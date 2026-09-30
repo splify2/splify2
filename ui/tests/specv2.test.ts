@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
-import { decodeSpec, encodeSpec, wasV1 } from '@/lib/specv2'
-import type { Spec } from '@/lib/model'
+import { decodeSpec, encodeSpec, foldStatus, wasV1 } from '@/lib/specv2'
+import type { Spec, Status } from '@/lib/model'
 
 // Кодек спеки v2 без движка: форма записи и чтения. Совпадение с настоящим движком проверяет
 // specv2-engine.test.ts; здесь — то, что не зависит от бинарника: какие ключи пишутся, как
@@ -159,6 +159,24 @@ describe('чтение v2 и круг', () => {
         expect(back.channels[0].match.prefixes_files).toEqual(['/l/dc.lst'])
         expect(back.channels[0].narrow).toEqual({ '/l/dc.lst': { proto: 'udp', ports: ['50000-65535'] } })
         expect(encodeSpec(back)).toEqual(d)
+    })
+
+    it('состояние: пул-группа сворачивается в выход со списком устройств, члены уходят', () => {
+        const st = {
+            schema: 1, channels: [],
+            outputs: {
+                vpn: { kind: 'group', up: true, device: 'wg0', devices: ['wg0', 'wg1'], group: { pick: 'order', members: ['vpn.wg0', 'vpn.wg1'], selected: 'vpn.wg0', alive: ['vpn.wg0'] } },
+                'vpn.wg0': { kind: 'interface', device: 'wg0', up: true },
+                'vpn.wg1': { kind: 'interface', device: 'wg1', up: false },
+                eu: { kind: 'group', group: { pick: 'manual', members: ['a', 'b'], selected: 'a', alive: ['a'] } },
+                a: { kind: 'interface', device: 'wg2' }, b: { kind: 'interface', device: 'wg3' },
+            },
+        } as unknown as Status
+        const f = foldStatus(st)
+        expect(Object.keys(f.outputs)).toEqual(['vpn', 'eu', 'a', 'b'])
+        expect(f.outputs.vpn).toMatchObject({ kind: 'interface', devices: ['wg0', 'wg1'], up: true })
+        expect('group' in f.outputs.vpn).toBe(false)
+        expect(f.outputs.eu.kind).toBe('group')
     })
 
     it('неизвестные ключи выхода доезжают обратно', () => {

@@ -7,6 +7,7 @@ import { deadline, rpc, type SubQuota } from '@/lib/rpc'
 import { subsRemember, subsRemembered } from '@/lib/subs'
 import { human, type DiagCheck, type Live } from '@/lib/live'
 import { usePending } from '@/lib/pending'
+import { specV2Unsupported } from '@/lib/engine'
 import { ON_FAIL_TEXT, type Channel, type ChannelStatus, type OutputStatus, devList, isPart, isTunnelKind } from '@/lib/model'
 import { country } from '@/lib/geo'
 import Flag from '@/components/Flag'
@@ -235,6 +236,17 @@ export default function Home({
 
     return (
         <div className="space-y-4">
+            {specV2Unsupported(live.status) && (
+                <Card className="border-destructive">
+                    <CardHeader className="pb-2">
+                        <CardTitle className="text-base">Движок не читает новую спеку</CardTitle>
+                    </CardHeader>
+                    <CardContent className="text-sm">
+                        Этот интерфейс записывает настройки в формате движка 2.0. Установленный движок старше, и
+                        изменения не применятся. Обновите движок: Настройки → О ПО.
+                    </CardContent>
+                </Card>
+            )}
             <div className="flex flex-col items-stretch gap-3 sm:flex-row sm:items-start sm:justify-between">
                 <div className="min-w-0">
                     <div className="flex items-center gap-2.5">

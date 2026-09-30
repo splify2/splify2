@@ -247,9 +247,9 @@ backup_check_sub() {  # ФАЙЛ
     [ "$sz" -le "$BACKUP_SUB_MAX" ] || { echo "подписка больше $((BACKUP_SUB_MAX / 1024)) КБ"; return 1; }
     lines="$(grep -c "[^[:space:]]" "$1")"
     [ "$lines" -gt 0 ] || { echo "раздел подписки пуст"; return 1; }
-    [ "$(grep -c '^vless://' "$1")" = "$lines" ] && return 0
+    [ "$(grep -cE '^(vless|hysteria2|hy2)://' "$1")" = "$lines" ] && return 0
     grep -qvE '^[A-Za-z0-9+/=]*$' "$1" || return 0
-    echo "подписка: ждём строки vless:// или один блок base64"
+    echo "подписка: ждём строки vless:// или hysteria2:// либо один блок base64"
     return 1
 }
 

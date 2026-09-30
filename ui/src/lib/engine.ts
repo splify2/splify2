@@ -174,3 +174,10 @@ export function missingModule(
               : null
     return need && !modules.includes(need) ? need : null
 }
+
+/** Не читает ли движок спеку формата 2.0: да, если он сообщает перечень умений и в нём нет
+ *  `groups` (группы выходов появились вместе со спекой v2). Перечня нет вовсе — движок до 1.3.0
+ *  или ответ ещё не пришёл: утверждать нечего, false. */
+export function specV2Unsupported(status: Status | null): boolean {
+    return Array.isArray(status?.features) && !status!.features!.includes('groups')
+}

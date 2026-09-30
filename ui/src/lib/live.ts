@@ -4,6 +4,7 @@ import { rpc } from './rpc'
 import { type Releases, type SelfUpdateInfo } from './engine'
 import { type Status } from './model'
 import { pending } from './pending'
+import { foldStatus } from './specv2'
 import { buildId } from './assets'
 
 /** Живые данные экрана — ОДИН опрос на всё.
@@ -306,7 +307,7 @@ export function useLive(): Live {
                 withDiag ? rpc.diag() : Promise.resolve(null), rpc.netInfo(),
             ])
             if (stop) return
-            if (s.status === 'fulfilled' && !failure(s.value)) { setStatus(s.value); setError(null); fails.current = 0 }
+            if (s.status === 'fulfilled' && !failure(s.value)) { setStatus(foldStatus(s.value)); setError(null); fails.current = 0 }
             else failed(s.status === 'fulfilled' ? failure(s.value)! : asText(s.reason))
             const devices = d.status === 'fulfilled' && !failure(d.value) ? d.value.devices || {} : null
             if (withDiag) {
@@ -315,7 +316,7 @@ export function useLive(): Live {
                 } else setDiagOld(true)
             }
             const netv = ni.status === 'fulfilled' && !failure(ni.value) ? ni.value : null
-            finish(s.status === 'fulfilled' && !failure(s.value) ? s.value : null, devices, netv, null)
+            finish(s.status === 'fulfilled' && !failure(s.value) ? foldStatus(s.value) : null, devices, netv, null)
         }
 
         const finish = (
@@ -447,6 +448,7 @@ export function useLive(): Live {
                     }
                     const bad = failure(r)
                     if (bad) { failed(bad); return }
+                    r.status = foldStatus(r.status)
                     setStatus(r.status)
                     setError(null)
                     setStarting(false)

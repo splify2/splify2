@@ -38,7 +38,9 @@ import {
     type Narrow,
     type Output,
     type OutputKind,
+    type OutputStatus,
     type Spec,
+    type Status,
     type Upstream,
 } from '@/lib/model'
 
@@ -334,6 +336,43 @@ function decodeV2(d: J): Spec {
     const dns = decodeDns(dnsRaw)
     if (dns) spec.dns = dns
     return spec
+}
+
+/** Состояние движка → вид, к которому привык интерфейс: пул, записанный группой с членами
+ *  «<пул>.<устройство>», снова один выход kind=interface со списком устройств, а его члены из
+ *  перечня выходов уходят. Та же свёртка, что у спеки (decodeV2): без неё счётчик «VPN», блоки
+ *  туннелей на главной и проверка устройств видели бы служебные члены как отдельные выходы, а
+ *  пул — как группу, которой в списке «свои туннели» не место. Остальные группы (выбор вручную,
+ *  веса, члены-выходы) остаются группами и показываются как есть. */
+export function foldStatus(st: Status): Status {
+    const outs = st?.outputs
+    if (!outs) return st
+    const hidden = new Set<string>()
+    const pools = new Set<string>()
+    for (const [g, o] of Object.entries(outs)) {
+        const gr = o.kind === 'group' ? o.group : undefined
+        if (!gr || (gr.pick !== 'order' && gr.pick !== 'latency') || !gr.members.length) continue
+        if (!gr.members.every((m) => m.startsWith(`${g}.`) && outs[m]?.kind === 'interface')) continue
+        pools.add(g)
+        for (const m of gr.members) hidden.add(m)
+    }
+    if (!pools.size) return st
+    const next: Record<string, OutputStatus> = {}
+    for (const [n, o] of Object.entries(outs)) {
+        if (hidden.has(n)) continue
+        if (pools.has(n)) {
+            const members = o.group!.members
+            const { group: _g, ...rest } = o
+            next[n] = {
+                ...rest,
+                kind: 'interface',
+                devices: o.devices?.length ? o.devices : members.map((m) => outs[m].device || ''),
+            }
+            continue
+        }
+        next[n] = o
+    }
+    return { ...st, outputs: next }
 }
 
 // ---------------------------------------------------------------------------------------
