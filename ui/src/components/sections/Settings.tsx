@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react'
-import { ChevronLeft, Info, Layers, Library, Network, Sliders, Stethoscope } from 'lucide-react'
-import HubRow from '@/components/HubRow'
+import { Info, Layers, Library, Network, Sliders, Stethoscope } from 'lucide-react'
+import { Group, ScreenHeader, TapRow } from '@/components/ui/layout'
 import Diagnostics from '@/components/sections/Diagnostics'
 import CatalogTab from '@/components/tabs/CatalogTab'
 import BackupCard from '@/components/BackupCard'
@@ -66,17 +66,8 @@ export default function Settings({
     if (screen !== 'root') {
         return (
             <div className="space-y-4">
-                <div className="flex flex-wrap items-baseline gap-2">
-                    <button
-                        type="button"
-                        onClick={() => setScreen('root')}
-                        className="flex items-center gap-1 text-sm text-primary"
-                    >
-                        <ChevronLeft className="h-4 w-4" aria-hidden="true" /> Настройки
-                    </button>
-                    <span className="text-sm text-muted-foreground">/</span>
-                    <h2 className="sp-title">{TITLE[screen]}</h2>
-                </div>
+                {/* Bode: шапка вложенного экрана — стрелка назад и заголовок, как в приложении. */}
+                <ScreenHeader title={TITLE[screen]} back={() => setScreen('root')} backLabel="Настройки" />
                 <>
                     {screen === 'diag' && <Diagnostics live={live} />}
                     {screen === 'general' && (
@@ -133,11 +124,11 @@ export default function Settings({
     ).size
 
     return (
-        <div className="space-y-2.5">
-            <HubRow
+        <Group>
+            <TapRow
                 icon={Stethoscope}
                 title="Диагностика"
-                state={
+                subtitle={
                     live.diag?.fail
                         ? `проверок с отказом: ${live.diag.fail}`
                         : live.diag?.warn
@@ -147,29 +138,29 @@ export default function Settings({
                 alarm={warnings > 0}
                 onClick={() => setScreen('diag')}
             />
-            <HubRow
+            <TapRow
                 icon={Sliders}
                 title="Общее"
-                state={(live.status?.lan_devices || spec?.lan_devices || []).join(', ') || undefined}
+                subtitle={(live.status?.lan_devices || spec?.lan_devices || []).join(', ') || undefined}
                 onClick={() => setScreen('general')}
             />
-            <HubRow
+            <TapRow
                 icon={Library}
                 title="Каталог"
-                state={`списков используется: ${used}`}
+                subtitle={`списков используется: ${used}`}
                 onClick={() => setScreen('catalog')}
             />
-            <HubRow icon={Network} title="XSTEER" onClick={() => setScreen('xsteer')} />
-            <HubRow
+            <TapRow icon={Network} title="XSTEER" onClick={() => setScreen('xsteer')} />
+            <TapRow
                 icon={Layers}
                 title="Дополнительно"
-                state={own ? `своих списков: ${own}` : undefined}
+                subtitle={own ? `своих списков: ${own}` : undefined}
                 onClick={() => setScreen('extra')}
             />
-            <HubRow
+            <TapRow
                 icon={Info}
                 title="О ПО"
-                state={[
+                subtitle={[
                     live.selfUpdate?.current ? `splify2 ${live.selfUpdate.current}` : '',
                     live.build?.version ? `steer ${live.build.version}` : '',
                 ]
@@ -177,6 +168,6 @@ export default function Settings({
                     .join(' · ') || undefined}
                 onClick={() => setScreen('about')}
             />
-        </div>
+        </Group>
     )
 }
