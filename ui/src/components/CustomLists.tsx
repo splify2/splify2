@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from 'react'
 import { Loader2, Pencil, Plus, Trash2, X } from 'lucide-react'
+import { Block, CardHead } from '@/components/ui/layout'
 import { Button } from '@/components/ui/button'
 import { notify } from '@/lib/notify'
 import { rpc } from '@/lib/rpc'
@@ -215,26 +216,28 @@ export default function CustomLists({
     }
 
     return (
-        <section className="rounded-md border border-border bg-card p-4">
-            <h3 className="sp-sub">Свои списки</h3>
-            <p className="mt-1 text-xs text-muted-foreground">
+        /* Bode: карточкой приложения — заголовок со счётчиком, списки строками через линию
+           (имя, под ним вид и число записей), действия у правого края. */
+        <Block>
+            <CardHead title="Свои списки" meta={mine.length ? `списков: ${mine.length}` : undefined} />
+            <p className="text-xs text-muted-foreground">
                 Домены и подсети, которых нет у издателя. После добавления список появится в
                 редакторе правил рядом с остальными — сам по себе он ничего не меняет.
             </p>
 
             {mine.length > 0 && (
-                <ul className="mt-3 space-y-1.5 text-sm">
+                <ul className="divide-y divide-border text-sm">
                     {mine.map((sv) => {
                         const svKind = sv.domains.length ? 'domains' : 'prefixes'
                         const m = meta[`${svKind}:${sv.name}`]
                         const from = sourceText(m)
                         const open = editing?.name === sv.name && editing?.kind === svKind
                         return (
-                            <li key={sv.id}>
-                                <div className="flex items-center gap-2">
-                                    <span className="min-w-0 flex-1 truncate">
-                                        {sv.name}
-                                        <span className="ml-2 text-xs text-muted-foreground">
+                            <li key={sv.id} className="py-2">
+                                <div className="flex min-h-[44px] items-center gap-2">
+                                    <span className="min-w-0 flex-1">
+                                        <span className="block truncate font-medium">{sv.name}</span>
+                                        <span className="mt-0.5 block truncate text-xs text-subtle">
                                             {svKind === 'domains' ? 'домены' : 'подсети'} · записей {sv.count}
                                             {from ? ` · ${from}` : ''}
                                         </span>
@@ -290,7 +293,7 @@ export default function CustomLists({
                 </ul>
             )}
 
-            <div className="mt-4 space-y-3">
+            <div className="space-y-3 border-t border-border pt-3">
                 <div className="flex flex-wrap items-center gap-2">
                     <input
                         value={name}
@@ -368,7 +371,7 @@ export default function CustomLists({
                     у списков издателя.
                 </p>
             </div>
-        </section>
+        </Block>
     )
 }
 

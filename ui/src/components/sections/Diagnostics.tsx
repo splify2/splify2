@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useState } from 'react'
 import { Check, Info, RefreshCw, Search, TriangleAlert, X, XCircle } from 'lucide-react'
 import { Button } from '@/components/ui/button'
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
+import { Block, CardHead } from '@/components/ui/layout'
 import { type Live } from '@/lib/live'
 import { parseLog } from '@/lib/log'
 import { rpc } from '@/lib/rpc'
@@ -78,26 +78,24 @@ export default function Diagnostics({ live }: { live: Live }) {
         <div className="space-y-4">
             {/* Плохое наверху, исправное свёрнуто: двенадцать зелёных галочек прячут одну
                 красную. */}
-            <Card>
-                <CardHeader>
-                    <CardTitle>
-                        {live.diagOld
+            <Block>
+                <CardHead
+                    title={live.diagOld
                             ? 'Проверка состояния недоступна'
                             : live.diag?.fail
                               ? `проверок с отказом: ${live.diag.fail}`
                               : live.diag?.warn
                                 ? `проверок с предупреждением: ${live.diag.warn}`
                                 : 'Всё в порядке'}
-                    </CardTitle>
+                />
                     {/* Объяснять, ЧТО такое проверки, на экране незачем: об этом не
                         спрашивают. Остаётся то, после чего человек делает следующий шаг —
                         движок старый и проверок не умеет. */}
                     {live.diagOld && (
-                        <CardDescription>Обновите steer в разделе «Настройки → О ПО».</CardDescription>
+                        <p className="text-xs text-muted-foreground">Обновите steer в разделе «Настройки → О ПО».</p>
                     )}
-                </CardHeader>
                 {!live.diagOld && (
-                    <CardContent className="space-y-2">
+                    <div className="space-y-2">
                         {bad.map((c, i) => (
                             <div
                                 key={`${c.id}-${i}`}
@@ -144,13 +142,14 @@ export default function Diagnostics({ live }: { live: Live }) {
                                 ))}
                             </div>
                         )}
-                    </CardContent>
+                    </div>
                 )}
-            </Card>
+            </Block>
 
-            <Card>
-                <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-3">
-                    <CardTitle>Логи steer</CardTitle>
+            <Block>
+                <CardHead
+                    title="Логи steer"
+                    action={
                     <Button
                         variant="ghost"
                         size="sm"
@@ -161,8 +160,9 @@ export default function Diagnostics({ live }: { live: Live }) {
                         <RefreshCw className={`h-3.5 w-3.5 ${refreshingLog ? 'animate-spin' : ''}`} />
                         <span>Обновить</span>
                     </Button>
-                </CardHeader>
-                <CardContent className="space-y-2">
+                    }
+                />
+                <div className="space-y-2">
                     {log && log.length > 0 && (
                         <div className="relative">
                             <Search className="absolute left-2.5 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-muted-foreground pointer-events-none" />
@@ -228,8 +228,8 @@ export default function Diagnostics({ live }: { live: Live }) {
                             Движок ничего не писал в журнал.
                         </p>
                     )}
-                </CardContent>
-            </Card>
+                </div>
+            </Block>
         </div>
     )
 }

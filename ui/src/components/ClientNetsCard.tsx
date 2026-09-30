@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from 'react'
-import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
+import { Block, CardHead } from '@/components/ui/layout'
 import { Button } from '@/components/ui/button'
 import { devList, isTunnelKind, type ClientNet, type Spec, type Status } from '@/lib/model'
 import { rpc } from '@/lib/rpc'
@@ -166,11 +166,8 @@ export default function ClientNetsCard({ spec, status, onChange }: Props) {
     const anyBlank = rows.some((n) => !n.absent && !(n.subnets || []).length && !whyNotSource(n))
 
     return (
-        <Card>
-            <CardHeader className="pb-2">
-                <CardTitle className="text-base">Кого маршрутизируем</CardTitle>
-            </CardHeader>
-            <CardContent className="space-y-3">
+        <Block>
+                <CardHead title="Кого маршрутизируем" />
                 <p className="text-[13px] text-muted-foreground">
                     Правила касаются устройств, которые приходят через эти интерфейсы — например, из Tailscale или
                     ZeroTier, если роутер им шлюз.
@@ -290,7 +287,6 @@ export default function ClientNetsCard({ spec, status, onChange }: Props) {
                         Трафик ваших устройств оттуда не придёт, и правила на них не встанут.
                     </p>
                 )}
-            </CardContent>
-        </Card>
+        </Block>
     )
 }

@@ -1,8 +1,8 @@
 import { useEffect, useState } from 'react'
 import { Plus, Trash2 } from 'lucide-react'
 import { Button } from '@/components/ui/button'
-import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
-import { Field, NumField, Radio, inputCls } from '@/components/formbits'
+import { Block, CardHead, FieldRow, KV, Segmented } from '@/components/ui/layout'
+import { inputCls } from '@/components/formbits'
 import { notify } from '@/lib/notify'
 import { pending } from '@/lib/pending'
 import { rpc, type DnsLog } from '@/lib/rpc'
@@ -111,51 +111,60 @@ export default function Dns(_props: { live?: Live }) {
     const state = (n: string) => log?.upstreams?.find((u) => u.name === n)
     const mode: DomainMode = dns.mode || 'fakeip'
 
+    /* Состояние сервера точкой, как у выходов в приложении: зелёная — отвечает или ждёт
+     * вопросов, жёлтая — соединяется, красная — не отвечает или не может работать вовсе. */
+    const dotOf = (st?: string) =>
+        !st ? 'bg-muted-foreground'
+            : st === 'ready' || st === 'idle' ? 'bg-success'
+                : st === 'connecting' ? 'bg-warning' : 'bg-destructive'
+
+    /* Bode: раскладка приложения. Серверы — строками одной карточки через линию, у каждого
+     * шапка «точка · имя · состояние · убрать» и поля строками «подпись — поле»; режим — двумя
+     * сегментами вместо двух радиокнопок столбиком. */
     return (
         <div className="space-y-4">
-            <Card>
-                <CardHeader>
-                    <CardTitle>Серверы DNS</CardTitle>
-                </CardHeader>
-                <CardContent className="space-y-4">
-                    {names.length === 0 && (
-                        <p className="text-sm text-muted-foreground">
-                            Серверов нет: имена под правилами спрашиваются у системного DNS роутера.
-                        </p>
-                    )}
-                    {names.map((n) => {
-                        const u = ups[n]
-                        const s = state(n)
-                        return (
-                            <div key={n} className="space-y-3 rounded-lg border border-border p-3">
-                                <div className="flex flex-wrap items-center gap-2">
-                                    <input
-                                        defaultValue={n}
-                                        aria-label={`имя сервера ${n}`}
-                                        onBlur={(e) => rename(n, e.currentTarget.value.trim())}
-                                        className={`${inputCls} w-40 font-mono`}
-                                    />
-                                    {s && (
-                                        <span className={`text-xs ${s.state === 'down' || s.state === 'no-tls' ? 'text-destructive' : 'text-muted-foreground'}`}>
-                                            {PROTO_TEXT[s.proto] || s.proto} · {STATE_TEXT[s.state] || s.state}
-                                            {s.ok !== undefined ? ` · ответов: ${s.ok}` : ''}
-                                        </span>
-                                    )}
-                                    <span className="flex-1" />
-                                    <button type="button" aria-label={`убрать ${n}`} onClick={() => remove(n)} className="sp-row bg-transparent p-0 text-muted-foreground hover:text-destructive">
-                                        <Trash2 className="h-4 w-4" />
-                                    </button>
-                                </div>
-                                <Field label="Адрес">
-                                    <input
-                                        value={u.url}
-                                        onChange={(e) => setUp(n, { ...u, url: e.currentTarget.value.trim() })}
-                                        placeholder="https://dns.example/dns-query"
-                                        className={`${inputCls} w-full font-mono`}
-                                    />
-                                </Field>
-                                <div className="grid gap-3 sm:grid-cols-2">
-                                    <Field label="Через выход">
+            <Block>
+                <CardHead title="Серверы DNS" meta={names.length ? `серверов: ${names.length}` : undefined} />
+                {names.length === 0 && (
+                    <p className="text-sm text-muted-foreground">
+                        Серверов нет: имена под правилами спрашиваются у системного DNS роутера.
+                    </p>
+                )}
+                {names.length > 0 && (
+                    <div className="divide-y divide-border">
+                        {names.map((n) => {
+                            const u = ups[n]
+                            const s = state(n)
+                            return (
+                                <div key={n} className="space-y-1 py-3 first:pt-0">
+                                    <div className="flex flex-wrap items-center gap-2">
+                                        <span className={`h-2 w-2 shrink-0 rounded-full ${dotOf(s?.state)}`} aria-hidden="true" />
+                                        <input
+                                            defaultValue={n}
+                                            aria-label={`имя сервера ${n}`}
+                                            onBlur={(e) => rename(n, e.currentTarget.value.trim())}
+                                            className={`${inputCls} w-40 font-mono`}
+                                        />
+                                        {s && (
+                                            <span className={`text-xs ${s.state === 'down' || s.state === 'no-tls' ? 'text-destructive' : 'text-muted-foreground'}`}>
+                                                {PROTO_TEXT[s.proto] || s.proto} · {STATE_TEXT[s.state] || s.state}
+                                                {s.ok !== undefined ? ` · ответов: ${s.ok}` : ''}
+                                            </span>
+                                        )}
+                                        <span className="flex-1" />
+                                        <button type="button" aria-label={`убрать ${n}`} onClick={() => remove(n)} className="sp-row bg-transparent p-0 text-muted-foreground hover:text-destructive">
+                                            <Trash2 className="h-4 w-4" />
+                                        </button>
+                                    </div>
+                                    <FieldRow label="Адрес">
+                                        <input
+                                            value={u.url}
+                                            onChange={(e) => setUp(n, { ...u, url: e.currentTarget.value.trim() })}
+                                            placeholder="https://dns.example/dns-query"
+                                            className={`${inputCls} w-full font-mono`}
+                                        />
+                                    </FieldRow>
+                                    <FieldRow label="Через выход">
                                         <select
                                             value={u.out || ''}
                                             onChange={(e) => setUp(n, { ...u, out: e.currentTarget.value || undefined })}
@@ -164,38 +173,39 @@ export default function Dns(_props: { live?: Live }) {
                                             <option value="">напрямую</option>
                                             {outs.map((o) => <option key={o} value={o}>{o}</option>)}
                                         </select>
-                                    </Field>
-                                    <Field label="Адреса сервера">
+                                    </FieldRow>
+                                    <FieldRow label="Адреса сервера">
                                         <input
                                             defaultValue={(u.ips || []).join(', ')}
                                             onBlur={(e) => setUp(n, { ...u, ips: listOf(e.currentTarget.value) })}
                                             placeholder="1.1.1.1, 1.0.0.1"
                                             className={`${inputCls} w-full font-mono`}
                                         />
-                                    </Field>
+                                    </FieldRow>
+                                    {s?.error && <p className="text-xs text-destructive">{s.error}</p>}
                                 </div>
-                                {s?.error && <p className="text-xs text-destructive">{s.error}</p>}
-                            </div>
-                        )
-                    })}
-                    <div className="flex flex-wrap items-end gap-2">
-                        <Field label="Добавить">
-                            <select value={preset} onChange={(e) => setPreset(e.currentTarget.value)} className={`${inputCls}`}>
-                                {PRESETS.map((p) => <option key={p.name} value={p.name}>{p.title}</option>)}
-                            </select>
-                        </Field>
-                        <Button onClick={addPreset}><Plus className="h-4 w-4" aria-hidden="true" /> Добавить</Button>
-                        <Button variant="secondary" onClick={addCustom}>Свой адрес</Button>
+                            )
+                        })}
                     </div>
-                </CardContent>
-            </Card>
+                )}
+                <div className="flex flex-wrap items-center gap-2 border-t border-border pt-3">
+                    <select
+                        value={preset}
+                        aria-label="Добавить"
+                        onChange={(e) => setPreset(e.currentTarget.value)}
+                        className={`${inputCls} min-w-0 flex-1`}
+                    >
+                        {PRESETS.map((p) => <option key={p.name} value={p.name}>{p.title}</option>)}
+                    </select>
+                    <Button onClick={addPreset}><Plus className="h-4 w-4" aria-hidden="true" /> Добавить</Button>
+                    <Button variant="secondary" onClick={addCustom}>Свой адрес</Button>
+                </div>
+            </Block>
 
-            <Card>
-                <CardHeader>
-                    <CardTitle>Как спрашивать</CardTitle>
-                </CardHeader>
-                <CardContent className="space-y-5">
-                    <Field label="Сервер по умолчанию для имён под правилами">
+            <Block>
+                <CardHead title="Как спрашивать" />
+                <div className="divide-y divide-border">
+                    <FieldRow label="Сервер по умолчанию для имён под правилами">
                         <select
                             value={dns.upstream || ''}
                             onChange={(e) => setDns({ ...dns, upstream: e.currentTarget.value || undefined })}
@@ -204,42 +214,57 @@ export default function Dns(_props: { live?: Live }) {
                             <option value="">системный DNS роутера</option>
                             {names.map((n) => <option key={n} value={n}>{n}</option>)}
                         </select>
-                    </Field>
-                    <Field label="Серверы для разрешения имён серверов (обычный DNS)">
+                    </FieldRow>
+                    <FieldRow label="Серверы для разрешения имён серверов (обычный DNS)">
                         <input
                             defaultValue={(dns.bootstrap || []).join(', ')}
                             onBlur={(e) => setDns({ ...dns, bootstrap: listOf(e.currentTarget.value).slice(0, 4) })}
                             placeholder="1.1.1.1, 8.8.8.8"
                             className={`${inputCls} w-full font-mono`}
                         />
-                    </Field>
-                    <div className="space-y-1">
-                        <div className="sp-label uppercase tracking-wide text-muted-foreground">Режим доменных правил</div>
-                        <Radio on={mode === 'fakeip'} onClick={() => setDns({ ...dns, mode: undefined })}>
-                            <span className="font-medium">Поддельные адреса</span>
-                            <span className="block text-xs text-muted-foreground">точнее по доменам, значение по умолчанию</span>
-                        </Radio>
-                        <Radio on={mode === 'realip'} onClick={() => setDns({ ...dns, mode: 'realip' })}>
-                            <span className="font-medium">Настоящие адреса</span>
-                            <span className="block text-xs text-muted-foreground">трассировка видит настоящие узлы</span>
-                        </Radio>
-                    </div>
-                    <div className="grid gap-3 sm:grid-cols-2">
-                        <NumField
-                            label="Записей в кэше ответов"
-                            value={dns.cache}
-                            onChange={(v) => setDns({ ...dns, cache: v })}
-                            placeholder="0 — без кэша"
-                            min={0}
+                    </FieldRow>
+                    <div className="space-y-2 py-3">
+                        <div className="text-sm text-subtle">Режим доменных правил</div>
+                        <Segmented
+                            label="Режим доменных правил"
+                            value={mode}
+                            onChange={(v) => setDns({ ...dns, mode: v === 'fakeip' ? undefined : v })}
+                            items={[
+                                { value: 'fakeip', label: 'Поддельные адреса' },
+                                { value: 'realip', label: 'Настоящие адреса' },
+                            ]}
                         />
-                        {log?.cache && (
-                            <div className="self-end pb-2 text-xs text-muted-foreground">
-                                в кэше {log.cache.entries} из {log.cache.max} · попаданий {log.cache.hits}, промахов {log.cache.misses}
-                            </div>
-                        )}
+                        <p className="text-xs text-muted-foreground">
+                            {mode === 'fakeip'
+                                ? 'точнее по доменам, значение по умолчанию'
+                                : 'трассировка видит настоящие узлы'}
+                        </p>
                     </div>
-                </CardContent>
-            </Card>
+                    <FieldRow label="Записей в кэше ответов">
+                        <input
+                            type="number"
+                            inputMode="numeric"
+                            value={dns.cache ?? ''}
+                            min={0}
+                            placeholder="0 — без кэша"
+                            onChange={(e) => {
+                                const v = e.currentTarget.value.trim()
+                                const n = Number(v)
+                                setDns({ ...dns, cache: v === '' || !Number.isFinite(n) ? undefined : n })
+                            }}
+                            className={`${inputCls} w-full`}
+                        />
+                    </FieldRow>
+                    {log?.cache && (
+                        <div className="py-2.5">
+                            <KV
+                                k="кэш"
+                                v={`в кэше ${log.cache.entries} из ${log.cache.max} · попаданий ${log.cache.hits}, промахов ${log.cache.misses}`}
+                            />
+                        </div>
+                    )}
+                </div>
+            </Block>
         </div>
     )
 }

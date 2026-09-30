@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react'
-import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
+import { Block, CardHead } from '@/components/ui/layout'
 import { Switch } from '@/components/ui/switch'
 import { Button } from '@/components/ui/button'
 import { rpc } from '@/lib/rpc'
@@ -141,12 +141,9 @@ export default function TelemetryCard() {
     }
 
     return (
-        <Card>
-            <CardHeader>
-                <CardTitle className="text-base">{t('Отчёт о работе')}</CardTitle>
-            </CardHeader>
-            <CardContent className="space-y-3">
-                <div className="flex items-start gap-2.5">
+        <Block>
+                <CardHead title={t('Отчёт о работе')} />
+                <div className="flex flex-row-reverse items-start justify-between gap-3">
                     <Switch
                         on={on}
                         label={t('Отправлять отчёт о работе раз в час')}
@@ -236,7 +233,6 @@ export default function TelemetryCard() {
                         <div className="text-xs text-warning-fg">{pktError}</div>
                     )}
                 </div>
-            </CardContent>
-        </Card>
+        </Block>
     )
 }

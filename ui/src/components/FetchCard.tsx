@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react'
-import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
+import { Block, CardHead } from '@/components/ui/layout'
 import { Switch } from '@/components/ui/switch'
 import { rpc } from '@/lib/rpc'
 import { notify } from '@/lib/notify'
@@ -62,12 +62,9 @@ export default function FetchCard() {
     const on = mode === 'always'
 
     return (
-        <Card>
-            <CardHeader>
-                <CardTitle className="text-base">{t('Скачивание')}</CardTitle>
-            </CardHeader>
-            <CardContent>
-                <div className="flex items-start gap-2.5">
+        <Block>
+                <CardHead title={t('Скачивание')} />
+                <div className="flex flex-row-reverse items-start justify-between gap-3">
                     <Switch
                         on={on}
                         label={t('Скачивать списки и обновления через туннель')}
@@ -91,7 +88,6 @@ export default function FetchCard() {
                         )}
                     </div>
                 </div>
-            </CardContent>
-        </Card>
+        </Block>
     )
 }

@@ -1,6 +1,6 @@
 import { useRef, useState } from 'react'
 import { Download, Loader2, Upload } from 'lucide-react'
-import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
+import { Block, CardHead } from '@/components/ui/layout'
 import { Button } from '@/components/ui/button'
 import { useConfirm } from '@/components/ui/confirm'
 import { notify } from '@/lib/notify'
@@ -169,12 +169,9 @@ export default function BackupCard({
     }
 
     return (
-        <Card>
+        <Block>
             {dialog}
-            <CardHeader className="pb-2">
-                <CardTitle className="text-base">Бекап настроек</CardTitle>
-            </CardHeader>
-            <CardContent className="space-y-3">
+            <CardHead title="Бекап настроек" />
                 <p className="text-sm text-muted-foreground">
                     Один файл: правила, выходы, подписка и свои списки. Списки каталога не входят — роутер скачает
                     их сам.
@@ -215,7 +212,6 @@ export default function BackupCard({
                     Восстановление ничего не применяет: файл проверяется, настройки сохраняются, маршрутизация
                     меняется только после «Применить».
                 </p>
-            </CardContent>
-        </Card>
+        </Block>
     )
 }

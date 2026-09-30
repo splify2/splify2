@@ -1,6 +1,5 @@
 import { useEffect, useState } from 'react'
-import { Library } from 'lucide-react'
-import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
+import { Block, CardHead } from '@/components/ui/layout'
 import { Button } from '@/components/ui/button'
 import { rpc } from '@/lib/rpc'
 import { notify } from '@/lib/notify'
@@ -53,14 +52,8 @@ export default function ListsSourceCard() {
     if (url === null) return null
 
     return (
-        <Card>
-            <CardHeader>
-                <CardTitle className="text-base flex items-center gap-2">
-                    <Library className="h-4 w-4" aria-hidden="true" />
-                    {t('Источник списков')}
-                </CardTitle>
-            </CardHeader>
-            <CardContent className="space-y-2">
+        <Block>
+            <CardHead title={t('Источник списков')} />
                 <div className="flex flex-wrap items-center gap-2">
                     <input
                         value={url}
@@ -88,7 +81,6 @@ export default function ListsSourceCard() {
                         {t('Сейчас — каталог splify2.')}
                     </div>
                 )}
-            </CardContent>
-        </Card>
+        </Block>
     )
 }

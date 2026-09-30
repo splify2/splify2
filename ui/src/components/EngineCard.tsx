@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from 'react'
 import { Check, Download, Loader2 } from 'lucide-react'
-import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
+import { Block, CardHead, KV } from '@/components/ui/layout'
 import { Button } from '@/components/ui/button'
 import { notify } from '@/lib/notify'
 import { rpc } from '@/lib/rpc'
@@ -99,17 +99,16 @@ export default function EngineCard({ engine, releases, onInstalled }: Props) {
             : t('Движок')
 
     return (
-        <Card className={engine?.present && engine.vless && !tooOld ? '' : 'border-destructive'}>
-            <CardHeader className="pb-2">
-                <CardTitle className="text-base">{title}</CardTitle>
-            </CardHeader>
-            <CardContent className="space-y-3">
+        /* Bode: как экран «Движок» приложения — заголовок, затем факты полосами «подпись —
+           значение», ниже выбор варианта и версии, кнопка во всю ширину. */
+        <Block className={engine?.present && engine.vless && !tooOld ? '' : 'border-destructive'}>
+            <CardHead title={title} />
                 {engine?.present && (
-                    <p className="text-xs text-muted-foreground">
-                        {t('Сейчас')}: steer {engine.version || '?'}
-                        {engine.vless ? ` (${t('расширенный')})` : ` (${t('базовый')})`}
-                        {engine.arch ? ` · ${engine.arch}` : ''}
-                    </p>
+                    <div className="space-y-1">
+                        <KV k={t('версия')} v={`steer ${engine.version || '?'}`} />
+                        <KV k={t('вариант')} v={engine.vless ? t('расширенный') : t('базовый')} />
+                        {engine.arch && <KV k={t('архитектура')} v={<span className="font-mono">{engine.arch}</span>} />}
+                    </div>
                 )}
                 {!engine?.present && (
                     <>
@@ -199,12 +198,12 @@ export default function EngineCard({ engine, releases, onInstalled }: Props) {
                     ))}
                 </div>
 
-                <div className="flex flex-wrap items-center gap-2">
+                <div className="space-y-2">
                     <select
                         value={ver}
                         onChange={(e) => setVer(e.target.value)}
                         aria-label={t('Версия движка')}
-                        className="rounded-lg border border-input bg-transparent px-3 py-2 text-sm focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring"
+                        className="w-full rounded-lg border border-input bg-transparent px-3 py-2 text-sm focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring"
                     >
                         {versions === null && <option value="">{t('загрузка…')}</option>}
                         {versions?.length === 0 && <option value="">{t('релизов не найдено')}</option>}
@@ -218,7 +217,7 @@ export default function EngineCard({ engine, releases, onInstalled }: Props) {
                             </option>
                         ))}
                     </select>
-                    <Button onClick={install} disabled={busy || !ver}>
+                    <Button onClick={install} disabled={busy || !ver} className="w-full">
                         {busy ? <Loader2 className="h-4 w-4 animate-spin" /> : <Download className="h-4 w-4" />}
                         {t(action.label)}
                     </Button>
@@ -249,7 +248,6 @@ export default function EngineCard({ engine, releases, onInstalled }: Props) {
                         </a>
                     </p>
                 )}
-            </CardContent>
-        </Card>
+        </Block>
     )
 }

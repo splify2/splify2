@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react'
 import { Download, Loader2 } from 'lucide-react'
-import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
+import { Block, CardHead } from '@/components/ui/layout'
 import { Button } from '@/components/ui/button'
 import { notify } from '@/lib/notify'
 import { rpc } from '@/lib/rpc'
@@ -70,11 +70,8 @@ export default function SelfUpdateCard({
     }
 
     return (
-        <Card>
-            <CardHeader className="pb-2">
-                <CardTitle className="text-base">{t('Интерфейс')}</CardTitle>
-            </CardHeader>
-            <CardContent className="space-y-3">
+        <Block>
+                <CardHead title={t('Интерфейс')} />
                 <p className="text-xs text-muted-foreground">
                     {t('Сейчас')}: luci-app-splify2 {info?.current || '?'}
                 </p>
@@ -141,7 +138,6 @@ export default function SelfUpdateCard({
                         </pre>
                     </div>
                 )}
-            </CardContent>
-        </Card>
+        </Block>
     )
 }

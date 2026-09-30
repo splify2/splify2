@@ -206,3 +206,18 @@ export function Empty({ icon: Icon, text, action }: { icon: typeof ChevronRight;
         </div>
     )
 }
+
+/** Строка «подпись слева — поле справа», как «если всё упало [список]» в приложении. Поле
+ *  занимает до половины строки; на узком экране подпись и поле встают друг под другом, когда
+ *  не помещаются. Подпись — <label>: поле находится по ней и глазом, и чтением с экрана. */
+export function FieldRow({ label, caption, children }: { label: ReactNode; caption?: ReactNode; children: ReactNode }) {
+    return (
+        <label className="flex min-h-[44px] flex-wrap items-center justify-between gap-x-3 gap-y-1.5 py-1">
+            <span className="min-w-0 flex-1 basis-40">
+                <span className="block text-sm text-subtle">{label}</span>
+                {caption && <span className="mt-0.5 block text-xs text-muted-foreground">{caption}</span>}
+            </span>
+            <span className="min-w-0 flex-1 basis-56 sm:max-w-[60%]">{children}</span>
+        </label>
+    )
+}
