@@ -306,6 +306,14 @@ export default function Zapret() {
     const applied = target
         ? (outs.find((o) => o.name === target)?.strategy || '')
         : st.active
+    /* У всего роутера применённое — ПАЧКА: основная стратегия и слои поверх неё (Yv, Dv).
+       Слой применяется рядом с основной, а не вместо, и в `active` его нет; без слоёв здесь
+       применённая Yv не отмечалась нигде (splify2#34). У выхода файл ключей один — одно имя. */
+    const layerNames = target
+        ? []
+        : [st.layers?.youtube && `Yv${st.layers.youtube}`, st.layers?.discord && `Dv${st.layers.discord}`]
+              .filter((x): x is string => !!x)
+    const appliedAll = [applied, ...layerNames].filter(Boolean)
     const appliedFam = all.find((s) => s.name === applied)?.family
     const isOpen = (f: ZapretFamily) => (openFam ? !!openFam[f] : f === appliedFam)
     const toggleFam = (f: ZapretFamily) =>
@@ -426,7 +434,7 @@ export default function Zapret() {
                             '',
                             target === '',
                             t('Весь роутер'),
-                            st.active || t('стратегия не отмечена'),
+                            [st.active, ...layerNames].filter(Boolean).join(' + ') || t('стратегия не отмечена'),
                             [!st.enabled && <span key="off" className="rounded bg-accent px-1.5 py-0.5">{t('выключен')}</span>],
                         )}
                         {outs.map((o) => chip(
@@ -625,7 +633,7 @@ export default function Zapret() {
                                 .map((s) => scoreOf(res, s.name, fam))
                                 .filter((x): x is NonNullable<typeof x> => !!x && x.ok >= 0)
                                 .sort((a, b) => b.ok / Math.max(1, b.total) - a.ok / Math.max(1, a.total))[0]
-                            const hasApplied = list.some((s) => s.name === applied)
+                            const famApplied = list.find((s) => appliedAll.includes(s.name))?.name
                             return (
                                 <div key={fam} className="rounded-xl border border-border">
                                     <div className="flex items-center gap-1 px-2 py-1.5">
@@ -644,7 +652,7 @@ export default function Zapret() {
                                                 «21» рассыпалось на две строки по цифре. */}
                                             <span className="min-w-0 truncate text-xs text-muted-foreground">
                                                 {list.length}
-                                                {hasApplied ? ` · ${t('применена')} ${applied}` : ''}
+                                                {famApplied ? ` · ${t('применена')} ${famApplied}` : ''}
                                                 {best ? ` · ${t('лучшая')} ${best.ok}/${best.total}` : ''}
                                             </span>
                                         </button>
@@ -666,7 +674,7 @@ export default function Zapret() {
                                     {open && (
                                         <div className="border-t border-border p-1">
                                             {list.map((s) => {
-                                                const on = applied === s.name
+                                                const on = appliedAll.includes(s.name)
                                                 const sc = scoreOf(res, s.name, fam)
                                                 const expanded = openRow === s.name
                                                 return (
