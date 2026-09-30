@@ -296,12 +296,29 @@ case "$2" in
             json_dump
             exit 0
         fi
-        vless=1
-        out="$("$STEER" vless '' 2>&1)"
-        case "$out" in *steer-extended*) vless=0 ;; esac
+        # МОДУЛИ ДВИЖКА 2.0 — отдельные бинарники рядом с steerd (`steer-vless`, `steer-xsteer`,
+        # `steer-obfs`, `steer-tgws`, `steer-hysteria2`), каждый из своего пакета. Наличие
+        # спрашивается у файла, а не у базы пакетов: так отвечает и движок, который видит
+        # модуль, и ручная установка мимо менеджера.
+        mods=""
+        for m in vless xsteer obfs tgws hysteria2; do
+            [ -x "${MODULE_DIR:-${STEER%/*}}/steer-$m" ] && mods="$mods $m"
+        done
+        vless=0
+        case " $mods " in *" vless "*) vless=1 ;; esac
+        if [ "$vless" = 0 ]; then
+            # Сборка без отдельных модулей (статическая, либо прежний steer-extended): клиент
+            # VLESS вшит в сам движок. Отказ «нужен пакет steer-vless (входит в steer-extended)»
+            # означает, что его нет; слово steer-extended осталось в отказе ради старых версий.
+            out="$("$STEER" vless '' 2>&1)"
+            case "$out" in *steer-extended*|*steer-vless*) ;; *) vless=1 ;; esac
+        fi
         json_init
         json_add_boolean present 1
         json_add_boolean vless "$vless"
+        json_add_array modules
+        for m in $mods; do json_add_string "" "$m"; done
+        json_close_array
         # Автозапуск и работа — разные вещи, и тумблеру нужны обе. Движок могли
         # остановить из консоли между двумя открытиями страницы, поэтому подпись обязана
         # читать состояние, а не помнить своё.
@@ -311,7 +328,7 @@ case "$2" in
         # Версия любого из двух вариантов пакета. Через pkg_version, а не своим разбором
         # `apk list`: на opkg-роутере тот отдавал пустоту, и карточка движка показывала
         # установленный движок без версии.
-        json_add_string version "$(v="$(pkg_version steer-extended)"; [ -n "$v" ] || v="$(pkg_version steer)"; printf '%s' "$v")"
+        json_add_string version "$(v="$(pkg_version steer-core)"; [ -n "$v" ] || v="$(pkg_version steer-extended)"; [ -n "$v" ] || v="$(pkg_version steer)"; printf '%s' "$v")"
         # Не старше какой версии должен быть движок — см. STEER_MIN_VERSION в шапке файла.
         json_add_string min_version "$STEER_MIN_VERSION"
         json_dump

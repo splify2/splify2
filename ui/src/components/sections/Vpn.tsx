@@ -7,7 +7,7 @@ import VlessScreen from '@/components/VlessScreen'
 import XsteerPanel from '@/components/XsteerPanel'
 import { rpc } from '@/lib/rpc'
 import { usePending } from '@/lib/pending'
-import { devList, isPart } from '@/lib/model'
+import { devList, isPart, isTunnelKind } from '@/lib/model'
 import { type Live } from '@/lib/live'
 
 /** VPN: чем роутер выходит наружу.
@@ -72,7 +72,7 @@ export default function Vpn({ live }: { live: Live }) {
         .filter((o) => o.kind === 'interface')
         .flatMap((o) => devList(o))
         .filter((d) => !partNames.has(d))
-    const vless = outputs.filter((o) => o.kind === 'vless')
+    const vless = outputs.filter((o) => isTunnelKind(o.kind))
     const vlessCount = vless.reduce(
         (n, o) => n + Math.max(1, o.nodes?.length || 0),
         0,

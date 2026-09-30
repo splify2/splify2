@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useState } from 'react'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
-import { devList, type ClientNet, type Spec, type Status } from '@/lib/model'
+import { devList, isTunnelKind, type ClientNet, type Spec, type Status } from '@/lib/model'
 import { rpc } from '@/lib/rpc'
 
 /** Кого маршрутизируем: устройства, с которых движок забирает трафик клиентов (splify2#16).
@@ -84,7 +84,7 @@ export default function ClientNetsCard({ spec, status, onChange }: Props) {
         const outs = Object.values(spec?.outputs || {})
         return new Set(outs.flatMap((o) => [
             ...devList(o),
-            ...(o.kind === 'vless' || o.kind === 'xsteer' ? [o.name] : []),
+            ...(isTunnelKind(o.kind) || o.kind === 'xsteer' || o.kind === 'awg' ? [o.device || o.name.slice(0, 15)] : []),
         ]))
     }, [spec])
 

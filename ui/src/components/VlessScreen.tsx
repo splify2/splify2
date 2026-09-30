@@ -121,7 +121,7 @@ export default function VlessScreen() {
     async function add() {
         const src = url.trim()
         if (!isSubSource(src)) {
-            notify('Нужна ссылка подписки (http:// или https://) либо ссылка vless://', 'warning')
+            notify('Нужна ссылка подписки (http:// или https://) либо ссылка vless:// или hysteria2://', 'warning')
             return
         }
         /* Имя файла узлов — латиница и цифры, и придумывать его человек не обязан: название

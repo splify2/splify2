@@ -234,13 +234,13 @@ tm_event_rebuild() {
 TM_CRASH_FILE=${TM_CRASH_FILE:-/var/run/splify2-crash}
 
 tm_crash_what_ok() {  # ЧТО УПАЛО
-    case "${1:-}" in steer|zapret|xsteer|wan) return 0 ;; esac
+    case "${1:-}" in steer|xsteer|wan) return 0 ;; esac
     return 1
 }
 
 tm_crash_reason_ok() {  # ПОЧЕМУ
     case "${1:-}" in
-        steer_down|zapret_down|xsteer_down|wan_flap|boot|oom|apply_failed) return 0 ;;
+        steer_down|xsteer_down|wan_flap|boot|oom|apply_failed) return 0 ;;
     esac
     return 1
 }
@@ -250,7 +250,6 @@ tm_crash_reason_ok() {  # ПОЧЕМУ
 tm_crash_what_for() {  # ПРИЧИНА -> ЧТО
     case "${1:-}" in
         steer_down|apply_failed|boot|oom) printf 'steer' ;;
-        zapret_down)                      printf 'zapret' ;;
         xsteer_down)                      printf 'xsteer' ;;
         wan_flap)                         printf 'wan' ;;
     esac
@@ -454,7 +453,7 @@ tm_sub_host() {  # ССЫЛКА -> «домен deep» либо пусто
 # вычищаются вместе с кавычками.
 tm_list_files() {
     tr -d '\r\n' < "$SPEC" 2>/dev/null |
-        sed 's/"\(prefixes_files\|domains_files\)"[[:space:]]*:[[:space:]]*\[/\n@@[/g' |
+        sed 's/"\(prefixes_files\|domains_files\|prefixes_file\|domains_file\)"[[:space:]]*:[[:space:]]*\[/\n@@[/g' |
         sed -n 's/^@@\[\([^]]*\)\].*/\1/p' |
         tr ',' '\n' | tr -d '" \t' | grep . | sort -u
 }
@@ -465,8 +464,6 @@ tm_list_files() {
 # нет и поля — панель обязана это пережить (правило совместимости в docs/TELEMETRY.md).
 # «Ноль вместо неизвестного» здесь хуже отсутствия: ноль неотличим от измеренного нуля.
 RPCD_OBJ=${RPCD_OBJ:-/usr/libexec/rpcd/splify2}
-ZAPRET_SH=${ZAPRET_SH:-/usr/lib/splify2/zapret.sh}
-DOH_SH=${DOH_SH:-/usr/lib/splify2/doh.sh}
 
 # Значение поля из ответа объекта rpcd. Разбор по ИМЕНИ ПОЛЯ, а не по порядку: ответ читается
 # как данные, а не как текст известной формы.
@@ -584,7 +581,7 @@ tm_build() {
         _tm_i=$((_tm_i + 1))
         _tm_obj="$(printf '%s' "$_tm_st" | grep -o "\"$_tm_name\":{[^{}]*\(}[^{}]*\)\?" | head -1)"
         _tm_kindv="$(tm_field "$_tm_obj" kind)"
-        case "$_tm_kindv" in direct|interface|vless|zapret|obfs|xsteer|tgws) ;; *) _tm_kindv=other ;; esac
+        case "$_tm_kindv" in direct|interface|vless|hysteria2|zapret|obfs|xsteer|tgws|awg|group) ;; *) _tm_kindv=other ;; esac
         [ "$_tm_first" = 1 ] || printf ','
         _tm_first=0
         printf '{"i":%s,"kind":' "$_tm_i"
@@ -632,49 +629,6 @@ tm_build() {
     done
     _tm_custom="$(tm_list_files | grep -c "^$LISTS/custom/")"
     printf '],"custom":%s}' "$(tm_int "$_tm_custom")"
-
-    # ---- DoH ----
-    # Провайдер — ТОЛЬКО id из нашего каталога: вписанную руками ссылку `doh_active` не
-    # отдаёт вовсе, и это решено не здесь, а там, где ей и место.
-    if [ -r "$DOH_SH" ]; then
-        ( . "$DOH_SH" 2>/dev/null
-          printf ',"doh":{"installed":%s,"running":%s,"enabled":%s,"provider":' \
-              "$(tm_bool "$(doh_installed && echo 1 || echo 0)")" \
-              "$(tm_bool "$(doh_running && echo 1 || echo 0)")" \
-              "$(tm_bool "$(doh_enabled && echo 1 || echo 0)")"
-          tm_str "$(doh_active 2>/dev/null)"
-          printf '}' )
-    fi
-
-    # ---- обход DPI ----
-    if [ -r "$ZAPRET_SH" ]; then
-        ( . "$ZAPRET_SH" 2>/dev/null
-          printf ',"zapret":{"installed":%s,"running":%s,"enabled":%s' \
-              "$(tm_bool "$(zp_installed && echo 1 || echo 0)")" \
-              "$(tm_bool "$(zp_running && echo 1 || echo 0)")" \
-              "$(tm_bool "$(zp_enabled && echo 1 || echo 0)")"
-          _tm_v="$(zp_version 2>/dev/null)"
-          [ -n "$_tm_v" ] && { printf ',"version":'; tm_str "$_tm_v"; }
-          # Имя стратегии уезжает, только если оно ЕСТЬ В КАТАЛОГЕ. Иначе это чужая или
-          # правленная руками строка, и вместо неё едет слово `custom`: имя, которого нет у
-          # автора, ничего не говорит о продукте, зато может быть чем угодно.
-          _tm_a="$(zp_active_global 2>/dev/null)"
-          if [ -n "$_tm_a" ]; then
-              if zp_has "$_tm_a" 2>/dev/null; then
-                  printf ',"strategy":'; tm_str "$_tm_a"
-              else
-                  printf ',"strategy":"custom"'
-              fi
-              # ИМЯ обязательно: zp_drifted_global первой же строкой выходит без него, и
-              # без имени поле уезжало «не разошлась» ВСЕГДА (тот же класс, что I-156).
-              printf ',"drifted":%s' \
-                  "$(tm_bool "$(zp_drifted_global "$_tm_a" 2>/dev/null && echo 1 || echo 0)")"
-          fi
-          _tm_yv="$(zp_yv_get 2>/dev/null)"; [ -n "$_tm_yv" ] && printf ',"yv":%s' "$(tm_int "$_tm_yv")"
-          _tm_dv="$(zp_dv_get 2>/dev/null)"; [ -n "$_tm_dv" ] && printf ',"dv":%s' "$(tm_int "$_tm_dv")"
-          _tm_gv="$(zp_game_gv 2>/dev/null)"; [ -n "$_tm_gv" ] && printf ',"gv":%s' "$(tm_int "$_tm_gv")"
-          printf ',"strategies":%s}' "$(tm_int "$(zp_count 2>/dev/null)")" )
-    fi
 
     # ---- подписки ----
     #

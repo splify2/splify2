@@ -147,7 +147,7 @@ while [ $# -gt 0 ]; do
             echo "использование: splify2-telemetry [--send] [--now ПРИЧИНА [--what ЧТО] [--code N] [--signal N]]"
             echo "без --send пакет печатается и никуда не уходит"
             echo "--now: внеплановая отправка при падении; ПРИЧИНА только из набора:"
-            echo "       steer_down zapret_down xsteer_down wan_flap boot oom apply_failed"
+            echo "       steer_down xsteer_down wan_flap boot oom apply_failed"
             exit 0 ;;
         *) shift ;;
     esac

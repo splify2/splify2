@@ -11,8 +11,9 @@ import { ccFromName, plainName } from '@/lib/nodename'
 import { poolsSupported } from '@/lib/engine'
 import { latencyTone, probeKey, useNodeProbe } from '@/lib/probe'
 import {
-    devList, isPart, ON_FAIL_TEXT, type OnFail, type Output, type Spec, type VlessNode,
+    devList, isPart, isTunnelKind, ON_FAIL_TEXT, type OnFail, type Output, type Spec, type VlessNode,
 } from '@/lib/model'
+import OutputAdvanced, { advFrom, advApply, type Adv } from '@/components/OutputAdvanced'
 import { type Live } from '@/lib/live'
 
 /** Состав выхода: из чего он собран и в каком порядке.
@@ -50,10 +51,19 @@ interface Sub {
 
 /** Строка состава: одна локация подписки, «любая рабочая» локация подписки либо одно своё
  *  устройство. Порядок строк — порядок предпочтения, каким его расставил человек. */
+type Proto = 'vless' | 'hysteria2'
 type Row =
-    | { kind: 'node'; sub: string; idx: number }
-    | { kind: 'any'; sub: string }
+    | { kind: 'node'; sub: string; idx: number; proto: Proto }
+    | { kind: 'any'; sub: string; proto: Proto }
     | { kind: 'dev'; dev: string }
+
+const PROTO_LABEL: Record<Proto, string> = { vless: 'VLESS', hysteria2: 'hysteria2' }
+
+/** Подписка в таблице замеров. Номера узлов у протоколов свои (у каждого клиента — среди своих
+ *  пригодных), поэтому в смешанной подписке «узел 3» бывает двух видов; у hysteria2 ключ
+ *  подписки свой, и замеры не смешиваются. */
+const HY_PROBE = 'hy2|'
+const probeSub = (sub: string, proto: Proto) => (proto === 'hysteria2' ? HY_PROBE + sub : sub)
 
 const NAME_RE = /^[A-Za-z0-9_-]{1,24}$/
 /** Имя выхода `kind: vless` становится именем устройства TUN, а у него предел IFNAMSIZ:
@@ -84,19 +94,20 @@ function partsOf(spec: Spec, pool: string | undefined): [string, Output][] {
 /** Строки из выхода kind=vless (обычного или служебной части). */
 function rowsOfVless(o: Output): Row[] {
     const sub = o.sub_file || ''
+    const proto: Proto = o.kind === 'hysteria2' ? 'hysteria2' : 'vless'
     const nodes = o.nodes?.length
         ? o.nodes
         : typeof o.node === 'number' && o.node >= 0
           ? [o.node]
           : []
-    return nodes.length ? nodes.map((idx): Row => ({ kind: 'node', sub, idx })) : [{ kind: 'any', sub }]
+    return nodes.length ? nodes.map((idx): Row => ({ kind: 'node', sub, idx, proto })) : [{ kind: 'any', sub, proto }]
 }
 
 /** Разложить существующий выход на строки состава. Обратная операция к сборке в save(). */
 function rowsOf(spec: Spec, name: string | undefined): Row[] {
     const o = name ? spec.outputs[name] : undefined
     if (!o) return []
-    if (o.kind === 'vless') return rowsOfVless(o)
+    if (isTunnelKind(o.kind)) return rowsOfVless(o)
     if (o.kind !== 'interface') return []
     const parts = partsOf(spec, name)
     return devList(o).flatMap((d): Row[] => {
@@ -107,7 +118,8 @@ function rowsOf(spec: Spec, name: string | undefined): Row[] {
 
 /** Ключ строки — чтобы React не терял состояние при перестановке. */
 function rowKey(r: Row): string {
-    return r.kind === 'node' ? `n:${r.sub}:${r.idx}` : r.kind === 'any' ? `a:${r.sub}` : `d:${r.dev}`
+    const t = r.kind === 'dev' || r.proto === 'vless' ? '' : 'h'
+    return r.kind === 'node' ? `${t}n:${r.sub}:${r.idx}` : r.kind === 'any' ? `${t}a:${r.sub}` : `d:${r.dev}`
 }
 
 function sameRow(a: Row, b: Row): boolean {
@@ -115,7 +127,7 @@ function sameRow(a: Row, b: Row): boolean {
 }
 
 /** Группы соседних строк одной подписки — то, что станет частями пула. */
-type Group = { kind: 'sub'; sub: string; nodes: number[] } | { kind: 'dev'; dev: string }
+type Group = { kind: 'sub'; sub: string; proto: Proto; nodes: number[] } | { kind: 'dev'; dev: string }
 function groupsOf(rows: Row[]): Group[] {
     const out: Group[] = []
     for (const r of rows) {
@@ -123,11 +135,11 @@ function groupsOf(rows: Row[]): Group[] {
         const last = out[out.length - 1]
         /* «Любая рабочая» — всегда своя часть: пустой список узлов значит «все», и склеивать
          * его с выбранными номерами значило бы потерять либо то, либо другое. */
-        if (r.kind === 'node' && last && last.kind === 'sub' && last.sub === r.sub && last.nodes.length) {
+        if (r.kind === 'node' && last && last.kind === 'sub' && last.sub === r.sub && last.proto === r.proto && last.nodes.length) {
             last.nodes.push(r.idx)
             continue
         }
-        out.push({ kind: 'sub', sub: r.sub, nodes: r.kind === 'node' ? [r.idx] : [] })
+        out.push({ kind: 'sub', sub: r.sub, proto: r.proto, nodes: r.kind === 'node' ? [r.idx] : [] })
     }
     return out
 }
@@ -153,6 +165,7 @@ export default function PoolEditor({
     const [openSubs, setOpenSubs] = useState<Record<string, boolean>>({})
     const [rows, setRows] = useState<Row[]>(() => rowsOf(spec, name))
     const [onFail, setOnFail] = useState<OnFail>(existing?.on_fail || 'drop')
+    const [adv, setAdv] = useState<Adv>(() => advFrom(spec, name))
     const [tunnels, setTunnels] = useState<{ name: string; up: boolean; kind: string }[]>([])
     /* Перечень подписок начинается с запомненного: пока `sub_list` идёт, список говорил
      * «подписок нет» — утверждение, а не ожидание, и человек успевал ему поверить. */
@@ -160,14 +173,25 @@ export default function PoolEditor({
     /** Узлы каждой подписки глазами движка. `undefined` — ещё не спрашивали, `null` — спросить
      *  не удалось (подписка не скачана или бэкенд постарше без выхода на ней). */
     const [nodesBySub, setNodesBySub] = useState<Record<string, VlessNode[] | null>>({})
+    /** Протокол подписки: по ссылкам, которые в ней нашёл движок. Подписка из ссылок
+     *  `hysteria2://` — выход `protocol: hysteria2`, остальное — VLESS. `foreign` — сколько
+     *  ссылок движок не узнал как свои: при нуле узлов и ненулевом числе это почти всегда
+     *  ссылки протокола, модуля которого нет. */
+    /** Узлы hysteria2 той же подписки: вторая половина смешанной подписки. Спрашивается, когда
+     *  движок нашёл в подписке ссылки, которых не признал своими. */
+    const [hyBySub, setHyBySub] = useState<Record<string, VlessNode[]>>({})
+    const [foreignBySub, setForeignBySub] = useState<Record<string, number>>({})
     /** Проверка узлов — здесь, где их выбирают: см. lib/probe.ts. Спрашивается у подписки
      *  её файлом; движок или бэкенд постарше пути не знают — тогда через любой выход, уже
      *  стоящий на этой подписке (тот же запасной ход, что у списка узлов ниже). */
     const probe = useNodeProbe(async (sub, index) => {
         const asker = Object.entries(spec.outputs).find(
-            ([, o]) => o.kind === 'vless' && o.sub_file === sub,
+            ([, o]) => isTunnelKind(o.kind) && o.sub_file === sub,
         )?.[0]
         try {
+            /* Узел hysteria2 проверяется клиентом hysteria2 (пакет steer-hysteria2), VLESS —
+             * своим; формат ответа тот же. */
+            if (sub.startsWith(HY_PROBE)) return await rpc.hysteria2ProbeOfSub(sub.slice(HY_PROBE.length), index)
             return await rpc.vlessProbeOfSub(sub, index)
         } catch (e) {
             if (!asker) throw e
@@ -197,13 +221,25 @@ export default function PoolEditor({
         for (const s of subs) {
             if (!s.present) { setNodesBySub((m) => ({ ...m, [s.path]: null })); continue }
             const asker = Object.entries(spec.outputs).find(
-                ([, o]) => o.kind === 'vless' && o.sub_file === s.path,
+                ([, o]) => isTunnelKind(o.kind) && o.sub_file === s.path,
             )?.[0]
-            const take = (r: VlessNodesReply) => {
-                if (!stop) setNodesBySub((m) => ({ ...m, [s.path]: r.nodes || [] }))
+            const take = (r: VlessNodesReply, hy: VlessNode[] = []) => {
+                if (stop) return
+                setNodesBySub((m) => ({ ...m, [s.path]: r.nodes || [] }))
+                setHyBySub((m) => ({ ...m, [s.path]: hy }))
+                setForeignBySub((m) => ({ ...m, [s.path]: r.foreign || 0 }))
             }
             rpc.vlessNodesOfSub(s.path)
-                .then(take)
+                .then((r) => {
+                    /* Ссылки, которых движок не признал своими, — возможно, hysteria2: смешанная
+                     * подписка показывает узлы ОБОИХ протоколов, а не один из двух. Нет ссылок
+                     * такого рода или нет модуля — остаётся ответ VLESS как есть, а число
+                     * непризнанных ссылок говорит, что не хватает пакета. */
+                    if (!r.foreign) { take(r); return }
+                    return rpc.hysteria2NodesOfSub(s.path)
+                        .then((h) => take(r, h.nodes || []))
+                        .catch(() => take(r))
+                })
                 .catch(() => {
                     if (!asker) { if (!stop) setNodesBySub((m) => ({ ...m, [s.path]: null })); return }
                     rpc.vlessNodes(asker)
@@ -220,7 +256,8 @@ export default function PoolEditor({
         const s = subOf(path)
         return s?.title || s?.name || path.replace(/^.*\//, '').replace(/\.txt$/, '')
     }
-    const nodeOf = (sub: string, idx: number) => (nodesBySub[sub] || []).find((x) => x.index === idx)
+    const nodeOf = (sub: string, idx: number, proto: Proto = 'vless') =>
+        ((proto === 'hysteria2' ? hyBySub[sub] : nodesBySub[sub]) || []).find((x) => x.index === idx)
 
     /** Устройства, занятые ДРУГИМИ выходами: одно устройство в двух выходах kind=interface —
      *  это две таблицы маршрутизации на один туннель, и вторая молча не работает.
@@ -273,12 +310,12 @@ export default function PoolEditor({
     }
 
     /** Отметить или снять локацию. Новая строка встаёт в конец: порядок — дело правой колонки. */
-    function toggleNode(sub: string, idx: number) {
-        const r: Row = { kind: 'node', sub, idx }
+    function toggleNode(sub: string, idx: number, proto: Proto = 'vless') {
+        const r: Row = { kind: 'node', sub, idx, proto }
         if (has(r)) { commit(rows.filter((x) => !sameRow(x, r))); return }
-        /* «Любая рабочая» этой подписки и выбранный номер вместе не значат ничего: выбор
-         * номера заменяет «любую». */
-        const base = rows.filter((x) => !(x.kind === 'any' && x.sub === sub))
+        /* «Любая рабочая» того же протокола этой подписки и выбранный номер вместе не значат
+         * ничего: выбор номера заменяет «любую». */
+        const base = rows.filter((x) => !(x.kind === 'any' && x.sub === sub && x.proto === proto))
         /* Без пула локация одна: вторая отметка переезжает, а не добавляется. */
         commit(pools ? [...base, r] : [...base.filter((x) => x.kind !== 'node'), r])
     }
@@ -286,10 +323,10 @@ export default function PoolEditor({
     /** «Любая рабочая»: подписка взята целиком, выбор узла делает проверка при подъёме.
      *  Повторное нажатие ничего не меняет — убирается строка крестиком в порядке справа,
      *  как и всё остальное; два способа убрать одно и то же путали бы. */
-    function anyOf(sub: string) {
-        const r: Row = { kind: 'any', sub }
+    function anyOf(sub: string, proto: Proto = 'vless') {
+        const r: Row = { kind: 'any', sub, proto }
         if (has(r)) return
-        commit([...rows.filter((x) => !(x.kind === 'node' && x.sub === sub)), r])
+        commit([...rows.filter((x) => !(x.kind === 'node' && x.sub === sub && x.proto === proto)), r])
     }
 
     function toggleDev(dev: string) {
@@ -308,16 +345,25 @@ export default function PoolEditor({
     /** Форма выхода kind=vless из группы строк подписки. ОДНА форма из двух: спеку с `node` и
      *  `nodes` разом движок отвергает целиком. Список — только там, где движок его понимает. */
     function vlessOut(n: string, g: Extract<Group, { kind: 'sub' }>, fail: OnFail, partOf?: string): Output {
-        return {
+        return advApply({
             name: n,
-            kind: 'vless',
+            kind: g.proto,
             sub_file: g.sub,
             ...(pools && g.nodes.length > 1
                 ? { nodes: g.nodes }
                 : { node: g.nodes.length ? g.nodes[0] : -1 }),
             on_fail: fail,
             ...(partOf ? { part_of: partOf } : {}),
-        }
+        }, adv, 'tunnel')
+    }
+
+    /** Что в прежнем выходе редактор не трогает и обязан донести до записи: обфускатор и
+     *  ключи, которых модель не знает. Без этого сохранение состава стирало бы их молча. */
+    function carry(next: Output): Output {
+        const keep: Partial<Output> = {}
+        if (existing?.obfs && next.kind === 'interface') keep.obfs = existing.obfs
+        if (existing?.extra) keep.extra = existing.extra
+        return { ...next, ...keep }
     }
 
     function save() {
@@ -349,10 +395,11 @@ export default function PoolEditor({
                 notify(`Имя выхода подписки — не длиннее ${DEV_NAME_MAX} символов: оно становится именем устройства`, 'warning')
                 return
             }
-            outputs[n] = vlessOut(n, subGroups[0], onFail)
+            outputs[n] = carry(vlessOut(n, subGroups[0], onFail))
         } else if (subGroups.length === 0) {
             const devices = groups.map((g) => (g as Extract<Group, { kind: 'dev' }>).dev)
-            outputs[n] = { name: n, kind: 'interface', devices, device: devices[0], on_fail: onFail }
+            outputs[n] = carry(advApply(
+                { name: n, kind: 'interface', devices, device: devices[0], on_fail: onFail }, adv, 'top'))
         } else {
             /* Пул. Каждая группа соседних локаций одной подписки — своим служебным выходом; имя
              * части ≤ 15 символов (предел имени устройства) и по возможности прежнее: части с
@@ -361,12 +408,12 @@ export default function PoolEditor({
             const oldParts = partsOf(spec, name)
             const used = new Set(Object.keys(outputs))
             const devices: string[] = []
-            const keyOf = (o: Output) => `${o.sub_file}|${(o.nodes?.length ? o.nodes : typeof o.node === 'number' && o.node >= 0 ? [o.node] : []).join(',')}`
+            const keyOf = (o: Output) => `${o.kind}|${o.sub_file}|${(o.nodes?.length ? o.nodes : typeof o.node === 'number' && o.node >= 0 ? [o.node] : []).join(',')}`
             for (const g of groups) {
                 if (g.kind === 'dev') { devices.push(g.dev); continue }
-                const want = `${g.sub}|${g.nodes.join(',')}`
+                const want = `${g.proto}|${g.sub}|${g.nodes.join(',')}`
                 let pn = oldParts.find(([k, p]) => !used.has(k) && keyOf(p) === want)?.[0]
-                    ?? oldParts.find(([k, p]) => !used.has(k) && p.sub_file === g.sub)?.[0]
+                    ?? oldParts.find(([k, p]) => !used.has(k) && p.sub_file === g.sub && p.kind === g.proto)?.[0]
                 if (!pn || used.has(pn)) {
                     const stem = n.slice(0, DEV_NAME_MAX - 2)
                     let k = 1
@@ -384,7 +431,8 @@ export default function PoolEditor({
                 notify('В пуле не больше шестнадцати частей — таков предел движка; соседние локации одной подписки считаются одной частью', 'warning')
                 return
             }
-            outputs[n] = { name: n, kind: 'interface', devices, device: devices[0], on_fail: onFail }
+            outputs[n] = carry(advApply(
+                { name: n, kind: 'interface', devices, device: devices[0], on_fail: onFail }, adv, 'top'))
         }
         /* Переименование уводит за собой правила: канал ведёт в ИМЯ выхода, и оставить их
          * указывать на прежнее значит осиротить каждое. */
@@ -408,13 +456,13 @@ export default function PoolEditor({
         onSave({ ...spec, outputs })
     }
 
-    /* Выход kind=zapret правится НЕ ЗДЕСЬ, и открывать для него общий редактор нельзя: тот
-     * знает подписки и устройства и на «Сохранить» переписал бы его как выход без единого
-     * устройства. То есть один клик по строке в списке молча превращал бы работающий обход в
-     * выход, который никуда не ведёт.
+    /* Выход kind=zapret (его могли завести прежние версии или руками) правится НЕ ЗДЕСЬ, и
+     * открывать для него общий редактор нельзя: тот знает подписки и устройства и на
+     * «Сохранить» переписал бы его как выход без единого устройства. То есть один клик по
+     * строке в списке молча превращал бы работающий обход в выход, который никуда не ведёт.
      *
-     * Показываем то немногое, что здесь и правится (режим отказа и удаление), а за стратегией
-     * отправляем во вкладку Zapret — там она и живёт. */
+     * Показываем то немногое, что здесь и правится (режим отказа и удаление). Создавать такие
+     * выходы и выбирать стратегию splify2 больше не умеет — обход DPI из него убран. */
     if (existing?.kind === 'zapret') {
         return (
             <div className="space-y-4">
@@ -443,8 +491,8 @@ export default function PoolEditor({
                     </CardHeader>
                     <CardContent className="space-y-3 text-sm">
                         <div className="text-muted-foreground">
-                            Устройства у этого выхода нет: трафик идёт обычным маршрутом через обход DPI. Стратегия
-                            выбирается во вкладке Zapret.
+                            Устройства у этого выхода нет: трафик идёт обычным маршрутом через обход DPI.
+                            Стратегия настраивается вне splify2.
                         </div>
                         <div className="space-y-1.5">
                             <div className="sp-label uppercase tracking-wide text-muted-foreground">
@@ -523,7 +571,17 @@ export default function PoolEditor({
                         )}
                         {subs.map((s) => {
                             const nodes = nodesBySub[s.path]
-                            const any = has({ kind: 'any', sub: s.path })
+                            const hy = hyBySub[s.path] || []
+                            /* «Любая рабочая» — у каждого протокола своя: клиенты разные, и
+                             * одна строка не может быть обоими сразу. У подписки только из
+                             * hysteria2 единственная «любая» — её. */
+                            const anyProto: Proto = nodes && nodes.length === 0 && hy.length > 0 ? 'hysteria2' : 'vless'
+                            const any = has({ kind: 'any', sub: s.path, proto: 'vless' }) || has({ kind: 'any', sub: s.path, proto: 'hysteria2' })
+                            const mixed = hy.length > 0
+                            type N = { nd: VlessNode; proto: Proto }
+                            const tagged: N[] | undefined = nodes
+                                ? [...nodes.map((nd): N => ({ nd, proto: 'vless' })), ...hy.map((nd): N => ({ nd, proto: 'hysteria2' }))]
+                                : undefined
                             /* Что показывать из локаций: при поиске — совпавшие; иначе выбранные
                                и первые FOLD, пока подписку не развернули целиком.
 
@@ -535,20 +593,23 @@ export default function PoolEditor({
                                локаций одной подписки». Строки не двигаются: выбранные остаются
                                где были, свёртка лишь прячет невыбранные после лимита. */
                             const q = query.trim().toLowerCase()
-                            const all = nodes || []
-                            const hit = (nd: VlessNode) => {
+                            const all = tagged || []
+                            const hit = ({ nd }: N) => {
                                 const cc = ccFromName(nd.name)
                                 return `${plainName(nd.name)} ${country(cc)} ${cc || ''}`.toLowerCase().includes(q)
                             }
+                            const pickKey = (proto: Proto, idx: number) => `${proto}:${idx}`
                             const picked = new Set(
-                                rows.filter((r) => r.kind === 'node' && r.sub === s.path).map((r) => (r as { idx: number }).idx),
+                                rows
+                                    .filter((r): r is Extract<Row, { kind: 'node' }> => r.kind === 'node' && r.sub === s.path)
+                                    .map((r) => pickKey(r.proto, r.idx)),
                             )
                             let spare = Math.max(0, FOLD - picked.size)
                             const shown = q
                                 ? all.filter(hit)
                                 : openSubs[s.path]
                                   ? all
-                                  : all.filter((nd) => picked.has(nd.index) || spare-- > 0)
+                                  : all.filter((x) => picked.has(pickKey(x.proto, x.nd.index)) || spare-- > 0)
                             const folded = !q && !openSubs[s.path] && shown.length < all.length
                             if (q && !shown.length && !all.length) return null
                             return (
@@ -563,25 +624,35 @@ export default function PoolEditor({
                                         {s.present && nodes && (
                                             <span className="flex items-center gap-2 text-[11px] text-muted-foreground">
                                                 <span>
-                                                    локаций: {nodes.length}
+                                                    локаций: {all.length}
                                                     {picked.size ? ` · взято: ${picked.size}` : any ? ' · взята любая' : ''}
                                                 </span>
                                                 {/* Проверка всех узлов подписки — рядом с их числом:
                                                     вопрос «какие из них живые» задают до выбора, а
                                                     не после. Повторное нажатие останавливает. */}
-                                                {nodes.length > 0 && (
-                                                    <button
-                                                        type="button"
-                                                        onClick={() => void probe.probeAll(s.path, nodes.map((n) => n.index))}
-                                                        disabled={!!probe.batchSub && probe.batchSub !== s.path}
-                                                        className="flex items-center gap-1 bg-transparent p-0 text-primary underline decoration-dotted disabled:opacity-50"
-                                                    >
-                                                        {probe.batchSub === s.path
-                                                            ? <LoaderCircle className="h-3 w-3 animate-spin" aria-hidden="true" />
-                                                            : <Gauge className="h-3 w-3" aria-hidden="true" />}
-                                                        {probe.batchSub === s.path ? `остановить (осталось ${probe.left})` : 'проверить все'}
-                                                    </button>
-                                                )}
+                                                {([
+                                                    { proto: 'vless' as Proto, list: nodes },
+                                                    { proto: 'hysteria2' as Proto, list: hy },
+                                                ]).filter((t) => t.list.length > 0).map((t) => {
+                                                    const id = probeSub(s.path, t.proto)
+                                                    /* В смешанной подписке кнопок две — по протоколу: номера
+                                                       и клиенты у них свои. */
+                                                    const what = mixed && nodes.length > 0 ? ` ${PROTO_LABEL[t.proto]}` : ''
+                                                    return (
+                                                        <button
+                                                            key={t.proto}
+                                                            type="button"
+                                                            onClick={() => void probe.probeAll(id, t.list.map((n) => n.index))}
+                                                            disabled={!!probe.batchSub && probe.batchSub !== id}
+                                                            className="flex items-center gap-1 bg-transparent p-0 text-primary underline decoration-dotted disabled:opacity-50"
+                                                        >
+                                                            {probe.batchSub === id
+                                                                ? <LoaderCircle className="h-3 w-3 animate-spin" aria-hidden="true" />
+                                                                : <Gauge className="h-3 w-3" aria-hidden="true" />}
+                                                            {probe.batchSub === id ? `остановить (осталось ${probe.left})` : `проверить все${what}`}
+                                                        </button>
+                                                    )
+                                                })}
                                             </span>
                                         )}
                                     </div>
@@ -590,7 +661,7 @@ export default function PoolEditor({
                                             <Choice
                                                 on={any}
                                                 round
-                                                onClick={() => anyOf(s.path)}
+                                                onClick={() => anyOf(s.path, anyProto)}
                                                 disabled={!s.present}
                                                 title="любая рабочая"
                                                 /* Узел не закреплён: движок проверяет их при
@@ -600,6 +671,34 @@ export default function PoolEditor({
                                                 hint="не сломается при обновлении подписки"
                                             />
                                         </li>
+                                        {s.present && nodes && hy.length === 0 && (foreignBySub[s.path] || 0) > 0 && (
+                                            /* Чужие ссылки есть, а узлов hysteria2 из них не вышло — почти
+                                               всегда модуля нет. Назван пакет и число узлов, а не
+                                               «ошибка»: это и есть следующий шаг. В смешанной подписке
+                                               узлы VLESS остаются выбираемыми, а сказано о недостающей
+                                               половине. */
+                                            <li className="px-2.5 py-1 text-xs text-muted-foreground">
+                                                {live?.build?.modules && !live.build.modules.includes('hysteria2')
+                                                    ? (nodes.length === 0
+                                                        ? 'Узлов нет: для ссылок hysteria2 не установлен пакет steer-hysteria2.'
+                                                        : `В подписке ещё ${foreignBySub[s.path]} узлов hysteria2: нужен пакет steer-hysteria2.`)
+                                                    : (nodes.length === 0
+                                                        ? 'Узлов нет: движок не принял ссылки этой подписки.'
+                                                        : `Движок не принял ещё ${foreignBySub[s.path]} ссылок этой подписки.`)}
+                                            </li>
+                                        )}
+                                        {s.present && mixed && nodes && nodes.length > 0 && (
+                                            /* Вторая «любая рабочая» — для hysteria2: клиенты разные, и
+                                               одна строка не может быть обоими. */
+                                            <li>
+                                                <Choice
+                                                    on={has({ kind: 'any', sub: s.path, proto: 'hysteria2' })}
+                                                    round
+                                                    onClick={() => anyOf(s.path, 'hysteria2')}
+                                                    title="любая рабочая (hysteria2)"
+                                                />
+                                            </li>
+                                        )}
                                         {nodes === undefined && s.present && (
                                             <li className="px-2.5 py-1 text-xs text-muted-foreground">узлы читаются…</li>
                                         )}
@@ -611,20 +710,24 @@ export default function PoolEditor({
                                         {q && nodes && !shown.length && (
                                             <li className="px-2.5 py-1 text-xs text-muted-foreground">ничего не нашлось</li>
                                         )}
-                                        {shown.map((nd) => {
+                                        {shown.map(({ nd, proto }) => {
                                             const cc = ccFromName(nd.name);
-                                            const on = picked.has(nd.index)
+                                            const on = picked.has(pickKey(proto, nd.index))
                                             /* Страна справа — только когда её нет в самом названии:
                                                «Германия №2 … Германия» повторяло слово дважды. */
                                             const cName = country(cc)
-                                            const hint = cName && !plainName(nd.name).toLowerCase().includes(cName.toLowerCase()) ? cName : undefined
-                                            const key = probeKey(s.path, nd.index)
+                                            const cHint = cName && !plainName(nd.name).toLowerCase().includes(cName.toLowerCase()) ? cName : undefined
+                                            /* Протокол подписан у узла, когда в подписке есть hysteria2:
+                                               в смешанной без подписи не отличить, какой клиент их
+                                               понесёт. В подписке целиком из VLESS подписи нет. */
+                                            const hint = mixed ? [PROTO_LABEL[proto], cHint].filter(Boolean).join(' · ') : cHint
+                                            const key = probeKey(probeSub(s.path, proto), nd.index)
                                             const ph = probe.phase[key]
                                             const err = probe.fails[key]
                                             const pr = probe.probes[key]
                                             const label = plainName(nd.name) || `узел ${nd.index + 1}`
                                             return (
-                                                <li key={nd.index} className="flex items-center gap-1">
+                                                <li key={`${proto}:${nd.index}`} className="flex items-center gap-1">
                                                     <Choice
                                                         on={on}
                                                         /* Квадрат — набор, круг — одно из. Движок
@@ -633,7 +736,7 @@ export default function PoolEditor({
                                                            добавляется; форма отметки говорит об
                                                            этом сама (см. pool-one-location). */
                                                         round={!pools}
-                                                        onClick={() => toggleNode(s.path, nd.index)}
+                                                        onClick={() => toggleNode(s.path, nd.index, proto)}
                                                         flag={cc}
                                                         title={label}
                                                         hint={hint}
@@ -669,7 +772,7 @@ export default function PoolEditor({
                                                            бы и читалку, и стенды. */
                                                         aria-label="проверить отклик"
                                                         title={`проверить отклик: ${label}`}
-                                                        onClick={() => void probe.probeOne(s.path, nd.index)}
+                                                        onClick={() => void probe.probeOne(probeSub(s.path, proto), nd.index)}
                                                     >
                                                         <Gauge className="h-3.5 w-3.5" aria-hidden="true" />
                                                     </Button>
@@ -748,7 +851,7 @@ export default function PoolEditor({
                             ) : (
                                 <ol className="space-y-1" aria-label="порядок предпочтения">
                                     {rows.map((r, i) => {
-                                        const nd = r.kind === 'node' ? nodeOf(r.sub, r.idx) : undefined
+                                        const nd = r.kind === 'node' ? nodeOf(r.sub, r.idx, r.proto) : undefined
                                         const cc = r.kind === 'node' ? ccFromName(nd?.name) : undefined
                                         const label =
                                             r.kind === 'dev'
@@ -756,13 +859,19 @@ export default function PoolEditor({
                                                 : r.kind === 'any'
                                                   ? 'любая рабочая'
                                                   : plainName(nd?.name) || `узел ${r.idx + 1}`
-                                        const hint = r.kind === 'dev' ? undefined : subTitle(r.sub)
+                                        /* Протокол назван у строки hysteria2 и у любой строки смешанной
+                                           подписки: иначе «узел 3» двух клиентов не отличить. */
+                                        const hint = r.kind === 'dev'
+                                            ? undefined
+                                            : r.proto === 'hysteria2' || (hyBySub[r.sub]?.length ?? 0) > 0
+                                              ? `${subTitle(r.sub)} · ${PROTO_LABEL[r.proto]}`
+                                              : subTitle(r.sub)
                                         /* Соседние локации одной подписки — одна часть пула, и это
                                            видно: строки слиты в один блок без зазора. Граница блока
                                            показывает, где кончается переключение внутри клиента
                                            и начинается сторож движка. */
                                         const prev = rows[i - 1]
-                                        const joined = !!prev && prev.kind === 'node' && r.kind === 'node' && prev.sub === r.sub
+                                        const joined = !!prev && prev.kind === 'node' && r.kind === 'node' && prev.sub === r.sub && prev.proto === r.proto
                                         return (
                                             <li
                                                 key={rowKey(r)}
@@ -874,13 +983,26 @@ export default function PoolEditor({
                             <CardTitle>Если всё упало</CardTitle>
                         </CardHeader>
                         <CardContent className="space-y-1">
-                            {(['drop', 'direct', 'zapret'] as OnFail[]).map((v) => (
+                            {(['drop', 'direct'] as OnFail[]).map((v) => (
                                 <Radio key={v} on={onFail === v} onClick={() => setOnFail(v)}>
                                     {ON_FAIL_TEXT[v]}
                                 </Radio>
                             ))}
                         </CardContent>
                     </Card>
+
+                    <OutputAdvanced
+                        adv={adv}
+                        onChange={setAdv}
+                        spec={spec}
+                        self={new Set([name, ...partsOf(spec, name).map(([k]) => k), title.trim()].filter(Boolean) as string[])}
+                        show={{
+                            tunnel: subsInRows.size > 0,
+                            vless: rows.some((r) => r.kind !== 'dev' && r.proto === 'vless'),
+                            iface: rows.length === 1 && rows[0].kind === 'dev',
+                            pool: rows.length > 1,
+                        }}
+                    />
                 </div>
             </div>
         </div>

@@ -176,35 +176,16 @@ RPCD_LIB="${RPCD_LIB:-/usr/lib/splify2/rpcd}"
 # у fetch.sh: на машине разработчика его нет, стенд подставляет свой.
 UPDATE_LISTS=${UPDATE_LISTS:-/usr/sbin/splify2-update-lists}
 
-# Обход DPI и DNS over HTTPS — тоже отдельными файлами, и по тому же доводу, что fetch.sh:
-# каталог стратегий читают трое (объект, ночное обновление, фоновая проверка), а настройку
-# резолвера — объект и та же ночная работа. Копия в каждом означала бы, что «активная
-# стратегия» в одном месте значит одно, а в другом другое, и разошлись бы они молча.
-# Обход DPI и DoH подключаются ЛЕНИВО — тем методом, которому они нужны, а не каждым вызовом.
+# ОБХОД DPI (zapret) И DNS-ПРОКСИ (https-dns-proxy) ИЗ splify2 УБРАНЫ. Обход DPI вернётся
+# позже (в движке остался `kind: zapret`), а шифрованный DNS — теперь встроенный резолвер
+# движка (`dns.upstreams` в спеке v2: DoH, DoT, DoQ, обычный DNS, выход `out`, bootstrap).
+# Чужие установленные zapret / Zapret Manager и https-dns-proxy мы не снимаем и не читаем:
+# это настройка человека.
 #
-# Оболочка разбирает подключаемый файл целиком, и два этих файла — тысяча с лишком строк —
-# разбирались на КАЖДЫЙ вызов объекта, хотя нужны десятку методов из шести десятков. Круг
-# опроса страницы это не трогает (он уходит через fast.sh выше), но всё остальное — состояние
-# движка, устройства, подписки, каталог — платило за них на роутере десятки миллисекунд
-# впустую. Загрузчик защищён от повторного подключения: функции бы просто переопределились,
-# но переменные с умолчаниями `${X:-…}` от второго прохода не страдают, а время — да.
-need_zapret() { [ "${_zp_loaded:-}" = 1 ] || { . "${ZAPRET_SH:-/usr/lib/splify2/zapret.sh}"; _zp_loaded=1; }; }
-need_doh()    { [ "${_doh_loaded:-}" = 1 ] || { . "${DOH_SH:-/usr/lib/splify2/doh.sh}"; _doh_loaded=1; }; }
 # Сборщик пакета телеметрии. Подключается ЛЕНИВО и только своей группой: он тянет за собой
 # чтение спеки, каталога устройств и вызов движка, а платить за это должен тот вызов,
 # которому это нужно, — раз в сутки, а не на каждом круге опроса страницы.
 need_telemetry() { [ "${_tm_loaded:-}" = 1 ] || { . "${TELEMETRY_SH:-/usr/lib/splify2/telemetry.sh}"; _tm_loaded=1; }; }
-# Фоновая проверка стратегий — отдельный процесс, а не работа внутри вызова ubus: у вызова
-# свой срок жизни (две минуты), а проверка идёт десятки минут, и человек должен иметь право
-# закрыть окно. Путь швом по той же причине, что у остальных.
-ZAPRET_TEST=${ZAPRET_TEST:-/usr/sbin/splify2-zapret-test}
-# Автоподбор — ТРЕТИЙ процесс, а не работа внутри проверки: он её зовёт, ждёт кода возврата
-# и только потом ранжирует. Свой файл процесса и свой замок нужны ровно затем, чтобы
-# «идёт проверка» и «идёт подбор» были разными ответами: во время подбора кнопка проверки
-# обязана быть занята, а во время одиночной проверки подбор — нет.
-ZAPRET_AUTOSEL=${ZAPRET_AUTOSEL:-/usr/sbin/splify2-zapret-autoselect}
-ZA_PIDFILE=${ZA_PIDFILE:-/var/run/splify2-zapret-autoselect.pid}
-ZA_LOCK=${ZA_LOCK:-/var/lock/splify2-zapret-autoselect.lock}
 
 # ---- идентификатор устройства для панели подписки (HWID) ----------------------------
 #
@@ -246,94 +227,6 @@ OUT_SYSNET="${OUT_SYSNET:-/sys/class/net}"
 # описать то же состояние — значит однажды описать его иначе.
 SUB_ANSWER=""
 
-# ---- фикс Zapret Manager -------------------------------------------------------------
-#
-# ЗАЧЕМ. Zapret Manager ставится и обновляется с GitHub, аддоны берёт оттуда же, а у той
-# аудитории, ради которой splify2 и существует, GitHub закрыт. Поэтому собственные обращения
-# роутера к GitHub уводятся в туннель сами.
-#
-# ТОЛЬКО РОУТЕР. Устройств сети это не касается вовсе, и это не оговорка, а требование: у них
-# свои средства обхода, и уводить их трафик за них никто не просил. Отсюда и способ — метка
-# в цепочке `output`: туда попадает только то, что роутер отправил САМ. Пересылаемый трафик
-# идёт через `forward` и этой цепочки не видит.
-#
-# ПОЧЕМУ НЕ ПРАВИЛО В СПЕКЕ. Так было в 1.2.3, и это оказалось неверно дважды: канал
-# распространялся на клиентов и появлялся у человека в правилах, хотя тот его не заводил.
-# Здесь же — своя таблица nftables рядом с таблицей движка: движок её не трогает, человек её
-# не видит, а управление одно — переключатель в настройках.
-ZM_LIST="${ZM_LIST:-$LISTS/zm-github.lst}"
-ZM_TABLE="${ZM_TABLE:-splify2_zm}"
-ZM_CHANNEL=zm_github
-
-# ---- DoH через туннель --------------------------------------------------------------
-#
-# ЗАЧЕМ. DoH прячет имена сайтов от провайдера, но сам запрос к резолверу провайдер видит и
-# может закрыть — и закрывает: cloudflare-dns.com и dns.google у части аудитории не
-# отвечают вовсе. Тогда DoH не поднимается, dnsmasq остаётся без серверов, и «интернет
-# пропал» — при исправном туннеле рядом.
-#
-# КАК. Тем же приёмом, что фикс Zapret Manager выше, и это не совпадение: вопрос один — как
-# увести СОБСТВЕННЫЙ трафик роутера в туннель, которым движок метит только транзит. Метка в
-# цепочке `type route hook output`, маска движка, чужие биты не тронуты.
-#
-# ЧЕМ УЗНАЁТСЯ ТРАФИК ПРОКСИ. По владельцу сокета: https-dns-proxy мы сами записываем с
-# `option user 'nobody'` (см. doh_write), и других процессов под nobody на стоковом роутере
-# нет — dnsmasq, ntp, logd и ubus ходят под своими. Плюс порт назначения 443: DoH это HTTPS
-# и ничего кроме. Адрес назначения для отбора не годится в принципе — имя резолвера
-# разрешается по bootstrap, и в какой адрес оно разойдётся, заранее не известно.
-#
-# ЦЕНА, И О НЕЙ НАДО ЗНАТЬ. Если под nobody на роутере появится что-то ещё, ходящее в 443,
-# его трафик тоже уйдёт в туннель. Последствие безобидное — это собственный трафик роутера
-# через работающий выход, — но назвать его надо, потому что через год этот отбор будет
-# читать другой человек.
-# ОТБОР ИДЁТ ПРАВИЛОМ МАРШРУТИЗАЦИИ ПО ВЛАДЕЛЬЦУ СОКЕТА, а не меткой в nftables, и это второй
-# урок, снятый с живого роутера.
-#
-# Сначала здесь стояла метка в цепочке `type route hook output` — тем же приёмом работает фикс
-# Zapret Manager рядом. Для транзитного трафика приём верен, а для СОБСТВЕННОГО трафика
-# роутера — нет: адрес источника ядро выбирает в момент connect(), то есть по таблице main, и
-# только потом наша цепочка ставит метку и просит пересмотреть маршрут. Маршрут меняется,
-# адрес источника — уже нет. Пакет уходит в туннель с адресом WAN, ответ на этот адрес через
-# туннель не возвращается, и снаружи это выглядит как «DoH включён, DNS не работает».
-# Проверено счётчиками: правило срабатывало (27 пакетов), ответов не было ни одного.
-#
-# `ip rule ... uidrange` применяется В САМОМ ПЕРВОМ поиске маршрута, поэтому адрес источника
-# выбирается уже из таблицы туннеля. Заодно исчезает вся таблица nftables: одно правило
-# вместо цепочки, метки и маски.
-#
-# ЦЕНА ОТБОРА, и о ней надо знать: через туннель пойдёт ВЕСЬ трафик пользователя nobody, а не
-# только HTTPS. На стоковом роутере под nobody ходит только https-dns-proxy (dnsmasq, ntp,
-# logd и ubus — под своими), так что это ровно то, что нужно; но если под nobody появится
-# что-то ещё, оно тоже уйдёт в туннель.
-#
-# ТАБЛИЦА СВОЯ, а не таблица выхода, и это первый урок того же дня. Таблица выхода при
-# `on_fail: drop` (умолчание) содержит запрет: туннель умер — трафик остановлен. Для трафика
-# КЛИЕНТОВ это ровно то, что обещано. Но для собственного DNS роутера получается замкнутый
-# круг, и вот он целиком, как он воспроизвёлся на 10.8.1.87:
-#
-#   клиент vless перезапустился → ему надо разрешить имя своего узла (ru.riotvpn.eu)
-#   → запрос идёт в dnsmasq → dnsmasq пересылает его в https-dns-proxy → тот идёт к
-#   резолверу по HTTPS → правило уводит это в таблицу выхода → выход ещё не поднят, в
-#   таблице запрет → DoH молчит → имя не разрешается → клиент не поднимается никогда.
-#
-#   В журнале это выглядело как «steer[warn] tunnel: поток к ru.riotvpn.eu не открылся: имя
-#   не разрешилось», а снаружи — как «роутер потерял интернет после включения галочки».
-#
-# Своя таблица содержит РОВНО ОДИН маршрут — default через устройство выхода. Когда
-# устройство падает, ядро само убирает из таблицы маршруты через него; таблица пустеет,
-# поиск в ней не находит ничего, и ядро ПЕРЕХОДИТ К СЛЕДУЮЩЕМУ правилу, то есть к main. DoH
-# идёт напрямую, DNS оживает, туннель разрешает своё имя и поднимается — а правило снова
-# начинает работать само. Проверено на роутере: `ip link set vless down` → таблица 290
-# пустеет → DNS отвечает.
-#
-# Отказ здесь ОТКРЫТЫЙ, и это не поблажка: `on_fail: drop` — обещание про трафик КЛИЕНТОВ
-# («не утечёт мимо туннеля»), а собственный DNS роутера — другой трафик и другое обещание.
-#
-# Номер таблицы 290 — ниже 300, с которой движок раздаёт свои; приоритет правила 29000 — выше
-# (то есть раньше) его правил, чтобы наш выбор не перебивался меткой выхода.
-DOH_RT="${DOH_RT:-290}"
-DOH_RULE_PREF="${DOH_RULE_PREF:-29000}"
-
 # Зона фаервола для устройств, которые движок создаёт сам (выходы kind=vless).
 #
 # Зачем это здесь. fw4 отвергает форвардинг на устройство, не входящее ни в одну зону:
@@ -361,29 +254,6 @@ DOH_RULE_PREF="${DOH_RULE_PREF:-29000}"
 # ui_set. Теперь оно одно на все три, потому что три копии одного правила — это три места,
 # где его можно забыть по-разному.
 UCI_SPLIFY2="${UCI_SPLIFY2:-/etc/config/splify2}"
-# Признак «настройку vless надо перечитать». Ставится там, где изменилось то, что клиент
-# читает ОДИН РАЗ при старте — выбранный узел или файл подписки, — и снимается после
-# перезапуска экземпляров.
-#
-# Через файл, а не переменную: spec_set и apply — два отдельных вызова rpcd, то есть два
-# процесса, и между ними ничего не переживает, кроме диска.
-VLESS_DIRTY="${VLESS_DIRTY:-/var/run/splify2-vless-dirty}"
-
-# То же для обфускации транспорта (WireGuard поверх TCP). Отдельный признак, а не общий с
-# vless: перезапускать надо разные экземпляры, и по разным поводам.
-OBFS_DIRTY="${OBFS_DIRTY:-/var/run/splify2-obfs-dirty}"
-
-# То же для выходов kind=zapret. Отдельный признак, а не общий с vless: обработчик обхода —
-# чужой процесс (nfqws), и поводов у него ровно один, зато цена промаха выше, чем у туннеля.
-#
-# ПОЧЕМУ ЭТО ВООБЩЕ НУЖНО. `steer apply` ставит правила, но экземпляров procd не заводит —
-# их заводит init-скрипт, разбирая спеку. Значит НОВЫЙ выход kind=zapret после «Применить»
-# остался бы без обработчика: стратегия выбрана, правило очереди стоит, а разбирать пакеты
-# некому. И при on_fail=drop (умолчание) трафик канала при этом СТОИТ — то есть «включил и
-# интернет пропал» при полностью настроенном на вид выходе. Ровно та же беда, что уже была с
-# выходами vless и обфускаторами (splicicd#20), и лечится она тем же способом.
-ZAPRET_DIRTY="${ZAPRET_DIRTY:-/var/run/splify2-zapret-dirty}"
-
 # Расписка: что в фаерволе сделали МЫ, а что было до нас.
 #
 # Файл, а не пометка в самой зоне: fw4 на незнакомую опцию в секции ругается («specifies
@@ -427,7 +297,10 @@ FW_OWNED="${FW_OWNED:-/etc/splify2/fw-owned}"
 # СТОИТ ПЕРВОЙ, и это не вкусовщина: пробросы «зона клиентов -> зона туннеля» заводит
 # синхронизация ЗОНЫ ТУННЕЛЯ, спрашивая fw_client_zones. Пока зоны клиентов нет, та её не
 # назовёт — значит завести её надо раньше, чем синхронизируются зоны туннелей.
-FW_ZONES="steer_clients:clients:0 steer_vless:vless,xsteer:0 steer_iface:interface:1"
+#
+# hysteria2 (QUIC-клиент со своим TUN, как vless) идёт в зону туннелей движка, awg (WireGuard
+# в ядре, адреса наружу меняются masquerade, как у обычного интерфейса) — в зону интерфейсов.
+FW_ZONES="steer_clients:clients:0 steer_vless:vless,hysteria2,xsteer:0 steer_iface:interface,awg:1"
 
 # Релизы GitHub: версия, которой ставится пакет, и НАЗВАНИЕ, которым выпуск называют.
 #
@@ -711,57 +584,6 @@ list)
     json_add_object xsteer_link_put
         json_add_string iface; json_add_string link
     json_close_object
-    json_add_object zm_fix; json_close_object
-    json_add_object zm_fix_set; json_add_boolean on; json_close_object
-    # ---- DNS over HTTPS ----
-    json_add_object doh_state; json_close_object
-    json_add_object doh_set; json_add_string provider; json_close_object
-    json_add_object doh_off; json_close_object
-    json_add_object doh_custom_add; json_add_string url; json_add_string title; json_add_string bootstrap; json_close_object
-    json_add_object doh_custom_del; json_add_string id; json_close_object
-    json_add_object doh_tunnel_set; json_add_boolean on; json_add_string out; json_close_object
-    json_add_object doh_start; json_close_object
-    json_add_object doh_stop; json_close_object
-    json_add_object doh_force_fix; json_close_object
-    # ---- обход DPI ----
-    json_add_object zapret_state; json_close_object
-    json_add_object zapret_install; json_close_object
-    json_add_object zapret_remove; json_close_object
-    json_add_object zapret_sync; json_close_object
-    json_add_object zapret_strategies; json_close_object
-    # Одна стратегия целиком — её ключи nfqws. Отдельным методом и по запросу, а не полем
-    # zapret_strategies: каталог показывается при каждом открытии вкладки, а ключи человек
-    # разворачивает у одной-двух стратегий, и гонять полсотни блоков ради этого незачем.
-    json_add_object zapret_strategy; json_add_string name; json_close_object
-    # `out` — какому выходу kind=zapret. Пусто означает «всему роутеру», то есть
-    # /etc/config/zapret: это два разных места применения одной и той же стратегии, и
-    # различать их полем дешевле, чем двумя методами с одинаковым телом.
-    json_add_object zapret_apply; json_add_string name; json_add_string out; json_close_object
-    # Выключатель обхода всего роутера: служба zapret, а не стратегия (та остаётся отмеченной).
-    json_add_object zapret_enable; json_add_boolean on; json_close_object
-    # Игровой фильтр (Gv) всего роутера: номер 0..4, подделка, Xtreme — любое подмножество.
-    json_add_object zapret_game_set; json_add_int gv; json_add_string fake; json_add_boolean xtreme; json_close_object
-    json_add_object zapret_test_start; json_add_string scope; json_close_object
-    json_add_object zapret_test_stop; json_close_object
-    # Ход проверки отдельным методом, а не полем zapret_state: состояние спрашивает пакетный
-    # менеджер про версию (это десятки миллисекунд), а ход опрашивают раз в две секунды,
-    # пока проверка идёт. Один метод на оба означал бы плату за версию на каждом опросе.
-    json_add_object zapret_test; json_close_object
-    # Результаты отдаются ДОСЛОВНО тем файлом, который написала проверка. Пересобирать их
-    # здесь через jshn значило бы разбирать и собирать пятьдесят объектов на каждый запрос
-    # ради того же самого JSON — тот же довод, по которому `status` движка отдаётся как есть.
-    json_add_object zapret_results; json_close_object
-    # Автоподбор. Состояние и рейтинг — одним методом (вкладка спрашивает оба факта разом,
-    # и оба читаются из одного каталога результатов).
-    json_add_object zapret_autoselect; json_close_object
-    # Расписание: число дней между подборами, 0 выключает. Выключено по умолчанию — смена
-    # работающей стратегии затрагивает всех клиентов роутера, и такое не включают за человека.
-    json_add_object zapret_autoselect_set; json_add_int days; json_close_object
-    # «Подобрать и применить»: гоняет проверку в изоляции, ранжирует, применяет победителя —
-    # но только если он лучше и того, что без обхода вовсе, и того, что работает сейчас.
-    json_add_object zapret_autoselect_start; json_add_string scope; json_close_object
-    # Откат к настройке, которая была до применения победителя.
-    json_add_object zapret_autoselect_undo; json_close_object
     # Телеметрия. Согласие тремя состояниями: ключа нет — «не спрашивали» (можно предложить
     # один раз), 0 — отказ (предлагать больше нельзя), 1 — согласие. Умолчание — выключено.
     json_add_object telemetry_state; json_close_object
@@ -780,6 +602,17 @@ list)
     json_add_object vless_probe
         json_add_string output; json_add_int node
     json_close_object
+    # Те же два вызова для выхода `protocol: hysteria2` (пакет steer-hysteria2): формат узла один.
+    json_add_object hysteria2_nodes; json_add_string output; json_add_string sub; json_close_object
+    json_add_object hysteria2_probe
+        json_add_string output; json_add_string sub; json_add_int node
+    json_close_object
+    # Состояние движка 2.0: журнал имён резолвера (апстримы, кэш), соединения, живое состояние
+    # помощников выхода и выбор члена группы `pick: manual`.
+    json_add_object dns_log; json_close_object
+    json_add_object conns; json_close_object
+    json_add_object helper; json_add_string output; json_close_object
+    json_add_object group_select; json_add_string group; json_add_string member; json_close_object
     json_add_object engine_stop; json_close_object
     json_add_object engine_start; json_close_object
     json_add_object splify2_versions; json_close_object
@@ -795,17 +628,14 @@ call)
     # /usr/lib/splify2/rpcd. Метод, которого нет ни в одной группе, — отказ здесь же, до
     # чтения чего бы то ни было.
     case "$2" in
-        status|diag|dev_stats|net_info|devices|client_nets|leases|engine_state|outbound_geo|outbound_probe|explain|xsteer_state|vless_nodes|vless_probe|support_report) _grp=state ;;
-        spec_set|apply) _grp=spec ;;
-        lists|list_fetch|lists_update|list_put|list_remove|list_custom|list_get|local_lists|allow_domains|fetch_mode|fetch_mode_set|zm_fix|zm_fix_set|\
+        status|diag|dev_stats|net_info|devices|client_nets|leases|engine_state|outbound_geo|outbound_probe|explain|xsteer_state|vless_nodes|vless_probe|hysteria2_nodes|hysteria2_probe|dns_log|conns|helper|support_report) _grp=state ;;
+        spec_set|apply|group_select) _grp=spec ;;
+        lists|list_fetch|lists_update|list_put|list_remove|list_custom|list_get|local_lists|allow_domains|fetch_mode|fetch_mode_set|\
         lists_source|lists_source_set) _grp=lists ;;
         engine|engine_stop|engine_start|steer_versions|splify2_versions|splify2_install|steer_install|ui_get|ui_set) _grp=engine ;;
         sub_set|sub_info|sub_quota|sub_list|sub_del|sub_auto|sub_refresh) _grp=sub ;;
         backup_get|backup_put) _grp=backup ;;
         xsteer_link|xsteer_link_put) _grp=xsteer ;;
-        doh_state|doh_set|doh_off|doh_tunnel_set|doh_custom_add|doh_custom_del|\
-        doh_start|doh_stop|doh_force_fix) _grp=doh ;;
-        zapret_state|zapret_install|zapret_remove|zapret_sync|zapret_strategies|zapret_strategy|zapret_apply|zapret_enable|zapret_game_set|zapret_test_start|zapret_test_stop|zapret_test|zapret_results|zapret_autoselect|zapret_autoselect_set|zapret_autoselect_start|zapret_autoselect_undo) _grp=zapret ;;
         telemetry_state|telemetry_set|telemetry_preview) _grp=telemetry ;;
         *) fail "неизвестный метод" ;;
     esac

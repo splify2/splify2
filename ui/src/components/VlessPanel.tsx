@@ -216,7 +216,7 @@ export default function VlessPanel({ name, output, onChange, saved }: Props) {
     // отдельно: здесь источник обязателен.
     const urlBad = urlText.length > 0 && !isSubSource(urlText)
     const urlErr = urlBad
-        ? 'Нужна ссылка вида https://… на подписку либо одна или несколько ссылок vless:// '
+        ? 'Нужна ссылка вида https://… на подписку либо одна или несколько ссылок vless:// или hysteria2:// '
           + 'через пробел. Смешивать эти две формы нельзя: роутер возьмёт только одну.'
         : urlTried && !urlText ? 'Вставьте ссылку на подписку или ссылку vless://.' : ''
     const chosenName = chosen < 0

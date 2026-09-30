@@ -42,7 +42,8 @@ export const isSubSource = (v: string) => {
   if (isHttpUrl(s)) return true
   // Ссылок может быть несколько: из однострочного поля многострочная вставка приезжает
   // склеенной пробелами, и делит их бэкенд — здесь только проверяем, что все они vless://.
-  return s.split(/\s+/).every((p) => /^vless:\/\/[^\s]+$/i.test(p))
+  // Схемы те же, что принимает sub_set: vless://, hysteria2:// и короткая hy2://.
+  return s.split(/\s+/).every((p) => /^(vless|hysteria2|hy2):\/\/[^\s]+$/i.test(p))
 }
 
 /** Свой список доменов — в punycode, ПЕРЕД отправкой на роутер.

@@ -7,7 +7,8 @@ import { deadline, rpc, type SubQuota } from '@/lib/rpc'
 import { subsRemember, subsRemembered } from '@/lib/subs'
 import { human, type DiagCheck, type Live } from '@/lib/live'
 import { usePending } from '@/lib/pending'
-import { ON_FAIL_TEXT, type Channel, type ChannelStatus, type OutputStatus, devList, isPart } from '@/lib/model'
+import { specV2Unsupported } from '@/lib/engine'
+import { ON_FAIL_TEXT, type Channel, type ChannelStatus, type OutputStatus, devList, isPart, isTunnelKind } from '@/lib/model'
 import { country } from '@/lib/geo'
 import Flag from '@/components/Flag'
 import { type SectionId } from '@/lib/sections'
@@ -239,6 +240,17 @@ export default function Home({
 
     return (
         <div className="space-y-4">
+            {specV2Unsupported(live.status) && (
+                <Card className="border-destructive">
+                    <CardHeader className="pb-2">
+                        <CardTitle className="text-base">Движок не читает новую спеку</CardTitle>
+                    </CardHeader>
+                    <CardContent className="text-sm">
+                        Этот интерфейс записывает настройки в формате движка 2.0. Установленный движок старше, и
+                        изменения не применятся. Обновите движок: Настройки → О ПО.
+                    </CardContent>
+                </Card>
+            )}
             <div className="flex flex-col items-stretch gap-3 sm:flex-row sm:items-start sm:justify-between">
                 <div className="min-w-0">
                     <div className="flex items-center gap-2.5">
@@ -496,8 +508,10 @@ function RuleRow({
 }) {
     /* Кандидаты выхода в порядке предпочтения: первый здоровый побеждает, поэтому нынешний —
      * это `device`, поставленный движком, а не первый в списке. */
-    const cands = st?.devices?.length ? st.devices : st?.device ? [st.device] : []
-    const active = st?.device || (st?.kind === 'vless' ? undefined : cands[0])
+    /* Группа (спека v2): кандидаты — её члены, а несёт трафик выбранный член, не устройство. */
+    const grp = st?.group
+    const cands = grp ? grp.members : st?.devices?.length ? st.devices : st?.device ? [st.device] : []
+    const active = grp ? (grp.selected ?? undefined) : st?.device || (isTunnelKind(st?.kind) ? undefined : cands[0])
     /* Части пула зовутся подписками, а не «vpn-2»: имя части — служебное, человек его не давал. */
     const { spec } = usePending()
     const remembered = subsRemembered() ?? []
@@ -543,7 +557,12 @@ function RuleRow({
                     <span className="min-w-0 truncate text-[11px] text-muted-foreground">
                         {st?.kind === 'direct'
                             ? 'напрямую'
-                            : [via, facts?.ping && facts.ping.ms >= 0 ? `${facts.ping.ms} мс` : null]
+                            : [
+                                  via,
+                                  facts?.ping && facts.ping.ms >= 0 ? `${facts.ping.ms} мс` : null,
+                                  grp && !grp.selected ? 'члены не отвечают' : null,
+                                  st?.node_down ? 'узел не отвечает' : null,
+                              ]
                                   .filter(Boolean)
                                   .join(' · ') || 'не поднят'}
                     </span>
@@ -591,7 +610,7 @@ function OutputsColumn({
      * не попадала ни в один блок — на экране оставался голый остаток. */
     const { spec } = usePending()
     const outputs = Object.entries(live.status?.outputs || {})
-    const vless = outputs.filter(([, o]) => o.kind === 'vless')
+    const vless = outputs.filter(([, o]) => isTunnelKind(o.kind))
     const tunnels = outputs.filter(([, o]) => o.kind === 'interface')
 
     /** Подписки роутера. Их бывает несколько, и блок полагается КАЖДОЙ: остаток, срок и

@@ -160,11 +160,32 @@ backup_check_spec() {  # ФАЙЛ
                 echo "устройство «$dev» у выхода $o: так имя устройства не выглядит"
                 return 1
             fi
+            # `sub_file` — прежняя спека v1, `subscription` — v2. Проверяются оба ключа:
+            # архив прежнего выпуска остаётся годным, а новый не проезжает мимо проверки.
             json_get_var sf sub_file
             if [ -n "$sf" ] && ! backup_safe_path "$sf"; then
                 echo "файл подписки «$sf» у выхода $o лежит вне каталогов настроек"
                 return 1
             fi
+            sf=''
+            json_get_var sf subscription
+            if [ -n "$sf" ] && ! backup_safe_path "$sf"; then
+                echo "файл подписки «$sf» у выхода $o лежит вне каталогов настроек"
+                return 1
+            fi
+            # Файлы настройки туннелей и обхода (conf, strategy) читает движок от root: только
+            # под каталогом настроек и без «..».
+            for cf in conf strategy; do
+                sf=''
+                json_get_var sf "$cf"
+                if [ -n "$sf" ]; then
+                    case "$sf" in
+                        *..*|*[\ \"\'\`\$\;\|\&\<\>]*) echo "путь «$sf» у выхода $o недопустим"; return 1 ;;
+                        /etc/steer/*|"${SPEC%/*}"/*) ;;
+                        /*) echo "файл «$sf» у выхода $o лежит вне каталога настроек движка"; return 1 ;;
+                    esac
+                fi
+            done
             json_select ..
         done
         json_select ..
@@ -190,6 +211,31 @@ backup_check_spec() {  # ФАЙЛ
         -e '@.channels[*].match.prefixes_file'    -e '@.channels[*].match.domains_file' 2>/dev/null); do
         backup_safe_path "$p" || { echo "список «$p» лежит вне каталога списков"; return 1; }
     done
+    # ---- спека v2: правила, списки, клиенты, DNS --------------------------------------
+    # Те же доводы, что у каналов выше, для новых ключей. Выход правила и имена членов групп
+    # уезжают в имена наборов и командные строки — строгая проверка; имя правила — ярлык.
+    for v in $(jsonfilter -i "$1" -e '@.rules[*].out' -e '@.outputs[*].members[*]' \
+               -e '@.outputs[*].over' -e '@.dns.upstreams[*].out' 2>/dev/null); do
+        backup_safe_word "$v" || { echo "имя выхода «$v» в правиле или группе — только латиница, цифры, точка, двоеточие, дефис"; return 1; }
+    done
+    for v in $(jsonfilter -i "$1" -e '@.lan.devices[*]' 2>/dev/null); do
+        backup_safe_word "$v" || { echo "lan.devices «$v»: имя устройства так не выглядит"; return 1; }
+    done
+    for v in $(jsonfilter -i "$1" -e '@.rules[*].name' 2>/dev/null); do
+        backup_safe_label "$v" || { echo "имя правила «$v»: кавычки, доллар и разделители команд в имени недопустимы"; return 1; }
+    done
+    for p in $(jsonfilter -i "$1" -e '@.lists[*].prefixes_file[*]' -e '@.lists[*].domains_file[*]' \
+               -e '@.lists[*].srs[*]' 2>/dev/null); do
+        backup_safe_path "$p" || { echo "список «$p» лежит вне каталога списков"; return 1; }
+    done
+    # Адрес сервера DNS уезжает в запросы резолвера: без пробелов, кавычек и подстановок.
+    for v in $(jsonfilter -i "$1" -e '@.dns.upstreams[*].url' 2>/dev/null); do
+        case "$v" in
+            https://*|tls://*|quic://*|udp://*|tcp://*) ;;
+            *) echo "DNS «$v»: ждём https://, tls://, quic://, udp:// или tcp://"; return 1 ;;
+        esac
+        case "$v" in *[\ \"\'\`\$\;\|\&\<\>]*) echo "DNS «$v»: недопустимые символы"; return 1 ;; esac
+    done
     return 0
 }
 
@@ -201,9 +247,9 @@ backup_check_sub() {  # ФАЙЛ
     [ "$sz" -le "$BACKUP_SUB_MAX" ] || { echo "подписка больше $((BACKUP_SUB_MAX / 1024)) КБ"; return 1; }
     lines="$(grep -c "[^[:space:]]" "$1")"
     [ "$lines" -gt 0 ] || { echo "раздел подписки пуст"; return 1; }
-    [ "$(grep -c '^vless://' "$1")" = "$lines" ] && return 0
+    [ "$(grep -cE '^(vless|hysteria2|hy2)://' "$1")" = "$lines" ] && return 0
     grep -qvE '^[A-Za-z0-9+/=]*$' "$1" || return 0
-    echo "подписка: ждём строки vless:// или один блок base64"
+    echo "подписка: ждём строки vless:// или hysteria2:// либо один блок base64"
     return 1
 }
 
@@ -228,30 +274,6 @@ backup_check_xsteer() {  # ФАЙЛ ИМЯ
     return 0
 }
 
-# Стратегия обхода из архива. Каждая непустая строка этого файла становится ОТДЕЛЬНЫМ
-# аргументом nfqws — так его читает и обёртка обработчика, и проверка zp_dry_run, — поэтому
-# ничего, кроме ключей и отметки стратегии, здесь быть не должно. Подстановки оболочки в
-# аргументе не разбираются, но чужой ключ nfqws — это чужое поведение процесса, который
-# роутер держит от root на всём трафике выхода.
-#
-# Отметку «#имя» проверять не на что: её отсутствие — законное состояние (так выглядит
-# стратегия, поставленная не нами, см. zp_active_global), и отказывать из-за него значило бы
-# не принимать архив с роутера, где обход настроен менеджером.
-backup_check_zapret() {  # ФАЙЛ ИМЯ
-    sz="$(wc -c 2>/dev/null < "$1" || echo 0)"
-    [ "$sz" -le "$BACKUP_OPT_MAX" ] ||
-        { echo "стратегия обхода «$2» больше $((BACKUP_OPT_MAX / 1024)) КБ"; return 1; }
-    # Пустой раздел — отказ, а не «нечего восстанавливать»: файл на диске он всё равно
-    # создаст, и обработчик поднимется на выходе БЕЗ единого ключа обхода. То есть канал
-    # заработает, а обход в нём молча выключится — худший из возможных исходов.
-    [ -s "$1" ] || { echo "раздел стратегии «$2» пуст"; return 1; }
-    if grep -qvE '^[[:space:]]*($|#|--[A-Za-z0-9-]+([= ].*)?$)' "$1"; then
-        echo "стратегия обхода «$2»: строки бывают только ключами nfqws (--…) и отметкой «#имя»"
-        return 1
-    fi
-    return 0
-}
-
 # Ссылка из архива. Уезжает в uci и оттуда в командную строку загрузчика: пробелы, кавычки
 # и подстановки в ней не значат ничего хорошего ни в одном из этих мест.
 #
@@ -267,8 +289,8 @@ backup_check_url() {  # КЛЮЧ ЗНАЧЕНИЕ
 # Поля uci. Ключи — по белому списку: непонятное поле здесь означало бы, что архив
 # принесён из другой версии и его смысл нам неизвестен.
 #
-# Значения выключателей проверяются ШИРЕ, чем их пишет интерфейс: читают их функции вида
-# zm_fix_on и fetch_tunnel_on, а они понимают и 1/0, и yes/no, и always. Сузить проверку до
+# Значения выключателей проверяются ШИРЕ, чем их пишет интерфейс: читает их fetch_tunnel_on,
+# а он понимает и 1/0, и yes/no, и always. Сузить проверку до
 # «как пишем сами» значило бы отвергать архив с роутера, где ключ поставлен руками из
 # консоли, — а руками его ставят именно те, у кого он вообще есть.
 backup_check_options() {  # ФАЙЛ
@@ -284,7 +306,7 @@ backup_check_options() {  # ФАЙЛ
             sub_kind)
                 case "$v" in url|links|none) ;; *) echo "sub_kind: ждём url, links или none"; return 1 ;; esac
                 ;;
-            zm_fix|doh_via_tunnel|fetch_via_tunnel)
+            fetch_via_tunnel)
                 case "$v" in
                     0|1|on|off|yes|no|true|false|always|auto) ;;
                     *) echo "$k: ждём 1/0 (или yes/no, on/off, always)"; return 1 ;;
@@ -293,19 +315,11 @@ backup_check_options() {  # ФАЙЛ
             list_shrink_factor)
                 case "$v" in ''|*[!0-9]*) echo "list_shrink_factor: ждём число"; return 1 ;; esac
                 ;;
-            # Число дней между автоподборами стратегии обхода; 0 — выключено. Верхний предел
-            # тот же, что у метода zapret_autoselect_set: архив не должен уметь то, чего не
-            # умеет интерфейс, иначе он становится способом обойти проверку.
-            zapret_autoselect)
-                case "$v" in ''|*[!0-9]*) echo "zapret_autoselect: ждём число дней (0 выключает)"; return 1 ;; esac
-                [ "$v" -le 90 ] || { echo "zapret_autoselect: больше 90 дней не бывает"; return 1; }
-                ;;
-            # Откуда качать стратегии обхода: либо «владелец/репозиторий», либо ссылка. Это
-            # значение доходит до командной строки загрузчика, поэтому набор символов
-            # ограничен здесь, а не там, где его когда-нибудь начнут читать.
-            zapret_source)
-                case "$v" in ''|*[!A-Za-z0-9_.:/-]*) echo "zapret_source: только владелец/репозиторий или ссылка"; return 1 ;; esac
-                ;;
+            # Поля прежних выпусков (фикс Zapret Manager, DoH через туннель, автоподбор и
+            # источник стратегий обхода): архив, снятый до 2.0, их несёт, и отказ «непонятная
+            # настройка» сделал бы такой архив невозвратным. Принимаются и молча
+            # отбрасываются при восстановлении (см. ниже) — функций за ними больше нет.
+            zm_fix|doh_via_tunnel|doh_out|zapret_autoselect|zapret_source) ;;
             # Название подписки и память мастера — непрозрачный текст: первое печатает панель
             # провайдера (и печатает по-своему, вплоть до emoji), второе принадлежит мастеру и
             # разбирается только им. Проверять их содержимое нечем и незачем: двоичные байты
@@ -455,7 +469,7 @@ case "$2" in
         mkdir -p "$D/clean" || fail "не удалось развернуть архив"
         why="$(backup_split "$BACKUP_IN" "$D")" || backup_giveup "${why:-архив не разбирается}"
         any=0
-        for f in "$D/spec" "$D/sub" "$D/options" "$D"/list.* "$D"/sub.* "$D"/xsteer.* "$D"/zapret.*; do
+        for f in "$D/spec" "$D/sub" "$D/options" "$D"/list.* "$D"/sub.* "$D"/xsteer.*; do
             [ -f "$f" ] && any=1
         done
         [ "$any" = 1 ] || backup_giveup "в архиве нет ни настроек, ни списков"
@@ -480,11 +494,6 @@ case "$2" in
             [ -f "$f" ] || continue
             nm="${f##*/}"; nm="${nm#xsteer.}"
             why="$(backup_check_xsteer "$f" "$nm")" || backup_giveup "${why:-настройка туннеля из архива не годится}"
-        done
-        for f in "$D"/zapret.*; do
-            [ -f "$f" ] || continue
-            nm="${f##*/}"; nm="${nm#zapret.}"
-            why="$(backup_check_zapret "$f" "$nm")" || backup_giveup "${why:-стратегия обхода из архива не годится}"
         done
         # Свои списки — ТЕМ ЖЕ санитайзером, что и list_put. Второй проверки формата здесь
         # быть не должно: расхождение между «что принимает загрузка» и «что принимает
@@ -558,15 +567,6 @@ case "$2" in
                 warn="${warn}ключи туннеля $nm не записались; "
             fi
         done
-        zapret_done=0
-        for f in "$D"/zapret.*; do
-            [ -f "$f" ] || continue
-            nm="${f##*/}"; nm="${nm#zapret.}"
-            mkdir -p "$ZP_OPTS_DIR"
-            cp "$f" "$ZP_OPTS_DIR/$nm.opts.new.$$" && mv "$ZP_OPTS_DIR/$nm.opts.new.$$" "$ZP_OPTS_DIR/$nm.opts" &&
-                zapret_done=$((zapret_done + 1)) ||
-                { rm -f "$ZP_OPTS_DIR/$nm.opts.new.$$"; warn="${warn}стратегия $nm не записалась; "; }
-        done
         if [ -f "$D/options" ]; then
             # Файл конфигурации создаётся здесь по той же причине, что и в sub_set: `uci set`
             # в несуществующий файл молча ничего не делает, и настройка «восстанавливалась»
@@ -590,6 +590,7 @@ case "$2" in
                         uci -q get "splify2.$_sec" >/dev/null 2>&1 || uci -q set "splify2.$_sec=subscription"
                         uci -q set "splify2.$_sec.${k#*.}=${ln#*=}"
                         ;;
+                    zm_fix|doh_via_tunnel|doh_out|zapret_autoselect|zapret_source) ;;
                     *) uci -q set "splify2.main.$k=${ln#*=}" ;;
                 esac
             done < "$D/options"
@@ -611,21 +612,16 @@ case "$2" in
             # «Применить · N» показала бы ноль на только что заменённой настройке.
             if [ ! -s "$APPLIED" ]; then
                 if [ -s "$SPEC" ]; then cp "$SPEC" "$APPLIED" 2>/dev/null
-                else printf '{"schema":1,"outputs":{},"channels":[]}\n' > "$APPLIED"
+                else printf '{"version":2}\n' > "$APPLIED"
                 fi
             fi
             cp "$D/spec" "$SPEC.new.$$" && mv "$SPEC.new.$$" "$SPEC" ||
                 { rm -f "$SPEC.new.$$"; backup_giveup "спека не записалась — кончилось место?"; }
             spec_done=1
         fi
-        # Восстановление меняет и подписку, и САМ НАБОР выходов, а клиент vless с
-        # обфускатором читают своё один раз при старте. Признак поэтому instances, а не
-        # params: экземпляра для появившегося выхода ещё нет, и сигналить некому.
-        dirty_mark "$VLESS_DIRTY" instances
-        dirty_mark "$VLESS_DIRTY" params
-        dirty_mark "$OBFS_DIRTY" instances
-        dirty_mark "$OBFS_DIRTY" params
-        dirty_mark "$ZAPRET_DIRTY" instances
+        # Помощников выходов после восстановления перезапускает демон при «Применить»: он
+        # сверяет прежнюю спеку с новой и подпись помощника (параметры выхода и содержимое
+        # файла подписки) с запущенным.
         json_init
         json_add_boolean ok 1
         json_add_boolean spec "$spec_done"
@@ -635,7 +631,6 @@ case "$2" in
         # тот же довод, по которому отдельными полями стоят spec и sub.
         json_add_int subs "$subs_done"
         json_add_int xsteer "$xsteer_done"
-        json_add_int zapret "$zapret_done"
         json_add_array lists
         for e in $entries; do
             k="${e%%:*}"; rest="${e#*:}"; nm="${rest%%:*}"; rest="${rest#*:}"

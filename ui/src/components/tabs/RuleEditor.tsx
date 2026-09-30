@@ -3,7 +3,8 @@ import { ArrowLeft, Search, Trash2 } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { rpc } from '@/lib/rpc'
 import { isCidr4, isIp4 } from '@/lib/validate'
-import { type Channel, type Narrow, type OutputStatus, type ServiceEntry, devList, isPart } from '@/lib/model'
+import { usePending } from '@/lib/pending'
+import { type Channel, type Narrow, type OutputStatus, type ServiceEntry, devList, isPart, isTunnelKind } from '@/lib/model'
 
 /** Редактор правила — на месте таблицы, а не в модальном окне.
  *
@@ -92,6 +93,9 @@ export default function RuleEditor({
     const chosen = selectedIds(ch, services)
     const chosenEntries = services.filter((sv) => chosen.includes(sv.id))
     const outNames = Object.keys(outputs)
+    /* Серверы DNS из раздела «DNS»: правило может выбрать свой вместо общего. */
+    const { spec: fullSpec } = usePending()
+    const upstreamNames = Object.keys(fullSpec?.dns?.upstreams || {})
     const hasDomains = isDomains(ch)
     /** Правило-исключение — это канал в выход `direct`, стоящий выше туннельных. Отдельной
      *  сущности в движке нет и не нужно: метку раздаёт первое совпадение, поэтому верхнее
@@ -523,7 +527,7 @@ export default function RuleEditor({
                                             {o.kind === 'direct'
                                                 ? 'мимо туннеля'
                                                 : o.nat === false && o.kind === 'interface' && !isPart(outputs[o.device || ''])
-                                                      && !(o.device && outputs[o.device]?.kind === 'vless')
+                                                      && !(o.device && isTunnelKind(outputs[o.device]?.kind))
                                                   ? 'нет NAT'
                                                   : o.kind === 'interface' && o.device && isPart(outputs[o.device])
                                                     ? 'подписка'
@@ -575,6 +579,25 @@ export default function RuleEditor({
                                     fake-IP: каждому домену свой адрес — точно, но дороже по памяти. real-IP: настоящие адреса из
                                     ответа — дешевле, но два домена за одним адресом станут одним.
                                 </span>
+                            </label>
+                        )}
+                        {hasDomains && upstreamNames.length > 0 && (
+                            <label className="mt-3 flex flex-col gap-1 text-xs">
+                                Сервер DNS
+                                <select
+                                    value={typeof ch.dns === 'string' ? ch.dns : ''}
+                                    onChange={(e) => {
+                                        const v = e.currentTarget.value
+                                        const next = { ...ch }
+                                        if (v) next.dns = v
+                                        else delete next.dns
+                                        onChange(next)
+                                    }}
+                                    className="rounded-md border border-border bg-background px-2 py-1 text-sm"
+                                >
+                                    <option value="">по умолчанию</option>
+                                    {upstreamNames.map((n) => <option key={n} value={n}>{n}</option>)}
+                                </select>
                             </label>
                         )}
                     </section>

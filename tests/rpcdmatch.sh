@@ -83,39 +83,9 @@ case "$1" in
     enable)  rm -f "$SANDBOX/disabled" ;;
     disable) : > "$SANDBOX/disabled" ;;
     enabled) [ -f "$SANDBOX/disabled" ] && exit 1; exit "${ENGINE_ENABLED:-0}" ;;
-    # `start` на работающем сервисе — это пересборка набора экземпляров procd. След нужен
-    # заглушке движка: по нему её `status` отвечает, жив ли обработчик обхода. Без этого
-    # проверить «экземпляры пересобрались» было бы нечем — заглушка всегда говорила бы «жив».
-    # Когда стенд считает опросы (ZAPRET_UP_AT_CALL), «жив ли обработчик» решает счётчик в
-    # заглушке движка, а не этот след: подъём в тот же миг и есть то, чего на роутере не бывает.
-    # Счётчик обнуляется ЗДЕСЬ, и это делает счёт независимым от остального apply: `start`
-    # стоит ровно перед ожиданием, значит после него объект опрашивает состояние только в
-    # цикле ожидания, и опрос №N — это ровно N-й круг цикла.
-    start)   if [ -n "${ZAPRET_UP_AT_CALL:-}" ]; then : > "$SANDBOX/steer-status.count"
-             else : > "$SANDBOX/zapret-up"; fi ;;
 esac
 exit 0
 EOF
-
-# Обход DPI: объект проверяет только исполнимость файла (zp_installed), поэтому заглушке
-# достаточно быть исполняемой. Ключи nfqws проверяет стенд zapretmatch, а не эта.
-printf '#!/bin/sh\nexit 0\n' > "$T/bin/nfqws"
-# Служба zapret: init-скрипт записывает команды, ссылка автозапуска — настоящая, в своём rc.d:
-# по ней объект и отвечает `enabled`. Функцией, потому что раздел обхода ниже заводит
-# заглушку заново.
-zapret_initd_stub() {
-    mkdir -p "$T/rcd-zapret"
-    cat > "$T/bin/initd-zapret" <<EOF
-#!/bin/sh
-echo "\$1" >> "$T/initd-zapret.log"
-case "\$1" in
-    enable)  ln -sf "$T/bin/initd-zapret" "$T/rcd-zapret/S21zapret" ;;
-    disable) rm -f "$T/rcd-zapret/S21zapret" ;;
-esac
-EOF
-    chmod +x "$T/bin/initd-zapret"
-}
-zapret_initd_stub
 
 cat > "$T/bin/initd-rpcd" <<'EOF'
 #!/bin/sh
@@ -386,7 +356,6 @@ EOF
 # ubus: код возврата прежний (на машине разработчика его нет, и скрипт обязан это
 # переживать), но вызовы теперь протоколируются — сигнал экземпляру виден только так.
 # nft: ничего не делает, но записывает всё, что ему дали — и аргументами, и потоком.
-# Проверять фикс Zapret Manager иначе нечем: таблица собирается heredoc-ом.
 # opkg: воспроизводит беду свежей прошивки — списков пакетов нет, и зависимость локального
 # файла не находится. После `opkg update` установка проходит.
 cat > "$T/bin/ifup" <<'EOF'
@@ -502,7 +471,7 @@ case "${1:-}" in
         [ -n "$_m" ] && : > "$_m"
         exit 0
         ;;
-    vless-probe|vless-nodes)
+    vless-probe|vless-nodes|hysteria2-probe|hysteria2-nodes)
         [ -n "${STEER_NOISE:-}" ] && echo "$STEER_NOISE" >&2
         [ -n "${STEER_JSON:-}" ] && printf '%s\n' "$STEER_JSON"
         exit "${STEER_RC:-0}"
@@ -545,6 +514,12 @@ PersistentKeepalive = 25}" ;;
             *) echo "${XS_LINK_ERR:-файл не разобрался}" >&2 ;;
         esac
         exit "${XS_LINK_RC:-0}"
+        ;;
+    # Команды демона (`steer ctl check`): ответ — одна строка JSON, как у настоящего сокета.
+    ctl)
+        cat > /dev/null
+        [ -n "${CTL_RESP:-}" ] && printf '%s\n' "$CTL_RESP"
+        exit "${CTL_RC:-0}"
         ;;
     sub-hwid)
         printf '{"hwid":"%s","os":"OpenWrt 25.12.5","model":"Xiaomi AX3000T"}\n' \
@@ -599,8 +574,7 @@ PersistentKeepalive = 25}" ;;
         exit 0
         ;;
 esac
-# status: собирается из спеки, чтобы у выходов была метка. Без неё фикс Zapret Manager
-# нечем проверить — он берёт метку именно оттуда, а не выдумывает.
+# status: собирается из спеки, чтобы у выходов была метка и признак `up`.
 # Проверки состояния: заглушка отвечает так же, как движок, — документом с приговорами.
 # Нужна для круга опроса: он спрашивает их по просьбе, и «пришло/не пришло» без ответа
 # заглушки не отличить от «движок старый».
@@ -629,33 +603,6 @@ for name, o in (d.get('outputs') or {}).items():
         continue
     if o.get('kind') == 'direct':
         outs[name] = {'kind': 'direct'}
-    elif o.get('kind') == 'zapret':
-        # У выхода обхода `up` означает «жив обработчик его очереди», а не «поднято
-        # устройство». Заглушка не может это знать сама, поэтому читает след, который
-        # оставляет заглушка init-скрипта на `start`: так моделируется procd, заводящий
-        # экземпляр. Отвечать здесь всегда True значило бы проверять ветку, которая на
-        # роутере никогда не выбирается.
-        import os as _os
-        _sb = _os.environ.get('SANDBOX', '')
-        up = _os.path.exists(_os.path.join(_sb, 'zapret-up'))
-        # ...либо обработчик «поднимается» на заданном по счёту опросе. Нужно ровно одному
-        # стенду — тому, что проверяет ожидание в apply: там важно НЕ время, а то, на каком
-        # именно опросе объект перестаёт спрашивать. Порог стенд вычисляет сам (см. «ожидание
-        # обработчика обхода»), поэтому здесь только счётчик и сравнение.
-        _at = _os.environ.get('ZAPRET_UP_AT_CALL', '')
-        if _at:
-            _cf = _os.path.join(_sb, 'steer-status.count')
-            try:
-                _n = int(open(_cf).read().strip() or 0)
-            except Exception:
-                _n = 0
-            _n += 1
-            open(_cf, 'w').write(str(_n))
-            if _n >= int(_at):
-                up = True
-        outs[name] = {'kind': 'zapret', 'up': up, 'mark': f'0x{mark:08x}',
-                      'queue': 8300, 'opts_file': f'/etc/steer/zapret/{name}.opts'}
-        mark <<= 1
     else:
         outs[name] = {'kind': o.get('kind'), 'up': True, 'mark': f'0x{mark:08x}', 'table': 300}
         mark <<= 1
@@ -810,24 +757,10 @@ rpcd() {  # МЕТОД [JSON_ЗАПРОСА]  — вызов метода; дл�
         PATH="$T/bin:$PATH" \
         JSHN_SH="$ROOT/tests/stub/jshn.sh" FETCH_SH="$ROOT/files/usr/lib/splify2/fetch.sh" \
         FAST_SH="$ROOT/files/usr/lib/splify2/fast.sh" \
-        ZAPRET_SH="$ROOT/files/usr/lib/splify2/zapret.sh" \
-        DOH_SH="$ROOT/files/usr/lib/splify2/doh.sh" \
         RPCD_LIB="$ROOT/files/usr/lib/splify2/rpcd" \
-        ZAPRET_TEST="$T/bin/zapret-test" \
-        ZAPRET_AUTOSEL="$T/bin/zapret-autoselect" \
         AD_SH="${AD_SH_FIXTURE:-$ROOT/files/usr/share/splify2/allow-domains.sh}" \
         AD_STAMP="$T/etc/allow-domains.tag" AD_TMP="$T/srs-tmp" \
         AD_BASE="${AD_BASE_FIXTURE:-file://$T/adrel}" AD_TAG_DEFAULT="${AD_TAG_FIXTURE:-2026-08-31_16-18}" \
-        ZA_PIDFILE="$T/zapret/autosel.pid" ZA_LOCK="$T/zapret/autosel.lock" \
-        ZP_PREV="$T/zapret/previous.opts" ZP_AUTOSEL="$T/zapret/autoselect" \
-        ZP_DIR="$T/zapret" ZP_CATALOG="$T/zapret/strategies.txt" \
-        ZP_RESULTS="$T/zapret/results.json" ZP_RESULTS_DIR="$T/zapret/results.d" ZP_STAMP="$T/zapret/updated" \
-        ZP_PROGRESS="$T/zapret/progress" ZP_PIDFILE="$T/zapret/pid" \
-        ZP_OPTS_DIR="$T/etc/steer-zapret" ZP_CONF="$T/etc/config-zapret" \
-        ZP_NFQWS="${ZP_NFQWS_FIXTURE:-$T/bin/nfqws-missing}" ZP_INIT="$T/bin/initd-zapret" ZP_RCD="$T/rcd-zapret" \
-        DOH_CONF="$T/etc/config-doh" DOH_INIT="$T/bin/initd-doh" \
-        DOH_LIST="$ROOT/files/usr/share/splify2/doh-providers.conf" \
-        DOH_STEER="$T/bin/steer" DOH_SPEC="$T/etc/spec.json" \
         SYSNET_STATS="${SYSNET_STATS_FIXTURE:-$T/statnet}" \
         CONNTRACK="${CONNTRACK_FIXTURE:-$T/nf_conntrack}" \
         STEER="$T/bin/steer" \
@@ -840,8 +773,7 @@ rpcd() {  # МЕТОД [JSON_ЗАПРОСА]  — вызов метода; дл�
         RPCD_INITD="$T/bin/initd-rpcd" \
         FW_OWNED="$T/etc/fw-owned" \
         OPENWRT_RELEASE="${OPENWRT_RELEASE_FIXTURE:-$T/etc/openwrt_release}" \
-        VLESS_DIRTY="$T/var/vless-dirty" \
-        OBFS_DIRTY="$T/var/obfs-dirty" \
+        APPLIED="$T/etc/spec.applied.json" \
         HWID_SYSNET="${HWID_SYSNET_FIXTURE:-$T/sys/class/net}" \
         SYSNET="${SYSNET_FIXTURE:-$T/sysnet}" \
         OUT_SYSNET="${OUT_SYSNET_FIXTURE:-$T/outnet}" \
@@ -880,8 +812,6 @@ rpcd() {  # МЕТОД [JSON_ЗАПРОСА]  — вызов метода; дл�
 
 rpcd_list() {
     env SANDBOX="$T" PATH="$T/bin:$PATH" JSHN_SH="$ROOT/tests/stub/jshn.sh" FETCH_SH="$ROOT/files/usr/lib/splify2/fetch.sh" \
-        ZAPRET_SH="$ROOT/files/usr/lib/splify2/zapret.sh" \
-        DOH_SH="$ROOT/files/usr/lib/splify2/doh.sh" \
         sh "$SCRIPT" list 2>"$T/stderr"
 }
 
@@ -995,7 +925,6 @@ if ! printf '%s' "$out" | python3 -c 'import json,sys; json.load(sys.stdin)' >/d
     echo "--- какой sh: $(command -v sh) → $(readlink -f "$(command -v sh)")"
     echo "--- sh -x объекта (хвост):"
     env SANDBOX="$T" PATH="$T/bin:$PATH" JSHN_SH="$ROOT/tests/stub/jshn.sh" FETCH_SH="$ROOT/files/usr/lib/splify2/fetch.sh" \
-        ZAPRET_SH="$ROOT/files/usr/lib/splify2/zapret.sh" DOH_SH="$ROOT/files/usr/lib/splify2/doh.sh" \
         sh -x "$SCRIPT" list 2>&1 | tail -40
 fi
 
@@ -1438,8 +1367,6 @@ out="$( { printf '%s\n' '{"name":"bytes","kind":"prefixes","offset":0}'; } | env
     SANDBOX="$T" PATH="$T/bin:$PATH" \
     JSHN_SH="$ROOT/tests/stub/jshn.sh" FETCH_SH="$ROOT/files/usr/lib/splify2/fetch.sh" \
     FAST_SH="$ROOT/files/usr/lib/splify2/fast.sh" \
-        ZAPRET_SH="$ROOT/files/usr/lib/splify2/zapret.sh" \
-        DOH_SH="$ROOT/files/usr/lib/splify2/doh.sh" \
     STEER="$T/bin/steer" SPEC="$T/etc/spec.json" LISTS="$T/lists" \
     SUB="$T/etc/sub.txt" MANIFEST="$T/etc/manifest.json" RPCD_LIB="$RPCD_DIR" \
     LIST_CHUNK=11 sh "$SCRIPT" call list_get 2>/dev/null)"
@@ -1586,54 +1513,25 @@ if len(sys.argv) > 2 and sys.argv[2]:
 print(json.dumps({"schema": 1, "outputs": {"vpn": o}, "channels": []}))' "$T/etc/sub.txt" "${1:-}"
 }
 
-rm -f "$T/var/vless-dirty" "$T/var/obfs-dirty"
 printf 'vless://key@host:443#node\n' > "$T/etc/sub.txt"
 printf '{"schema":1,"outputs":{},"channels":[]}\n' > "$T/etc/spec.json"
 out="$(rpcd spec_set "$(spec_req "$(vless_spec)")")"
-check "выход vless завёлся — признак instances" "true;instances" \
-      "$(printf '%s' "$out" | jget ok);$(cat "$T/var/vless-dirty" 2>/dev/null)"
-# Вторая правка ТОГО ЖЕ выхода: имя выхода не изменилось, изменился узел — сам по себе это
-# случай params. Но применения между двумя сохранениями не было, значит экземпляра всё ещё
-# нет, и повод пересобрать набор никуда не делся.
-out="$(rpcd spec_set "$(spec_req "$(vless_spec 1)")")"
-check "выбор узла у нового выхода не затирает instances" "yes" \
-      "$(grep -qx instances "$T/var/vless-dirty" 2>/dev/null && echo yes || echo no)"
+check "выход vless сохранён" "true" "$(printf '%s' "$out" | jget ok)"
+# Помощников (клиент vless, обфускатор) с версии 1.8 держит демон движка: `steer apply` через
+# него сверяет прежнюю спеку с новой и перезапускает ровно тех, у кого что-то изменилось.
+# Объект rpcd больше не шлёт сигналы экземплярам procd `vless_*`/`obfs_*` (их нет) и не
+# пересобирает набор экземпляров — ни при новом выходе, ни при смене узла.
 : > "$T/initd.log"; : > "$T/ubus.log"
 out="$(rpcd apply)"
-check "apply пересобирает набор экземпляров" "yes" \
-      "$(grep -qx start "$T/initd.log" && echo yes || echo no)"
-check "признак снят после применения" "no" \
-      "$([ -f "$T/var/vless-dirty" ] && echo yes || echo no)"
-# Смена узла у выхода, экземпляр которого уже есть, лечится сигналом — и `start` его не
-# заменяет: командная строка экземпляра от номера узла не зависит, procd видит описание
-# неизменившимся и процесс не трогает, то есть подписку заново никто не читает.
+check "apply не сигналит экземплярам procd" "0" "$(grep -c 'signal' "$T/ubus.log")"
+check "и не пересобирает набор экземпляров" "0" "$(grep -c '^start$' "$T/initd.log")"
 out="$(rpcd spec_set "$(spec_req "$(vless_spec 2)")")"
-check "смена узла у существующего выхода — params" "params" \
-      "$(cat "$T/var/vless-dirty" 2>/dev/null)"
 : > "$T/initd.log"; : > "$T/ubus.log"
 out="$(rpcd apply)"
-check "apply сигналит экземпляру, а набор не пересобирает" "yes;no" \
-      "$(grep -q 'vless_vpn' "$T/ubus.log" && echo yes || echo no);$(grep -qx start "$T/initd.log" && echo yes || echo no)"
-
-# ИМЯ ВЫХОДА С ДЕФИСОМ. Движок и интерфейс разрешают в имени выхода `-` и `.`, а объект rpcd
-# подставлял имя в путь jsonfilter голым: `@.outputs.de-1.node` — для jsonfilter это синтаксическая
-# ошибка, оба отпечатка выходили пустыми и равными, смена узла не давала params, и выбранный
-# узел не применялся до перезагрузки (I-284). Имя обязано идти в скобках: `@.outputs['de-1']`.
-vless_spec_named() {  # ИМЯ [НОМЕР_УЗЛА]
-    python3 -c 'import json,sys
-o = {"kind": "vless", "sub_file": sys.argv[2]}
-if len(sys.argv) > 3 and sys.argv[3]:
-    o["node"] = int(sys.argv[3])
-print(json.dumps({"schema": 1, "outputs": {sys.argv[1]: o}, "channels": []}))' "$1" "$T/etc/sub.txt" "${2:-}"
-}
-rm -f "$T/var/vless-dirty"
-printf '{"schema":1,"outputs":{},"channels":[]}\n' > "$T/etc/spec.json"
-out="$(rpcd spec_set "$(spec_req "$(vless_spec_named de-1 1)")")"
-: > "$T/initd.log"; : > "$T/ubus.log"
-out="$(rpcd apply)"
-out="$(rpcd spec_set "$(spec_req "$(vless_spec_named de-1 2)")")"
-check "смена узла у выхода с дефисом в имени — params" "params" \
-      "$(cat "$T/var/vless-dirty" 2>/dev/null)"
+check "смена узла тоже без сигналов: узел перечитывает демон" "0;0" \
+      "$(grep -c 'signal' "$T/ubus.log");$(grep -c '^start$' "$T/initd.log")"
+check "признаков перезапуска на диске не остаётся" "no" \
+      "$([ -e "$T/var/vless-dirty" ] || [ -e "$T/var/obfs-dirty" ] && echo yes || echo no)"
 
 # ВРЕМЕННЫЕ ФАЙЛЫ В /tmp — ТОЛЬКО mktemp. Имя вида /tmp/splify2-что-то.$$ предсказуемо: PID виден в
 # /proc, и непривилегированный процесс роутера успевает создать файл или каталог с этим именем до
@@ -1687,43 +1585,21 @@ check "основная подписка при этом не тронута" "y
 rpcd sub_del "{\"name\":\"$dom_name\"}" >/dev/null 2>&1
 rpcd sub_del "{\"name\":\"$rab_name\"}" >/dev/null 2>&1
 
-# Новая подписка тоже перечитывается клиентом только при перезапуске, и sub_set помечал это
-# ПУСТЫМ файлом. Пустой признак — не «параметры», а отсутствие слова: он затирал instances
-# ровно так же, как params, а прочитать его как instances нельзя (тогда любая смена
-# подписки пересобирала бы набор вместо сигнала).
-rm -f "$T/var/vless-dirty"
+# Новая подписка перечитывается демоном: sub_set просит у него `steer reload`, но только когда
+# сохранённое равно применённому (иначе перезагрузка применила бы чужие неприменённые правки).
 printf '{"schema":1,"outputs":{},"channels":[]}\n' > "$T/etc/spec.json"
+cp "$T/etc/spec.json" "$T/etc/spec.applied.json"
 out="$(rpcd spec_set "$(spec_req "$(vless_spec)")")"
+cp "$T/etc/spec.json" "$T/etc/spec.applied.json"
+: > "$T/steer.log"
 out="$(rpcd sub_set '{"url":"vless://key@host:443#node"}')"
-check "смена подписки не затирает instances" "yes" \
-      "$(grep -qx instances "$T/var/vless-dirty" 2>/dev/null && echo yes || echo no)"
-check "смена подписки помечена и как params" "yes" \
-      "$(grep -qx params "$T/var/vless-dirty" 2>/dev/null && echo yes || echo no)"
-: > "$T/initd.log"; : > "$T/ubus.log"
-out="$(rpcd apply)"
-check "apply делает и то и другое: сигнал существующим, сборка набора" "yes;yes" \
-      "$(grep -q 'vless_vpn' "$T/ubus.log" && echo yes || echo no);$(grep -qx start "$T/initd.log" && echo yes || echo no)"
-
-# Обфускация: тот же признак и та же ошибка. Проверяется на той же паре сохранений —
-# выход с obfs появился, затем у него сменился порт.
-obfs_spec() {  # ПОРТ_LISTEN
-    python3 -c 'import json,sys
-print(json.dumps({"schema": 1, "outputs": {"wg": {"kind": "interface", "device": "wg0",
-      "obfs": {"mode": "wg-over-tcp", "server": "203.0.113.10:4567",
-               "listen": "127.0.0.1:" + sys.argv[1]}}}, "channels": []}))' "$1"
-}
-rm -f "$T/var/obfs-dirty" "$T/var/vless-dirty"
-printf '{"schema":1,"outputs":{},"channels":[]}\n' > "$T/etc/spec.json"
-out="$(rpcd spec_set "$(spec_req "$(obfs_spec 8443)")")"
-check "выход с обфускацией завёлся — признак instances" "instances" \
-      "$(cat "$T/var/obfs-dirty" 2>/dev/null)"
-out="$(rpcd spec_set "$(spec_req "$(obfs_spec 8444)")")"
-check "смена порта у нового обфускатора не затирает instances" "yes" \
-      "$(grep -qx instances "$T/var/obfs-dirty" 2>/dev/null && echo yes || echo no)"
-: > "$T/initd.log"
-out="$(rpcd apply)"
-check "apply пересобирает набор обфускаторов" "yes" \
-      "$(grep -qx start "$T/initd.log" && echo yes || echo no)"
+check "смена подписки при чистой спеке просит перезагрузку у демона" "1" \
+      "$(grep -c '^reload' "$T/steer.log")"
+out="$(rpcd spec_set "$(spec_req "$(vless_spec 3)")")"
+: > "$T/steer.log"
+out="$(rpcd sub_set '{"url":"vless://key@host:443#node"}')"
+check "а при неприменённых правках — нет, применит кнопка" "0" \
+      "$(grep -c '^reload' "$T/steer.log")"
 
 # ---- кандидат спеки готовится РЯДОМ с целевым файлом ----------------------------
 # Спека — единственный файл, где лежит вся настройка, и подменяется она mv. Но mv атомарен
@@ -1759,6 +1635,26 @@ out="$(STEER_RC=1 STEER_ERR='bad spec' rpcd spec_set "$(spec_req "$(vless_spec 1
 check "отвергнутая спека не сохраняется" "false" "$(printf '%s' "$out" | jget ok)"
 check "после отказа кандидата не остаётся" "" \
       "$(ls "$T/etc"/spec.json.new.* 2>/dev/null)"
+
+# Проверка через демона (`steer ctl check`), когда его сокет есть: отказ приходит в поле stderr
+# ответа, успех — code 0, а отказ самого демона (поле error) не считается проверкой и
+# переходит на прямой dry-run. Без сокета — прямой dry-run, как выше.
+: > "$T/steer.sock"
+: > "$T/steer.log"
+out="$(STEER_SOCK="$T/steer.sock" CTL_RESP='{"v":1,"cmd":"check","code":1,"stdout":"","stderr":"отказ демона"}' \
+    rpcd spec_set "$(spec_req "$(vless_spec 1)")")"
+check "отказ через демона: спека не сохраняется" "false" "$(printf '%s' "$out" | jget ok)"
+check "отказ через демона: причина из ответа" "yes" \
+      "$(printf '%s' "$out" | grep -q 'отказ демона' && echo yes || echo no)"
+check "через демона dry-run напрямую не зовётся" "0" "$(grep -c '^apply --dry-run' "$T/steer.log")"
+out="$(STEER_SOCK="$T/steer.sock" CTL_RESP='{"v":1,"cmd":"check","code":0,"stdout":"","stderr":""}' \
+    rpcd spec_set "$(spec_req "$(vless_spec 1)")")"
+check "успех через демона: спека сохранена" "true" "$(printf '%s' "$out" | jget ok)"
+: > "$T/steer.log"
+out="$(STEER_SOCK="$T/steer.sock" CTL_RESP='{"v":1,"cmd":"check","error":"internal","message":"занят"}' \
+    rpcd spec_set "$(spec_req "$(vless_spec 1)")")"
+check "отказ самого демона: проверка падает на прямой dry-run" "1" "$(grep -c '^apply --dry-run' "$T/steer.log")"
+rm -f "$T/steer.sock"
 
 # Фикстуры возвращаются к исходным: проверки ниже писаны против них.
 printf '{"schema":1,"outputs":{},"channels":[]}\n' > "$T/etc/spec.json"
@@ -1803,7 +1699,7 @@ check "прямых путей /etc/config/splify2 в коде не остало
 # uci_file БЕЗ проверки — как и `uci set` с `uci commit` рядом. Ответ `ok 1` у него значил не
 # «согласие записано», а «дошли до конца функции»: на роутере с заполненным флешем ползунок
 # переезжал, страница показывала успех, а в конфигурации оставалось прежнее значение.
-check "файл заводится одной функцией на все места" "10" \
+check "файл заводится одной функцией на все места" "8" \
       "$(rpcd_src | grep -c '^ *uci_file ||')"
 check "перенаправлением файл больше не заводится" "0" \
       "$(rpcd_src | grep -c ': > "\?/etc/config')"
@@ -1931,18 +1827,19 @@ out="$(rpcd sub_auto '{"name":"hand1","minutes":60}')"
 check "ссылкам vless:// интервал не назначить" "false" "$(printf '%s' "$out" | jget ok)"
 
 # Обновление по сохранённой ссылке. Узлы прежние — туннель не трогаем.
-# Первое обновление узлы МЕНЯЕТ (в файле лежал образец от sub_set) — метку правки снимаем
-# после него: проверяем второе, где узлы те же самые.
+# Первое обновление узлы МЕНЯЕТ (в файле лежал образец от sub_set) — журнал вызовов движка
+# чистим после него: проверяем второе, где узлы те же самые.
+cp "$T/etc/spec.json" "$T/etc/spec.applied.json"
 out="$(STEER_SUB_BODY='vless://same@h:443#n' rpcd sub_refresh '{"name":"auto1"}')"
-rm -f "$T/var/vless-dirty"
+: > "$T/steer.log"
 out="$(STEER_SUB_BODY='vless://same@h:443#n' rpcd sub_refresh '{"name":"auto1"}')"
 check "узлы прежние — обновление это говорит" "true;false"       "$(printf '%s' "$out" | jget ok);$(printf '%s' "$out" | jget changed)"
-check "и туннель перечитывать не просит" "no"       "$([ -s "$T/var/vless-dirty" ] && echo yes || echo no)"
+check "и у демона перечитать не просит" "0"       "$(grep -c '^reload' "$T/steer.log")"
 
 # Узлы сменились — вот тогда просит.
 out="$(STEER_SUB_BODY='vless://other@h:443#n' rpcd sub_refresh '{"name":"auto1"}')"
 check "узлы сменились — обновление это говорит" "true;true"       "$(printf '%s' "$out" | jget ok);$(printf '%s' "$out" | jget changed)"
-check "и туннель просит перечитать" "yes"       "$(grep -qx params "$T/var/vless-dirty" 2>/dev/null && echo yes || echo no)"
+check "и просит у демона перечитать" "1"       "$(grep -c '^reload' "$T/steer.log")"
 
 out="$(rpcd sub_refresh '{"name":"hand1"}')"
 check "ссылки vless:// обновлять нечем" "false" "$(printf '%s' "$out" | jget ok)"
@@ -1959,10 +1856,11 @@ out="$(rpcd sub_set '{"url":"https://panel.invalid/sub/main"}')"
 python3 -c 'import json,sys
 print(json.dumps({"schema":1,"outputs":{"vpn":{"name":"vpn","kind":"vless","sub_file":sys.argv[1]}},"channels":[]}))' \
     "$T/etc/sub.txt" > "$T/etc/spec.json"
-: > "$T/ubus.log"
+cp "$T/etc/spec.json" "$T/etc/spec.applied.json"
+: > "$T/steer.log"
 out="$(STEER_SUB_BODY='vless://fresh@h:443#n' rpcd sub_refresh '{"name":"main"}')"
-check "обновление по расписанию поднятый туннель перечитывает" "yes" \
-      "$(grep -q 'vless_' "$T/ubus.log" && echo yes || echo no)"
+check "обновление по расписанию просит демон перечитать подписки" "1" \
+      "$(grep -c '^reload' "$T/steer.log")"
 # ВЫХОД ОПОЗНАЁТСЯ ПО КЛЮЧУ, а не по полю `name` (I-328). Поле `name` внутри выхода пишет
 # только интерфейс; в контракте спеки его нет, и спека, положенная руками или пустая заготовка
 # fast.sh, его не несёт. Счёт по `name` у такой спеки не находил ни одного выхода: туннель не
@@ -1970,10 +1868,11 @@ check "обновление по расписанию поднятый тунн�
 python3 -c 'import json,sys
 print(json.dumps({"schema":1,"outputs":{"vpn":{"kind":"vless","sub_file":sys.argv[1],"nodes":[0,1]}},"channels":[]}))' \
     "$T/etc/sub.txt" > "$T/etc/spec.json"
-: > "$T/ubus.log"
+cp "$T/etc/spec.json" "$T/etc/spec.applied.json"
+: > "$T/steer.log"
 out="$(STEER_SUB_BODY='vless://fresher@h:443#n' rpcd sub_refresh '{"name":"main"}')"
-check "выход без поля name: туннель подписки перечитывает узлы" "1;yes" \
-      "$(printf '%s' "$out" | jget restarted);$(grep -q '"vless_vpn"' "$T/ubus.log" && echo yes || echo no)"
+check "выход без поля name: подписку перечитывает демон, выход посчитан" "1;1" \
+      "$(printf '%s' "$out" | jget restarted);$(grep -c '^reload' "$T/steer.log")"
 check "выход без поля name: занятые локации подписки посчитаны" "1;2" \
       "$(rpcd sub_list | python3 -c 'import json,sys
 d=next(d for d in json.load(sys.stdin)["subs"] if d["name"]=="main"); print("%s;%s" % (d["used"], d["used_nodes"]))')"
@@ -2069,6 +1968,39 @@ check "узлы подписки спрашиваются у движка пут
 check "и ответ движка отдан дословно" "x" "$(printf '%s' "$out" | jget sub_file)"
 out="$(rpcd vless_nodes '{"sub":"/etc/passwd"}')"
 check "чужой путь вместо подписки отвергается" "false" "$(printf '%s' "$out" | jget ok)"
+# Смешанная подписка (46 ссылок vless:// и 5 hysteria2://, первая — vless; ключи выдуманы): файл
+# один, клиенты два. Бэкенд не делит узлы сам — каждый метод отдаёт движку тот же путь своей
+# командой, и ответ каждого клиента приходит дословно: узлы VLESS и hysteria2 редактор
+# складывает уже сам.
+cp "$T/etc/subs/green.txt" "$T/green.keep"
+: > "$T/etc/subs/green.txt"
+_i=1
+while [ "$_i" -le 46 ]; do
+    printf 'vless://00000000-0000-0000-0000-%012d@v%d.example.invalid:443?security=tls&sni=x.example.invalid#vless-%d\n' "$_i" "$_i" "$_i" >> "$T/etc/subs/green.txt"
+    _i=$((_i + 1))
+done
+_i=1
+while [ "$_i" -le 5 ]; do
+    printf 'hysteria2://00000000-0000-0000-0000-%012d@h%d.example.invalid:443/?sni=x.example.invalid&fm=%%7B%%22quicParams%%22%%3A%%7B%%22debug%%22%%3Afalse%%7D%%7D#hy-%d\n' "$_i" "$_i" "$_i" >> "$T/etc/subs/green.txt"
+    _i=$((_i + 1))
+done
+check "в смешанной подписке 51 ссылка" "51" "$(grep -c '://' "$T/etc/subs/green.txt")"
+: > "$T/steer.log"
+out="$(STEER_JSON='{"output":"","usable":5,"skipped":0,"foreign":46,"nodes":[{"index":0,"name":"hy-1"}]}' \
+       rpcd hysteria2_nodes "{\"sub\":\"$T/etc/subs/green.txt\"}")"
+check "смешанная подписка: hysteria2_nodes зовёт hysteria2-nodes по тому же файлу" \
+      "hysteria2-nodes $T/etc/subs/green.txt --spec $T/etc/spec.json" "$(tail -1 "$T/steer.log")"
+check "и ответ hysteria2-клиента дословно" "5" "$(printf '%s' "$out" | jget usable)"
+out="$(STEER_JSON='{"output":"","usable":46,"skipped":0,"foreign":5,"nodes":[]}' \
+       rpcd vless_nodes "{\"sub\":\"$T/etc/subs/green.txt\"}")"
+check "смешанная подписка: vless_nodes зовёт vless-nodes по тому же файлу" \
+      "vless-nodes $T/etc/subs/green.txt --spec $T/etc/spec.json" "$(tail -1 "$T/steer.log")"
+check "и ответ VLESS-клиента сообщает о чужих ссылках" "5" "$(printf '%s' "$out" | jget foreign)"
+: > "$T/steer.log"
+rpcd hysteria2_probe "{\"sub\":\"$T/etc/subs/green.txt\",\"node\":3}" > /dev/null
+check "проба узла hysteria2 идёт командой hysteria2-probe" "1" "$(grep -c '^hysteria2-probe ' "$T/steer.log")"
+check "и не командой vless-probe" "0" "$(grep -c '^vless-probe ' "$T/steer.log")"
+mv "$T/green.keep" "$T/etc/subs/green.txt"
 # Остаток второй подписки спрашивается по ЕЁ файлу: общий файл означал бы, что обзор
 # показывает остаток одной панели под именем другой.
 out="$(rpcd sub_quota '{"name":"green"}')"
@@ -2207,7 +2139,7 @@ check "функция вызывается трижды: spec_set, apply, backup
       "$(rpcd_src | grep -c 'fetch_missing_lists "')"
 # spec_set и apply живут в группе spec, восстановление — в группе backup.
 set_line=$(grep -n 'set_warn="$(fetch_missing_lists' "$RPCD_DIR/m-spec.sh" | cut -d: -f1)
-dry_line=$(grep -n 'apply --dry-run --spec "$tmp"' "$RPCD_DIR/m-spec.sh" | cut -d: -f1)
+dry_line=$(grep -n 'engine_check "$tmp"' "$RPCD_DIR/m-spec.sh" | cut -d: -f1)
 check "в spec_set загрузка идёт ДО проверки движком" "yes" \
       "$([ -n "$set_line" ] && [ -n "$dry_line" ] && [ "$set_line" -lt "$dry_line" ] && echo yes || echo no)"
 # Порядок ищется ВНУТРИ ветки, а не по всему файлу: `fetch_warn=` встречается и в apply, и
@@ -2329,6 +2261,8 @@ awk 'BEGIN { for (i = 0; i < 1200; i++) printf "host%d.example\n", i }' > "$(cus
 # разделов стенда, а этот каталог нужен одному — архиву.
 export XSTEER_DIR="$T/etc/steer-xsteer"
 mkdir -p "$XSTEER_DIR" "$T/etc/steer-zapret" "$T/etc/subs"
+# Стратегия обхода лежит на диске (её мог поставить прежний выпуск), но в архив больше не
+# едет: обход DPI из splify2 убран, и файл принадлежит тому, кто его положил.
 printf '%s\n' '[Interface]' \
   'PrivateKey = 6Gtidge6FqhO/0LhrAWpRiyYaKdLZF/gib/HePLC9GU=' \
   'Address = 10.77.0.5/24' 'SNI = www.microsoft.com' '' '[Peer]' \
@@ -2340,12 +2274,11 @@ printf 'vless://k2@h2:443#second\n' > "$T/etc/subs/work.txt"
 uci_set splify2.sub_work subscription
 uci_set splify2.sub_work.url 'https://panel.example.net/sub/2'
 uci_set splify2.sub_work.kind url
-# Все одиннадцать полей, а не три: перечень получается тем же способом, каким его находят в
+# Все восемь полей, а не три: перечень получается тем же способом, каким его находят в
 # коде, — `grep -rhoE 'splify2\.(main|sub_[a-z_]*)\.[a-z_]+' files/`.
 for _kv in 'sub_url=https://panel.example.net/sub/1' 'sub_kind=url' 'wizard=step3' \
-           'sub_title=Моя панель' 'zm_fix=1' 'manifest_url=https://example.net/categories.json' \
-           'fetch_via_tunnel=always' 'doh_via_tunnel=1' 'list_shrink_factor=4' \
-           'zapret_source=StressOzz/Zapret-Manager' 'geo_url=https://example.net/trace'; do
+           'sub_title=Моя панель' 'manifest_url=https://example.net/categories.json' \
+           'fetch_via_tunnel=always' 'list_shrink_factor=4' 'geo_url=https://example.net/trace'; do
     uci_set "splify2.main.${_kv%%=*}" "${_kv#*=}"
 done
 
@@ -2385,21 +2318,16 @@ check "ключи xsteer уезжают в архив дословно" "yes" \
       "$(printf '%s\n' "$doc" | grep -q '^\[xsteer home\]$' &&
          printf '%s\n' "$doc" | grep -q '^\[Interface\]$' &&
          printf '%s\n' "$doc" | grep -q '^PrivateKey = 6Gtidge6' && echo yes || echo no)"
-# Отметка стратегии — первая строка файла ключей, и она комментарий (`#v1`). Разборщик архива
-# комментарии выбрасывает, поэтому здесь проверяется именно она: без отметки восстановленный
-# выход работает по нужным ключам, но интерфейс не знает, какая стратегия выбрана.
-check "стратегия выхода обхода уезжает вместе со своей отметкой" "yes" \
-      "$(printf '%s\n' "$doc" | grep -q '^\[zapret yt\]$' &&
-         printf '%s\n' "$doc" | grep -qx '#v1' &&
-         printf '%s\n' "$doc" | grep -qx -- '--dpi-desync=fake,split2' && echo yes || echo no)"
+check "стратегии обхода DPI в архив больше не уезжают" "no" \
+      "$(printf '%s\n' "$doc" | grep -q '^\[zapret ' && echo yes || echo no)"
 # Вторая подписка — это файл И ссылка на панель: без ссылки восстановленную подписку нечем
 # обновить, то есть она приезжает мёртвой.
 check "именованная подписка уезжает и файлом, и ссылкой" "yes" \
       "$(printf '%s\n' "$doc" | grep -q '^\[sub work\]$' &&
          printf '%s\n' "$doc" | grep -qx 'sub_work.url=https://panel.example.net/sub/2' &&
          printf '%s\n' "$doc" | grep -qx 'sub_work.kind=url' && echo yes || echo no)"
-check "в архив уезжают все одиннадцать полей uci, а не три" "11" \
-      "$(printf '%s\n' "$doc" | grep -cE '^(sub_url|sub_kind|wizard|sub_title|zm_fix|manifest_url|fetch_via_tunnel|doh_via_tunnel|list_shrink_factor|zapret_source|geo_url)=')"
+check "в архив уезжают все восемь полей uci, а не три" "8" \
+      "$(printf '%s\n' "$doc" | grep -cE '^(sub_url|sub_kind|wizard|sub_title|manifest_url|fetch_via_tunnel|list_shrink_factor|geo_url)=')"
 # Шапка архива предупреждала про ссылки vless://. С приватными ключами туннелей это верно
 # сильнее, и сказать об этом обязана сама шапка: файл человек уносит на флешке и в переписке.
 check "шапка предупреждает и о приватных ключах" "yes" \
@@ -2548,11 +2476,6 @@ check "восстановление ничего не применяет" "0" "$
 # отсутствие отдаёт саму спеку, то есть восстановленное выглядело бы применённым.
 check "снимок применённого снят с ПРЕЖНЕЙ спеки" "yes" \
       "$([ -s "$T/etc/spec.applied.json" ] && ! grep -q 'br-lan' "$T/etc/spec.applied.json" && echo yes || echo no)"
-# Оба повода сразу: восстановление меняет и НАБОР выходов (экземпляра для появившегося
-# ещё нет — instances), и подписку у тех, что могли остаться под тем же именем (их
-# экземпляр работает и обязан перечитать узлы — params).
-check "туннели помечены к пересборке по обоим поводам" "yes;yes" \
-      "$(grep -qx instances "$T/var/vless-dirty" && echo yes || echo no);$(grep -qx params "$T/var/vless-dirty" && echo yes || echo no)"
 check "накопленный файл убран за собой" "no" \
       "$([ -f "$T/var/backup.in" ] && echo yes || echo no)"
 # Заголовок у архива выше — намеренно ПРЕЖНЕЙ версии: у людей уже лежат файлы, собранные
@@ -2600,17 +2523,16 @@ check "приватный ключ туннеля лёг на место дос�
 # закрытым, и восстановление не имеет права раскрыть его шире, чем создало бы само.
 check "восстановленный ключ закрыт от чужих глаз" "600" \
       "$(stat -c %a "$XSTEER_DIR/home.conf" 2>/dev/null)"
-check "стратегия обхода лежит вместе со своей отметкой" "yes" \
-      "$(head -1 "$T/etc/steer-zapret/yt.opts" | grep -qx '#v1' &&
-         grep -qx -- '--filter-tcp=443' "$T/etc/steer-zapret/yt.opts" && echo yes || echo no)"
+check "раздел стратегии обхода из старого архива принят и не восстановлен" "no" \
+      "$([ -e "$T/etc/steer-zapret/yt.opts" ] && echo yes || echo no)"
 check "именованная подписка легла своим файлом" "yes" \
       "$(grep -qx 'vless://k2@h2:443#second' "$T/etc/subs/work.txt" && echo yes || echo no)"
 check "ссылка именованной подписки легла в свою секцию uci" "https://panel.example.net/sub/2;url;subscription" \
       "$(uci_get splify2.sub_work.url);$(uci_get splify2.sub_work.kind);$(uci_get splify2.sub_work)"
-check "остальные поля uci восстановлены, а не только три прежних" "Моя панель;0;4;https://example.net/trace" \
+check "остальные поля uci восстановлены, а не только три прежних; поле фикса Zapret Manager отброшено" "Моя панель;;4;https://example.net/trace" \
       "$(uci_get splify2.main.sub_title);$(uci_get splify2.main.zm_fix);$(uci_get splify2.main.list_shrink_factor);$(uci_get splify2.main.geo_url)"
-check "в ответе сказано, что именно восстановлено" "1;1;1" \
-      "$(printf '%s' "$out" | jget xsteer);$(printf '%s' "$out" | jget zapret);$(printf '%s' "$out" | jget subs)"
+check "в ответе сказано, что именно восстановлено" "1;1" \
+      "$(printf '%s' "$out" | jget xsteer);$(printf '%s' "$out" | jget subs)"
 
 # Выход, ссылающийся на ИМЕНОВАННУЮ подписку, отвергался проверкой путей: она знала только
 # /etc/steer/sub.txt и каталог списков. То есть архив роутера с двумя подписками нельзя было
@@ -2620,9 +2542,8 @@ out="$(printf '%s\n' 'splify2-backup 2' '[spec]' \
   backup_put)"
 check "выход на именованную подписку не считается путём наружу" "true" "$(printf '%s' "$out" | jget ok)"
 
-# Дальше — отказы. Каталог с ключами и файл ключей nfqws попадают в руки root: первый читает
-# движок, каждая строка второго становится ОТДЕЛЬНЫМ аргументом обработчика обхода. Принять
-# туда что угодно из присланного файла нельзя.
+# Дальше — отказы. Каталог с ключами попадает в руки root: его читает движок. Принять туда
+# что угодно из присланного файла нельзя.
 out="$(printf '%s\n' 'splify2-backup 2' '[xsteer home]' '[Interface]' 'PrivateKey = k' \
   'ключ = значение; reboot' | backup_put)"
 check "чужая строка в настройке туннеля отвергает файл" "yes" \
@@ -2631,24 +2552,19 @@ check "чужая строка в настройке туннеля отверг
 out="$(printf '%s\n' 'splify2-backup 2' '[xsteer home]' '[Interface]' 'Address = 10.77.0.5/24' | backup_put)"
 check "настройка туннеля без приватного ключа отвергается" "false" "$(printf '%s' "$out" | jget ok)"
 
-out="$(printf '%s\n' 'splify2-backup 2' '[zapret yt]' '#v1' '/bin/sh' | backup_put)"
-check "строка не из ключей nfqws отвергает стратегию" "yes" \
-      "$(printf '%s' "$out" | jget error | grep -q 'nfqws' && echo yes || echo no)"
-
 out="$(printf '%s\n' 'splify2-backup 2' '[options]' 'geo_url=https://x/$(reboot)' | backup_put)"
 check "подстановка в адресе измерителя отвергается" "false" "$(printf '%s' "$out" | jget ok)"
 
-out="$(printf '%s\n' 'splify2-backup 2' '[options]' 'zm_fix=да' | backup_put)"
+out="$(printf '%s\n' 'splify2-backup 2' '[options]' 'fetch_via_tunnel=да' | backup_put)"
 check "нечисловое значение выключателя отвергается" "false" "$(printf '%s' "$out" | jget ok)"
 
 out="$(printf '%s\n' 'splify2-backup 2' '[sub work]' 'http://example.org/list' | backup_put)"
 check "именованная подписка не из vless:// отвергается" "false" "$(printf '%s' "$out" | jget ok)"
 
-# Пустой раздел стратегии создал бы файл ключей без ключей: обработчик обхода на таком
-# выходе поднимается и не обходит ничего, а канал при этом работает — то есть человек видит
-# «включено» на выключенном обходе.
+# Раздел стратегии обхода из архива прежнего выпуска сам по себе ничего не восстанавливает:
+# в архиве больше нечего принимать, и отказ говорит об этом словами.
 out="$(printf '%s\n' 'splify2-backup 2' '[zapret yt]' | backup_put)"
-check "пустой раздел стратегии отвергается" "false" "$(printf '%s' "$out" | jget ok)"
+check "архив только со стратегией обхода не годится" "false" "$(printf '%s' "$out" | jget ok)"
 
 # Восстановление продолжается там, где остановились: следующие проверки этого раздела ждут
 # спеку и подписку на месте.
@@ -2769,100 +2685,7 @@ check "выключается обратно" "off" "$(rpcd fetch_mode | jget mo
 # против команды, которая не умеет ничего: зелёными они были не по существу.
 cp "$T/bin/uci.stub" "$T/bin/uci"
 
-# ---- фикс Zapret Manager: только сам роутер, и ничего в правилах ------------------
-# Zapret Manager ставится и обновляется с GitHub, а у аудитории splify2 GitHub закрыт.
-# Собственные обращения роутера уводятся в туннель сами — и ТОЛЬКО они: у устройств сети свои
-# средства обхода, и уводить их трафик за них никто не просил. Отсюда метка в цепочке
-# `output`: туда попадает только то, что роутер отправил сам.
-#
-# В 1.2.3 это было правилом в спеке, и оба свойства нарушались разом: канал касался клиентов
-# и висел у человека в правилах. Стенд сторожит, чтобы так больше не было.
-ZM_LIST_FIXTURE="$T/lists/zm-github.lst"
-mkdir -p "$T/lists"
-printf '# комментарий\n140.82.112.0/20\n185.199.108.0/22\n' > "$ZM_LIST_FIXTURE"
-
-SPEC_ONE='{"schema":1,"outputs":{"direct":{"kind":"direct"},"vl":{"kind":"vless"}},"channels":[]}'
-printf '%s' "$SPEC_ONE" > "$T/etc/spec.json"
-: > "$T/nft.log"
-ZM_LIST="$ZM_LIST_FIXTURE" rpcd apply >/dev/null 2>&1
-
-check "спека не правится: правил у человека не прибавилось" "$SPEC_ONE" "$(cat "$T/etc/spec.json")"
-check "метка ставится в цепочке output — сеть за роутером не затронута" "yes" \
-      "$(grep -q 'hook output' "$T/nft.log" && echo yes || echo no)"
-check "и только там: цепочек forward или prerouting не заводим" "" \
-      "$(grep -c 'hook forward\|hook prerouting' "$T/nft.log" | sed 's/^0$//')"
-check "адреса из списка попали в набор" "yes" \
-      "$(grep -q '140.82.112.0/20' "$T/nft.log" && echo yes || echo no)"
-check "комментарии из списка в набор не попали" "" \
-      "$(grep -c 'комментарий' "$T/nft.log" | sed 's/^0$//')"
-check "метка выхода взята у движка, а не выдумана" "yes" \
-      "$(grep -q '0x00100000' "$T/nft.log" && echo yes || echo no)"
-
-# Выключено человеком — таблица снимается, а не остаётся висеть.
-: > "$T/nft.log"
-cat > "$T/bin/uci" <<'STUB'
-#!/bin/sh
-key=""
-for a in "$@"; do key="$a"; done
-case "$key" in splify2.main.zm_fix) echo 0 ;; *) exit 1 ;; esac
-STUB
-chmod +x "$T/bin/uci"
-ZM_LIST="$ZM_LIST_FIXTURE" rpcd apply >/dev/null 2>&1
-check "выключенный фикс снимает таблицу" "yes" \
-      "$(grep -q 'delete table inet splify2_zm' "$T/nft.log" && echo yes || echo no)"
-check "и ничего не собирает" "" \
-      "$(grep -c 'hook output' "$T/nft.log" | sed 's/^0$//')"
-cp "$T/bin/uci.stub" "$T/bin/uci" 2>/dev/null || printf '#!/bin/sh\nexit 1\n' > "$T/bin/uci"
-chmod +x "$T/bin/uci"
-
-# Наследство 1.2.3: канал, дописанный прошлой версией, убирается из спеки.
-SPEC_OLD='{"schema":1,"outputs":{"direct":{"kind":"direct"},"vl":{"kind":"vless"}},"channels":[{"name":"zm_github","match":{"prefixes_files":["/etc/steer/lists/zm-github.lst"]},"out":"vl"},{"name":"my","match":{"prefixes_files":["/etc/steer/lists/a.lst"]},"out":"vl"}]}'
-printf '%s' "$SPEC_OLD" > "$T/etc/spec.json"
-ZM_LIST="$ZM_LIST_FIXTURE" rpcd apply >/dev/null 2>&1
-check "канал от 1.2.3 убран из правил" "my" \
-      "$(python3 -c 'import json,sys
-try: d = json.load(open(sys.argv[1]))
-except Exception: print("НЕ JSON"); raise SystemExit
-print(" ".join(c["name"] for c in d.get("channels", [])))' "$T/etc/spec.json")"
-
-# ---- переключатель фикса Zapret Manager --------------------------------------------
-# Умолчание — включено: фикс нужен именно тем, кто ещё ничего не настроил и до GitHub не
-# дошёл. Выключенным по умолчанию он не помог бы никому — кто про него знает, тот и правило
-# заведёт сам.
-cp "$T/bin/uci.stub" "$T/bin/uci" 2>/dev/null || printf '#!/bin/sh\nexit 1\n' > "$T/bin/uci"
-chmod +x "$T/bin/uci"
-check "по умолчанию фикс включён" "true" "$(rpcd zm_fix | jget on)"
-check "имя правила названо — интерфейсу есть что показать" "zm_github" "$(rpcd zm_fix | jget channel)"
-out="$(rpcd zm_fix_set '{"on":"мусор"}')"
-check "чужое значение отвергается" "false" "$(printf '%s' "$out" | jget ok)"
-# ---- DNS over HTTPS -----------------------------------------------------------------
-#
-# Каталог резолверов и запись настройки проверены отдельно (tests/dohmatch.sh); здесь — то,
-# что принадлежит объекту: отдаётся ли вкладке всё нужное ОДНИМ вызовом и собирается ли
-# правило «через туннель».
-mkdir -p "$T/etc" "$T/zapret"
-printf '#!/bin/sh\nexit 0\n' > "$T/bin/initd-doh"; chmod +x "$T/bin/initd-doh"
-zapret_initd_stub
-printf '#!/bin/sh\nexit 0\n' > "$T/bin/zapret-test"; chmod +x "$T/bin/zapret-test"
-printf "config https-dns-proxy\n\toption resolver_url 'https://dns.comss.one/dns-query'\n" \
-    > "$T/etc/config-doh"
-
-out="$(rpcd doh_state)"
-check "состояние DoH — один вызов на всё" "true" "$(printf '%s' "$out" | jget installed)"
-check "выбранный резолвер узнан по ссылке" "comss" "$(printf '%s' "$out" | jget active)"
-check "каталог резолверов отдан вместе с состоянием" "yes" \
-      "$(printf '%s' "$out" | grep -q '"providers"' && echo yes || echo no)"
-# Пункт «по умолчанию» несёт ДВЕ ссылки, и активным он считается только по обеим сразу:
-# сравнение по одной сделало бы его неотличимым от «Cloudflare».
-check "пункт с двумя резолверами есть в каталоге" "yes" \
-      "$(printf '%s' "$out" | grep -q 'Cloudflare + Google' && echo yes || echo no)"
-
-out="$(rpcd doh_set '{"provider":"нет такого"}')"
-check "неизвестный резолвер отвергается" "false" "$(printf '%s' "$out" | jget ok)"
-
-: > "$T/nft.log"
-out="$(rpcd doh_tunnel_set '{"on":"мусор"}')"
-check "чужое значение переключателя отвергается" "false" "$(printf '%s' "$out" | jget ok)"
+mkdir -p "$T/etc"
 
 # ЧУЖАЯ ПРИСТАВКА В id — ЭТО ДРУГОЙ ИСТОЧНИК, А НЕ ОШИБКА. Каталог списков даёт своим
 # записям приставку («itdoginfo:telegram»), и такой id обязан дойти до манифеста. Пока ветка
@@ -2896,8 +2719,28 @@ check "спеки нет — она заводится чтением" "yes" \
       "$([ -s "$T/etc/spec.json" ] && echo yes || echo no)"
 check "и в ней есть постоянный выход direct" "direct" \
       "$(printf '%s' "$out" | python3 -c 'import json,sys; d=json.load(sys.stdin); print(",".join(k for k,v in d["outputs"].items() if v.get("kind")=="direct"))')"
-check "каналов в ней нет — это точная запись того, что есть" "0" \
-      "$(printf '%s' "$out" | python3 -c 'import json,sys; print(len(json.load(sys.stdin)["channels"]))')"
+check "правил в ней нет — это точная запись того, что есть" "0" \
+      "$(printf '%s' "$out" | python3 -c 'import json,sys; print(len(json.load(sys.stdin).get("rules", [])))')"
+check "и это спека v2, а не прежняя" "2" \
+      "$(printf '%s' "$out" | python3 -c 'import json,sys; print(json.load(sys.stdin)["version"])')"
+# Рядом лежит spec.yaml — спека ведётся руками: второй файл не заводится вовсе, и запись через
+# интерфейс отвергается словами (движок при двух спеках не читает ни одну).
+rm -f "$T/etc/spec.json"
+printf 'version: 2\n' > "$T/etc/spec.yaml"
+rpcd spec_get >/dev/null
+check "при spec.yaml рядом второй файл не заводится" "no" "$([ -s "$T/etc/spec.json" ] && echo yes || echo no)"
+out="$(rpcd spec_set '{"spec":"{\"version\":2}"}')"
+check "запись спеки при двух файлах отвергается" "false" "$(printf '%s' "$out" | jget ok)"
+check "и причина названа" "yes" "$(printf '%s' "$out" | jget error | grep -q 'spec.yaml' && echo yes || echo no)"
+rm -f "$T/etc/spec.yaml"
+printf '{"version":2}\n' > "$T/etc/spec.json"
+# Прежняя v1 перед заменой на v2 остаётся копией рядом — один раз, старейшая.
+printf '{"schema":1,"outputs":{},"channels":[]}\n' > "$T/etc/spec.json"
+rm -f "$T/etc/spec.json.v1.bak"
+out="$(rpcd spec_set '{"spec":"{\"version\":2}"}')"
+check "v1 перед заменой на v2 сохранена копией" "yes" "$(grep -q schema "$T/etc/spec.json.v1.bak" && echo yes || echo no)"
+out="$(rpcd spec_set '{"spec":"{\"version\":2,\"outputs\":{}}"}')"
+check "а вторая замена копию не затирает" "yes" "$(grep -q schema "$T/etc/spec.json.v1.bak" && echo yes || echo no)"
 printf '{"schema":1,"outputs":{},"channels":[{"name":"чужой","out":"vl","match":{"any":true}}]}\n' \
     > "$T/etc/spec.json"
 rpcd spec_get >/dev/null
@@ -2907,518 +2750,6 @@ rm -f "$T/etc/spec.json"
 rpcd live '{"fast":true}' >/dev/null
 check "круг опроса заводит спеку так же" "yes" \
       "$([ -s "$T/etc/spec.json" ] && echo yes || echo no)"
-
-# ЧЕРЕЗ КАКОЙ ВЫХОД. Прежде выбора не было вовсе — брался первый поднятый, и на роутере с
-# двумя туннелями это оказывался не тот («есть пункт „DNS в туннель“, а в какой выход —
-# выбрать не можем», обратка). Выход спрашивается у ДВИЖКА: спека могла быть сохранена и не
-# применена, и обещать маршрут через выход, которого в ядре нет, нельзя.
-out="$(rpcd doh_tunnel_set '{"on":true,"out":"нет-такого"}')"
-check "несуществующий выход отвергается" "false" "$(printf '%s' "$out" | jget ok)"
-out="$(rpcd doh_tunnel_set '{"on":true,"out":"direct"}')"
-check "direct как выход для DoH отвергается" "false" "$(printf '%s' "$out" | jget ok)"
-# Вызов БЕЗ поля выбор не меняет: переключатель и выбор выхода нажимают по отдельности, и
-# щелчок по переключателю не должен молча сбрасывать выбранный выход.
-uci_set splify2.main.doh_out vl
-out="$(rpcd doh_tunnel_set '{"on":false}')"
-check "вызов без поля выбор выхода не трогает" "vl" "$(uci_get splify2.main.doh_out)"
-out="$(rpcd doh_tunnel_set '{"on":false,"out":""}')"
-check "пустое поле снимает выбор" "" "$(uci_get splify2.main.doh_out)"
-out="$(rpcd doh_state)"
-check "состояние отдаёт и выбранный выход" "yes" \
-      "$(printf '%s' "$out" | grep -q '"out_pick"' && echo yes || echo no)"
-
-# ---- обход DPI ------------------------------------------------------------------------
-# Отсутствие пакета — не поломка, а состояние, и объект обязан отвечать им, а не отказом:
-# вкладка на это состояние показывает кнопку установки.
-out="$(rpcd zapret_state)"
-check "обход не установлен — это ответ, а не ошибка" "false" \
-      "$(printf '%s' "$out" | jget installed)"
-check "и число стратегий при этом ноль" "0" "$(printf '%s' "$out" | jget strategies)"
-
-# Архитектура пакета обхода — из того же шва, что и архитектура пакета движка
-# (OPENWRT_RELEASE), а не из литерального /etc/openwrt_release. Диспетчер объявляет шов
-# ровно для этого («по второму выбирается архитектура пакета»), и второй читатель, ходящий
-# мимо него, означает две вещи сразу: установку обхода нечем проверить стендом, и на роутере
-# два места объекта берут одно и то же число разными путями.
-#
-# Проверяется по СЛЕДСТВИЮ — по тому, попала ли архитектура в ссылку на релиз: имя файла в
-# нём собирается из неё, и неверная архитектура выглядит как «релиза нет», то есть виной
-# издателя.
-rm -f "$T/curl.log" "$T/wget.log"
-out="$(rpcd zapret_install)"
-check "архитектура пакета обхода берётся из шва" "yes" \
-      "$(cat "$T/curl.log" "$T/wget.log" 2>/dev/null | grep -q 'zapret_v.*_aarch64_cortex-a53\.zip' && echo yes || echo no)"
-# И наоборот: без файла описания системы архитектура не выдумывается, а установка честно
-# отказывается — тот же ответ, что у steer_versions выше (I-050).
-out="$(OPENWRT_RELEASE_FIXTURE="$T/etc/nonexistent" rpcd zapret_install)"
-check "без openwrt_release установка обхода не выдумывает архитектуру" "yes" \
-      "$(printf '%s' "$out" | jget error | grep -q 'не определилась архитектура' && echo yes || echo no)"
-
-out="$(rpcd zapret_test_start '{"scope":"all"}')"
-check "проверка без обхода не запускается" "false" "$(printf '%s' "$out" | jget ok)"
-
-# Запрос от rpcd приходит БЕЗ перевода строки: `read` возвращает ненулевой код, уже заполнив
-# переменную, и `|| input='{}'` затирал набор пустым — любая проверка шла по всем 58 (снято с
-# роутера владельца). Набор обязан доехать и в такой форме.
-out="$(rpcd_raw zapret_test_start '{"scope":"one:nope"}')"
-check "набор без перевода строки не теряется" "yes" \
-      "$(printf '%s' "$out" | grep -q 'nope' && echo yes || echo no)"
-out="$(rpcd zapret_test_start '{"scope":"чужой"}')"
-check "чужой набор отвергается" "false" "$(printf '%s' "$out" | jget ok)"
-check "и отказ называет допустимые наборы, включая одиночный" "yes" \
-      "$(printf '%s' "$out" | grep -q 'one:' && echo yes || echo no)"
-
-# Результатов ещё нет — метод обязан отдать РАЗБИРАЕМЫЙ JSON, а не пустоту: интерфейс на
-# пустом ответе показал бы «нет данных» вместо «проверка не запускалась».
-out="$(rpcd zapret_results)"
-check "пустые результаты — всё равно JSON" "0" "$(printf '%s' "$out" | jget at)"
-check "и с пустым списком" "yes" \
-      "$(printf '%s' "$out" | grep -q '"results":\[\]' && echo yes || echo no)"
-
-# Ход проверки, когда её не было. Тот же довод: idle — это ответ.
-out="$(rpcd zapret_test)"
-check "ход проверки без проверки — idle" "idle" "$(printf '%s' "$out" | jget state)"
-check "и процесс не считается живым" "false" "$(printf '%s' "$out" | jget running)"
-
-# Стратегии: каталог есть, обход не установлен. Список обязан отдаваться всё равно — человек
-# должен видеть, что будет доступно после установки.
-mkdir -p "$T/zapret"
-printf '#v1\n--filter-tcp=443\n#Yv01\n--filter-tcp=443\n' > "$T/zapret/strategies.txt"
-out="$(rpcd zapret_strategies)"
-check "стратегии перечисляются" "yes" \
-      "$(printf '%s' "$out" | grep -q '"name":"Yv01"' && echo yes || echo no)"
-check "семейство считает бэкенд, а не интерфейс" "yes" \
-      "$(printf '%s' "$out" | grep -q '"family":"yv"' && echo yes || echo no)"
-
-out="$(rpcd zapret_apply '{"name":"v1"}')"
-check "применение без установленного обхода отвергается" "false" \
-      "$(printf '%s' "$out" | jget ok)"
-
-# Выключатель обхода всего роутера («как мне отключить стратегию на весь роутер?» — владелец).
-# Выключается служба, стратегия остаётся отмеченной; без пакета выключать нечего.
-out="$(rpcd zapret_enable '{"on":false}')"
-check "выключатель без установленного обхода — отказ" "false" "$(printf '%s' "$out" | jget ok)"
-out="$(ZP_NFQWS_FIXTURE="$T/bin/nfqws" rpcd zapret_enable '{"on":"мусор"}')"
-check "чужое значение выключателя отвергается" "false" "$(printf '%s' "$out" | jget ok)"
-"$T/bin/initd-zapret" enable
-: > "$T/initd-zapret.log"
-out="$(ZP_NFQWS_FIXTURE="$T/bin/nfqws" rpcd zapret_enable '{"on":false}')"
-check "выключение принято" "true" "$(printf '%s' "$out" | jget ok)"
-check "и ответ говорит, что выключено" "false" "$(printf '%s' "$out" | jget enabled)"
-check "служба снята с автозапуска и остановлена, в этом порядке" "disable stop" \
-      "$(tr '\n' ' ' < "$T/initd-zapret.log" | sed 's/ $//')"
-out="$(ZP_NFQWS_FIXTURE="$T/bin/nfqws" rpcd zapret_state)"
-check "состояние показывает выключенный обход" "false" "$(printf '%s' "$out" | jget enabled)"
-# Применить стратегию выключенному обходу — значит включить его: иначе «Применить» отвечает
-# успехом, а стратегия не действует.
-printf "config zapret 'config'\n\toption NFQWS_OPT '\n--filter-tcp=443\n'\n" > "$T/etc/config-zapret"
-: > "$T/initd-zapret.log"
-out="$(ZP_NFQWS_FIXTURE="$T/bin/nfqws" rpcd zapret_apply '{"name":"v1"}')"
-check "стратегия выключенному обходу применяется" "true" "$(printf '%s' "$out" | jget ok)"
-check "и обход при этом включается" "yes" \
-      "$(grep -qx enable "$T/initd-zapret.log" && echo yes || echo no)"
-: > "$T/initd-zapret.log"
-out="$(ZP_NFQWS_FIXTURE="$T/bin/nfqws" rpcd zapret_enable '{"on":true}')"
-check "включение принято" "true" "$(printf '%s' "$out" | jget enabled)"
-check "служба поставлена на автозапуск и запущена" "enable start" \
-      "$(tr '\n' ' ' < "$T/initd-zapret.log" | sed 's/ $//')"
-
-# Игровой фильтр (Gv): состояние в zapret_state, правка одним методом, выхода у него нет.
-out="$(ZP_NFQWS_FIXTURE="$T/bin/nfqws" rpcd zapret_state)"
-check "игрового блока нет — gv пуст" "" "$(printf '%s' "$out" | jget game.gv)"
-check "список подделок отдаётся с признаком файла" "yes" \
-      "$(printf '%s' "$out" | grep -q '"name":"stun2.bin","present":' && echo yes || echo no)"
-out="$(rpcd zapret_game_set '{"gv":2}')"
-check "игровой фильтр без обхода — отказ" "false" "$(printf '%s' "$out" | jget ok)"
-out="$(ZP_NFQWS_FIXTURE="$T/bin/nfqws" rpcd zapret_game_set '{"gv":9}')"
-check "чужой номер отвергается" "false" "$(printf '%s' "$out" | jget ok)"
-out="$(ZP_NFQWS_FIXTURE="$T/bin/nfqws" rpcd zapret_game_set '{"fake":"stun2.bin"}')"
-check "подделка без блока — отказ с причиной" "yes" \
-      "$(printf '%s' "$out" | grep -q 'блок не стоит' && echo yes || echo no)"
-out="$(ZP_NFQWS_FIXTURE="$T/bin/nfqws" rpcd zapret_game_set '{"gv":3}')"
-check "Gv3 поставлен" "3" "$(printf '%s' "$out" | jget gv)"
-check "в конфигурации метка Gv3" "1" "$(grep -c '^#Gv3$' "$T/etc/config-zapret")"
-out="$(ZP_NFQWS_FIXTURE="$T/bin/nfqws" rpcd zapret_state)"
-check "состояние видит Gv3" "3" "$(printf '%s' "$out" | jget game.gv)"
-check "подделка по умолчанию" "stun.bin" "$(printf '%s' "$out" | jget game.fake)"
-out="$(ZP_NFQWS_FIXTURE="$T/bin/nfqws" ZP_GV_XTREME_FILE="$T/zapret/GvXtreme" rpcd zapret_game_set '{"xtreme":true}')"
-check "Xtreme включён" "true" "$(printf '%s' "$out" | jget xtreme)"
-out="$(ZP_NFQWS_FIXTURE="$T/bin/nfqws" ZP_GV_XTREME_FILE="$T/zapret/GvXtreme" rpcd zapret_game_set '{"gv":0}')"
-check "снятие вместе с Xtreme" "" "$(printf '%s' "$out" | jget gv)"
-check "и Xtreme снят" "false" "$(printf '%s' "$out" | jget xtreme)"
-check "метки не осталось" "0" "$(grep -c '^#Gv' "$T/etc/config-zapret")"
-
-# Одна стратегия целиком: её ключи, по строке на ключ, без служебного заголовка «#Имя».
-# Интерфейс показывает их человеку, чтобы тот видел, ЧТО применяет.
-printf '#v1\n--filter-tcp=443\n--dpi-desync=fake\n\n#Yv01\n--filter-tcp=443\n' > "$T/zapret/strategies.txt"
-out="$(rpcd zapret_strategy '{"name":"v1"}')"
-check "ключи стратегии отдаются списком" "yes" \
-      "$(printf '%s' "$out" | grep -q '"opts":\["--filter-tcp=443","--dpi-desync=fake"\]' && echo yes || echo no)"
-check "семейство стратегии названо" "v" "$(printf '%s' "$out" | jget family)"
-out="$(rpcd zapret_strategy '{"name":"нет такой"}')"
-check "неизвестная стратегия — отказ" "false" "$(printf '%s' "$out" | jget ok)"
-
-# Одиночная проверка: набор «one:имя» принимается, если стратегия есть в каталоге, и
-# отвергается по имени, а не как «чужой набор», если нет.
-out="$(rpcd zapret_test_start '{"scope":"one:v1"}')"
-check "одиночный набор доходит до проверки установки" "yes" \
-      "$(printf '%s' "$out" | grep -q 'не установлен' && echo yes || echo no)"
-out="$(rpcd zapret_test_start '{"scope":"one:v9"}')"
-check "одиночный набор с чужим именем отвергается по имени" "yes" \
-      "$(printf '%s' "$out" | grep -q 'нет такой стратегии' && echo yes || echo no)"
-
-# ---- автоподбор стратегии ---------------------------------------------------------------
-#
-# Правило выбора живёт в zapret.sh и проверяется autoselmatch.sh целиком. Здесь — только
-# граница «объект rpcd ↔ библиотека и команда»: ровно то место, где ломались все прежние
-# находки этой вкладки (метод звал zp_drifted с /dev/null, метод отказывался применять слой).
-#
-# Проверяется поэтому не рейтинг, а три вещи: что ответ разбирается и при пустом состоянии,
-# что запуск действительно зовёт КОМАНДУ ПОДБОРА (а не проверку) и делает это с --apply, и
-# что невозможный откат отказывает громко.
-printf '#!/bin/sh\necho "$@" >> "%s/autosel.log"\nexit 0\n' "$T" > "$T/bin/zapret-autoselect"
-chmod +x "$T/bin/zapret-autoselect"
-rm -f "$T/autosel.log" "$T/zapret/autoselect" "$T/zapret/previous.opts" "$T/uci.db"
-printf '#v1\n--filter-tcp=443\n#v2\n--filter-tcp=443\n--dpi-desync=fake\n' > "$T/zapret/strategies.txt"
-
-out="$(rpcd zapret_autoselect)"
-check "автоподбор выключен по умолчанию" "false" "$(printf '%s' "$out" | jget on)"
-check "и срок в днях нулевой" "0" "$(printf '%s' "$out" | jget every_days)"
-check "ни разу не применяли — время ноль, а не выдумка" "0" "$(printf '%s' "$out" | jget at)"
-check "откатывать нечего" "false" "$(printf '%s' "$out" | jget can_undo)"
-# ОТКАЗ ТОЖЕ ОТВЕТ: без результатов проверки поле note обязано сказать, почему победителя нет.
-# Пустой ответ здесь означал бы, что вкладка показывает «подбирать нечего» и там, где просто
-# не запускали проверку, и там, где уже применена лучшая, — а это разные состояния.
-check "и сказано, почему победителя нет" "yes" \
-      "$(printf '%s' "$out" | jget note | grep -q 'проверка не проходила' && echo yes || echo no)"
-
-# Расписание. Ноль выключает; больше 90 дней — отказ, ровно как в проверке архива, иначе
-# архив умел бы то, чего не умеет интерфейс.
-out="$(rpcd zapret_autoselect_set '{"days":7}')"
-check "срок ставится" "7" "$(printf '%s' "$out" | jget every_days)"
-out="$(rpcd zapret_autoselect)"
-check "и читается обратно как включённый" "true" "$(printf '%s' "$out" | jget on)"
-out="$(rpcd zapret_autoselect_set '{"days":365}')"
-check "365 дней — отказ" "false" "$(printf '%s' "$out" | jget ok)"
-out="$(rpcd zapret_autoselect_set '{"days":"каждый вторник"}')"
-check "не число — отказ" "false" "$(printf '%s' "$out" | jget ok)"
-out="$(rpcd zapret_autoselect_set '{"days":0}')"
-check "ноль принимается — это «выключено»" "true" "$(printf '%s' "$out" | jget ok)"
-
-# Запуск. Обход не установлен — отказ до всякого фона: подбирать нечего, а сказать надо.
-out="$(rpcd zapret_autoselect_start '{"scope":"all"}')"
-check "без обхода подбор не запускается" "false" "$(printf '%s' "$out" | jget ok)"
-check "и команду не зовёт" "no" "$([ -s "$T/autosel.log" ] && echo yes || echo no)"
-# Слой discord в наборах подбора отсутствует НАРОЧНО, в отличие от проверки: мерить его нечем,
-# а подбор без замера — подбор наугад.
-out="$(rpcd zapret_autoselect_start '{"scope":"dv"}')"
-check "область dv для подбора отвергается" "false" "$(printf '%s' "$out" | jget ok)"
-check "и отказ перечисляет то, что мерить есть чем" "yes" \
-      "$(printf '%s' "$out" | grep -q 'all, flowseal, v или yv' && echo yes || echo no)"
-
-out="$(ZP_NFQWS_FIXTURE="$T/bin/nfqws" rpcd zapret_autoselect_start '{"scope":"v"}')"
-check "с установленным обходом подбор запускается" "true" "$(printf '%s' "$out" | jget ok)"
-# Ждём появления журнала: команда запускается ФОНОМ (в этом весь смысл — подбор идёт минуты,
-# а у вызова ubus свой срок), поэтому файл появляется не в тот же миг. Ожидание по ФАКТУ, а
-# не по времени, и с потолком — иначе стенд либо мигает, либо висит.
-_w=0
-while [ "$_w" -lt 40 ] && [ ! -s "$T/autosel.log" ]; do _w=$((_w + 1)); sleep 0.05; done
-check "зовётся команда подбора, а не проверка" "yes" \
-      "$([ -s "$T/autosel.log" ] && echo yes || echo no)"
-# ГЛАВНАЯ ПРОВЕРКА РАЗДЕЛА: кнопка называется «подобрать и применить», значит --apply
-# обязателен. Без него метод отвечал бы «ок», ничего не меняя, и человек считал бы, что
-# стратегия подобрана.
-check "и зовётся с --apply" "yes" \
-      "$(grep -q -- '--apply' "$T/autosel.log" && echo yes || echo no)"
-check "и с той областью, что просили" "yes" \
-      "$(grep -q -- '--scope v' "$T/autosel.log" && echo yes || echo no)"
-
-# Откат. Копии нет — отказ ГРОМКИЙ: молчаливый «ок» здесь означал бы, что человек считает,
-# будто вернул как было.
-out="$(rpcd zapret_autoselect_undo)"
-check "откат без копии — отказ" "false" "$(printf '%s' "$out" | jget ok)"
-check "и причина названа" "yes" \
-      "$(printf '%s' "$out" | jget error | grep -q 'откатывать нечего' && echo yes || echo no)"
-
-# Копия есть и активная стратегия та же, что применил подбор — откат обязан пройти и вернуть
-# файл байт в байт.
-printf "config zapret 'config'\n\toption NFQWS_OPT '\n#v1\n--filter-tcp=443\n'\n" > "$T/zapret/previous.opts"
-printf "config zapret 'config'\n\toption NFQWS_OPT '\n#v2\n--filter-tcp=443\n--dpi-desync=fake\n'\n" > "$T/etc/config-zapret"
-printf 'at=%s\nby=auto\nname=v2\nok=26\ntotal=30\n' "$(date +%s)" > "$T/zapret/autoselect"
-out="$(rpcd zapret_autoselect)"
-check "откат доступен, когда работает применённое" "true" "$(printf '%s' "$out" | jget can_undo)"
-out="$(rpcd zapret_autoselect_undo)"
-check "откат прошёл" "true" "$(printf '%s' "$out" | jget ok)"
-check "и вернул прежнюю стратегию" "v1" "$(printf '%s' "$out" | jget active)"
-check "файл вернулся" "1" "$(grep -c '^#v1$' "$T/etc/config-zapret")"
-check "и копии больше нет" "no" "$([ -e "$T/zapret/previous.opts" ] && echo yes || echo no)"
-
-# Человек выбрал стратегию руками после подбора — откат обязан отказать, а не отменить его
-# выбор: копия хранит файл целиком.
-printf "config zapret 'config'\n\toption NFQWS_OPT '\n#v1\n--filter-tcp=443\n'\n" > "$T/zapret/previous.opts"
-printf 'at=%s\nby=auto\nname=v2\n' "$(date +%s)" > "$T/zapret/autoselect"
-printf "config zapret 'config'\n\toption NFQWS_OPT '\n#v1\n--filter-tcp=443\n'\n" > "$T/etc/config-zapret"
-out="$(rpcd zapret_autoselect)"
-check "после ручного выбора откат недоступен" "false" "$(printf '%s' "$out" | jget can_undo)"
-out="$(rpcd zapret_autoselect_undo)"
-check "и он отказывает" "false" "$(printf '%s' "$out" | jget ok)"
-check "и объясняет, что отменил бы выбор человека" "yes" \
-      "$(printf '%s' "$out" | jget error | grep -q 'ваш выбор' && echo yes || echo no)"
-
-# Методы обязаны быть в перечне: метод, которого нет в list, для LuCI не существует.
-# Метод, которого нет в `list`, для LuCI не существует: ubus его просто не покажет. Считаются
-# ВХОЖДЕНИЯ, а не строки: перечень приезжает одним JSON.
-check "автоподбор объявлен в перечне методов" "4" \
-      "$(rpcd_list | grep -o '"zapret_autoselect[a-z_]*"' | sort -u | grep -c .)"
-
-# ---- разошлась ли активная стратегия с каталогом -------------------------------------
-#
-# Каталог обновляется сам раз в сутки и активную стратегию НЕ подменяет (требование
-# владельца) — значит расхождение с каталогом это законное состояние, и единственный способ
-# о нём узнать — спросить объект. По признаку `drifted` вкладка показывает предложение
-# применить стратегию заново; без него человек видит имя стратегии и не знает, что за этим
-# именем в каталоге уже другие ключи.
-#
-# Признак проверяется здесь целиком через метод, а не через zp_drifted в zapretmatch.sh,
-# потому что ломался он именно на стыке: библиотека сравнивала правильно, а объект звал её
-# с /dev/null вместо применённого тела.
-printf '#v1\n--filter-tcp=443\n' > "$T/zapret/strategies.txt"
-printf "config zapret 'config'\n\toption NFQWS_OPT '\n#v1\n--filter-tcp=443\n'\n" > "$T/etc/config-zapret"
-out="$(ZP_NFQWS_FIXTURE="$T/bin/nfqws" rpcd zapret_state)"
-check "активная стратегия названа" "v1" "$(printf '%s' "$out" | jget active)"
-check "совпавшая с каталогом не считается разошедшейся" "false" \
-      "$(printf '%s' "$out" | jget drifted)"
-
-# Каталог обновился, применённое осталось прежним — это и есть расхождение.
-printf '#v1\n--filter-tcp=443\n--dpi-desync=fake\n' > "$T/zapret/strategies.txt"
-out="$(ZP_NFQWS_FIXTURE="$T/bin/nfqws" rpcd zapret_state)"
-check "изменившаяся в каталоге считается разошедшейся" "true" \
-      "$(printf '%s' "$out" | jget drifted)"
-
-# Стратегии в каталоге нет вовсе (её переименовали у автора) — сравнивать не с чем, и
-# выдавать это за расхождение нельзя: расхождение зовёт «применить заново», а применять
-# нечего.
-printf '#v2\n--filter-tcp=443\n' > "$T/zapret/strategies.txt"
-out="$(ZP_NFQWS_FIXTURE="$T/bin/nfqws" rpcd zapret_state)"
-check "пропавшая из каталога не выдаётся за расхождение" "false" \
-      "$(printf '%s' "$out" | jget drifted)"
-
-
-# ---- слой применяется как слой, а не как основная стратегия ---------------------------
-#
-# Значение `option NFQWS_OPT` — пачка блоков: слой YouTube, основная, подмена блока
-# discord.media внутри неё, игровой в хвосте. Слои не конкурируют с основной (у них разные
-# hostlist'ы), и применять их надо ВСТАВКОЙ в уже собранное значение.
-#
-# Проверяется здесь самое дорогое: что применение слоя НЕ подменяет основную. До запуска 65
-# каталог был плоским списком, `zapret_apply {"name":"Yv01"}` уходил в zp_apply_global, тот
-# срезал всё от открывающей кавычки до конца файла и писал один блок — Google начинал
-# работать, а весь остальной трафик тихо оставался без обхода.
-printf '#v1\n--filter-tcp=443\n--hostlist-exclude=/opt/zapret/ipset/zapret-hosts-user-exclude.txt\n\n#Yv01\n--filter-tcp=443\n--hostlist=/opt/zapret/ipset/zapret-hosts-google.txt\n--ip-id=zero\n\n#Dv2\n--filter-tcp=2053,2083,2087,2096,8443\n--hostlist-domains=discord.media\n--dpi-desync=fake,multisplit\n' \
-    > "$T/zapret/strategies.txt"
-printf "config zapret 'config'\n\toption NFQWS_OPT '\n#v1\n--filter-tcp=443\n'\n" > "$T/etc/config-zapret"
-
-out="$(ZP_NFQWS_FIXTURE="$T/bin/nfqws" rpcd zapret_apply '{"name":"v1"}')"
-check "основная применена" "true" "$(printf '%s' "$out" | jget ok)"
-out="$(ZP_NFQWS_FIXTURE="$T/bin/nfqws" rpcd zapret_apply '{"name":"Yv01"}')"
-check "слой YouTube применён" "true" "$(printf '%s' "$out" | jget ok)"
-check "и ответ называет его слоем, а не стратегией" "youtube" "$(printf '%s' "$out" | jget layer)"
-# САМОЕ ГЛАВНОЕ: основная осталась на месте.
-check "основная НЕ подменена слоем" "v1" "$(printf '%s' "$out" | jget active)"
-check "и в конфигурации она есть" "1" "$(grep -c '^#v1$' "$T/etc/config-zapret")"
-check "а слой стоит рядом" "1" "$(grep -c '^#Yv01$' "$T/etc/config-zapret")"
-
-out="$(ZP_NFQWS_FIXTURE="$T/bin/nfqws" rpcd zapret_state)"
-check "состояние показывает слой YouTube" "01" "$(printf '%s' "$out" | jget layers.youtube)"
-check "и активной по-прежнему основную" "v1" "$(printf '%s' "$out" | jget active)"
-
-# Слой к выходу kind=zapret не применяется: у выхода своя стратегия целиком, и «слой поверх»
-# там означал бы файл ключей, собранный из двух источников.
-out="$(ZP_NFQWS_FIXTURE="$T/bin/nfqws" rpcd zapret_apply '{"name":"Yv01","out":"zt"}')"
-check "слой к выходу — отказ" "false" "$(printf '%s' "$out" | jget ok)"
-check "и причина названа" "yes" \
-      "$(printf '%s' "$out" | grep -q 'ко всему роутеру' && echo yes || echo no)"
-
-# Слой, которому не к чему прикрепиться, отвергается С ПРИЧИНОЙ, а не молча: у стратегии v1
-# нет блока портов discord.media, подменять нечего.
-out="$(ZP_NFQWS_FIXTURE="$T/bin/nfqws" rpcd zapret_apply '{"name":"Dv2"}')"
-check "слой discord без своего блока — отказ" "false" "$(printf '%s' "$out" | jget ok)"
-check "и сказано, чего не хватает" "yes" \
-      "$(printf '%s' "$out" | grep -q 'discord.media' && echo yes || echo no)"
-
-# Игровой блок дописан ПОВЕРХ стратегии соседней функцией, в каталоге его нет и быть не
-# может (zp_block обрывается на следующем `#`). Без оговорки про него каждый роутер с
-# игровым фильтром выглядел бы разошедшимся всегда.
-printf '#v1\n--filter-tcp=443\n' > "$T/zapret/strategies.txt"
-printf "config zapret 'config'\n\toption NFQWS_OPT '\n#v1\n--filter-tcp=443\n#Gv3\n--new\n--filter-udp=1024-65535\n'\n" \
-    > "$T/etc/config-zapret"
-out="$(ZP_NFQWS_FIXTURE="$T/bin/nfqws" rpcd zapret_state)"
-check "своя игровая стратегия не выдаётся за расхождение" "false" \
-      "$(printf '%s' "$out" | jget drifted)"
-# ...но и не закрывает глаза на настоящее расхождение: блок отрезается, остальное сверяется.
-printf '#v1\n--filter-tcp=80\n' > "$T/zapret/strategies.txt"
-out="$(ZP_NFQWS_FIXTURE="$T/bin/nfqws" rpcd zapret_state)"
-check "игровой блок не прячет расхождение в самой стратегии" "true" \
-      "$(printf '%s' "$out" | jget drifted)"
-
-# Метка `#Gv0` — не дописанный блок, а отметка встроенного игрового фильтра стратегии
-# general, и стоит она ПЕРЕД её собственным хвостом. Хвост из сравнения выпадает, поэтому
-# здесь совпадением считается совпадение начала.
-printf '#general\n--filter-tcp=443\n--new\n--filter-tcp=2802\n--dpi-desync=multisplit\n' \
-    > "$T/zapret/strategies.txt"
-printf "config zapret 'config'\n\toption NFQWS_OPT '\n#general\n--filter-tcp=443\n#Gv0\n--new\n--filter-tcp=2802\n--dpi-desync=multisplit\n'\n" \
-    > "$T/etc/config-zapret"
-out="$(ZP_NFQWS_FIXTURE="$T/bin/nfqws" rpcd zapret_state)"
-check "встроенный фильтр Flowseal не выдаётся за расхождение" "false" \
-      "$(printf '%s' "$out" | jget drifted)"
-printf '#general\n--filter-tcp=80\n--new\n--filter-tcp=2802\n--dpi-desync=multisplit\n' \
-    > "$T/zapret/strategies.txt"
-out="$(ZP_NFQWS_FIXTURE="$T/bin/nfqws" rpcd zapret_state)"
-check "и расхождение до метки видно" "true" "$(printf '%s' "$out" | jget drifted)"
-
-# Каталога нет вовсе — обычное состояние свежей установки, и оно не «расхождение».
-rm -f "$T/zapret/strategies.txt"
-out="$(ZP_NFQWS_FIXTURE="$T/bin/nfqws" rpcd zapret_state)"
-check "пустой каталог не выдаётся за расхождение" "false" \
-      "$(printf '%s' "$out" | jget drifted)"
-printf '#v1\n--filter-tcp=443\n--dpi-desync=fake\n\n#Yv01\n--filter-tcp=443\n' > "$T/zapret/strategies.txt"
-
-# ---- то же расхождение у выхода kind=zapret -------------------------------------------
-#
-# У выхода стратегия лежит отдельным файлом ключей целиком ($ZP_OPTS_DIR/<выход>.opts), то
-# есть тем самым вторым аргументом, ради отсутствия которого для стратегии ВСЕГО РОУТЕРА
-# пришлось заводить отдельную zp_drifted_global. Признак у выхода поэтому дешевле, а нужен
-# он ровно по той же причине: каталог обновляется сам раз в сутки и файл ключей не трогает.
-# Без признака человек видит на вкладке имя стратегии выхода и не знает, что за этим именем
-# в каталоге уже другие ключи.
-cp "$T/etc/spec.json" "$T/etc/spec.json.pre-r103" 2>/dev/null
-printf '%s' '{"schema":1,"outputs":{"direct":{"kind":"direct"},"zt":{"kind":"zapret"}},"channels":[]}' \
-    > "$T/etc/spec.json"
-mkdir -p "$T/etc/steer-zapret"
-printf '#v1\n--filter-tcp=443\n' > "$T/zapret/strategies.txt"
-printf '#v1\n--filter-tcp=443\n' > "$T/etc/steer-zapret/zt.opts"
-out="$(rpcd zapret_strategies)"
-check "выход kind=zapret перечислен" "zt" "$(printf '%s' "$out" | jout zt name)"
-check "и его стратегия названа" "v1" "$(printf '%s' "$out" | jout zt strategy)"
-check "совпавшая с каталогом не считается разошедшейся" "false" \
-      "$(printf '%s' "$out" | jout zt drifted)"
-
-# Каталог обновился, файл ключей выхода остался прежним — это и есть расхождение.
-printf '#v1\n--filter-tcp=443\n--dpi-desync=fake\n' > "$T/zapret/strategies.txt"
-out="$(rpcd zapret_strategies)"
-check "изменившаяся в каталоге считается разошедшейся у выхода" "true" \
-      "$(printf '%s' "$out" | jout zt drifted)"
-
-# Стратегии в каталоге нет вовсе — сравнивать не с чем, и выдавать это за расхождение
-# нельзя по тому же доводу, что и для всего роутера: расхождение зовёт «применить заново».
-printf '#v2\n--filter-tcp=443\n' > "$T/zapret/strategies.txt"
-out="$(rpcd zapret_strategies)"
-check "пропавшая из каталога не выдаётся за расхождение у выхода" "false" \
-      "$(printf '%s' "$out" | jout zt drifted)"
-
-# Файла ключей нет вовсе (выход заведён, стратегию ему ещё не выбирали) — это не расхождение,
-# и признак обязан быть false, а не отсутствовать: интерфейс читает поле, а не его наличие.
-rm -f "$T/etc/steer-zapret/zt.opts"
-printf '#v1\n--filter-tcp=443\n' > "$T/zapret/strategies.txt"
-out="$(rpcd zapret_strategies)"
-check "выход без выбранной стратегии не разошёлся" "false" \
-      "$(printf '%s' "$out" | jout zt drifted)"
-printf '#v1\n--filter-tcp=443\n--dpi-desync=fake\n\n#Yv01\n--filter-tcp=443\n' > "$T/zapret/strategies.txt"
-mv "$T/etc/spec.json.pre-r103" "$T/etc/spec.json" 2>/dev/null
-
-# ---- экземпляры обработчиков пересобираются, а не ждут перезагрузки роутера -----------
-#
-# `steer apply` ставит правила, но экземпляров procd НЕ ЗАВОДИТ — их заводит init-скрипт,
-# разбирая спеку. Значит новый выход kind=zapret после «Применить» остался бы без
-# обработчика: стратегия выбрана, правило очереди стоит, разбирать пакеты некому. И при
-# on_fail=drop (умолчание) трафик канала при этом СТОИТ, то есть «включил и интернет
-# пропал» на полностью настроенном с виду выходе. Ровно та же беда уже была с выходами
-# vless и обфускаторами (splicicd#20), и лечится тем же способом.
-#
-# `start`, а не `restart`: procd сверяет описанные экземпляры с запущенными и заводит
-# разницу, не трогая остальные. Проверено на роутере — PIDы клиентов vless не изменились.
-: > "$T/initd.log"
-rm -f "$T/zapret-dirty" "$T/zapret-up"
-SPEC_ZAP='{"schema":1,"outputs":{"direct":{"kind":"direct"},"zt":{"kind":"zapret"}},"channels":[]}'
-printf '%s' "$SPEC_ZAP" > "$T/etc/spec.json"
-out="$(ZAPRET_DIRTY="$T/zapret-dirty" ZP_NFQWS_FIXTURE="$T/bin/nfqws" rpcd apply)"
-check "apply пересобирает экземпляры обхода" "1" \
-      "$(grep -c '^start$' "$T/initd.log")"
-check "и говорит, что сделал" "yes" \
-      "$(printf '%s' "$out" | jget output | grep -q 'обработчики пересобраны' && echo yes || echo no)"
-
-# ---- ожидание обработчика обхода: приговор по СОСТОЯНИЮ, а не по счётчику --------------
-#
-# `apply` ждёт, пока procd поднимет экземпляр обработчика, и только потом решает, говорить ли
-# «не поднялся». Ложная тревога здесь дороже пропущенной — по ней настраивают лишнее и
-# перестают верить сообщениям, — и ровно ею оборачивался последний круг ожидания: цикл
-# засыпал в четвёртый раз, а состояние после этого сна не спрашивал ни разу. Обработчик,
-# поднявшийся на четвёртой секунде, объявлялся не поднявшимся, а сон при этом покупал ноль.
-#
-# Стенд считает не время, а ОПРОСЫ, и потому не зависит от скорости машины: заглушка движка
-# «поднимает» обработчик на заданном по счёту опросе (ZAPRET_UP_AT_CALL), а счётчик обнуляет
-# заглушка init-скрипта на `start`. `start` стоит ровно перед ожиданием, значит опрос №N —
-# это N-й круг цикла, и никакие другие вызовы движка в счёт не попадают.
-#
-# Кругов при бюджете в четыре секунды должно быть ПЯТЬ: по разу перед каждым из четырёх снов
-# и один раз после последнего. Пятый и есть смысл проверки — до правки его не было, и
-# четвёртый сон покупал ровно ту ложную тревогу, ради избавления от которой ожидание заведено.
-# Число 5 связано с бюджетом: поменяется бюджет — этот стенд обязан покраснеть и заставить
-# пересчитать его вслух.
-#
-# Оба прогона стоят по четыре секунды настоящего сна — это цена проверки самого ожидания,
-# и другой у неё нет.
-: > "$T/initd.log"
-rm -f "$T/zapret-up"
-printf 'instances\n' > "$T/zapret-dirty"
-printf '%s' "$SPEC_ZAP" > "$T/etc/spec.json"
-: > "$T/steer-status.count"
-out="$(ZAPRET_UP_AT_CALL=99999 ZAPRET_DIRTY="$T/zapret-dirty" ZP_NFQWS_FIXTURE="$T/bin/nfqws" rpcd apply)"
-check "обработчик не поднялся вовсе — об этом сказано" "yes" \
-      "$(printf '%s' "$out" | jget output | grep -q 'обработчик обхода DPI не поднялся' && echo yes || echo no)"
-check "и это не выдаётся за пересборку" "no" \
-      "$(printf '%s' "$out" | jget output | grep -q 'обработчики пересобраны' && echo yes || echo no)"
-check "состояние опрошено пять раз — по разу на каждый сон и один после последнего" "5" \
-      "$(cat "$T/steer-status.count" 2>/dev/null || echo 0)"
-# Повод не потерян: снять его на неподнявшемся обработчике значило бы, что следующий apply
-# уже не станет пересобирать экземпляры, а выход так и останется без обработчика.
-check "признак пересборки на неудаче не снят" "yes" \
-      "$([ -f "$T/zapret-dirty" ] && echo yes || echo no)"
-
-# Тот же прогон, но обработчик поднимается на ПЯТОМ опросе — то есть ровно на последней
-# секунде ожидания, после четвёртого сна. Это единственный круг, которого объект не делал.
-: > "$T/initd.log"
-rm -f "$T/zapret-up"
-printf 'instances\n' > "$T/zapret-dirty"
-printf '%s' "$SPEC_ZAP" > "$T/etc/spec.json"
-: > "$T/steer-status.count"
-out="$(ZAPRET_UP_AT_CALL=5 ZAPRET_DIRTY="$T/zapret-dirty" ZP_NFQWS_FIXTURE="$T/bin/nfqws" rpcd apply)"
-check "поднявшийся на последней секунде не объявляется мёртвым" "no" \
-      "$(printf '%s' "$out" | jget output | grep -q 'обработчик обхода DPI не поднялся' && echo yes || echo no)"
-check "и пересборка засчитана" "yes" \
-      "$(printf '%s' "$out" | jget output | grep -q 'обработчики пересобраны' && echo yes || echo no)"
-# Признак снимается только вместе с засчитанной пересборкой — иначе повод потерян, а
-# обработчика нет.
-check "признак пересборки снят" "no" \
-      "$([ -f "$T/zapret-dirty" ] && echo yes || echo no)"
-rm -f "$T/steer-status.count"
-
-# Обхода нет вовсе — пересобирать нечего, но СКАЗАТЬ надо: трафик такого канала остановлен.
-: > "$T/initd.log"
-out="$(ZAPRET_DIRTY="$T/zapret-dirty" rpcd apply)"
-check "без пакета zapret экземпляры не пересобираются" "0" \
-      "$(grep -c '^start$' "$T/initd.log")"
-check "но человеку сказано про пакет" "yes" \
-      "$(printf '%s' "$out" | jget output | grep -q 'пакет zapret не установлен' && echo yes || echo no)"
-
-# Выходов обхода в спеке нет — ни лишнего `start`, ни лишних слов.
-: > "$T/initd.log"
-printf '%s' '{"schema":1,"outputs":{"direct":{"kind":"direct"}},"channels":[]}' > "$T/etc/spec.json"
-out="$(ZAPRET_DIRTY="$T/zapret-dirty" rpcd apply)"
-check "без выходов обхода apply их не трогает" "0" \
-      "$(grep -c '^start$' "$T/initd.log")"
-check "и молчит о них" "no" \
-      "$(printf '%s' "$out" | jget output | grep -q 'обход DPI' && echo yes || echo no)"
 
 # ---- opkg: пустые списки пакетов не должны валить установку -------------------------
 # С живого роутера: «cannot find dependency ip-full for steer», хотя пакет скачан и лежит
@@ -3713,52 +3044,28 @@ check "круг: по просьбе проверки приходят досл�
       "$(printf '%s' "$out2" | python3 -c 'import json,sys
 print(json.load(sys.stdin)["diag"]["checks"][0]["what"])' 2>/dev/null)"
 
-# ---- спор за порт 53 — приговор в проверках, а не только на вкладке DoH (I-253) ----------
-# https-dns-proxy с force_dns=1 просит fw4 завернуть DNS сети на dnsmasq, движок заворачивает
-# его же на свой резолвер; кто перехватит первым, решает порядок запуска служб, и проигравший
-# молчит. До этого спор считался (doh_state.force_conflict) и показывался только на вкладке
-# DoH — а обновившийся с 1.2.5, к которому прокси приехал зависимостью, туда не заходит. Теперь
-# он же — приговор `doh_force` в diag, и попадает в счётчик fail, то есть в метку рельса.
-# Приговор ДОБАВЛЯЕТСЯ к ответу движка, а не подменяет его: остальные проверки дословно.
+# ---- проверки движка отдаются дословно, без наших приговоров ---------------------------
+# Прежние приговоры про https-dns-proxy (спор за порт 53, молчащий DoH) убраны вместе с его
+# настройкой: чужой прокси — настройка человека. Круг и метод diag дают ровно то, что сказал
+# движок.
 mkdir -p "$T/etc"
-printf '#!/bin/sh\nexit 0\n' > "$T/bin/initd-doh"; chmod +x "$T/bin/initd-doh"
-printf "config main 'config'\n\toption force_dns '1'\n\nconfig https-dns-proxy\n\toption resolver_url 'https://dns.comss.one/dns-query'\n" \
-    > "$T/etc/config-doh"
 dj() { python3 -c 'import json,sys
 d=json.load(sys.stdin)'"$1" 2>/dev/null; }
+printf 'config main "config"\n\toption force_dns "1"\n' > "$T/etc/config-doh"
 out="$(rpcd live '{"diag":true}')"
-check "спор за порт 53 — приговор doh_force в проверках круга" "fail" \
-      "$(printf '%s' "$out" | dj '
-print([c["verdict"] for c in d["diag"]["checks"] if c["id"]=="doh_force"][0])')"
-check "и он учтён в счётчике fail — метка в рельсе загорится" "1" \
-      "$(printf '%s' "$out" | dj '
-print(d["diag"]["fail"])')"
-check "приговор движка при этом на месте и дословен" "таблица на месте" \
-      "$(printf '%s' "$out" | dj '
-print(d["diag"]["checks"][0]["what"])')"
-check "ответ остаётся разбираемым JSON с двумя проверками" "2" \
+check "чужой https-dns-proxy не добавляет приговоров в круг" "1" \
       "$(printf '%s' "$out" | dj '
 print(len(d["diag"]["checks"]))')"
-out="$(rpcd diag)"
-check "метод diag говорит то же самое" "fail" \
+check "приговор движка на месте и дословен" "таблица на месте" \
       "$(printf '%s' "$out" | dj '
-print([c["verdict"] for c in d["checks"] if c["id"]=="doh_force"][0])')"
-# force_dns выключен — спора нет, приговора нет, счётчик прежний.
-printf "config main 'config'\n\toption force_dns '0'\n\nconfig https-dns-proxy\n\toption resolver_url 'https://dns.comss.one/dns-query'\n" \
-    > "$T/etc/config-doh"
-out="$(rpcd live '{"diag":true}')"
-check "force_dns=0 — приговора нет" "0" \
+print(d["diag"]["checks"][0]["what"])')"
+check "счётчик fail — движка, без наших" "0" \
       "$(printf '%s' "$out" | dj '
-print(len([c for c in d["diag"]["checks"] if c["id"]=="doh_force"]))')"
-check "и счётчик fail не тронут" "0" "$(printf '%s' "$out" | dj '
 print(d["diag"]["fail"])')"
-# Прокси не установлен вовсе — тем более нет.
-rm -f "$T/bin/initd-doh"
-out="$(rpcd live '{"diag":true}')"
-check "прокси не установлен — приговора нет" "0" \
+out="$(rpcd diag)"
+check "метод diag говорит то же самое" "1" \
       "$(printf '%s' "$out" | dj '
-print(len([c for c in d["diag"]["checks"] if c["id"]=="doh_force"]))')"
-printf '#!/bin/sh\nexit 0\n' > "$T/bin/initd-doh"; chmod +x "$T/bin/initd-doh"
+print(len(d["checks"]))')"
 # Движок не ответил — честная ошибка, а не пустой объект: интерфейс покажет пустоту как
 # «всё в порядке», и это худшая из возможных неправд.
 # Спека, которую движок не разбирает: `steer status` не печатает ничего, и это ошибка, а не
@@ -3984,16 +3291,6 @@ cat > "$T/etc/spec.json" <<EOF
   ] }
 EOF
 
-# Обход DPI: пакет «установлен» (заглушка nfqws исполнима), в каталоге одна стратегия, она же
-# отмечена активной в конфигурации — ровно так её отмечает Zapret Manager.
-printf '#v1\n--filter-tcp=443\n' > "$T/zapret/strategies.txt"
-printf "config zapret 'config'\n\toption NFQWS_OPT '\n#v1\n--filter-tcp=443\n'\n" > "$T/etc/config-zapret"
-
-# DoH: выбран резолвер из каталога.
-printf '#!/bin/sh\nexit 0\n' > "$T/bin/initd-doh"; chmod +x "$T/bin/initd-doh"
-printf "config https-dns-proxy\n\toption resolver_url 'https://dns.comss.one/dns-query'\n" \
-    > "$T/etc/config-doh"
-
 # ---- СЕКРЕТЫ, которые лежат на роутере рядом и в отчёт попасть не должны -------------
 # Ссылка подписки с ключом — в uci, файл подписки — со ссылкой узла и его UUID.
 uci_set splify2.main.sub_url 'https://panel.example.org/sub?token=SECRETTOKEN123'
@@ -4062,14 +3359,10 @@ check "выход-локация подписки назван своим вид
 check "правила из спеки перечислены" "yes" "$(has 'Новости')"
 check "и второе правило тоже" "yes" "$(has 'Соцсети')"
 
-# ---- состав: обход DPI ----
-check "обход DPI: сказано, что пакет стоит" "yes" "$(has 'обход DPI')"
-check "обход DPI: активная стратегия названа" "yes" "$(has 'v1')"
-check "обход DPI: число стратегий в каталоге названо" "yes" "$(has 'стратегий в каталоге: 1')"
-
 # ---- состав: DNS ----
-check "DoH: выбранный резолвер назван" "yes" "$(has 'comss')"
-check "резолвер доменов и перенаправление DNS описаны" "yes" "$(has 'force_dns')"
+check "резолвер доменов движка описан" "yes" "$(has 'резолвер доменов движка')"
+check "чужой https-dns-proxy в отчёте не читается" "no" "$(has 'https-dns-proxy')"
+check "и обход DPI в отчёте не упоминается" "no" "$(has 'обход DPI')"
 
 # ---- состав: подписка ----
 check "подписка: сказано, что она есть" "yes" "$(has 'подписка')"
@@ -4456,6 +3749,41 @@ out="$(rpcd apply)"
 check "у устройства есть своя зона — нашей не появляется" "" "$(zone_id_by_name steer_clients)"
 check "ему хватает проброса из его зоны" "lan ts" "$(fwd_srcs steer_iface)"
 rm -f "$T/uci.store"; : > "$T/uci.store"
+
+# ---- спека v2: бэкенд читает её так же, как прежнюю v1 ------------------------------------
+# Интерфейс пишет v2 (`lists`, `rules`, `subscription`, `lan.devices`); до первого сохранения на
+# диске может лежать v1. Читатели оболочки понимают обе формы.
+mkdir -p "$T/etc/subs"
+printf 'vless://k@h:443#n\n' > "$T/etc/subs/v2.txt"
+cat > "$T/etc/spec.json" <<EOF
+{"version":2,"lan":{"devices":["br-lan"]},
+ "lists":{"a":{"domains_file":["$T/lists/domains/v2only.lst"]},"b":{"prefixes_file":["$T/lists/v2pfx.lst"]}},
+ "outputs":{"direct":{"kind":"direct"},"nl":{"kind":"tunnel","protocol":"vless","subscription":"$T/etc/subs/v2.txt","nodes":[0,2]}},
+ "rules":[{"name":"Новости","to":["a"],"out":"nl"},{"name":"Всё","to":"all","out":"direct","enabled":false}]}
+EOF
+rm -f "$T/lists/domains/v2only.lst" "$T/lists/v2pfx.lst"
+printf '{"categories":[],"domain_lists":[],"base_url":"https://example.invalid/l"}\n' > "$T/etc/manifest.json"
+out="$(rpcd apply)"
+check "доскачивание видит файлы списков спеки v2" "yes;yes" \
+      "$([ -s "$T/lists/domains/v2only.lst" ] && echo yes || echo no);$([ -s "$T/lists/v2pfx.lst" ] && echo yes || echo no)"
+check "подписка выхода tunnel найдена по ключу subscription" "1;2" \
+      "$(rpcd sub_list | python3 -c 'import json,sys
+d=[d for d in json.load(sys.stdin)["subs"] if d["name"]=="v2"]
+print("%s;%s" % (d[0]["used"], d[0]["used_nodes"]) if d else "нет")')"
+rep="$(rpcd support_report | jget text)"
+check "отчёт читает правила v2 с видом списка" "yes;yes;yes" \
+      "$(printf '%s' "$rep" | grep -q 'Новости -> nl (доменные списки)' && echo yes || echo no);$(printf '%s' "$rep" | grep -q 'Всё -> direct (весь трафик) \[ВЫКЛЮЧЕНО\]' && echo yes || echo no);$(printf '%s' "$rep" | grep -q 'vless://' && echo no || echo yes)"
+# Архив со спекой v2 принимается восстановлением.
+out="$(printf '%s\n' 'splify2-backup 2' '[spec]' '{"version":2,"outputs":{"direct":{"kind":"direct"}},"rules":[{"name":"x","to":"all","out":"direct"}]}' | backup_put)"
+check "архив со спекой v2 принимается" "true" "$(printf '%s' "$out" | jget ok)"
+out="$(printf '%s\n' 'splify2-backup 2' '[spec]' '{"version":2,"rules":[{"name":"x","to":"all","out":"a;reboot"}]}' | backup_put)"
+check "имя выхода с разделителем в правиле v2 отвергается" "false" "$(printf '%s' "$out" | jget ok)"
+out="$(printf '%s\n' 'splify2-backup 2' '[spec]' '{"version":2,"lists":{"a":{"domains_file":["/etc/passwd"]}}}' | backup_put)"
+check "список вне каталога списков в v2 отвергается" "false" "$(printf '%s' "$out" | jget ok)"
+out="$(printf '%s\n' 'splify2-backup 2' '[spec]' '{"version":2,"dns":{"upstreams":{"g":{"url":"file:///etc/shadow"}}}}' | backup_put)"
+check "чужая схема в адресе DNS отвергается" "false" "$(printf '%s' "$out" | jget ok)"
+out="$(printf '%s\n' 'splify2-backup 2' '[spec]' '{"version":2,"outputs":{"t":{"kind":"awg","conf":"/etc/shadow"}}}' | backup_put)"
+check "файл настройки вне каталога движка отвергается" "false" "$(printf '%s' "$out" | jget ok)"
 
 printf '\n%s\n' "$([ "$fails" -eq 0 ] && echo 'все проверки прошли' || echo "ЕСТЬ ПРОВАЛЫ: $fails")"
 [ "$fails" -eq 0 ]

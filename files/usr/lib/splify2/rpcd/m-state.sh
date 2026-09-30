@@ -320,7 +320,7 @@ case "$2" in
         # члены пула добираются из самой спеки: пул из wg-a и wg-b — это два наших
         # исходящих, и второй иначе был бы предложен источником.
         _cn_ours=" $("$STEER" outputs --devices --spec "$SPEC" 2>/dev/null | tr '\n' ' ')"
-        _cn_ours="$_cn_ours$(jsonfilter -i "$SPEC" -e '@.outputs[*].devices[*]' 2>/dev/null |
+        _cn_ours="$_cn_ours$(jsonfilter -i "$SPEC" -e '@.outputs[*].devices[*]' -e '@.outputs[*].device' 2>/dev/null |
                              tr '\n' ' ')"
 
         # 2. ЧЕРЕЗ УСТРОЙСТВО ИДЁТ МАРШРУТ ПО УМОЛЧАНИЮ — значит наружу роутер уходит через
@@ -734,7 +734,11 @@ case "$2" in
         printf '}}\n'
         ;;
 
-    vless_nodes)
+    vless_nodes|hysteria2_nodes)
+        # Два метода — одна ветка: команды движка `vless-nodes` и `hysteria2-nodes` отличаются
+        # только именем (клиенты разных модулей, формат узла один), и копия ветки означала бы
+        # два места, где решается, какой путь к файлу подписки допустим.
+        _vn_cmd="${2%%_*}-nodes"
         read -r input
         json_load "$input" 2>/dev/null || fail "неразбираемый запрос"
         json_get_var output output
@@ -763,13 +767,14 @@ case "$2" in
         # Движок печатает JSON сам — отдаём дословно. Разбирать его здесь значило бы
         # держать вторую модель узла в shell, а имена узлов приходят из подписки и
         # содержат что угодно, включая кавычки.
-        raw="$("$STEER" vless-nodes "$output" --spec "$SPEC" 2>&1)"
+        raw="$("$STEER" "$_vn_cmd" "$output" --spec "$SPEC" 2>&1)"
         out="$(json_tail "$raw")"
         [ -n "$out" ] || fail "${raw:-движок не ответил}"
         printf '%s\n' "$out"
         ;;
 
-    vless_probe)
+    vless_probe|hysteria2_probe)
+        _vp_cmd="${2%%_*}-probe"
         read -r input
         json_load "$input" 2>/dev/null || fail "неразбираемый запрос"
         json_get_var output output
@@ -796,9 +801,33 @@ case "$2" in
         # подписке из двадцати шести узлов заняло бы дольше, чем живёт вызов ubus.
         # Интерфейс спрашивает по одному и заполняет таблицу постепенно.
         [ -n "$node" ] || node=-1
-        raw="$("$STEER" vless-probe "$output" --node "$node" --timeout 6 --spec "$SPEC" 2>&1)"
+        raw="$("$STEER" "$_vp_cmd" "$output" --node "$node" --timeout 6 --spec "$SPEC" 2>&1)"
         out="$(json_tail "$raw")"
         [ -n "$out" ] || fail "${raw:-движок не ответил}"
+        printf '%s\n' "$out"
+        ;;
+
+    dns_log|conns)
+        # Журнал имён резолвера движка (апстримы и кэш видны в нём же) и соединения, которые
+        # движок повёл в свои выходы. Движок печатает JSON сам — отдаём дословно, как status.
+        case "$2" in dns_log) _dl_cmd=dns-log ;; *) _dl_cmd=conns ;; esac
+        raw="$("$STEER" "$_dl_cmd" --spec "$SPEC" 2>&1)"
+        out="$(json_tail "$raw")"
+        [ -n "$out" ] || fail "${raw:-движок не ответил}"
+        printf '%s\n' "$out"
+        ;;
+
+    helper)
+        # Живое состояние помощников выхода из памяти демона: запущен ли, поднят ли, сколько
+        # раз перезапускали, какой модуль и его версия, причина последнего отказа. Помощника
+        # без модуля демон описывает словами «нужен пакет steer-<имя>» — их и показывает экран.
+        read -r input
+        json_load "$input" 2>/dev/null || fail "неразбираемый запрос"
+        json_get_var output output
+        case "$output" in ''|*[!a-zA-Z0-9_.-]*) fail "недопустимое имя выхода" ;; esac
+        raw="$("$STEER" ctl helper "$output" 2>&1)"
+        out="$(json_tail "$raw")"
+        [ -n "$out" ] || fail "${raw:-демон не ответил}"
         printf '%s\n' "$out"
         ;;
 
@@ -1030,7 +1059,40 @@ case "$2" in
         sr_line "-- правила (из спеки) --"
         _sr_spec="$(cat "$SPEC" 2>/dev/null)"
         _sr_rules=0
-        if [ -n "$_sr_spec" ] && json_load "$_sr_spec" 2>/dev/null && json_select channels 2>/dev/null; then
+        # Спека v2: правила — `rules`, списки — `lists` (вид списка по ключам списка, на который
+        # ссылается `to`). Прежняя v1 читается ниже, пока интерфейс не переписал файл.
+        _sr_n2="$(jsonfilter -i "$SPEC" -e '@.rules[*].out' 2>/dev/null | grep -c .)"
+        case "${_sr_n2:-}" in ''|*[!0-9]*) _sr_n2=0 ;; esac
+        if [ "$_sr_n2" -gt 0 ]; then
+            _sr_i=0
+            while [ "$_sr_i" -lt "$_sr_n2" ]; do
+                _sr_rn="$(jsonfilter -i "$SPEC" -e "@.rules[$_sr_i].name" 2>/dev/null)"
+                _sr_ro="$(jsonfilter -i "$SPEC" -e "@.rules[$_sr_i].out" 2>/dev/null)"
+                _sr_ren="$(jsonfilter -i "$SPEC" -e "@.rules[$_sr_i].enabled" 2>/dev/null)"
+                _sr_to="$(jsonfilter -i "$SPEC" -e "@.rules[$_sr_i].to[*]" -e "@.rules[$_sr_i].to" 2>/dev/null)"
+                _sr_mkind="вид списка не назван"
+                for _sr_l in $_sr_to; do
+                    case "$_sr_l" in
+                        all) _sr_mkind="весь трафик"; break ;;
+                        *[!A-Za-z0-9_.-]*|'') continue ;;
+                    esac
+                    if [ -n "$(jsonfilter -i "$SPEC" -e "@.lists['$_sr_l'].domains_file[*]" 2>/dev/null)" ]; then
+                        _sr_mkind="доменные списки"; break
+                    elif [ -n "$(jsonfilter -i "$SPEC" -e "@.lists['$_sr_l'].prefixes_file[*]" 2>/dev/null)" ]; then
+                        _sr_mkind="адресные списки"; break
+                    elif [ "$(jsonfilter -i "$SPEC" -e "@.lists['$_sr_l'].all" 2>/dev/null)" = true ]; then
+                        _sr_mkind="весь трафик"; break
+                    fi
+                done
+                case "$_sr_ren" in
+                    0|false) _sr_rst=" [ВЫКЛЮЧЕНО]" ;;
+                    *) _sr_rst="" ;;
+                esac
+                sr_line "${_sr_rn:-без имени} -> ${_sr_ro:-выход не назван} ($_sr_mkind)$_sr_rst"
+                _sr_rules=$((_sr_rules + 1))
+                _sr_i=$((_sr_i + 1))
+            done
+        elif [ -n "$_sr_spec" ] && json_load "$_sr_spec" 2>/dev/null && json_select channels 2>/dev/null; then
             json_get_keys _sr_rs
             for _sr_r in $_sr_rs; do
                 json_select "$_sr_r" 2>/dev/null || continue
@@ -1065,62 +1127,13 @@ case "$2" in
         fi
         [ "$_sr_rules" = 0 ] && sr_line "правил нет — трафик никуда не уводится"
 
-        # ---- обход DPI ------------------------------------------------------------------
-        sr_line ""
-        sr_line "-- обход DPI (zapret) --"
-        need_zapret
-        if zp_installed; then
-            sr_line "пакет: установлен, версия $(v="$(zp_version 2>/dev/null)"; printf '%s' "${v:-не определилась}")"
-            sr_line "служба: $(zp_running && printf 'работает' || printf 'не работает'), автозапуск $(zp_enabled && printf 'включён' || printf 'снят')"
-            _sr_za="$(zp_active_global 2>/dev/null)"
-            if [ -n "$_sr_za" ]; then
-                # Расхождение с каталогом — законное состояние (ночное обновление активную
-                # стратегию не подменяет), и в отчёте оно объясняет самое непонятное: имя
-                # стратегии то же, а ключи под ним уже другие.
-                if zp_drifted_global "$_sr_za" 2>/dev/null; then
-                    sr_line "активная стратегия: $_sr_za (в каталоге она уже ДРУГАЯ — применить заново)"
-                else
-                    sr_line "активная стратегия: $_sr_za"
-                fi
-            else
-                # Пустой ответ — свежий роутер со стратегией из config.default: имени из
-                # каталога там нет, и менеджер тоже ничего не показывает.
-                sr_line "активная стратегия: не отмечена (стоит стратегия из поставки пакета)"
-            fi
-        else
-            sr_line "пакет: не установлен"
-        fi
-        # Каталог считается и без пакета: он скачивается ночным обновлением, и «пакета нет,
-        # а стратегии есть» — обычное состояние роутера, на котором обход ещё не ставили.
-        sr_line "стратегий в каталоге: $(zp_count)"
-
         # ---- DNS ------------------------------------------------------------------------
+        #
+        # Только то, что настроено в спеке: апстримы (адрес и выход, без чужих строк) и
+        # кэш. Чужой https-dns-proxy и dnsmasq здесь не читаются — это настройка человека.
         sr_line ""
         sr_line "-- DNS --"
-        need_doh
-        if doh_installed; then
-            sr_line "DoH (https-dns-proxy): установлен, $(doh_running && printf 'работает' || printf 'не работает'), автозапуск $(doh_enabled && printf 'включён' || printf 'снят')"
-            _sr_da="$(doh_active 2>/dev/null)"
-            if [ -n "$_sr_da" ]; then
-                sr_line "выбранный резолвер: $_sr_da"
-            else
-                # САМА ССЫЛКА В ОТЧЁТ НЕ ИДЁТ. Пустой ответ означает «в конфигурации ссылка,
-                # которой нет в каталоге»: её вписали руками или взяли из версии менеджера
-                # новее нашей. Показывать её человеку на вкладке правильно — там он её
-                # хозяин; в чат она уезжать не обязана, а «чужая» тут говорит ровно
-                # столько, сколько нужно помогающему.
-                sr_line "выбранный резолвер: не из нашего каталога (ссылка вписана мимо интерфейса)"
-            fi
-        else
-            sr_line "DoH (https-dns-proxy): не установлен"
-        fi
-        sr_line "DoH через туннель: $(doh_tunnel_on && printf 'да' || printf 'нет')"
-        # Резолвер доменных правил и перенаправление порта 53 — постоянные величины, и
-        # названы они здесь ровно тем же составом, каким их отдаёт метод doh_state: резолвер
-        # держится всегда, поэтому перенаправление порта 53 наше, а force_dns у прокси
-        # выключен. Без этой строки сброшенный force_dns выглядит как чужая порча настройки.
-        sr_line "резолвер доменов движка (steer dnsd): держится всегда, перенаправление порта 53 наше"
-        sr_line "force_dns у https-dns-proxy: $(doh_force_dns) — два перенаправления на порт 53 спорили бы молча"
+        sr_line "резолвер доменов движка (steer dnsd): держится всегда"
 
         # ---- подписки -------------------------------------------------------------------
         #

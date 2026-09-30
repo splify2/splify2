@@ -89,6 +89,7 @@ describe('validate.ts: isSubSource — две формы одного поля',
         expect(isSubSource('vless://u@a:443#x vless://u@b:443#y')).toBe(true)
         expect(isSubSource('vless://u@a:443#x\nvless://u@b:443#y')).toBe(true)
         expect(isSubSource('VLESS://u@a:443#x')).toBe(true)   // схема без учёта регистра
+        expect(isSubSource('hysteria2://p@h:443/?sni=x#hy hy2://p@h2:443#b')).toBe(true)
         // Пустое — это «ещё не ввели», а не ошибка формы: пустоту панель проверяет отдельно.
         expect(isSubSource('')).toBe(true)
         expect(isSubSource('   ')).toBe(true)

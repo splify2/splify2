@@ -922,32 +922,5 @@ AD_EOF
         fi
         ;;
 
-    zm_fix|zm_fix_set)
-        # Фикс Zapret Manager: уводить ли адреса GitHub в туннель. Включён по умолчанию — он
-        # нужен именно тем, кто ещё ничего не настроил и до GitHub не дошёл.
-        uci_file || fail "не удалось создать $UCI_SPLIFY2 — кончилось место?"
-        uci -q get splify2.main >/dev/null 2>&1 || uci -q set splify2.main=splify2
-        if [ "$2" = zm_fix_set ]; then
-            read -r input
-            json_load "$input" 2>/dev/null || fail "неразбираемый запрос"
-            json_get_var on on
-            case "$on" in
-                1|true) uci -q set splify2.main.zm_fix=1 ;;
-                0|false) uci -q set splify2.main.zm_fix=0 ;;
-                *) fail "нужно true или false" ;;
-            esac
-            uci -q commit splify2
-            json_init; json_add_boolean ok 1
-            zm_fix_on && json_add_boolean on 1 || json_add_boolean on 0
-            json_dump
-        else
-            json_init
-            zm_fix_on && json_add_boolean on 1 || json_add_boolean on 0
-            # Имя канала — чтобы интерфейс мог показать, что именно появится в правилах.
-            json_add_string channel "$ZM_CHANNEL"
-            json_dump
-        fi
-        ;;
-
     *) fail "неизвестный метод" ;;
 esac

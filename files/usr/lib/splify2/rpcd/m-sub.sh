@@ -125,7 +125,8 @@ sub_used_by() {  # PATH -> ЧИСЛО
     # пустоту, а интерфейс показывал «подписок нет».
     _u=0
     if [ -s "$SPEC" ]; then
-        _u="$(jsonfilter -i "$SPEC" -e '@.outputs[*].sub_file' 2>/dev/null |
+        # `subscription` — ключ спеки v2, `sub_file` — прежней v1 (до переноса интерфейсом).
+        _u="$(jsonfilter -i "$SPEC" -e '@.outputs[*].subscription' -e '@.outputs[*].sub_file' 2>/dev/null |
               grep -Fx -c -- "$1" 2>/dev/null)"
     fi
     case "${_u:-}" in ''|*[!0-9]*) _u=0 ;; esac
@@ -165,7 +166,7 @@ spec_output_names() {  # -> имена выходов по одному на с�
 sub_outputs_using() {  # PATH -> имена выходов по одному на строку
     [ -s "$SPEC" ] || return 0
     for _oo in $(spec_output_names); do
-        [ "$(jsonfilter -i "$SPEC" -e "@.outputs['$_oo'].sub_file" 2>/dev/null)" = "$1" ] || continue
+        [ "$(spec_out_sub "$_oo")" = "$1" ] || continue
         printf '%s\n' "$_oo"
     done
 }
@@ -174,7 +175,7 @@ sub_nodes_used() {  # PATH -> ЧИСЛО
     _un=0
     [ -s "$SPEC" ] || { printf '0'; return; }
     for _uo in $(spec_output_names); do
-        [ "$(jsonfilter -i "$SPEC" -e "@.outputs['$_uo'].sub_file" 2>/dev/null)" = "$1" ] || continue
+        [ "$(spec_out_sub "$_uo")" = "$1" ] || continue
         _uc="$(jsonfilter -i "$SPEC" -e "@.outputs['$_uo'].nodes[*]" 2>/dev/null | grep -c .)"
         case "${_uc:-}" in ''|*[!0-9]*) _uc=0 ;; esac
         _un=$((_un + _uc))
@@ -287,24 +288,25 @@ case "$2" in
                 [ -n "$_u" ] && url="$_u"
                 kind=url
                 ;;
-            vless://*)
+            vless://*|hysteria2://*|hy2://*)
                 # Пробелы между ссылками превращаем в переводы строк: из однострочного
-                # поля ввода многострочная вставка приезжает склеенной пробелами.
-                printf '%s\n' "$url" | tr ' \t' '\n\n' | grep '^vless://' > "$SUB.tmp" \
-                    || fail "в тексте нет ссылок vless://"
-                [ -s "$SUB.tmp" ] || { rm -f "$SUB.tmp"; fail "в тексте нет ссылок vless://"; }
+                # поля ввода многострочная вставка приезжает склеенной пробелами. Ссылки
+                # hysteria2:// (и короткая hy2://) — узлы клиента hysteria2 (пакет
+                # steer-hysteria2); файл подписки один, какому протоколу принадлежит узел,
+                # различает движок.
+                printf '%s\n' "$url" | tr ' \t' '\n\n' | grep -E '^(vless|hysteria2|hy2)://' > "$SUB.tmp" \
+                    || fail "в тексте нет ссылок vless:// или hysteria2://"
+                [ -s "$SUB.tmp" ] || { rm -f "$SUB.tmp"; fail "в тексте нет ссылок vless:// или hysteria2://"; }
                 mv "$SUB.tmp" "$SUB"
                 kind=links
                 ;;
-            *) fail "нужна ссылка на подписку (http:// или https://) либо ссылка vless://" ;;
+            *) fail "нужна ссылка на подписку (http:// или https://) либо ссылка vless:// или hysteria2://" ;;
         esac
-        # Новая подписка — новые узлы, значит клиента надо перечитать. Иначе туннель
-        # продолжает работать по узлу, которого в подписке может уже не быть.
-        #
-        # Словом, а не пустым файлом: пустой затирал накопленное «instances» (подписку
-        # задают как раз при заведении выхода, до применения), и новый туннель оставался
-        # без экземпляра. Повод здесь именно params — набор выходов подписка не меняет.
-        dirty_mark "$VLESS_DIRTY" params
+        # Новая подписка — новые узлы, значит помощника выхода надо перечитать. Иначе туннель
+        # продолжает работать по узлу, которого в подписке может уже не быть. Перечитывает
+        # демон движка (см. engine_reload_clean); туннелей, которым эта подписка ещё не
+        # назначена, перезагрузка не касается.
+        engine_reload_clean || true
         # Ссылка сохраняется, чтобы её можно было обновить одной кнопкой и показать
         # человеку, откуда взялись узлы. В uci, а не в спеке: спека — вход движка, и
         # URL ему не нужен ни для чего.
@@ -548,19 +550,16 @@ case "$2" in
         json_add_string name "$SUB_NAME"
         if [ "$before" != "$after" ]; then
             json_add_boolean changed 1
-            # Помечаем правку — на случай, если туннель сейчас не поднят: тогда узлы он
-            # прочитает при ближайшем применении.
-            dirty_mark "$VLESS_DIRTY" params
-            # И сразу говорим живым туннелям этой подписки перечитать узлы. Ждать, пока
-            # человек нажмёт «Применить», здесь нельзя: обновление затем и по часам, чтобы
-            # человек в него не вмешивался. Сигнал ИМЕННО ЭТИМ экземплярам — тем же способом,
-            # каким это делает применение спеки.
+            # Сразу просим демон перечитать подписки: ждать, пока человек нажмёт «Применить»,
+            # нельзя — обновление затем и по часам, чтобы человек в него не вмешивался. Если
+            # есть неприменённые правки, перезагрузка не делается (см. engine_reload_clean), а
+            # «Применить» перезапустит помощников само: содержимое файла входит в их подпись.
+            # Перезапустить узнают те выходы, что читают эту подписку: остальных перезагрузка
+            # не трогает.
             _rs=0
-            for _ro in $(sub_outputs_using "$SUB"); do
-                ubus call service signal \
-                    "{\"name\":\"steer\",\"instance\":\"vless_$_ro\",\"signal\":15}" 2>/dev/null
-                _rs=$((_rs + 1))
-            done
+            if engine_reload_clean; then
+                for _ro in $(sub_outputs_using "$SUB"); do _rs=$((_rs + 1)); done
+            fi
             json_add_int restarted "$_rs"
         else
             json_add_boolean changed 0
@@ -594,8 +593,6 @@ case "$2" in
             uci -q delete "splify2.sub_$SUB_NAME" 2>/dev/null
         fi
         uci -q commit splify2
-        # Узлы сменились для всех, кто их читал, — клиента надо перечитать.
-        dirty_mark "$VLESS_DIRTY" params
         json_init
         json_add_boolean ok 1
         json_add_string name "$SUB_NAME"

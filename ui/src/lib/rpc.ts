@@ -5,8 +5,8 @@
 // deliberately does not model channels itself — a second model would be a second
 // thing to keep in sync with the engine's contract.
 
+import { decodeSpec } from './specv2'
 import {
-    normalizeSpec,
     toCatalog,
     type AllowDomains,
     type Narrow,
@@ -171,6 +171,32 @@ export interface VlessNodesReply {
     skipped_other?: number
 }
 
+/** Сервер DNS резолвера в ответе `dns-log` (docs/ctl.md, «dns-log»). */
+export interface DnsUpstreamState {
+    name: string
+    url: string
+    proto: 'udp' | 'tcp' | 'dot' | 'doh' | 'doq' | string
+    /** Выход, через который уходит запрос; null — напрямую. */
+    via: string | null
+    state: 'ready' | 'idle' | 'connecting' | 'down' | 'unmarked' | 'no-tls' | string
+    conns?: number
+    inflight?: number
+    sent?: number
+    ok?: number
+    failed?: number
+    last_ok_ago?: number | null
+    error?: string | null
+    error_ago?: number | null
+}
+
+export interface DnsLog {
+    running: boolean
+    size?: number
+    names?: { name: string; channel: string | null; out: string | null; count: number; last: number; ago: number }[]
+    upstreams?: DnsUpstreamState[]
+    cache?: { entries: number; max: number; hits: number; misses: number; stored: number; evicted: number } | null
+}
+
 export const rpc = {
     /** Live engine state: outputs with up/nat, per-channel counters, warnings. */
     status: declare<Status>('status'),
@@ -180,12 +206,12 @@ export const rpc = {
      *  precisely what must not be reinterpreted on the way through. */
     /** Единственный вход спеки в интерфейс — поэтому и приведение написаний стоит здесь,
      *  а не в четырёх потребителях `match` по отдельности (I-041, splicicd#7). */
-    specGet: () => specGetRaw().then(normalizeSpec),
+    specGet: () => specGetRaw().then(decodeSpec),
 
     /** Снимок спеки в момент последнего apply — по нему считается «Применить · N».
      *  На старом бэкенде метода нет: вызывающий обязан ловить отказ (pending.ts ловит,
      *  и тогда применённым считается сохранённое — счётчик стартует с нуля). */
-    appliedGet: () => appliedGetRaw().then(normalizeSpec),
+    appliedGet: () => appliedGetRaw().then(decodeSpec),
     /** warn — сохранение прошло, но что-то требует внимания: например список, который не
      *  скачался, из-за чего его канал не поднимется. Это не ошибка сохранения. */
     specSet: declare<{ ok: boolean; error?: string; warn?: string }>('spec_set', ['spec']),
@@ -392,6 +418,10 @@ export const rpc = {
         /** Не старше какой версии должен быть движок для ЭТОГО интерфейса (m-engine.sh,
          *  STEER_MIN_VERSION). Может не прийти от бэкенда старее интерфейса. */
         min_version?: string
+        /** Какие модули движка стоят рядом с ним: vless, xsteer, obfs, tgws, hysteria2
+         *  (пакеты steer-<модуль>). Нет поля — бэкенд старее интерфейса, и про модули ничего
+         *  не известно. */
+        modules?: string[]
         /** Автозапуск и работа — разные вещи: первое переживает перезагрузку, второе нет.
          *  Тумблеру «остановить всё» нужны оба. */
         enabled?: boolean
@@ -658,11 +688,6 @@ export const rpc = {
     /** Чем роутер качает списки и обновления: `auto` — туннель последним, `always` — первым,
      *  `off` — не трогать. `out` — выход, через который пойдёт скачивание; пусто означает,
      *  что поднятого выхода нет и `always` ничего не даст (splify2#15). */
-    /** Фикс Zapret Manager: уводить ли адреса GitHub в туннель. Включён по умолчанию — он
-     *  нужен именно тем, кто ещё ничего не настроил и до GitHub не дошёл. */
-    zmFix: declare<{ on?: boolean; channel?: string }>('zm_fix'),
-    zmFixSet: declare<{ ok: boolean; on?: boolean; error?: string }>('zm_fix_set', ['on']),
-
     fetchMode: declare<{ mode?: string; out?: string }>('fetch_mode'),
     fetchModeSet: declare<{ ok: boolean; mode?: string; error?: string }>('fetch_mode_set', ['mode']),
 
@@ -846,72 +871,28 @@ export const rpc = {
         ['sub', 'node'],
     ),
 
-    /** ---- DNS over HTTPS ------------------------------------------------------------
-     *
-     *  Всё состояние вкладки одним вызовом: служба, каталог резолверов, выбранный, туннель.
-     *  Четырьмя вызовами это стоило бы четырёх запусков скрипта объекта, а плата за запуск —
-     *  126 мс (замер в шапке бэкенда). */
-    dohState: declare<{
-        installed: boolean
-        running: boolean
-        enabled: boolean
-        /** id выбранного пункта каталога. ПУСТО — законное состояние, и означает оно одно из
-         *  двух, различимых по `urls`: настройки нет вовсе (urls пуст) или в конфигурации
-         *  стоит чужая ссылка, которой в каталоге нет (urls непуст). */
-        active: string
-        urls: string[]
-        /** Каталог и свои резолверы одним списком; у своих `custom` — их можно удалить. */
-        providers: { id: string; title: string; custom?: boolean }[]
-        via_tunnel: boolean
-        /** Через какой выход пойдёт DoH. Выбора здесь нет: это первый поднятый выход со
-         *  своей меткой, тот же, что у фикса Zapret Manager. */
-        out: string
-        /** Нужен ли движку свой резолвер доменных каналов. От этого зависит force_dns. */
-        needs_dnsd: boolean
-        /** Что записано в force_dns. Показывается потому, что иначе это выглядит как
-         *  «поставил 1 руками, а splify2 сбросил»: два перенаправления порта 53 в одной
-         *  точке дают гонку, и проигравший наш резолвер молча перестаёт видеть запросы. */
-        force_dns: string
-        /** Ведём ли настройку прокси МЫ. Пакет приезжает нашей зависимостью, но он не наш:
-         *  человек вправе держать свой DoH и без splify2. От признака зависят права, а не
-         *  показ — у чужого хозяйства мы ничего не правим. */
-        managed: boolean
-        /** Что стоит в force_dns на самом деле (пусто — ключа нет, а умолчание прокси —
-         *  единица), и спорит ли это с нашим резолвером за порт 53. */
-        force_dns_now: string
-        force_conflict: boolean
-        /** Какой выход человек ВЫБРАЛ для «DoH через туннель». Пусто — «решайте сами»,
-         *  тогда берётся первый поднятый. Отдельно от `out`: выбранный может лежать, и
-         *  тогда запросы идут через другой — сказать об этом можно, зная оба. */
-        out_pick: string
-    }>('doh_state'),
+    /** Узлы и проверка узла для выхода `protocol: hysteria2` (пакет steer-hysteria2). Формат
+     *  узла и ответа — тот же, что у VLESS; поэтому и типы общие. Без модуля движок отвечает
+     *  отказом «нужен пакет steer-hysteria2» — он доезжает до экрана как есть. */
+    hysteria2NodesOfSub: declare<VlessNodesReply>('hysteria2_nodes', ['sub']),
+    hysteria2ProbeOfSub: declare<{ output?: string; results?: VlessProbe[]; working?: number; error?: string }>(
+        'hysteria2_probe',
+        ['sub', 'node'],
+    ),
 
-    dohSet: declare<{ ok: boolean; error?: string; active?: string; force_dns?: string }>(
-        'doh_set', ['provider'],
-    ),
-    dohOff: declare<{ ok: boolean; error?: string }>('doh_off'),
-    /** Свой резолвер: ссылка https://…/dns-query, название по желанию. Добавленный сразу
-     *  выбирается; `warn` — записан, но включить не удалось (причина — человеку). */
-    dohCustomAdd: declare<{ ok: boolean; error?: string; id?: string; warn?: string }>(
-        'doh_custom_add', ['url', 'title'],
-    ),
-    /** Удалить свой резолвер. Удалённый работающий заменяется пунктом по умолчанию, а не
-     *  выключением: выключение — отдельное решение (dohOff). */
-    dohCustomDel: declare<{ ok: boolean; error?: string }>('doh_custom_del', ['id']),
-    /** Переключатель «через туннель» и выбор выхода. Поле `out` необязательно: вызов без
-     *  него выбор не меняет — щелчок по переключателю не должен сбрасывать выбранный
-     *  выход. Пустая строка — «решайте сами». */
-    dohTunnelSet: declare<{ ok: boolean; error?: string; on?: boolean; out?: string; out_pick?: string }>(
-        'doh_tunnel_set', ['on', 'out'],
-    ),
-    /** Запустить и остановить ЧУЖУЮ службу из нашей вкладки. Хозяином её настройки нас не
-     *  делают: заведены потому, что про DoH спрашивают здесь, а кнопка на странице
-     *  https-dns-proxy у людей не срабатывает. */
-    dohStart: declare<{ ok: boolean; error?: string }>('doh_start'),
-    dohStop: declare<{ ok: boolean; error?: string }>('doh_stop'),
-    /** Поправить force_dns у чужой настройки — однократно и по нажатию человека. Молча
-     *  этого больше не делает никто. */
-    dohForceFix: declare<{ ok: boolean; error?: string; force_dns_now?: string }>('doh_force_fix'),
+    /** Журнал имён резолвера движка: какое имя в какое правило попало, а также серверы DNS
+     *  (`upstreams`: адрес, транспорт, выход, состояние, счётчики, последняя ошибка) и кэш. */
+    dnsLog: declare<DnsLog>('dns_log'),
+
+    /** Соединения, которые движок повёл в свои выходы (до 2000 записей). */
+    conns: declare<{ shown?: number; total?: number; truncated?: boolean; conns?: unknown[] }>('conns'),
+
+    /** Живое состояние помощников выхода из памяти демона — ответ управляющего сокета как есть:
+     *  `{code, stdout}`, где stdout — строка JSON на помощника. */
+    helper: declare<{ code?: number; stdout?: string; stderr?: string; error?: string }>('helper', ['output']),
+
+    /** Выбрать член группы `pick: manual` без apply. */
+    groupSelect: declare<{ ok: boolean; error?: string }>('group_select', ['group', 'member']),
 
     /** Откуда роутер берёт КАТАЛОГ списков — перечень «какие списки бывают и где лежит
      *  каждый». Пустая ссылка в `listsSourceSet` означает «вернуть свой каталог»: человек,
@@ -920,208 +901,6 @@ export const rpc = {
         'lists_source',
     ),
     listsSourceSet: declare<{ ok: boolean; url?: string; error?: string }>('lists_source_set', ['url']),
-
-    /** ---- обход DPI ------------------------------------------------------------------ */
-    zapretState: declare<{
-        installed: boolean
-        /** Работает ли служба zapret ВСЕГО РОУТЕРА (обработчики выходов kind=zapret — не она). */
-        running: boolean
-        /** Включён ли её автозапуск. «Не запущен» и «выключен» — разные состояния: первое —
-         *  поломка, второе — решение человека (zapretEnable). */
-        enabled: boolean
-        version: string
-        /** Есть ли curl. Без него проверка стратегий невозможна, и сказать это надо ДО
-         *  нажатия кнопки: ключи, которыми меряет Zapret Manager, у uclient-fetch выразить
-         *  нечем, а мерить другим инструментом — получить числа, несравнимые с его. */
-        curl: boolean
-        strategies: number
-        /** Когда каталог обновлялся последний раз (unix-время). 0 — ни разу. */
-        updated: number
-        /** Имя активной стратегии всего роутера, как её отмечает Zapret Manager. Пусто —
-         *  отметки нет: так выглядит свежий пакет zapret со своей стандартной стратегией. */
-        active: string
-        /** Слои пачки всего роутера — номера Yv и Dv (пусто — слоя нет). Слой ложится поверх
-         *  основной стратегии, а не вместо неё, поэтому в `active` его нет. Бэкенд постарше
-         *  поля не присылает. */
-        layers?: { youtube?: string; discord?: string }
-        drifted: boolean
-        /** Игровой фильтр (Gv) всего роутера — «стратегия для игр» Zapret Manager. */
-        game: ZapretGame
-    }>('zapret_state'),
-
-    /** Игровой фильтр: номер (0 снимает), подделка, Xtreme — любое подмножество одним вызовом.
-     *  Пропущенные поля не уезжают (undefined выпадает из JSON). Выхода kind=zapret у него нет:
-     *  он ловит весь игровой UDP роутера, как в оригинале. */
-    zapretGameSet: declare<{ ok: boolean; error?: string; gv?: string; xtreme?: boolean; fake?: string }>(
-        'zapret_game_set', ['gv', 'fake', 'xtreme'],
-    ),
-
-    zapretInstall: declare<{
-        ok: boolean; error?: string; note?: string
-        version?: string; strategies?: number; curl?: boolean
-    }>('zapret_install'),
-    zapretRemove: declare<{ ok: boolean; error?: string }>('zapret_remove'),
-    zapretSync: declare<{ ok: boolean; error?: string; strategies?: number; updated?: number; note?: string }>(
-        'zapret_sync',
-    ),
-
-    /** Каталог стратегий и выходы kind=zapret. Числа проверки приходят ОТДЕЛЬНО
-     *  (zapretResults) и соединяются здесь, в интерфейсе: разбирать полсотни объектов JSON
-     *  в shell ради того же самого JSON — работа ради работы. */
-    zapretStrategies: declare<{
-        active: string
-        updated: number
-        strategies: { name: string; family: ZapretFamily; layer: ZapretLayer }[]
-        outputs: { name: string; strategy: string; queue: number; up: boolean; drifted: boolean }[]
-    }>('zapret_strategies'),
-
-    /** Одна стратегия целиком: её ключи nfqws, по строке на ключ. По запросу, а не в каталоге:
-     *  каталог показывается при каждом открытии вкладки, а ключи человек разворачивает у
-     *  одной-двух стратегий. */
-    zapretStrategy: declare<{ name: string; family: ZapretFamily; opts: string[] }>(
-        'zapret_strategy', ['name'],
-    ),
-
-    /** Применить стратегию. `out` пуст — всему роутеру (/etc/config/zapret), иначе выходу
-     *  kind=zapret. Два места применения одной и той же стратегии. */
-    zapretApply: declare<{ ok: boolean; error?: string; name?: string; out?: string }>(
-        'zapret_apply', ['name', 'out'],
-    ),
-
-    /** Выключатель обхода всего роутера: служба zapret, а не стратегия — та остаётся
-     *  отмеченной, и Zapret Manager видит свою конфигурацию. Обработчики выходов kind=zapret
-     *  живут своими экземплярами, их это не касается. */
-    zapretEnable: declare<{ ok: boolean; error?: string; enabled?: boolean; running?: boolean }>(
-        'zapret_enable', ['on'],
-    ),
-
-    /** Набор: `all`, семейство (`flowseal`, `v`, `yv`) либо одна стратегия — `one:<имя>`.
-     *  Результат одиночной проверки ложится РЯДОМ с остальными, а не затирает их. */
-    zapretTestStart: declare<{ ok: boolean; error?: string; scope?: string }>(
-        'zapret_test_start', ['scope'],
-    ),
-    zapretTestStop: declare<{ ok: boolean; error?: string }>('zapret_test_stop'),
-
-    /** Ход проверки. Дёшев нарочно — его опрашивают раз в две секунды, пока проверка идёт.
-     *
-     *  `running` спрашивается У ПРОЦЕССА, а не берётся из файла хода: файл мог остаться от
-     *  проверки, которую убили (снятие питания, OOM), и страница показывала бы «идёт» вечно,
-     *  не давая запустить новую. */
-    zapretTest: declare<{
-        state: 'idle' | 'starting' | 'running' | 'done' | 'error'
-        running: boolean
-        started?: number
-        scope?: string
-        total?: number
-        done?: number
-        targets?: number
-        current?: string
-        error_text?: string
-        results_at: number
-    }>('zapret_test'),
-
-    /** Результаты последней проверки — дословно тем файлом, который она написала.
-     *  Отсортированы по убыванию доли удач; ok = -1 значит «стратегия не поднялась».
-     *
-     *  Наборов целей ДВА, как у Zapret Manager: общий (сайты плюс dpi-checkers) для Flowseal и
-     *  v, YouTube — для Yv. У каждого свой контрольный проход «без обхода» и свой перечень
-     *  целей; строка результата называет свой набор и то, что в нём открылось. Верхние
-     *  `targets` и `baseline` — про общий набор, для файла постарше. */
-    zapretResults: declare<ZapretResults>('zapret_results'),
-
-    /** Автоподбор: состояние, рейтинг и приговор ОДНИМ ответом — вкладка спрашивает всё это
-     *  разом, а читается оно из одного каталога результатов.
-     *
-     *  `winner` нет, а `note` объясняет, почему, и это ОТВЕТ, а не пустота: «уже применена
-     *  лучшая», «не лучше работающей», «не лучше, чем без обхода вовсе» и «проверка не
-     *  проходила» — четыре разных состояния, и по строке человек понимает, жать ли кнопку. */
-    zapretAutoselect: declare<{
-        every_days: number
-        on: boolean
-        /** Когда подбор ПРИМЕНИЛ стратегию (не когда гонял проверку). 0 — ни разу. */
-        at: number
-        applied?: string
-        applied_ok?: number
-        applied_total?: number
-        by?: string
-        prev?: string
-        can_undo: boolean
-        winner?: { name: string; ok: number; total: number; set: ZapretSet }
-        note?: string
-        /** По убыванию доли удач; при равной доле выше та, у которой меньше ключей nfqws. */
-        rank: { name: string; ok: number; total: number; keys: number; set: ZapretSet }[]
-        running: boolean
-        /** Где подбор: testing — гоняет проверку (её ход отдаёт zapret_test), ranking,
-         *  done, error, skipped. Нет — бэкенд постарше или подбор не запускался. */
-        state?: 'testing' | 'ranking' | 'done' | 'error' | 'skipped' | string
-        state_note?: string
-    }>('zapret_autoselect'),
-
-    /** Число дней между подборами; 0 выключает, больше 90 — отказ. */
-    zapretAutoselectSet: declare<{ ok: boolean; error?: string; every_days?: number }>(
-        'zapret_autoselect_set', ['days'],
-    ),
-
-    /** Подобрать и ПРИМЕНИТЬ. Набор без `dv`: слой discord мерить нечем, а подбор без замера —
-     *  подбор наугад. Идёт фоном, как и проверка. */
-    zapretAutoselectStart: declare<{ ok: boolean; error?: string; scope?: string }>(
-        'zapret_autoselect_start', ['scope'],
-    ),
-
-    /** Откат к настройке, которая была до применения победителя. Отказывает, если после
-     *  подбора стратегию выбрали руками: копия хранит файл целиком, и откат отменил бы
-     *  именно этот выбор. */
-    zapretAutoselectUndo: declare<{ ok: boolean; error?: string; active?: string }>(
-        'zapret_autoselect_undo',
-    ),
-}
-
-/** Состояние игрового фильтра. `gv`: '' — блока нет, '0' — встроенный фильтр стратегии
- *  Flowseal (у менеджера «GvF»), '1'..'4' — свой. `fakes` — что менеджер предлагает подделкой
- *  для UDP и есть ли файл на роутере. */
-export type ZapretGame = {
-    gv: string
-    xtreme: boolean
-    fake: string
-    fakes: { name: string; present: boolean }[]
-}
-
-export type ZapretFamily = 'flowseal' | 'v' | 'yv' | 'dv' | 'other'
-
-/** Слой отвечает на вопрос «можно ли применить это одно», а семейство — на вопрос «откуда
- *  оно взято». Интерфейсу нужен именно первый: `Yv05` и `Dv3` — надстройки над основной
- *  стратегией, и у выхода kind=zapret им места нет вовсе (у выхода стратегия лежит одним
- *  файлом ключей целиком). Считает слой бэкенд — правило «начинается с Yv» это знание о
- *  чужом каталоге, и на двух сторонах оно разошлось бы при первом же переименовании. */
-export type ZapretLayer = 'main' | 'youtube' | 'discord' | 'game'
-
-export type ZapretSet = 'general' | 'youtube'
-
-export interface ZapretResults {
-    at: number
-    targets: number
-    /** Сколько целей открылось БЕЗ обхода вовсе. Без этого числа «30 из 54» не значит
-     *  ничего: может, у этого провайдера и без обхода открывается тридцать. */
-    baseline: number
-    scope?: string
-    sets?: Partial<Record<ZapretSet, {
-        baseline: number
-        total: number
-        at?: number
-        /** Все цели набора по порядку и те из них, что открылись без обхода. */
-        targets: string[]
-        opened: string[]
-    }>>
-    results: {
-        name: string
-        ok: number
-        /** Сколько целей было у ЭТОЙ стратегии; нет — как у набора (файл постарше). */
-        total?: number
-        set?: ZapretSet
-        at?: number
-        /** Метки открывшихся целей — в порядке перечня целей набора. */
-        opened?: string[]
-    }[]
 }
 
 export type Rpc = typeof rpc
