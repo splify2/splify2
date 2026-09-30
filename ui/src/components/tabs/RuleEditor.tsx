@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
-import { ArrowLeft, Search, Trash2 } from 'lucide-react'
+import { Search, Trash2 } from 'lucide-react'
 import { Button } from '@/components/ui/button'
+import { Block, CardHead, ScreenHeader, Segmented } from '@/components/ui/layout'
 import { rpc } from '@/lib/rpc'
 import { isCidr4, isIp4 } from '@/lib/validate'
 import { usePending } from '@/lib/pending'
@@ -212,338 +213,345 @@ export default function RuleEditor({
         })
     }
 
+    /* Bode 26.10: редактор по образцу экрана правила в приложении Splify2.
+     *
+     *  Шапка экрана — стрелка назад и место правила в очереди. Ниже
+     *  блоки-карточки в порядке приложения: название, кого касается, что перенаправляем,
+     *  куда. На широком экране они встают в две колонки (название и «кого» слева, «что» и
+     *  «куда» справа) — порядок чтения при этом тот же, что на узком, где колонка одна.
+     *  Внизу «Готово» во всю ширину и «Удалить правило» обведённой красной кнопкой: первое —
+     *  то, что делают почти всегда, второе — то, что нельзя нажать нечаянно вместо первого. */
+    const someone = !!ch.from?.length
     return (
-        <div className="rounded-md border border-border bg-card shadow-card">
-            <div className="flex flex-wrap items-center justify-between gap-2 border-b border-border p-3">
-                <div className="flex items-center gap-2 text-sm">
-                    <button
-                        type="button"
-                        onClick={onClose}
-                        className="flex items-center gap-1 text-muted-foreground hover:text-foreground"
-                    >
-                        <ArrowLeft className="h-4 w-4" aria-hidden="true" /> Все правила
-                    </button>
-                    <span className="text-muted-foreground">/</span>
-                    <span className="font-medium">
-                        Правило {index + 1} из {rulesTotal}
-                    </span>
-                </div>
-                <div className="font-mono text-xs text-muted-foreground">
-                    {chosenEntries.length
-                        ? `сервисов ${chosenEntries.length}`
-                        : 'сервис не выбран'}
-                    {total ? ` · ${total.toLocaleString('ru-RU')} записей` : ''}
-                </div>
-            </div>
+        <div className="space-y-4">
+            <ScreenHeader
+                title={`Правило ${index + 1} из ${rulesTotal}`}
+                back={onClose}
+                backLabel="Все правила"
+            />
 
-            <div className="space-y-4 p-3">
-                <section>
-                    <div className="flex flex-wrap items-center justify-between gap-2">
-                        <h3 className="sp-label uppercase tracking-wide text-muted-foreground">
-                            Что перенаправляем
-                        </h3>
-                        <span className="text-xs text-muted-foreground">
-                            {chosen.length ? `${chosen.length} записей выбрано` : 'ничего не выбрано'}
-                        </span>
-                    </div>
+            <div className="grid gap-4 lg:grid-cols-2 lg:items-start">
+                <div className="min-w-0 space-y-4">
+                    <Block>
+                        <label className="flex flex-col gap-1.5 text-xs text-subtle">
+                            Название правила
+                            <input
+                                value={ch.name}
+                                onChange={(e) => onChange({ ...ch, name: e.currentTarget.value })}
+                                className="rounded-lg border border-border bg-background px-3 py-2 text-sm text-foreground"
+                            />
+                        </label>
+                    </Block>
 
-                    <label className="mt-2 flex flex-col gap-1 text-xs">
-                        Название правила
-                        <input
-                            value={ch.name}
-                            onChange={(e) => onChange({ ...ch, name: e.currentTarget.value })}
-                            className="rounded-md border border-border bg-background px-2 py-1.5 text-sm"
+                    <Block>
+                        <CardHead title="Кого касается" />
+                        {/* Два варианта — сегментами, как «Кому» в приложении. Значение то же,
+                            что у прежних переключателей: пустой `from` — все устройства,
+                            непустой — только перечисленные. */}
+                        <Segmented
+                            label="Кого касается"
+                            value={someone ? 'some' : 'all'}
+                            onChange={(v) =>
+                                v === 'all'
+                                    ? onChange({ ...ch, from: undefined })
+                                    : onChange({ ...ch, from: ch.from?.length ? ch.from : [''] })
+                            }
+                            /* Подписи мельче на узком экране и переносятся: «Все устройства в
+                               сети» в половине ширины телефона иначе обрезалась бы многоточием. */
+                            items={[
+                                { value: 'all', label: <span className="block whitespace-normal text-xs leading-tight sm:text-sm">Все устройства в сети</span> },
+                                { value: 'some', label: <span className="block whitespace-normal text-xs leading-tight sm:text-sm">Только выбранные</span> },
+                            ]}
                         />
-                    </label>
-
-                    {chosenEntries.length > 0 && (
-                        <div className="mt-2 flex flex-wrap gap-1.5">
-                            {chosenEntries.map((sv) => (
-                                <button
-                                    key={sv.id}
-                                    type="button"
-                                    onClick={() => pick(sv)}
-                                    className="flex items-center gap-1 rounded border border-primary/50 bg-primary/10 px-2 py-0.5 text-xs"
-                                >
-                                    {sv.name} <span aria-hidden="true">×</span>
-                                </button>
-                            ))}
-                        </div>
-                    )}
-
-                    <div className="mt-2 flex items-center gap-2 rounded-md border border-border px-2">
-                        <Search className="h-4 w-4 shrink-0 text-muted-foreground" aria-hidden="true" />
-                        <input
-                            value={q}
-                            onChange={(e) => setQ(e.currentTarget.value)}
-                            placeholder="поиск по каталогу — сервисы, категории"
-                            className="min-w-0 flex-1 bg-transparent py-1.5 text-sm outline-none"
-                        />
-                        <span className="shrink-0 text-xs text-muted-foreground">
-                            {shown.length} записей
-                        </span>
-                    </div>
-
-                    <div className="mt-1 max-h-64 overflow-y-auto rounded-md border border-border">
-                        {shown.length === 0 && (
-                            <p className="p-3 text-xs text-muted-foreground">Ничего не нашлось.</p>
-                        )}
-                        {shown.map((sv) => {
-                            const on = chosen.includes(sv.id)
-                            const kinds = [...new Set(sv.parts.map((p) => p.kind))]
-                            const missing = sv.parts.filter((p) => !local[p.file.replace(/^\/+/, '')]).length
-                            return (
-                                <label
-                                    key={sv.id}
-                                    className="flex items-center gap-2 border-b border-border/50 px-2 py-1.5 text-sm last:border-b-0"
-                                >
-                                    <input
-                                        type="checkbox"
-                                        checked={on}
-                                        onChange={() => pick(sv)}
-                                        className="shrink-0"
-                                    />
-                                    <span className="min-w-0 flex-1 truncate">
-                                        {sv.name}
-                                        {/* «Скачается» — под именем, а не в строку справа: там
-                                            оно вклинивалось между именем и видом, и вид с числом
-                                            обрезался как раз у самых длинных названий. */}
-                                        {missing > 0 && (
-                                            <span className="ml-2 text-xs text-muted-foreground">
-                                                скачается
-                                            </span>
-                                        )}
-                                    </span>
-                                    <span className="shrink-0 whitespace-nowrap text-xs text-muted-foreground">
-                                        {kinds.length === 2
-                                            ? 'домены и адреса'
-                                            : kinds[0] === 'domains'
-                                              ? 'домены'
-                                              : 'адреса'}
-                                        {sv.count ? ` · ${sv.count.toLocaleString('ru-RU')}` : ''}
-                                    </span>
-                                </label>
-                            )
-                        })}
-                    </div>
-
-                    {foreign.length > 0 && (
-                        /* ФАЙЛЫ, КОТОРЫХ НЕТ В КАТАЛОГЕ, но которые в этом правиле стоят.
-                           Появляются они у того, кто выбирал списки до смены издателя, и у
-                           того, кто правил спеку руками. Промолчать нельзя: галочки у них
-                           нет, а работают они по-прежнему — то есть правило делает больше,
-                           чем показывает. Снять можно прямо здесь, поимённо: это
-                           единственное место, где такой файл вообще виден. */
-                        <div className="mt-2 rounded-md border border-border p-2">
-                            <div className="mb-1 text-xs font-medium text-warning-fg">
-                                В правиле есть файлы не из каталога
-                            </div>
-                            <ul className="space-y-1">
-                                {foreign.map((f) => (
-                                    <li key={f} className="flex items-center gap-2 text-xs">
-                                        <code className="min-w-0 flex-1 truncate">{f}</code>
-                                        <button
-                                            type="button"
-                                            onClick={() => dropFile(f)}
-                                            className="shrink-0 text-muted-foreground underline decoration-dotted hover:text-destructive"
-                                        >
-                                            убрать
-                                        </button>
-                                    </li>
-                                ))}
-                            </ul>
-                            <p className="mt-1 text-xs text-muted-foreground">
-                                Они продолжают работать и обновляться. Каталог их больше не предлагает,
-                                поэтому выбрать такой файл заново отсюда будет нельзя.
-                            </p>
-                        </div>
-                    )}
-
-                    <p className="mt-1 text-xs text-muted-foreground">
-                        Выбирается сервис: если у него есть и домены, и адреса, в правило попадут оба. Домены точнее,
-                        адреса работают и когда устройство не спрашивает DNS роутера.
-                    </p>
-                    {clash && <p className="mt-1 text-xs text-warning-fg">{clash}</p>}
-                </section>
-
-                <div className="grid grid-cols-1 gap-3 md:grid-cols-2">
-                    <section className="rounded-md border border-border p-3">
-                        <h3 className="sp-label uppercase tracking-wide text-muted-foreground">
-                            Кого касается
-                        </h3>
-                        <div className="mt-2 space-y-2">
-                            <label className="flex items-center gap-2 text-sm">
-                                <input
-                                    type="radio"
-                                    checked={!ch.from?.length}
-                                    onChange={() => onChange({ ...ch, from: undefined })}
-                                />
-                                Все устройства в сети
-                            </label>
-                            <label className="flex items-center gap-2 text-sm">
-                                <input
-                                    type="radio"
-                                    checked={!!ch.from?.length}
-                                    onChange={() => onChange({ ...ch, from: ch.from?.length ? ch.from : [''] })}
-                                />
-                                Только выбранные
-                            </label>
-                            {!!ch.from?.length && (
-                                <>
-                                    {/* Устройства из аренд DHCP. Адрес у устройства меняется — DHCP
-                                        выдаёт другой после перезагрузки, и правило начинает касаться
-                                        не того; MAC живёт, пока живёт устройство. Поэтому в правило
-                                        кладём MAC, а адрес показываем только чтобы узнать устройство. */}
-                                    {leases.length > 0 && (
-                                        <div className="max-h-32 overflow-y-auto rounded-md border border-border">
-                                            {leases.map((l) => {
-                                                const on = (ch.from || []).includes(l.mac)
-                                                return (
-                                                    <label
-                                                        key={l.mac}
-                                                        className="flex items-center gap-2 border-b border-border/50 px-2 py-1 text-sm last:border-b-0"
-                                                    >
-                                                        <input
-                                                            type="checkbox"
-                                                            checked={on}
-                                                            onChange={() => {
-                                                                const cur = ch.from || []
-                                                                const next = on
-                                                                    ? cur.filter((x) => x !== l.mac)
-                                                                    : [...cur.filter((x) => x.includes(':')), l.mac]
-                                                                onChange({ ...ch, from: next.length ? next : [''] })
-                                                            }}
-                                                            className="shrink-0"
-                                                        />
-                                                        <span className="min-w-0 flex-1 truncate">
-                                                            {l.name || l.ip}
-                                                        </span>
-                                                        <span className="shrink-0 font-mono text-xs text-muted-foreground">
+                        {someone && (
+                            <>
+                                {/* Устройства из аренд DHCP. Адрес у устройства меняется — DHCP
+                                    выдаёт другой после перезагрузки, и правило начинает касаться
+                                    не того; MAC живёт, пока живёт устройство. Поэтому в правило
+                                    кладём MAC, а адрес показываем только чтобы узнать устройство. */}
+                                {leases.length > 0 && (
+                                    <div className="max-h-48 divide-y divide-border overflow-y-auto">
+                                        {leases.map((l) => {
+                                            const on = (ch.from || []).includes(l.mac)
+                                            return (
+                                                <label
+                                                    key={l.mac}
+                                                    className="flex min-h-[44px] cursor-pointer items-center gap-3 py-1.5 text-sm"
+                                                >
+                                                    <span className="min-w-0 flex-1">
+                                                        <span className="block truncate">{l.name || l.ip}</span>
+                                                        <span className="block truncate font-mono text-xs text-muted-foreground">
                                                             {l.mac}
                                                         </span>
-                                                    </label>
-                                                )
-                                            })}
-                                        </div>
-                                    )}
-                                    <input
-                                        value={(ch.from || []).join(', ')}
-                                        placeholder="192.168.1.50, 192.168.1.0/24 или MAC"
-                                        onChange={(e) => {
-                                            const v = e.currentTarget.value
-                                                .split(',')
-                                                .map((s) => s.trim())
-                                                .filter(Boolean)
-                                            onChange({ ...ch, from: v.length ? v : [''] })
-                                        }}
-                                        className="w-full rounded-md border border-border bg-background px-2 py-1.5 font-mono text-sm"
-                                    />
-                                    {/* Смешивать нельзя, и это не наша прихоть: nft не умеет «или»
-                                        внутри правила, поэтому движок такую спеку отвергает. Сказать
-                                        это здесь дешевле, чем получить отказ при сохранении. */}
-                                    <p className="text-xs text-muted-foreground">
-                                        Либо адреса и подсети, либо MAC — вместе в одном правиле нельзя. MAC виден только у устройств
-                                        своей сети: за вторым роутером правило накроет всех, кто за ним.
-                                    </p>
-                                    {(() => {
-                                        const macs = (ch.from || []).filter((x) => x.includes(':')).length
-                                        const mixed = macs > 0 && macs !== (ch.from || []).filter(Boolean).length
-                                        return mixed ? (
-                                            <p className="text-xs text-destructive">
-                                                Здесь и адреса, и MAC — движок такое правило отвергнет.
-                                            </p>
-                                        ) : null
-                                    })()}
-                                    {/* Опечатка в адресе не отвергается, а МОЛЧА выпадает: наборы nft
-                                        строит shell, и битую запись он выбрасывает по дороге. Наружу это
-                                        выходит как «я добавил телефон, а правило его не касается» —
-                                        причём касается оно при этом всех остальных, и человек ищет
-                                        поломку в туннеле. Проверки те же, что на shell-стороне
-                                        (lib/validate.ts), сказанные до сохранения. */}
-                                    {(() => {
-                                        const bad = (ch.from || [])
-                                            .filter(Boolean)
-                                            .filter((x) =>
-                                                x.includes(':')
-                                                    ? !MAC.test(x.trim())
-                                                    : !isIp4(x) && !isCidr4(x),
+                                                    </span>
+                                                    <input
+                                                        type="checkbox"
+                                                        checked={on}
+                                                        onChange={() => {
+                                                            const cur = ch.from || []
+                                                            const next = on
+                                                                ? cur.filter((x) => x !== l.mac)
+                                                                : [...cur.filter((x) => x.includes(':')), l.mac]
+                                                            onChange({ ...ch, from: next.length ? next : [''] })
+                                                        }}
+                                                        className="shrink-0"
+                                                    />
+                                                </label>
                                             )
-                                        return bad.length ? (
-                                            <p className="text-xs text-destructive">
-                                                Не адрес и не MAC: {bad.join(', ')} — такую запись движок
-                                                выбросит молча, и правило накроет не тех.
-                                            </p>
-                                        ) : null
-                                    })()}
-                                </>
-                            )}
-                        </div>
-                    </section>
+                                        })}
+                                    </div>
+                                )}
+                                <input
+                                    value={(ch.from || []).join(', ')}
+                                    placeholder="192.168.1.50, 192.168.1.0/24 или MAC"
+                                    onChange={(e) => {
+                                        const v = e.currentTarget.value
+                                            .split(',')
+                                            .map((s) => s.trim())
+                                            .filter(Boolean)
+                                        onChange({ ...ch, from: v.length ? v : [''] })
+                                    }}
+                                    className="w-full rounded-lg border border-border bg-background px-3 py-2 font-mono text-sm"
+                                />
+                                {/* Смешивать нельзя, и это не наша прихоть: nft не умеет «или»
+                                    внутри правила, поэтому движок такую спеку отвергает. Сказать
+                                    это здесь дешевле, чем получить отказ при сохранении. */}
+                                <p className="text-xs text-muted-foreground">
+                                    Либо адреса и подсети, либо MAC — вместе в одном правиле нельзя. MAC виден только у устройств
+                                    своей сети: за вторым роутером правило накроет всех, кто за ним.
+                                </p>
+                                {(() => {
+                                    const macs = (ch.from || []).filter((x) => x.includes(':')).length
+                                    const mixed = macs > 0 && macs !== (ch.from || []).filter(Boolean).length
+                                    return mixed ? (
+                                        <p className="text-xs text-destructive">
+                                            Здесь и адреса, и MAC — движок такое правило отвергнет.
+                                        </p>
+                                    ) : null
+                                })()}
+                                {/* Опечатка в адресе не отвергается, а МОЛЧА выпадает: наборы nft
+                                    строит shell, и битую запись он выбрасывает по дороге. Наружу это
+                                    выходит как «я добавил телефон, а правило его не касается» —
+                                    причём касается оно при этом всех остальных, и человек ищет
+                                    поломку в туннеле. Проверки те же, что на shell-стороне
+                                    (lib/validate.ts), сказанные до сохранения. */}
+                                {(() => {
+                                    const bad = (ch.from || [])
+                                        .filter(Boolean)
+                                        .filter((x) =>
+                                            x.includes(':')
+                                                ? !MAC.test(x.trim())
+                                                : !isIp4(x) && !isCidr4(x),
+                                        )
+                                    return bad.length ? (
+                                        <p className="text-xs text-destructive">
+                                            Не адрес и не MAC: {bad.join(', ')} — такую запись движок
+                                            выбросит молча, и правило накроет не тех.
+                                        </p>
+                                    ) : null
+                                })()}
+                            </>
+                        )}
+                    </Block>
+                </div>
 
-                    <section className="rounded-md border border-border p-3">
-                        <h3 className="sp-label uppercase tracking-wide text-muted-foreground">
-                            Куда — направление (выход)
-                        </h3>
-                        <div className="mt-2 space-y-2">
-                            {outNames.length === 0 && (
-                                <p className="text-xs text-warning-fg">
-                                    Выходов нет — правилу некуда вести. Подключение настраивается во вкладке «VPN».
-                                </p>
+                <div className="min-w-0 space-y-4">
+                    <Block>
+                        <CardHead
+                            title="Что перенаправляем"
+                            meta={chosen.length ? `${chosen.length} записей выбрано` : 'ничего не выбрано'}
+                        />
+                        {/* Счёт сервисов и записей стоял в шапке редактора справа. В шапке
+                            экрана по образцу приложения на 390 пикселях он отнимал место у
+                            заголовка («Правило 3 из 6» обрезалось), а относится он к этому
+                            блоку — сюда и переехал. */}
+                        <div className="-mt-2 font-mono text-xs text-muted-foreground">
+                            {chosenEntries.length
+                                ? `сервисов ${chosenEntries.length}`
+                                : 'сервис не выбран'}
+                            {total ? ` · ${total.toLocaleString('ru-RU')} записей` : ''}
+                        </div>
+
+                        {chosenEntries.length > 0 && (
+                            <div className="flex flex-wrap gap-1.5">
+                                {chosenEntries.map((sv) => (
+                                    <button
+                                        key={sv.id}
+                                        type="button"
+                                        onClick={() => pick(sv)}
+                                        className="flex items-center gap-1 rounded-lg border border-primary/40 bg-primary/10 px-2.5 py-1 text-xs"
+                                    >
+                                        {sv.name} <span aria-hidden="true">×</span>
+                                    </button>
+                                ))}
+                            </div>
+                        )}
+
+                        <div className="flex items-center gap-2 rounded-xl border border-border bg-background px-3">
+                            <Search className="h-4 w-4 shrink-0 text-muted-foreground" aria-hidden="true" />
+                            <input
+                                value={q}
+                                onChange={(e) => setQ(e.currentTarget.value)}
+                                placeholder="поиск по каталогу — сервисы, категории"
+                                className="min-w-0 flex-1 bg-transparent py-2 text-sm outline-none"
+                            />
+                            <span className="shrink-0 text-xs text-muted-foreground">
+                                {shown.length} записей
+                            </span>
+                        </div>
+
+                        {/* Каталог — строками через волосяную линию, галочка у правого края, как
+                            выбор списков в приложении. Прокрутка своя: каталог длиннее экрана,
+                            а блок «Куда» должен оставаться в пределах досягаемости. */}
+                        <div className="max-h-72 divide-y divide-border overflow-y-auto">
+                            {shown.length === 0 && (
+                                <p className="py-3 text-xs text-muted-foreground">Ничего не нашлось.</p>
                             )}
-                            {orphans.map((d) => (
-                                <p key={d.name} className="text-xs text-warning-fg">
-                                    Туннель {d.name} поднят, но не привязан к выходу — во вкладке «VPN».
-                                </p>
-                            ))}
-                            {outNames.map((n) => {
-                                const o = outputs[n]
+                            {shown.map((sv) => {
+                                const on = chosen.includes(sv.id)
+                                const kinds = [...new Set(sv.parts.map((p) => p.kind))]
+                                const missing = sv.parts.filter((p) => !local[p.file.replace(/^\/+/, '')]).length
                                 return (
-                                    <label key={n} className="flex items-center gap-2 text-sm">
-                                        <input
-                                            type="radio"
-                                            checked={ch.out === n}
-                                            onChange={() => onChange({ ...ch, out: n })}
-                                        />
-                                        <span
-                                            className={`h-2 w-2 shrink-0 rounded-full ${
-                                                o.kind === 'direct'
-                                                    ? 'bg-muted-foreground'
-                                                    : o.up
-                                                      ? 'bg-success'
-                                                      : 'bg-destructive'
-                                            }`}
-                                            aria-hidden="true"
-                                        />
-                                        {/* Постоянный выход называется словом, а не ключом
-                                            спеки: «direct» в списке целей читалось как чьё-то
-                                            имя выхода, а не как «никуда не уводить». */}
+                                    <label
+                                        key={sv.id}
+                                        className="flex min-h-[44px] cursor-pointer items-center gap-3 py-1.5 text-sm"
+                                    >
                                         <span className="min-w-0 flex-1 truncate">
-                                            {o.kind === 'direct' ? 'Напрямую' : n}
+                                            {sv.name}
+                                            {/* «Скачается» — под именем, а не в строку справа: там
+                                                оно вклинивалось между именем и видом, и вид с числом
+                                                обрезался как раз у самых длинных названий. */}
+                                            {missing > 0 && (
+                                                <span className="ml-2 text-xs text-muted-foreground">
+                                                    скачается
+                                                </span>
+                                            )}
                                         </span>
-                                        <span className="shrink-0 text-xs text-muted-foreground">
-                                            {/* «нет NAT» — только у своего устройства: у туннеля
-                                                подписки (и у пула, где активна часть подписки)
-                                                masquerade не нужен вовсе, и метка пугала зря. */}
-                                            {o.kind === 'direct'
-                                                ? 'мимо туннеля'
-                                                : o.nat === false && o.kind === 'interface' && !isPart(outputs[o.device || ''])
-                                                      && !(o.device && isTunnelKind(outputs[o.device]?.kind))
-                                                  ? 'нет NAT'
-                                                  : o.kind === 'interface' && o.device && isPart(outputs[o.device])
-                                                    ? 'подписка'
-                                                    : o.device || ''}
+                                        <span className="shrink-0 whitespace-nowrap text-xs text-muted-foreground">
+                                            {kinds.length === 2
+                                                ? 'домены и адреса'
+                                                : kinds[0] === 'domains'
+                                                  ? 'домены'
+                                                  : 'адреса'}
+                                            {sv.count ? ` · ${sv.count.toLocaleString('ru-RU')}` : ''}
                                         </span>
+                                        <input
+                                            type="checkbox"
+                                            checked={on}
+                                            onChange={() => pick(sv)}
+                                            className="shrink-0"
+                                        />
                                     </label>
                                 )
                             })}
                         </div>
+
+                        {foreign.length > 0 && (
+                            /* ФАЙЛЫ, КОТОРЫХ НЕТ В КАТАЛОГЕ, но которые в этом правиле стоят.
+                               Появляются они у того, кто выбирал списки до смены издателя, и у
+                               того, кто правил спеку руками. Промолчать нельзя: галочки у них
+                               нет, а работают они по-прежнему — то есть правило делает больше,
+                               чем показывает. Снять можно прямо здесь, поимённо: это
+                               единственное место, где такой файл вообще виден. */
+                            <div className="rounded-xl border border-border p-3">
+                                <div className="mb-1 text-xs font-medium text-warning-fg">
+                                    В правиле есть файлы не из каталога
+                                </div>
+                                <ul className="divide-y divide-border">
+                                    {foreign.map((f) => (
+                                        <li key={f} className="flex items-center gap-2 py-1 text-xs">
+                                            <code className="min-w-0 flex-1 truncate">{f}</code>
+                                            <button
+                                                type="button"
+                                                onClick={() => dropFile(f)}
+                                                className="shrink-0 text-muted-foreground underline decoration-dotted hover:text-destructive"
+                                            >
+                                                убрать
+                                            </button>
+                                        </li>
+                                    ))}
+                                </ul>
+                                <p className="mt-1 text-xs text-muted-foreground">
+                                    Они продолжают работать и обновляться. Каталог их больше не предлагает,
+                                    поэтому выбрать такой файл заново отсюда будет нельзя.
+                                </p>
+                            </div>
+                        )}
+
+                        <p className="text-xs text-muted-foreground">
+                            Выбирается сервис: если у него есть и домены, и адреса, в правило попадут оба. Домены точнее,
+                            адреса работают и когда устройство не спрашивает DNS роутера.
+                        </p>
+                        {clash && <p className="text-xs text-warning-fg">{clash}</p>}
+                    </Block>
+
+                    <Block>
+                        <CardHead title="Куда — направление (выход)" />
+                        {outNames.length === 0 && (
+                            <p className="text-xs text-warning-fg">
+                                Выходов нет — правилу некуда вести. Подключение настраивается во вкладке «VPN».
+                            </p>
+                        )}
+                        {orphans.map((d) => (
+                            <p key={d.name} className="text-xs text-warning-fg">
+                                Туннель {d.name} поднят, но не привязан к выходу — во вкладке «VPN».
+                            </p>
+                        ))}
+                        {/* Радиосписок с точкой состояния выхода, как «Куда» в приложении:
+                            кружок выбора, точка, имя, справа — чем выход является. */}
+                        {outNames.length > 0 && (
+                            <div>
+                                {outNames.map((n) => {
+                                    const o = outputs[n]
+                                    return (
+                                        <label key={n} className="flex min-h-[44px] cursor-pointer items-center gap-3 text-sm">
+                                            <input
+                                                type="radio"
+                                                checked={ch.out === n}
+                                                onChange={() => onChange({ ...ch, out: n })}
+                                                className="shrink-0"
+                                            />
+                                            <span
+                                                className={`h-2 w-2 shrink-0 rounded-full ${
+                                                    o.kind === 'direct'
+                                                        ? 'bg-muted-foreground'
+                                                        : o.up
+                                                          ? 'bg-success'
+                                                          : 'bg-destructive'
+                                                }`}
+                                                aria-hidden="true"
+                                            />
+                                            {/* Постоянный выход называется словом, а не ключом
+                                                спеки: «direct» в списке целей читалось как чьё-то
+                                                имя выхода, а не как «никуда не уводить». */}
+                                            <span className="min-w-0 flex-1 truncate">
+                                                {o.kind === 'direct' ? 'Напрямую' : n}
+                                            </span>
+                                            <span className="shrink-0 text-xs text-muted-foreground">
+                                                {/* «нет NAT» — только у своего устройства: у туннеля
+                                                    подписки (и у пула, где активна часть подписки)
+                                                    masquerade не нужен вовсе, и метка пугала зря. */}
+                                                {o.kind === 'direct'
+                                                    ? 'мимо туннеля'
+                                                    : o.nat === false && o.kind === 'interface' && !isPart(outputs[o.device || ''])
+                                                          && !(o.device && isTunnelKind(outputs[o.device]?.kind))
+                                                      ? 'нет NAT'
+                                                      : o.kind === 'interface' && o.device && isPart(outputs[o.device])
+                                                        ? 'подписка'
+                                                        : o.device || ''}
+                                            </span>
+                                        </label>
+                                    )
+                                })}
+                            </div>
+                        )}
                         {/* Исключение называется словом ровно там, где оно задаётся. Механизм в
                             продукте был всегда — канал в direct выше туннельных, — но нигде так не
                             назывался, и запрос «Spotify без VPN работает лучше» (splify2#3) не
                             находил ответа. Заодно здесь единственное место, где видно, СРАБОТАЕТ ли
                             оно: место в очереди решает всё. */}
                         {isException && (
-                            <p className="mt-2 text-xs text-muted-foreground">
+                            <p className="text-xs text-muted-foreground">
                                 {/* «Пока стоит выше» — это следствие того, что метку раздаёт первое
                                     совпадение сверху. Раздача меток — устройство движка, и на экране
                                     ей не место; место в очереди человек видит числом и правит
@@ -553,37 +561,40 @@ export default function RuleEditor({
                             </p>
                         )}
                         {isException && coveredBy.length > 0 && (
-                            <p className="mt-1 text-xs text-destructive">
+                            <p className="text-xs text-destructive">
                                 Исключение перекрыто: выше стоит «{coveredBy.join('», «')}» с теми же
                                 записями — трафик заберёт оно, и исключение не сработает. Поднимите его
                                 стрелкой ↑ в списке правил.
                             </p>
                         )}
                         {hasDomains && (
-                            <label className="mt-3 flex flex-col gap-1 text-xs">
-                                Режим доменов
-                                <select
+                            /* Два режима — сегментами, как любой выбор из двух-четырёх вариантов в
+                               приложении; значения те же, что были у выпадающего списка. */
+                            <div className="space-y-1.5 border-t border-border pt-3 text-xs">
+                                <div className="text-subtle">Режим доменов</div>
+                                <Segmented
+                                    label="Режим доменов"
                                     value={ch.match.mode ?? 'fakeip'}
-                                    onChange={(e) =>
+                                    onChange={(m) =>
                                         onChange({
                                             ...ch,
-                                            match: { ...ch.match, mode: e.currentTarget.value as 'fakeip' | 'realip' },
+                                            match: { ...ch.match, mode: m },
                                         })
                                     }
-                                    className="rounded-md border border-border bg-background px-2 py-1 text-sm"
-                                >
-                                    <option value="fakeip">fake-IP — точнее</option>
-                                    <option value="realip">real-IP — дешевле</option>
-                                </select>
-                                <span className="text-muted-foreground">
+                                    items={[
+                                        { value: 'fakeip', label: 'fake-IP — точнее' },
+                                        { value: 'realip', label: 'real-IP — дешевле' },
+                                    ]}
+                                />
+                                <p className="text-muted-foreground">
                                     fake-IP: каждому домену свой адрес — точно, но дороже по памяти. real-IP: настоящие адреса из
                                     ответа — дешевле, но два домена за одним адресом станут одним.
-                                </span>
-                            </label>
+                                </p>
+                            </div>
                         )}
                         {hasDomains && upstreamNames.length > 0 && (
-                            <label className="mt-3 flex flex-col gap-1 text-xs">
-                                Сервер DNS
+                            <label className="flex items-center justify-between gap-3 text-xs">
+                                <span className="text-subtle">Сервер DNS</span>
                                 <select
                                     value={typeof ch.dns === 'string' ? ch.dns : ''}
                                     onChange={(e) => {
@@ -593,22 +604,26 @@ export default function RuleEditor({
                                         else delete next.dns
                                         onChange(next)
                                     }}
-                                    className="rounded-md border border-border bg-background px-2 py-1 text-sm"
+                                    className="min-w-0 rounded-lg border border-border bg-background px-2 py-1.5 text-sm"
                                 >
                                     <option value="">по умолчанию</option>
                                     {upstreamNames.map((n) => <option key={n} value={n}>{n}</option>)}
                                 </select>
                             </label>
                         )}
-                    </section>
+                    </Block>
                 </div>
+            </div>
 
-                <div className="flex flex-wrap items-center justify-between gap-2">
-                    <Button onClick={onClose}>Готово</Button>
-                    <Button variant="ghost" onClick={onDelete} className="text-destructive">
-                        <Trash2 className="mr-1 h-4 w-4" aria-hidden="true" /> Удалить правило
-                    </Button>
-                </div>
+            <div className="space-y-2">
+                <Button onClick={onClose} className="w-full">Готово</Button>
+                <Button
+                    variant="outline"
+                    onClick={onDelete}
+                    className="w-full border-destructive text-destructive hover:bg-destructive/10 hover:text-destructive"
+                >
+                    <Trash2 className="mr-1 h-4 w-4" aria-hidden="true" /> Удалить правило
+                </Button>
             </div>
         </div>
     )

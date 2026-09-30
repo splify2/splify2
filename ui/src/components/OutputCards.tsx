@@ -1,6 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { Eye, EyeOff, Infinity as InfinityIcon, LoaderCircle, RefreshCw } from 'lucide-react'
-import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { deadline, rpc, type SubQuota } from '@/lib/rpc'
 import { human } from '@/lib/live'
 import type { OutputStatus } from '@/lib/model'
@@ -171,11 +170,15 @@ export function SubBlock({ outs = [], sub }: {
 
     const v = kind === 'url' && quota ? readQuota(quota) : null
 
+    /* Bode 26.10: участок карточки «Выходы», а не своя карточка. Выходы на главной стоят
+     * одним перечнем, как в приложении (см. OutputsColumn в Home), и подписка в нём — один
+     * из пунктов: шапка «название — обновлено/обновить», остаток, локации строками. Свою
+     * рамку участок не рисует, границу с соседом даёт волосяная линия перечня. */
     return (
-        <Card>
+        <section className="space-y-3 py-3 first:pt-0 last:pb-0">
             {/* Строка переносится: «обновлено 12 мин назад» плюс кнопка не влезают рядом с
                 заголовком в 390 пикселях, и кнопка уезжала за край карточки. */}
-            <CardHeader className="flex-row flex-wrap items-baseline justify-between gap-x-2 gap-y-1 space-y-0">
+            <div className="flex flex-wrap items-baseline justify-between gap-x-2 gap-y-1">
                 {/* Название опознанного источника ведёт к продавцу. Ссылка приходит полем
                     `link` и опознаётся бэкендом (sub_brand в m-sub.sh) — здесь она только
                     рисуется; второй признак того же источника в интерфейсе разошёлся бы с
@@ -183,7 +186,7 @@ export function SubBlock({ outs = [], sub }: {
 
                     Именно ЗДЕСЬ, на карточке выхода, она и нужна: остаток трафика и срок
                     человек смотрит на обзоре, и к продавцу идёт отсюда же — за продлением. */}
-                <CardTitle>
+                <div className="min-w-0 text-sm font-semibold">
                     {sub?.link ? (
                         <a
                             href={sub.link}
@@ -196,7 +199,7 @@ export function SubBlock({ outs = [], sub }: {
                     ) : (
                         sub?.title || (sub && sub.name !== 'main' ? sub.name : 'Подписка')
                     )}
-                </CardTitle>
+                </div>
                 <div className="flex items-baseline gap-2 text-xs text-muted-foreground">
                     {v?.age && <span>обновлено {v.age}</span>}
                     {/* Кнопка есть и когда числа свежие: «обновлено 3 мин назад» — это повод
@@ -218,8 +221,8 @@ export function SubBlock({ outs = [], sub }: {
                         </button>
                     )}
                 </div>
-            </CardHeader>
-            <CardContent>
+            </div>
+            <div>
                 {v && v.total !== null && v.left !== null ? (
                     <>
                         <div className="flex flex-wrap items-baseline gap-x-2">
@@ -308,16 +311,22 @@ export function SubBlock({ outs = [], sub }: {
                 ) : null}
 
 
-                {/* Локации — ниже остатка и всегда. */}
-                <ul className={`space-y-2.5 ${v || kind === 'url' ? 'mt-3 border-t border-border pt-3' : ''}`}>
-                    {outs.map((o) => (
-                        <li key={o.name}>
-                            <Location name={o.name} st={o.st} facts={o.facts} note={o.note} />
-                        </li>
-                    ))}
-                </ul>
-            </CardContent>
-        </Card>
+                {/* Локации — ниже остатка и всегда: строками с точкой состояния, как выходы
+                    в приложении. */}
+                {outs.length > 0 && (
+                    <ul className={`divide-y divide-border ${v || kind === 'url' ? 'mt-3 border-t border-border' : ''}`}>
+                        {outs.map((o) => (
+                            <li key={o.name} className="flex items-start gap-3 py-2 last:pb-0">
+                                <StateDot st={o.st} phase={o.phase} />
+                                <div className="min-w-0 flex-1">
+                                    <Location name={o.name} st={o.st} facts={o.facts} note={o.note} />
+                                </div>
+                            </li>
+                        ))}
+                    </ul>
+                )}
+            </div>
+        </section>
     )
 }
 
@@ -353,24 +362,41 @@ function Location({ name, st, facts, note, phase }: OutRef) {
  *  рядом с остатком подписки читался бы как остаток. Знак бесконечности говорит ровно то,
  *  что есть: ограничения нет. */
 export function TunnelBlock({ name, st, facts, phase }: OutRef) {
+    /* Bode 26.10: строка перечня «Выходы» — точка состояния, имя, справа «без лимита», под
+     * именем то, где выход сейчас. Как строка выхода на главной приложения. */
     return (
-        <Card>
-            <CardHeader className="flex-row items-baseline justify-between gap-x-2 space-y-0">
-                <CardTitle>{name}</CardTitle>
-                <span
-                    className="flex items-center gap-1 text-xs text-muted-foreground"
-                    title="объём не ограничен"
-                >
-                    <InfinityIcon className="h-4 w-4" aria-hidden="true" />
-                    <span aria-hidden="true">без лимита</span>
-                    <span className="sr-only">объём не ограничен</span>
-                </span>
-            </CardHeader>
-            <CardContent>
+        <div className="flex items-start gap-3 py-3 first:pt-0 last:pb-0">
+            <StateDot st={st} phase={phase} />
+            <div className="min-w-0 flex-1 space-y-1">
+                <div className="flex items-baseline justify-between gap-x-2">
+                    <span className="min-w-0 truncate text-sm font-medium">{name}</span>
+                    <span
+                        className="flex items-center gap-1 text-xs text-muted-foreground"
+                        title="объём не ограничен"
+                    >
+                        <InfinityIcon className="h-4 w-4" aria-hidden="true" />
+                        <span aria-hidden="true">без лимита</span>
+                        <span className="sr-only">объём не ограничен</span>
+                    </span>
+                </div>
                 <Where name={name} st={st} facts={facts} fallback={st?.device || null} phase={phase} />
-            </CardContent>
-        </Card>
+            </div>
+        </div>
     )
+}
+
+/** Точка состояния выхода у левого края строки: поднят — зелёная, подключается — жёлтая,
+ *  не поднят — красная, состояния ещё нет — серая. Цвет повторяет то, что строка говорит
+ *  словами (Where/Trouble), и ничего не решает сам. */
+function StateDot({ st, phase }: { st?: OutputStatus; phase?: OutRef['phase'] }) {
+    const tone = !st
+        ? 'bg-muted-foreground'
+        : st.up === true
+          ? 'bg-success'
+          : st.probe?.state === 'probing' || (phase && st.probe?.state === undefined)
+            ? 'bg-warning'
+            : 'bg-destructive'
+    return <span className={`mt-[7px] h-2 w-2 shrink-0 rounded-full ${tone}`} aria-hidden="true" />
 }
 
 /** Где выход сейчас: локация, отклик и — у подписки — внешний адрес.

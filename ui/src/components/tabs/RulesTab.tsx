@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
-import { ArrowDown, ArrowRight, ArrowUp, Pencil, Plus, Search, Trash2, X } from 'lucide-react'
+import { ArrowDown, ArrowUp, Pencil, Plus, Search, Trash2, X } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Switch } from '@/components/ui/switch'
 import { notify } from '@/lib/notify'
@@ -20,6 +20,7 @@ import {
 } from '@/lib/model'
 import { type Live } from '@/lib/live'
 import { Hint } from '@/components/ui/hint'
+import { Block, Group } from '@/components/ui/layout'
 import RuleEditor, { pathFor, selectedIds } from '@/components/tabs/RuleEditor'
 
 /** Правила: единственное место, где что-то назначается.
@@ -58,15 +59,10 @@ function defaultOut(spec: Spec): string | undefined {
     return names.find((n) => spec.outputs[n].kind !== 'direct') ?? names[0]
 }
 
-function whoText(ch: Channel) {
-    if (!ch.from?.length) return 'все устройства'
-    if (ch.from.length === 1) return ch.from[0]
-    return `${ch.from.length} адресов и подсетей`
-}
-
-/** То же самое в родительном падеже: на узком экране правило читается фразой «что → для кого →
+/** Кого касается правило — в родительном падеже: правило читается фразой «для кого → что →
  *  куда», и «для все устройства» в ней — не мелочь, а место, где интерфейс перестаёт читаться
- *  как текст. Столбцу таблицы на широком экране нужен именительный, поэтому форм две.
+ *  как текст. (Именительная форма жила ради столбца таблицы на широком экране; таблицы с
+ *  Bode 26.10 нет, фраза одна на любую ширину.)
  *
  *  Счётчик остаётся счётчиком — «устройств: 2», подпись с двоеточием и числом, — и склонения
  *  после числительного здесь не нужны по построению. */
@@ -368,31 +364,23 @@ export default function RulesTab({
         )
     }
 
-    /* Куски строки правила. Раскладок ДВЕ — таблица на широком экране и строки на узком, — и
-       вёрстка, повторённая в обеих, разошлась бы на первой же правке. */
+    /* Bode 26.10: список правил по образцу экрана «Правила» приложения Splify2.
+     *
+     *  РАСКЛАДКА ОДНА на любую ширину. Прежде их было две — таблица с шапкой столбцов на
+     *  широком экране и карточка на правило на узком, — и каждая правка вёрстки делалась
+     *  дважды. Теперь это одна карточка, в которой правила стоят строками через волосяную
+     *  линию (Group), как однородные пункты в приложении: номер слева столбиком (порядок —
+     *  это приоритет), имя и под ним фраза «для кого → что → куда», выключатель у правого
+     *  края. Строка целиком открывает правило, как в приложении; кнопки порядка, правки и
+     *  удаления остались, где были по смыслу, — рядом с выключателем на широком экране и
+     *  второй строкой под фразой на узком: на 390 пикселях четыре кнопки и выключатель в
+     *  одну строку оставили бы на имя правила треть ширины. */
     type Rule = Spec['channels'][number]
-
-    const ruleName = (ch: Rule, i: number, on: boolean) => (
-        <div className="flex items-start gap-3">
-            <Switch
-                on={on}
-                label={on ? `Выключить правило ${ch.name}` : `Включить правило ${ch.name}`}
-                onClick={() => toggle(i, !on)}
-            />
-            <div className="min-w-0">
-                <div className="truncate font-medium">{ch.name}</div>
-                <div className="truncate text-xs text-muted-foreground">
-                    {describe(ch, services)}
-                    {!on && ' · выключено'}
-                </div>
-            </div>
-        </div>
-    )
 
     const ruleOut = (ch: Rule) => {
         const o = outputs[ch.out]
         return (
-            <span className="flex min-w-0 items-center gap-2">
+            <span className="inline-flex min-w-0 items-center gap-1.5 align-baseline">
                 <span
                     className={`h-2 w-2 shrink-0 rounded-full ${
                         !o
@@ -405,7 +393,7 @@ export default function RulesTab({
                     }`}
                     aria-hidden="true"
                 />
-                <span className="truncate">
+                <span className="truncate text-foreground">
                     {o ? (o.kind === 'direct' ? 'Напрямую' : ch.out) : `${ch.out} — не найден`}
                 </span>
             </span>
@@ -415,7 +403,7 @@ export default function RulesTab({
     const isFiltering = search.trim().length > 0
 
     const ruleActions = (i: number) => (
-        <div className="flex justify-end gap-1">
+        <div className="flex justify-end gap-0.5">
             <Button
                 variant="ghost"
                 size="icon"
@@ -448,35 +436,38 @@ export default function RulesTab({
         </div>
     )
 
+    /* «Новое правило» и «Исключение» — под списком во всю ширину, как «Новое правило» в
+       приложении: действие стоит там, где кончается перечень, к которому оно добавляет. */
+    const addButtons = (
+        <div className="flex flex-col gap-2 sm:flex-row">
+            <Button variant="outline" onClick={add} className="w-full sm:flex-1">
+                <Plus className="mr-1 h-4 w-4" aria-hidden="true" /> Новое правило
+            </Button>
+            {/* Без иконки и вторичной кнопкой: исключение — частный случай правила, а
+                не второй способ его завести. Название кнопки и есть вся новизна — сам
+                механизм в движке тот же. */}
+            <Button variant="ghost" onClick={addException} className="w-full sm:w-auto">
+                Исключение
+            </Button>
+        </div>
+    )
+
     return (
         <div className="space-y-3">
             {/* «Кого маршрутизируем» живёт в Настройках → Общее, и только там: карточка стояла
                 и здесь, и человек видел одну и ту же настройку в двух разделах. Правила — про
                 то, ЧТО и КУДА; откуда приходят клиенты — настройка роутера, а не правила. */}
-            <div className="flex flex-wrap items-center justify-between gap-2">
-                <p className="text-xs text-muted-foreground">
-                    Сверху вниз — побеждает{' '}
-                    {/* Под этим стоит раздача меток движком: метку ставит первое совпавшее сверху
-                        правило, и именно поэтому «Напрямую» выше туннельного работает как
-                        исключение. На экране остаётся само правило игры и действие — стрелки. */}
-                    <Hint tip="Адрес достаётся самому верхнему правилу, которое его назвало; остальное идёт напрямую. Порядок меняется стрелками.">
-                        первое совпадение
-                    </Hint>
-                    . Изменения сохраняются сами. Правило «Напрямую» выше туннельных — это
-                    исключение: выбранное пойдёт мимо VPN.
-                </p>
-                <div className="flex flex-wrap gap-2">
-                    {/* Без иконки и вторичной кнопкой: исключение — частный случай правила, а
-                        не второй способ его завести. Название кнопки и есть вся новизна — сам
-                        механизм в движке тот же. */}
-                    <Button variant="ghost" onClick={addException}>
-                        Исключение
-                    </Button>
-                    <Button onClick={add}>
-                        <Plus className="mr-1 h-4 w-4" aria-hidden="true" /> Новое правило
-                    </Button>
-                </div>
-            </div>
+            <p className="text-xs text-muted-foreground">
+                Сверху вниз — побеждает{' '}
+                {/* Под этим стоит раздача меток движком: метку ставит первое совпавшее сверху
+                    правило, и именно поэтому «Напрямую» выше туннельного работает как
+                    исключение. На экране остаётся само правило игры и действие — стрелки. */}
+                <Hint tip="Адрес достаётся самому верхнему правилу, которое его назвало; остальное идёт напрямую. Порядок меняется стрелками.">
+                    первое совпадение
+                </Hint>
+                . Изменения сохраняются сами. Правило «Напрямую» выше туннельных — это
+                исключение: выбранное пойдёт мимо VPN.
+            </p>
 
             {spec.channels.length > 0 && (
                 <div className="flex items-center gap-2 rounded-xl border border-border bg-card px-3 py-1.5 shadow-card">
@@ -506,12 +497,12 @@ export default function RulesTab({
             )}
 
             {spec.channels.length === 0 ? (
-                <div className="rounded-xl border border-border bg-card p-6 text-center text-sm text-muted-foreground shadow-card lg:rounded-2xl">
-                    <p className="font-medium text-foreground">Правил нет — весь трафик идёт напрямую.</p>
-                    <p className="mt-1 text-xs text-muted-foreground">
+                <Block className="text-center">
+                    <p className="text-sm font-medium">Правил нет — весь трафик идёт напрямую.</p>
+                    <p className="text-xs text-muted-foreground">
                         Добавьте правила для сервисов (YouTube, Telegram, Discord...) или направьте нужный трафик через VPN.
                     </p>
-                    <div className="mt-4 flex flex-wrap justify-center gap-2">
+                    <div className="flex flex-wrap justify-center gap-2 pt-1">
                         <Button onClick={add}>
                             <Plus className="mr-1 h-4 w-4" aria-hidden="true" /> Новое правило
                         </Button>
@@ -520,7 +511,7 @@ export default function RulesTab({
                         </Button>
                     </div>
                     {routedOutputs(outputs).length === 0 && (
-                        <div className="mt-3 text-xs">
+                        <div className="text-xs">
                             <button
                                 type="button"
                                 onClick={onGoOutbounds}
@@ -530,70 +521,73 @@ export default function RulesTab({
                             </button>
                         </div>
                     )}
-                </div>
+                </Block>
             ) : filteredChannels.length === 0 ? (
-                <div className="rounded-xl border border-border bg-card p-6 text-center text-sm text-muted-foreground shadow-card lg:rounded-2xl">
-                    По запросу «{search}» ничего не нашлось.
-                    <div className="mt-3">
+                <Block className="text-center text-sm text-muted-foreground">
+                    <div>По запросу «{search}» ничего не нашлось.</div>
+                    <div>
                         <Button variant="outline" size="sm" onClick={() => setSearch('')}>
                             Сбросить поиск
                         </Button>
                     </div>
-                </div>
+                </Block>
             ) : (
                 <>
-                    <ul className="space-y-2 md:hidden">
-                        {filteredChannels.map(({ ch, originalIndex }) => {
-                            const on = ch.enabled !== false
-                            return (
-                                <li
-                                    key={`rule-m-${originalIndex}`}
-                                    className={`rounded-xl border border-border bg-card p-3 shadow-card ${on ? '' : 'opacity-50'}`}
-                                >
-                                    {ruleName(ch, originalIndex, on)}
-                                    <div className="mt-2 flex flex-wrap items-center gap-x-1.5 gap-y-1 text-[13px]">
-                                        <span className="text-muted-foreground">для</span>
-                                        <span>{whoTextFor(ch)}</span>
-                                        <ArrowRight className="h-3.5 w-3.5 shrink-0 text-muted-foreground" aria-hidden="true" />
-                                        {ruleOut(ch)}
-                                    </div>
-                                    <div className="mt-1 border-t border-border pt-1">{ruleActions(originalIndex)}</div>
-                                </li>
-                            )
-                        })}
-                    </ul>
-
-                    <div className="hidden overflow-x-auto rounded-2xl border border-border bg-card shadow-card md:block">
-                        <table className="w-full text-sm">
-                            <thead>
-                                <tr className="border-b border-border text-left text-xs uppercase tracking-wide text-muted-foreground">
-                                    <th className="px-3 py-2">Что перенаправляем</th>
-                                    <th className="px-3 py-2">Кого касается</th>
-                                    <th className="px-3 py-2">Куда</th>
-                                    <th className="px-3 py-2" />
-                                </tr>
-                            </thead>
-                            <tbody>
-                                {filteredChannels.map(({ ch, originalIndex }) => {
-                                    const on = ch.enabled !== false
-                                    return (
-                                        <tr
-                                            key={`rule-${originalIndex}`}
-                                            /* Выключенное приглушено, но НА ВИДУ и на своём месте: спрятанное
-                                               правило человек считает удалённым и заводит второе такое же, а
-                                               уехавшее вниз меняет порядок, то есть приоритет. */
-                                            className={`border-b border-border/50 transition-colors last:border-b-0 hover:bg-muted/40 ${on ? '' : 'opacity-50'}`}
+                    <Group>
+                        <ul className="divide-y divide-border">
+                            {filteredChannels.map(({ ch, originalIndex }) => {
+                                const on = ch.enabled !== false
+                                return (
+                                    <li
+                                        key={`rule-${originalIndex}`}
+                                        /* Кнопки стоят в разметке ОДИН раз, а место меняют
+                                           порядком: на узком — отдельной строкой под фразой,
+                                           на широком — между фразой и выключателем. Второй
+                                           экземпляр кнопок, спрятанный классом, читался бы
+                                           экранным чтецом дважды. */
+                                        className="flex flex-wrap items-start gap-x-2 py-2.5"
+                                    >
+                                        {/* Выключенное приглушено, но НА ВИДУ и на своём месте:
+                                            спрятанное правило человек считает удалённым и
+                                            заводит второе такое же, а уехавшее вниз меняет
+                                            порядок, то есть приоритет. Приглушается текст, а
+                                            не выключатель: им правило и включают обратно. */}
+                                        <button
+                                            type="button"
+                                            onClick={() => setOpen(originalIndex)}
+                                            className={`order-1 flex min-w-0 flex-1 items-start gap-3 rounded-lg bg-transparent py-1 pr-1 text-left transition-colors duration-200 hover:bg-accent focus:outline-none focus-visible:ring-2 focus-visible:ring-primary ${on ? '' : 'opacity-50'}`}
                                         >
-                                            <td className="px-3 py-2">{ruleName(ch, originalIndex, on)}</td>
-                                            <td className="px-3 py-2 text-muted-foreground">{whoText(ch)}</td>
-                                            <td className="px-3 py-2">{ruleOut(ch)}</td>
-                                            <td className="px-3 py-2">{ruleActions(originalIndex)}</td>
-                                        </tr>
-                                    )
-                                })}
-                            </tbody>
-                        </table>
-                    </div>
+                                            <span className="w-5 shrink-0 pt-px text-center text-xs tabular-nums text-muted-foreground">
+                                                {originalIndex + 1}
+                                            </span>
+                                            <span className="min-w-0 flex-1">
+                                                <span className="block truncate text-sm font-semibold">{ch.name}</span>
+                                                <span className="mt-0.5 block text-[13px] leading-snug text-subtle">
+                                                    <span>для {whoTextFor(ch)}</span>
+                                                    <span aria-hidden="true"> → </span>
+                                                    <span>{describe(ch, services)}</span>
+                                                    <span aria-hidden="true"> → </span>
+                                                    {ruleOut(ch)}
+                                                    {!on && ' · выключено'}
+                                                </span>
+                                            </span>
+                                        </button>
+                                        <div className={`order-3 w-full md:order-2 md:w-auto md:self-center ${on ? '' : 'opacity-50'}`}>
+                                            {ruleActions(originalIndex)}
+                                        </div>
+                                        <div className="order-2 flex min-h-[44px] shrink-0 items-center md:order-3">
+                                            <Switch
+                                                on={on}
+                                                label={on ? `Выключить правило ${ch.name}` : `Включить правило ${ch.name}`}
+                                                onClick={() => toggle(originalIndex, !on)}
+                                            />
+                                        </div>
+                                    </li>
+                                )
+                            })}
+                        </ul>
+                    </Group>
+                    {addButtons}
                 </>
             )}
         </div>

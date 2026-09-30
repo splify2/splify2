@@ -12,8 +12,9 @@ import type { Status } from '@/lib/model'
 // отступ, — и два соседних столбца читались как два разных вида вещей. Владелец на это и
 // указал.
 //
-// Здесь стоит барьер на возврат: у обоих заголовков обязан быть один и тот же вид (h2.sp-sub),
-// и оба обязаны быть ПЕРВОЙ строкой своего столбца.
+// С Bode 26.10 оба столбца — карточки приложения Splify2: заголовок стоит ВНУТРИ карточки
+// строкой «заголовок — подпись справа» (CardHead, h3.sp-sub). Барьер тот же по смыслу: вид
+// заголовков у обоих один и тот же, и оба — ПЕРВАЯ строка своей карточки.
 
 const status = {
     outputs: {
@@ -50,23 +51,23 @@ describe('обзор: правила и выходы оформлены один
         vi.spyOn(rpc, 'outboundGeo').mockRejectedValue(new Error('нет метода'))
     })
 
-    it('оба заголовка — заголовки раздела, а не заголовки карточек', async () => {
+    it('оба заголовка — одинаковые заголовки карточек', async () => {
         render(<Home live={live} onSection={() => undefined} onAddRule={() => undefined} />)
         const rules = await waitFor(() => screen.getByText('Правила'))
         const outs = await waitFor(() => screen.getByText('Выходы'))
-        expect(rules.tagName).toBe('H2')
-        expect(outs.tagName).toBe('H2')
+        expect(rules.tagName).toBe('H3')
+        expect(outs.tagName).toBe('H3')
         expect(rules.className).toContain('sp-sub')
         expect(outs.className).toContain('sp-sub')
     })
 
-    it('и каждый — первая строка своего столбца', async () => {
-        // Именно из-за этого столбцы и разъезжались: заголовок карточки стоит ниже на её
-        // отступ, а заголовок раздела — сразу.
+    it('и каждый — первая строка своей карточки', async () => {
+        // Именно из-за этого столбцы и разъезжались: у одного над заголовком стоял отступ
+        // карточки, у другого нет. Теперь обе шапки — первая строка карточки.
         render(<Home live={live} onSection={() => undefined} onAddRule={() => undefined} />)
         const rules = await waitFor(() => screen.getByText('Правила'))
         const outs = await waitFor(() => screen.getByText('Выходы'))
-        // Столбец — родитель строки заголовка; строка заголовка обязана быть в нём первой.
+        // Карточка — родитель строки заголовка; строка заголовка обязана быть в ней первой.
         for (const h of [rules, outs]) {
             const headRow = h.parentElement!
             const column = headRow.parentElement!

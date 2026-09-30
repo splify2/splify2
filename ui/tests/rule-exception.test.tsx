@@ -75,10 +75,12 @@ describe('шаблон «Исключение» (R-020)', () => {
         // Выход direct заведён здесь же — иначе шаблон был бы инструкцией из двух шагов.
         expect(screen.getByText('мимо туннеля')).toBeInTheDocument()
 
-        fireEvent.click(screen.getByText('Все правила'))
-        const rows = await screen.findAllByRole('row')
-        expect(rows[1].textContent).toContain('исключение')
-        expect(rows[2].textContent).toContain('весь трафик')
+        // Назад — стрелкой шапки экрана (подпись у неё для чтеца), а правила — строками
+        // одной карточки, а не строками таблицы с шапкой столбцов (Bode 26.10).
+        fireEvent.click(screen.getByRole('button', { name: 'Все правила' }))
+        const rows = await screen.findAllByRole('listitem')
+        expect(rows[0].textContent).toContain('исключение')
+        expect(rows[1].textContent).toContain('весь трафик')
     })
 
     it('исключение НИЖЕ туннельного правила с теми же записями — говорит, что не сработает', async () => {
