@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import { ArrowDown, ArrowUp, Check, Gauge, GripVertical, LoaderCircle, Search, Trash2, X } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
@@ -11,8 +11,9 @@ import { ccFromName, plainName } from '@/lib/nodename'
 import { poolsSupported } from '@/lib/engine'
 import { latencyTone, probeKey, useNodeProbe } from '@/lib/probe'
 import {
-    devList, isPart, ON_FAIL_TEXT, type OnFail, type Output, type Spec, type VlessNode,
+    devList, isPart, isTunnelKind, ON_FAIL_TEXT, type OnFail, type Output, type Spec, type VlessNode,
 } from '@/lib/model'
+import OutputAdvanced, { advFrom, advApply, type Adv } from '@/components/OutputAdvanced'
 import { type Live } from '@/lib/live'
 
 /** Состав выхода: из чего он собран и в каком порядке.
@@ -96,7 +97,7 @@ function rowsOfVless(o: Output): Row[] {
 function rowsOf(spec: Spec, name: string | undefined): Row[] {
     const o = name ? spec.outputs[name] : undefined
     if (!o) return []
-    if (o.kind === 'vless') return rowsOfVless(o)
+    if (isTunnelKind(o.kind)) return rowsOfVless(o)
     if (o.kind !== 'interface') return []
     const parts = partsOf(spec, name)
     return devList(o).flatMap((d): Row[] => {
@@ -153,6 +154,7 @@ export default function PoolEditor({
     const [openSubs, setOpenSubs] = useState<Record<string, boolean>>({})
     const [rows, setRows] = useState<Row[]>(() => rowsOf(spec, name))
     const [onFail, setOnFail] = useState<OnFail>(existing?.on_fail || 'drop')
+    const [adv, setAdv] = useState<Adv>(() => advFrom(spec, name))
     const [tunnels, setTunnels] = useState<{ name: string; up: boolean; kind: string }[]>([])
     /* Перечень подписок начинается с запомненного: пока `sub_list` идёт, список говорил
      * «подписок нет» — утверждение, а не ожидание, и человек успевал ему поверить. */
@@ -160,14 +162,25 @@ export default function PoolEditor({
     /** Узлы каждой подписки глазами движка. `undefined` — ещё не спрашивали, `null` — спросить
      *  не удалось (подписка не скачана или бэкенд постарше без выхода на ней). */
     const [nodesBySub, setNodesBySub] = useState<Record<string, VlessNode[] | null>>({})
+    /** Протокол подписки: по ссылкам, которые в ней нашёл движок. Подписка из ссылок
+     *  `hysteria2://` — выход `protocol: hysteria2`, остальное — VLESS. `foreign` — сколько
+     *  ссылок движок не узнал как свои: при нуле узлов и ненулевом числе это почти всегда
+     *  ссылки протокола, модуля которого нет. */
+    const [protoBySub, setProtoBySub] = useState<Record<string, 'vless' | 'hysteria2'>>({})
+    const protoRef = useRef<Record<string, 'vless' | 'hysteria2'>>({})
+    protoRef.current = protoBySub
+    const [foreignBySub, setForeignBySub] = useState<Record<string, number>>({})
     /** Проверка узлов — здесь, где их выбирают: см. lib/probe.ts. Спрашивается у подписки
      *  её файлом; движок или бэкенд постарше пути не знают — тогда через любой выход, уже
      *  стоящий на этой подписке (тот же запасной ход, что у списка узлов ниже). */
     const probe = useNodeProbe(async (sub, index) => {
         const asker = Object.entries(spec.outputs).find(
-            ([, o]) => o.kind === 'vless' && o.sub_file === sub,
+            ([, o]) => isTunnelKind(o.kind) && o.sub_file === sub,
         )?.[0]
         try {
+            /* Подписка со ссылками hysteria2 проверяется клиентом hysteria2 (пакет
+             * steer-hysteria2); формат ответа тот же. */
+            if (protoRef.current[sub] === 'hysteria2') return await rpc.hysteria2ProbeOfSub(sub, index)
             return await rpc.vlessProbeOfSub(sub, index)
         } catch (e) {
             if (!asker) throw e
@@ -197,13 +210,23 @@ export default function PoolEditor({
         for (const s of subs) {
             if (!s.present) { setNodesBySub((m) => ({ ...m, [s.path]: null })); continue }
             const asker = Object.entries(spec.outputs).find(
-                ([, o]) => o.kind === 'vless' && o.sub_file === s.path,
+                ([, o]) => isTunnelKind(o.kind) && o.sub_file === s.path,
             )?.[0]
-            const take = (r: VlessNodesReply) => {
-                if (!stop) setNodesBySub((m) => ({ ...m, [s.path]: r.nodes || [] }))
+            const take = (r: VlessNodesReply, proto: 'vless' | 'hysteria2' = 'vless') => {
+                if (stop) return
+                setNodesBySub((m) => ({ ...m, [s.path]: r.nodes || [] }))
+                setProtoBySub((m) => ({ ...m, [s.path]: proto }))
+                setForeignBySub((m) => ({ ...m, [s.path]: r.foreign || 0 }))
             }
             rpc.vlessNodesOfSub(s.path)
-                .then(take)
+                .then((r) => {
+                    /* Ни одного своего узла при чужих ссылках — спросить клиента hysteria2. Нет
+                     * модуля или ссылок такого рода — остаётся ответ VLESS как есть. */
+                    if ((r.usable ?? r.nodes?.length ?? 0) > 0 || !r.foreign) { take(r); return }
+                    return rpc.hysteria2NodesOfSub(s.path)
+                        .then((h) => ((h.usable ?? h.nodes?.length ?? 0) > 0 ? take(h, 'hysteria2') : take(r)))
+                        .catch(() => take(r))
+                })
                 .catch(() => {
                     if (!asker) { if (!stop) setNodesBySub((m) => ({ ...m, [s.path]: null })); return }
                     rpc.vlessNodes(asker)
@@ -308,16 +331,25 @@ export default function PoolEditor({
     /** Форма выхода kind=vless из группы строк подписки. ОДНА форма из двух: спеку с `node` и
      *  `nodes` разом движок отвергает целиком. Список — только там, где движок его понимает. */
     function vlessOut(n: string, g: Extract<Group, { kind: 'sub' }>, fail: OnFail, partOf?: string): Output {
-        return {
+        return advApply({
             name: n,
-            kind: 'vless',
+            kind: protoBySub[g.sub] === 'hysteria2' ? 'hysteria2' : 'vless',
             sub_file: g.sub,
             ...(pools && g.nodes.length > 1
                 ? { nodes: g.nodes }
                 : { node: g.nodes.length ? g.nodes[0] : -1 }),
             on_fail: fail,
             ...(partOf ? { part_of: partOf } : {}),
-        }
+        }, adv, 'tunnel')
+    }
+
+    /** Что в прежнем выходе редактор не трогает и обязан донести до записи: обфускатор и
+     *  ключи, которых модель не знает. Без этого сохранение состава стирало бы их молча. */
+    function carry(next: Output): Output {
+        const keep: Partial<Output> = {}
+        if (existing?.obfs && next.kind === 'interface') keep.obfs = existing.obfs
+        if (existing?.extra) keep.extra = existing.extra
+        return { ...next, ...keep }
     }
 
     function save() {
@@ -349,10 +381,11 @@ export default function PoolEditor({
                 notify(`Имя выхода подписки — не длиннее ${DEV_NAME_MAX} символов: оно становится именем устройства`, 'warning')
                 return
             }
-            outputs[n] = vlessOut(n, subGroups[0], onFail)
+            outputs[n] = carry(vlessOut(n, subGroups[0], onFail))
         } else if (subGroups.length === 0) {
             const devices = groups.map((g) => (g as Extract<Group, { kind: 'dev' }>).dev)
-            outputs[n] = { name: n, kind: 'interface', devices, device: devices[0], on_fail: onFail }
+            outputs[n] = carry(advApply(
+                { name: n, kind: 'interface', devices, device: devices[0], on_fail: onFail }, adv, 'top'))
         } else {
             /* Пул. Каждая группа соседних локаций одной подписки — своим служебным выходом; имя
              * части ≤ 15 символов (предел имени устройства) и по возможности прежнее: части с
@@ -384,7 +417,8 @@ export default function PoolEditor({
                 notify('В пуле не больше шестнадцати частей — таков предел движка; соседние локации одной подписки считаются одной частью', 'warning')
                 return
             }
-            outputs[n] = { name: n, kind: 'interface', devices, device: devices[0], on_fail: onFail }
+            outputs[n] = carry(advApply(
+                { name: n, kind: 'interface', devices, device: devices[0], on_fail: onFail }, adv, 'top'))
         }
         /* Переименование уводит за собой правила: канал ведёт в ИМЯ выхода, и оставить их
          * указывать на прежнее значит осиротить каждое. */
@@ -600,6 +634,16 @@ export default function PoolEditor({
                                                 hint="не сломается при обновлении подписки"
                                             />
                                         </li>
+                                        {s.present && nodes && nodes.length === 0 && (foreignBySub[s.path] || 0) > 0 && (
+                                            /* Ссылок, которые разобрал бы установленный движок, нет, а чужих
+                                               — есть: почти всегда это hysteria2 без модуля. Назван пакет, а
+                                               не «ошибка»: это и есть следующий шаг. */
+                                            <li className="px-2.5 py-1 text-xs text-muted-foreground">
+                                                {live?.build?.modules && !live.build.modules.includes('hysteria2')
+                                                    ? 'Узлов нет: для ссылок hysteria2 не установлен пакет steer-hysteria2.'
+                                                    : 'Узлов нет: движок не принял ссылки этой подписки.'}
+                                            </li>
+                                        )}
                                         {nodes === undefined && s.present && (
                                             <li className="px-2.5 py-1 text-xs text-muted-foreground">узлы читаются…</li>
                                         )}
@@ -881,6 +925,19 @@ export default function PoolEditor({
                             ))}
                         </CardContent>
                     </Card>
+
+                    <OutputAdvanced
+                        adv={adv}
+                        onChange={setAdv}
+                        spec={spec}
+                        self={new Set([name, ...partsOf(spec, name).map(([k]) => k), title.trim()].filter(Boolean) as string[])}
+                        show={{
+                            tunnel: subsInRows.size > 0,
+                            vless: [...subsInRows].some((p) => protoBySub[p] !== 'hysteria2'),
+                            iface: rows.length === 1 && rows[0].kind === 'dev',
+                            pool: rows.length > 1,
+                        }}
+                    />
                 </div>
             </div>
         </div>

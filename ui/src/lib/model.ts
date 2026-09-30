@@ -126,6 +126,13 @@ export function isPart(o: Output | undefined | null): boolean {
     return !!o?.part_of
 }
 
+/** Туннель по подписке: клиент VLESS или hysteria2. В спеке v2 оба — `kind: tunnel` с разным
+ *  `protocol`, и для всего, что не зависит от протокола (подписка, узлы, устройство из имени),
+ *  это один вид. */
+export function isTunnelKind(k: string | undefined | null): boolean {
+    return k === 'vless' || k === 'hysteria2'
+}
+
 /** Устройства выхода списком, какой бы формой они ни были записаны: `devices` либо
  *  единственное `device`. Читают это полдюжины мест, и каждое писало своё. */
 export function devList(o: Output | undefined | null): string[] {
@@ -233,6 +240,31 @@ export interface OutputStatus extends Output {
          *  объясняет причину. */
         total?: number
     }
+    /** IPv6 выхода: подменяется ли он на устройстве (любым способом) и кем — `steer` цепочкой
+     *  движка, `fw4` зоной или правилом фаервола. Печатается только у выходов, несущих IPv6. */
+    nat6?: boolean
+    nat6_by?: 'steer' | 'fw4'
+    /** Записанный `ipv6` не действует на этой платформе (телефон). */
+    ipv6_applied?: boolean
+    /** Только выход группы (kind=group): как группа выбирает и кого выбрала. */
+    group?: {
+        pick: 'order' | 'latency' | 'manual' | 'balance'
+        members: string[]
+        /** Член, чей лист несёт трафик сейчас; null — группа в отказе. */
+        selected: string | null
+        alive: string[]
+        /** pick=manual: выбор человека либо default, пока выбора не было. */
+        select?: string
+        url?: string
+        /** pick=latency: замеры по членам, мс (только измеренные). */
+        latency?: Record<string, number>
+        weights?: number[]
+    }
+    /** Узел за устройством не отвечает — слово клиента под демоном. */
+    node_down?: { why: string; since: number }
+    /** Отказ сторожа: устройство есть, но не отвечает. */
+    failed?: boolean
+    on_fail?: OnFail
 }
 
 export const ON_FAIL_TEXT: Record<OnFail, string> = {

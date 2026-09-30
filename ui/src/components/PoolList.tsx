@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react'
-import { ArrowRight, Globe, Plus, ShieldCheck, Waves } from 'lucide-react'
+import { ArrowRight, Globe, Layers, Plus, ShieldCheck, Waves } from 'lucide-react'
+import GroupEditor from '@/components/GroupEditor'
 import { Button } from '@/components/ui/button'
 import { Card, CardHeader, CardTitle } from '@/components/ui/card'
 import HubRow from '@/components/HubRow'
@@ -17,6 +18,17 @@ import { type Live } from '@/lib/live'
  *  и запас. Прежний вид (спойлер на каждый выход со своей настройкой внутри) отвечал на другой
  *  вопрос: он показывал, КАК выход устроен, тогда как со списка спрашивают, КУДА он ведёт и
  *  работает ли. Настройка открывается по нажатию, целым экраном. */
+
+/** Метка в состоянии «что правим»: редактор группы, а не пула. Имя выхода латиницей без
+ *  двоеточия, так что столкнуться с настоящим именем она не может. */
+const GROUP_PREFIX = 'group:'
+
+const GROUP_PICK: Record<string, string> = {
+    order: 'первый живой',
+    latency: 'самый быстрый',
+    manual: 'выбор вручную',
+    balance: 'по весам',
+}
 
 export default function PoolList({
     live, onEditingChange,
@@ -76,6 +88,21 @@ export default function PoolList({
 
     if (!spec) return <div className="p-5 text-sm text-muted-foreground">Загрузка…</div>
 
+    if (editing !== null && editing.startsWith(GROUP_PREFIX)) {
+        return (
+            <GroupEditor
+                spec={spec}
+                name={editing.slice(GROUP_PREFIX.length) || undefined}
+                live={live}
+                onCancel={() => setEditing(null)}
+                onSave={(next) => {
+                    edit(next)
+                    setEditing(null)
+                }}
+            />
+        )
+    }
+
     if (editing !== null) {
         return (
             <PoolEditor
@@ -100,7 +127,10 @@ export default function PoolList({
 
     return (
         <div className="space-y-3">
-            <div className="flex justify-end">
+            <div className="flex flex-wrap justify-end gap-2">
+                <Button variant="secondary" onClick={() => setEditing(GROUP_PREFIX)}>
+                    <Layers className="h-4 w-4" aria-hidden="true" /> Добавить группу
+                </Button>
                 <Button onClick={() => setEditing('')}>
                     <Plus className="h-4 w-4" aria-hidden="true" /> Добавить выход
                 </Button>
@@ -140,9 +170,20 @@ export default function PoolList({
                                   ? ['обход DPI', rules ? `правил: ${rules}` : '']
                                         .filter(Boolean)
                                         .join(' · ')
+                                  : o.kind === 'group'
+                                    /* Группа: способ выбора, кто несёт трафик сейчас и из
+                                       кого она собрана. */
+                                    ? [
+                                        GROUP_PICK[o.pick || 'order'],
+                                        st?.group?.selected ? `сейчас: ${st.group.selected}` : st?.group ? 'члены не отвечают' : '',
+                                        `членов: ${o.members?.length ?? 0}`,
+                                        rules ? `правил: ${rules}` : '',
+                                      ]
+                                          .filter(Boolean)
+                                          .join(' · ')
                                   : [
                                       country(g?.cc),
-                                      o.kind === 'vless'
+                                      o.kind === 'vless' || o.kind === 'hysteria2'
                                           ? 'подписка'
                                           : devs
                                                 /* Устройство служебной части называется
@@ -164,16 +205,18 @@ export default function PoolList({
                                 icon={
                                     o.kind === 'direct'
                                         ? ArrowRight
-                                        : o.kind === 'vless'
+                                        : o.kind === 'vless' || o.kind === 'hysteria2'
                                           ? Globe
-                                          : o.kind === 'zapret'
-                                            ? Waves
-                                            : ShieldCheck
+                                          : o.kind === 'group'
+                                            ? Layers
+                                            : o.kind === 'zapret'
+                                              ? Waves
+                                              : ShieldCheck
                                 }
                                 title={name}
                                 state={state}
                                 alarm={o.kind !== 'direct' && st?.up === false}
-                                onClick={() => setEditing(name)}
+                                onClick={() => setEditing(o.kind === 'group' ? `${GROUP_PREFIX}${name}` : name)}
                             />
                         )
                     })}

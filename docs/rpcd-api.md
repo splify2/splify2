@@ -1112,6 +1112,40 @@ wizard=<непрозрачная строка мастера>
 
 Один узел на вызов: проверка ограничена таймаутом, и «все узлы» вышли бы за время жизни вызова rpcd.
 
+### `hysteria2_nodes` (read) и `hysteria2_probe` (read)
+
+То же, что `vless_nodes` и `vless_probe`, для выхода `protocol: hysteria2`: те же входы
+(`output` либо `sub`; для проверки ещё `node`), те же рубежи на имя и путь, ответ — JSON
+`steer hysteria2-nodes` / `steer hysteria2-probe` дословно (формат узла общий). Нужен пакет
+`steer-hysteria2`: без него движок отвечает отказом «нужен пакет steer-hysteria2», и ответ
+доезжает до экрана как есть.
+
+### `dns_log` (read) и `conns` (read)
+
+Ответ `steer dns-log` и `steer conns` дословно. `dns_log`: последние имена, которые спрашивали у
+резолвера (правило, выход, число, возраст), `upstreams[]` — серверы DNS (`name`, `url`,
+`proto`: udp/tcp/dot/doh/doq, `via` — выход или `null`, `state`: ready/idle/connecting/down/
+unmarked/no-tls, счётчики, `last_ok_ago`, последняя ошибка словами) и `cache` (`entries`, `max`,
+`hits`, `misses`) либо `null`, когда кэша нет. `conns`: соединения, которые движок повёл в свои
+выходы (не больше 2000 записей, поле `truncated`).
+
+### `helper` (read)
+
+Вход: `{ "output": "<имя выхода>" }`. Живое состояние помощников выхода из памяти демона
+(`steer ctl helper`): ответ управляющего сокета как есть — `{code, stdout, stderr}`, где `stdout` —
+строка JSON на помощника (`running`, `up`, `since`, `restarts`, `last_down`, у VLESS `node` и
+`total`, у модуля `module` и `module_ver`). Модуля нет — `last_down` «нужен пакет steer-<имя>».
+Помощника у выхода нет или демон не запущен — `code` 1.
+
+### `group_select` (write)
+
+Вход: `{ "group": "<группа>", "member": "<член>" }`. Выбрать член группы `pick: manual`
+(`steer select`), без `apply`: таблица группы сразу ведёт в устройство члена, выбор запоминается
+в файле `select` рядом со спекой и переживает перезагрузку. Выбранный член не работает — группа
+применяет свой `on_fail`, а другой член вместо него не берётся. Имена — только имена (без
+ведущего дефиса): они уходят в командную строку. Выход: `{ "ok": true }` либо `{ "ok": false,
+"error": "<слова движка>" }`.
+
 ### `devices` (read)
 
 Кандидаты в выход `kind=interface`: только туннельные устройства (`ARPHRD_NONE` и `ARPHRD_TUNNEL`,
@@ -1270,7 +1304,7 @@ allowed-ips (сервер для своих); и отдельным поводо
 
 ## Перечень методов
 
-Все 56 объявленных методов (из блока `list)` скрипта rpcd). Группа ACL в скобках.
+Все 62 объявленных метода (из блока `list)` скрипта rpcd). Группа ACL в скобках.
 
 | Метод | ACL | Вход на stdin |
 |---|---|---|
@@ -1324,6 +1358,12 @@ allowed-ips (сервер для своих); и отдельным поводо
 | `fetch_mode_set` | write | `{mode}` |
 | `vless_nodes` | read | `{output}` или `{sub}` |
 | `vless_probe` | read | `{output, node}` |
+| `hysteria2_nodes` | read | `{output}` или `{sub}` |
+| `hysteria2_probe` | read | `{output, node}` или `{sub, node}` |
+| `dns_log` | read | — |
+| `conns` | read | — |
+| `helper` | read | `{output}` |
+| `group_select` | write | `{group, member}` |
 | `engine_stop` | write | — |
 | `engine_start` | write | — |
 | `splify2_versions` | read | — |

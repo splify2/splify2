@@ -1,0 +1,270 @@
+import { useMemo, useState } from 'react'
+import { ArrowDown, ArrowUp, Check, Trash2, X } from 'lucide-react'
+import { Button } from '@/components/ui/button'
+import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
+import { Chip, Field, NumField, Radio, inputCls } from '@/components/formbits'
+import { notify } from '@/lib/notify'
+import { rpc } from '@/lib/rpc'
+import { ON_FAIL_TEXT, isPart, type GroupPick, type OnFail, type Output, type Spec } from '@/lib/model'
+import { type Live } from '@/lib/live'
+
+/** Группа выходов: несколько выходов под одним именем, из которых движок выбирает один.
+ *
+ *  Правило ведёт в группу так же, как в любой выход; какой член несёт трафик, решает способ
+ *  выбора. Четыре способа движка (спека v2, `pick`): первый живой по порядку, самый быстрый с
+ *  допуском, выбор человека и раздача новых соединений по весам.
+ *
+ *  Пул из устройств и подписок (`PoolEditor`) — частный случай «первый живой» со своими
+ *  служебными членами; здесь члены — обычные выходы списка и другие группы. */
+
+const NAME_RE = /^[A-Za-z0-9_-]{1,24}$/
+
+const PICK_TEXT: Record<GroupPick, { title: string; hint: string }> = {
+    order: { title: 'Первый живой', hint: 'по порядку; вернётся на верхний, когда он оживёт' },
+    latency: { title: 'Самый быстрый', hint: 'по замеру задержки' },
+    manual: { title: 'Выбор вручную', hint: 'член выбираете вы, без применения' },
+    balance: { title: 'Поровну по весам', hint: 'новые соединения раздаются по живым членам' },
+}
+
+/** Группы, в которых `name` лежит членом (прямо или через вложенные): такую группу в члены
+ *  не берём — получился бы круг, и движок такую спеку отвергает. */
+function contains(spec: Spec, group: string, target: string, seen = new Set<string>()): boolean {
+    if (seen.has(group)) return false
+    seen.add(group)
+    const g = spec.outputs[group]
+    if (!g || g.kind !== 'group') return false
+    return (g.members || []).some((m) => m === target || contains(spec, m, target, seen))
+}
+
+export default function GroupEditor({ spec, name, live, onSave, onCancel }: {
+    spec: Spec
+    /** Имя правимой группы; пусто — заводим новую. */
+    name?: string
+    live?: Live
+    onSave: (next: Spec) => void
+    onCancel: () => void
+}) {
+    const existing = name ? spec.outputs[name] : undefined
+    const [title, setTitle] = useState(name || '')
+    const [pick, setPick] = useState<GroupPick>(existing?.pick || 'order')
+    const [members, setMembers] = useState<string[]>(existing?.members || [])
+    const [def, setDef] = useState(existing?.default || '')
+    const [tolerance, setTolerance] = useState<number | undefined>(existing?.tolerance)
+    const [interval, setInterval] = useState<number | undefined>(existing?.interval)
+    const [url, setUrl] = useState(existing?.url || '')
+    const [weights, setWeights] = useState<number[]>(existing?.weights || [])
+    const [onFail, setOnFail] = useState<OnFail>(existing?.on_fail === 'direct' ? 'direct' : 'drop')
+    const st = name ? live?.status?.outputs?.[name] : undefined
+
+    /* Кого можно взять: выходы с устройством и другие группы. `direct` устройства не имеет,
+     * служебные части пулов человеку не показываются. */
+    const candidates = useMemo(
+        () =>
+            Object.entries(spec.outputs)
+                .filter(([n, o]) => n !== name && !isPart(o) && o.kind !== 'direct' && o.kind !== 'zapret' && o.kind !== 'tgws')
+                .filter(([n]) => !name || !contains(spec, n, name))
+                .map(([n]) => n),
+        [spec, name],
+    )
+
+    function toggle(n: string) {
+        setMembers((m) => {
+            const i = m.indexOf(n)
+            if (i >= 0) {
+                setWeights((w) => w.filter((_, k) => k !== i))
+                return m.filter((x) => x !== n)
+            }
+            setWeights((w) => [...w, 1])
+            return [...m, n]
+        })
+    }
+    function move(i: number, j: number) {
+        if (j < 0 || j >= members.length) return
+        const m = members.slice()
+        const w = members.map((_, k) => weights[k] ?? 1)
+        ;[m[i], m[j]] = [m[j], m[i]]
+        ;[w[i], w[j]] = [w[j], w[i]]
+        setMembers(m)
+        setWeights(w)
+    }
+
+    function save() {
+        const n = title.trim()
+        if (!NAME_RE.test(n)) { notify('Имя: латиница, цифры, дефис или подчёркивание', 'warning'); return }
+        if (n !== name && spec.outputs[n]) { notify(`Выход «${n}» уже есть`, 'warning'); return }
+        if (!members.length) { notify('Выберите хотя бы один выход', 'warning'); return }
+        const g: Output = { name: n, kind: 'group', pick, members, on_fail: onFail }
+        if (pick === 'manual' && def && members.includes(def)) g.default = def
+        if (pick === 'latency') {
+            if (tolerance !== undefined) g.tolerance = tolerance
+            if (interval !== undefined) g.interval = interval
+            if (url.trim()) g.url = url.trim()
+        }
+        if (pick === 'balance') g.weights = members.map((_, k) => weights[k] ?? 1)
+        if (existing?.extra) g.extra = existing.extra
+        /* Переименование уводит за собой правила и членство в других группах. */
+        const outputs: Record<string, Output> = {}
+        for (const [k, v] of Object.entries(spec.outputs)) {
+            if (k === name) continue
+            outputs[k] = name && n !== name && v.kind === 'group'
+                ? { ...v, members: (v.members || []).map((m) => (m === name ? n : m)) }
+                : v
+        }
+        outputs[n] = g
+        const channels = name && n !== name ? spec.channels.map((c) => (c.out === name ? { ...c, out: n } : c)) : spec.channels
+        onSave({ ...spec, outputs, channels })
+    }
+
+    function remove() {
+        if (!name) return
+        const used = spec.channels.filter((c) => c.out === name).map((c) => c.name)
+        if (used.length) { notify(`Выход «${name}» занят правилами: ${used.join(', ')}`, 'warning'); return }
+        const holders = Object.entries(spec.outputs).filter(([, o]) => o.kind === 'group' && o.members?.includes(name)).map(([k]) => k)
+        if (holders.length) { notify(`Выход «${name}» входит в группы: ${holders.join(', ')}`, 'warning'); return }
+        const outputs = { ...spec.outputs }
+        delete outputs[name]
+        onSave({ ...spec, outputs })
+    }
+
+    async function choose(member: string) {
+        if (!name) return
+        try {
+            const r = await rpc.groupSelect(name, member)
+            if (!r.ok) throw new Error(r.error || 'не получилось')
+            notify(`Выбран ${member}`)
+            live?.refresh()
+        } catch (e) {
+            notify(String(e instanceof Error ? e.message : e), 'error')
+        }
+    }
+
+    const g = st?.group
+
+    return (
+        <div className="space-y-4">
+            <div className="flex flex-wrap items-center justify-between gap-2">
+                <input
+                    value={title}
+                    onChange={(e) => setTitle(e.currentTarget.value)}
+                    placeholder="имя группы"
+                    aria-label="имя группы"
+                    className={`${inputCls} flex-1 sm:max-w-[16rem]`}
+                />
+                <div className="flex flex-wrap gap-2">
+                    {name && (
+                        <Button variant="destructive" onClick={remove}>
+                            <Trash2 className="h-4 w-4" aria-hidden="true" /> Удалить
+                        </Button>
+                    )}
+                    <Button variant="secondary" onClick={onCancel}>
+                        <X className="h-4 w-4" aria-hidden="true" /> Отмена
+                    </Button>
+                    <Button onClick={save}>
+                        <Check className="h-4 w-4" aria-hidden="true" /> Сохранить группу
+                    </Button>
+                </div>
+            </div>
+
+            <div className="grid gap-4 xl:grid-cols-2">
+                <Card>
+                    <CardHeader><CardTitle>Как выбирать</CardTitle></CardHeader>
+                    <CardContent className="space-y-1">
+                        {(Object.keys(PICK_TEXT) as GroupPick[]).map((p) => (
+                            <Radio key={p} on={pick === p} onClick={() => setPick(p)}>
+                                <span className="font-medium">{PICK_TEXT[p].title}</span>
+                                <span className="block text-xs text-muted-foreground">{PICK_TEXT[p].hint}</span>
+                            </Radio>
+                        ))}
+                        {pick === 'latency' && (
+                            <div className="grid gap-3 pt-3 sm:grid-cols-2">
+                                <NumField label="Допуск, мс" value={tolerance} onChange={setTolerance} placeholder="50" min={0} max={60000} />
+                                <NumField label="Замер раз в, с" value={interval} onChange={setInterval} placeholder="180" min={5} max={86400} />
+                                <div className="sm:col-span-2">
+                                    <Field label="Адрес проверки">
+                                        <input
+                                            value={url}
+                                            onChange={(e) => setUrl(e.currentTarget.value)}
+                                            placeholder="http://cp.cloudflare.com/generate_204"
+                                            className={`${inputCls} w-full`}
+                                        />
+                                    </Field>
+                                </div>
+                            </div>
+                        )}
+                        <div className="space-y-1 pt-3">
+                            <div className="sp-label uppercase tracking-wide text-muted-foreground">Если все члены упали</div>
+                            {(['drop', 'direct'] as OnFail[]).map((v) => (
+                                <Radio key={v} on={onFail === v} onClick={() => setOnFail(v)}>
+                                    {ON_FAIL_TEXT[v]}
+                                </Radio>
+                            ))}
+                        </div>
+                    </CardContent>
+                </Card>
+
+                <Card>
+                    <CardHeader><CardTitle>Члены</CardTitle></CardHeader>
+                    <CardContent className="space-y-3">
+                        {candidates.length === 0 && (
+                            <p className="text-sm text-muted-foreground">Других выходов пока нет — сначала заведите их.</p>
+                        )}
+                        <div className="flex flex-wrap gap-2">
+                            {candidates.map((n) => (
+                                <Chip key={n} on={members.includes(n)} onClick={() => toggle(n)}>{n}</Chip>
+                            ))}
+                        </div>
+                        {members.length > 0 && (
+                            <ol className="space-y-1.5">
+                                {members.map((m, i) => (
+                                    <li key={m} className="flex items-center gap-2 rounded-lg border border-border px-2.5 py-1.5 text-sm">
+                                        <span className="w-5 shrink-0 text-xs text-muted-foreground">{i + 1}</span>
+                                        <span className="min-w-0 flex-1 truncate font-medium">{m}</span>
+                                        {g && (
+                                            <span className="shrink-0 text-xs text-muted-foreground">
+                                                {g.selected === m ? 'несёт трафик' : g.alive.includes(m) ? 'жив' : 'не отвечает'}
+                                                {g.latency?.[m] !== undefined ? ` · ${g.latency[m]} мс` : ''}
+                                            </span>
+                                        )}
+                                        {pick === 'balance' && (
+                                            <input
+                                                type="number"
+                                                min={1}
+                                                max={100}
+                                                value={weights[i] ?? 1}
+                                                aria-label={`вес ${m}`}
+                                                onChange={(e) => {
+                                                    const v = Math.max(1, Math.min(100, Number(e.currentTarget.value) || 1))
+                                                    setWeights((w) => members.map((_, k) => (k === i ? v : (w[k] ?? 1))))
+                                                }}
+                                                className={`${inputCls} h-8 w-16`}
+                                            />
+                                        )}
+                                        {pick === 'manual' && (
+                                            <span className="flex shrink-0 gap-1">
+                                                <Chip on={def === m || (!def && i === 0)} onClick={() => setDef(m)}>по умолчанию</Chip>
+                                                {name && g && (
+                                                    <Button size="sm" variant="secondary" onClick={() => void choose(m)}>Выбрать</Button>
+                                                )}
+                                            </span>
+                                        )}
+                                        <button type="button" aria-label="выше" onClick={() => move(i, i - 1)} disabled={i === 0}
+                                            className="sp-row bg-transparent p-0 text-muted-foreground disabled:opacity-30">
+                                            <ArrowUp className="h-4 w-4" />
+                                        </button>
+                                        <button type="button" aria-label="ниже" onClick={() => move(i, i + 1)} disabled={i === members.length - 1}
+                                            className="sp-row bg-transparent p-0 text-muted-foreground disabled:opacity-30">
+                                            <ArrowDown className="h-4 w-4" />
+                                        </button>
+                                    </li>
+                                ))}
+                            </ol>
+                        )}
+                        {pick === 'manual' && g?.select && (
+                            <p className="text-xs text-muted-foreground">Выбран: {g.select}</p>
+                        )}
+                    </CardContent>
+                </Card>
+            </div>
+        </div>
+    )
+}

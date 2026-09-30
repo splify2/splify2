@@ -599,6 +599,17 @@ list)
     json_add_object vless_probe
         json_add_string output; json_add_int node
     json_close_object
+    # Те же два вызова для выхода `protocol: hysteria2` (пакет steer-hysteria2): формат узла один.
+    json_add_object hysteria2_nodes; json_add_string output; json_add_string sub; json_close_object
+    json_add_object hysteria2_probe
+        json_add_string output; json_add_string sub; json_add_int node
+    json_close_object
+    # Состояние движка 2.0: журнал имён резолвера (апстримы, кэш), соединения, живое состояние
+    # помощников выхода и выбор члена группы `pick: manual`.
+    json_add_object dns_log; json_close_object
+    json_add_object conns; json_close_object
+    json_add_object helper; json_add_string output; json_close_object
+    json_add_object group_select; json_add_string group; json_add_string member; json_close_object
     json_add_object engine_stop; json_close_object
     json_add_object engine_start; json_close_object
     json_add_object splify2_versions; json_close_object
@@ -614,8 +625,8 @@ call)
     # /usr/lib/splify2/rpcd. Метод, которого нет ни в одной группе, — отказ здесь же, до
     # чтения чего бы то ни было.
     case "$2" in
-        status|diag|dev_stats|net_info|devices|client_nets|leases|engine_state|outbound_geo|outbound_probe|explain|xsteer_state|vless_nodes|vless_probe|support_report) _grp=state ;;
-        spec_set|apply) _grp=spec ;;
+        status|diag|dev_stats|net_info|devices|client_nets|leases|engine_state|outbound_geo|outbound_probe|explain|xsteer_state|vless_nodes|vless_probe|hysteria2_nodes|hysteria2_probe|dns_log|conns|helper|support_report) _grp=state ;;
+        spec_set|apply|group_select) _grp=spec ;;
         lists|list_fetch|lists_update|list_put|list_remove|list_custom|list_get|local_lists|allow_domains|fetch_mode|fetch_mode_set|\
         lists_source|lists_source_set) _grp=lists ;;
         engine|engine_stop|engine_start|steer_versions|splify2_versions|splify2_install|steer_install|ui_get|ui_set) _grp=engine ;;

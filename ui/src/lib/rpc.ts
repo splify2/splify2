@@ -171,6 +171,32 @@ export interface VlessNodesReply {
     skipped_other?: number
 }
 
+/** Сервер DNS резолвера в ответе `dns-log` (docs/ctl.md, «dns-log»). */
+export interface DnsUpstreamState {
+    name: string
+    url: string
+    proto: 'udp' | 'tcp' | 'dot' | 'doh' | 'doq' | string
+    /** Выход, через который уходит запрос; null — напрямую. */
+    via: string | null
+    state: 'ready' | 'idle' | 'connecting' | 'down' | 'unmarked' | 'no-tls' | string
+    conns?: number
+    inflight?: number
+    sent?: number
+    ok?: number
+    failed?: number
+    last_ok_ago?: number | null
+    error?: string | null
+    error_ago?: number | null
+}
+
+export interface DnsLog {
+    running: boolean
+    size?: number
+    names?: { name: string; channel: string | null; out: string | null; count: number; last: number; ago: number }[]
+    upstreams?: DnsUpstreamState[]
+    cache?: { entries: number; max: number; hits: number; misses: number; stored: number; evicted: number } | null
+}
+
 export const rpc = {
     /** Live engine state: outputs with up/nat, per-channel counters, warnings. */
     status: declare<Status>('status'),
@@ -392,6 +418,10 @@ export const rpc = {
         /** Не старше какой версии должен быть движок для ЭТОГО интерфейса (m-engine.sh,
          *  STEER_MIN_VERSION). Может не прийти от бэкенда старее интерфейса. */
         min_version?: string
+        /** Какие модули движка стоят рядом с ним: vless, xsteer, obfs, tgws, hysteria2
+         *  (пакеты steer-<модуль>). Нет поля — бэкенд старее интерфейса, и про модули ничего
+         *  не известно. */
+        modules?: string[]
         /** Автозапуск и работа — разные вещи: первое переживает перезагрузку, второе нет.
          *  Тумблеру «остановить всё» нужны оба. */
         enabled?: boolean
@@ -837,6 +867,29 @@ export const rpc = {
         'vless_probe',
         ['sub', 'node'],
     ),
+
+    /** Узлы и проверка узла для выхода `protocol: hysteria2` (пакет steer-hysteria2). Формат
+     *  узла и ответа — тот же, что у VLESS; поэтому и типы общие. Без модуля движок отвечает
+     *  отказом «нужен пакет steer-hysteria2» — он доезжает до экрана как есть. */
+    hysteria2NodesOfSub: declare<VlessNodesReply>('hysteria2_nodes', ['sub']),
+    hysteria2ProbeOfSub: declare<{ output?: string; results?: VlessProbe[]; working?: number; error?: string }>(
+        'hysteria2_probe',
+        ['sub', 'node'],
+    ),
+
+    /** Журнал имён резолвера движка: какое имя в какое правило попало, а также серверы DNS
+     *  (`upstreams`: адрес, транспорт, выход, состояние, счётчики, последняя ошибка) и кэш. */
+    dnsLog: declare<DnsLog>('dns_log'),
+
+    /** Соединения, которые движок повёл в свои выходы (до 2000 записей). */
+    conns: declare<{ shown?: number; total?: number; truncated?: boolean; conns?: unknown[] }>('conns'),
+
+    /** Живое состояние помощников выхода из памяти демона — ответ управляющего сокета как есть:
+     *  `{code, stdout}`, где stdout — строка JSON на помощника. */
+    helper: declare<{ code?: number; stdout?: string; stderr?: string; error?: string }>('helper', ['output']),
+
+    /** Выбрать член группы `pick: manual` без apply. */
+    groupSelect: declare<{ ok: boolean; error?: string }>('group_select', ['group', 'member']),
 
     /** Откуда роутер берёт КАТАЛОГ списков — перечень «какие списки бывают и где лежит
      *  каждый». Пустая ссылка в `listsSourceSet` означает «вернуть свой каталог»: человек,

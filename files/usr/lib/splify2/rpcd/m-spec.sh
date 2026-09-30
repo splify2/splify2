@@ -485,5 +485,23 @@ $out"
         json_dump
         ;;
 
+    group_select)
+        # Выбрать член группы `pick: manual` без apply (`steer select`): таблица группы сразу
+        # ведёт в устройство члена, выбор запоминается и переживает перезагрузку. Выбранный
+        # член не работает — группа применяет свой on_fail, а не переходит на другой.
+        read -r input
+        json_load "$input" 2>/dev/null || fail "неразбираемый запрос"
+        json_get_var grp group
+        json_get_var mem member
+        # Имена уходят в командную строку движка и в его сокет: только имя, никакого флага.
+        case "$grp" in ''|-*|*[!a-zA-Z0-9_.-]*) fail "недопустимое имя группы" ;; esac
+        case "$mem" in ''|-*|*[!a-zA-Z0-9_.-]*) fail "недопустимое имя члена" ;; esac
+        out="$("$STEER" select "$grp" "$mem" --spec "$SPEC" 2>&1)"; rc=$?
+        json_init
+        json_add_boolean ok $([ $rc -eq 0 ] && echo 1 || echo 0)
+        [ $rc -ne 0 ] && json_add_string error "${out:-движок отказал}"
+        json_dump
+        ;;
+
     *) fail "неизвестный метод" ;;
 esac

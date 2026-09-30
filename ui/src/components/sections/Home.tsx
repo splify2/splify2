@@ -7,7 +7,7 @@ import { deadline, rpc, type SubQuota } from '@/lib/rpc'
 import { subsRemember, subsRemembered } from '@/lib/subs'
 import { human, type DiagCheck, type Live } from '@/lib/live'
 import { usePending } from '@/lib/pending'
-import { ON_FAIL_TEXT, type Channel, type ChannelStatus, type OutputStatus, devList, isPart } from '@/lib/model'
+import { ON_FAIL_TEXT, type Channel, type ChannelStatus, type OutputStatus, devList, isPart, isTunnelKind } from '@/lib/model'
 import { country } from '@/lib/geo'
 import Flag from '@/components/Flag'
 import { type SectionId } from '@/lib/sections'
@@ -493,7 +493,7 @@ function RuleRow({
     /* Кандидаты выхода в порядке предпочтения: первый здоровый побеждает, поэтому нынешний —
      * это `device`, поставленный движком, а не первый в списке. */
     const cands = st?.devices?.length ? st.devices : st?.device ? [st.device] : []
-    const active = st?.device || (st?.kind === 'vless' ? undefined : cands[0])
+    const active = st?.device || (isTunnelKind(st?.kind) ? undefined : cands[0])
     /* Части пула зовутся подписками, а не «vpn-2»: имя части — служебное, человек его не давал. */
     const { spec } = usePending()
     const remembered = subsRemembered() ?? []
@@ -586,7 +586,7 @@ function OutputsColumn({
      * не попадала ни в один блок — на экране оставался голый остаток. */
     const { spec } = usePending()
     const outputs = Object.entries(live.status?.outputs || {})
-    const vless = outputs.filter(([, o]) => o.kind === 'vless')
+    const vless = outputs.filter(([, o]) => isTunnelKind(o.kind))
     const tunnels = outputs.filter(([, o]) => o.kind === 'interface')
 
     /** Подписки роутера. Их бывает несколько, и блок полагается КАЖДОЙ: остаток, срок и

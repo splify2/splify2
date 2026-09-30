@@ -3,7 +3,7 @@ import { ArrowLeft, Search, Trash2 } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { rpc } from '@/lib/rpc'
 import { isCidr4, isIp4 } from '@/lib/validate'
-import { type Channel, type Narrow, type OutputStatus, type ServiceEntry, devList, isPart } from '@/lib/model'
+import { type Channel, type Narrow, type OutputStatus, type ServiceEntry, devList, isPart, isTunnelKind } from '@/lib/model'
 
 /** Редактор правила — на месте таблицы, а не в модальном окне.
  *
@@ -523,7 +523,7 @@ export default function RuleEditor({
                                             {o.kind === 'direct'
                                                 ? 'мимо туннеля'
                                                 : o.nat === false && o.kind === 'interface' && !isPart(outputs[o.device || ''])
-                                                      && !(o.device && outputs[o.device]?.kind === 'vless')
+                                                      && !(o.device && isTunnelKind(outputs[o.device]?.kind))
                                                   ? 'нет NAT'
                                                   : o.kind === 'interface' && o.device && isPart(outputs[o.device])
                                                     ? 'подписка'

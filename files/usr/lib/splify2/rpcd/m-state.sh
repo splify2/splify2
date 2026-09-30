@@ -728,7 +728,11 @@ case "$2" in
         printf '}}\n'
         ;;
 
-    vless_nodes)
+    vless_nodes|hysteria2_nodes)
+        # Два метода — одна ветка: команды движка `vless-nodes` и `hysteria2-nodes` отличаются
+        # только именем (клиенты разных модулей, формат узла один), и копия ветки означала бы
+        # два места, где решается, какой путь к файлу подписки допустим.
+        _vn_cmd="${2%%_*}-nodes"
         read -r input
         json_load "$input" 2>/dev/null || fail "неразбираемый запрос"
         json_get_var output output
@@ -757,13 +761,14 @@ case "$2" in
         # Движок печатает JSON сам — отдаём дословно. Разбирать его здесь значило бы
         # держать вторую модель узла в shell, а имена узлов приходят из подписки и
         # содержат что угодно, включая кавычки.
-        raw="$("$STEER" vless-nodes "$output" --spec "$SPEC" 2>&1)"
+        raw="$("$STEER" "$_vn_cmd" "$output" --spec "$SPEC" 2>&1)"
         out="$(json_tail "$raw")"
         [ -n "$out" ] || fail "${raw:-движок не ответил}"
         printf '%s\n' "$out"
         ;;
 
-    vless_probe)
+    vless_probe|hysteria2_probe)
+        _vp_cmd="${2%%_*}-probe"
         read -r input
         json_load "$input" 2>/dev/null || fail "неразбираемый запрос"
         json_get_var output output
@@ -790,9 +795,33 @@ case "$2" in
         # подписке из двадцати шести узлов заняло бы дольше, чем живёт вызов ubus.
         # Интерфейс спрашивает по одному и заполняет таблицу постепенно.
         [ -n "$node" ] || node=-1
-        raw="$("$STEER" vless-probe "$output" --node "$node" --timeout 6 --spec "$SPEC" 2>&1)"
+        raw="$("$STEER" "$_vp_cmd" "$output" --node "$node" --timeout 6 --spec "$SPEC" 2>&1)"
         out="$(json_tail "$raw")"
         [ -n "$out" ] || fail "${raw:-движок не ответил}"
+        printf '%s\n' "$out"
+        ;;
+
+    dns_log|conns)
+        # Журнал имён резолвера движка (апстримы и кэш видны в нём же) и соединения, которые
+        # движок повёл в свои выходы. Движок печатает JSON сам — отдаём дословно, как status.
+        case "$2" in dns_log) _dl_cmd=dns-log ;; *) _dl_cmd=conns ;; esac
+        raw="$("$STEER" "$_dl_cmd" --spec "$SPEC" 2>&1)"
+        out="$(json_tail "$raw")"
+        [ -n "$out" ] || fail "${raw:-движок не ответил}"
+        printf '%s\n' "$out"
+        ;;
+
+    helper)
+        # Живое состояние помощников выхода из памяти демона: запущен ли, поднят ли, сколько
+        # раз перезапускали, какой модуль и его версия, причина последнего отказа. Помощника
+        # без модуля демон описывает словами «нужен пакет steer-<имя>» — их и показывает экран.
+        read -r input
+        json_load "$input" 2>/dev/null || fail "неразбираемый запрос"
+        json_get_var output output
+        case "$output" in ''|*[!a-zA-Z0-9_.-]*) fail "недопустимое имя выхода" ;; esac
+        raw="$("$STEER" ctl helper "$output" 2>&1)"
+        out="$(json_tail "$raw")"
+        [ -n "$out" ] || fail "${raw:-демон не ответил}"
         printf '%s\n' "$out"
         ;;
 
