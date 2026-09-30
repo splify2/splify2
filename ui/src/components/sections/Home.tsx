@@ -492,8 +492,10 @@ function RuleRow({
 }) {
     /* Кандидаты выхода в порядке предпочтения: первый здоровый побеждает, поэтому нынешний —
      * это `device`, поставленный движком, а не первый в списке. */
-    const cands = st?.devices?.length ? st.devices : st?.device ? [st.device] : []
-    const active = st?.device || (isTunnelKind(st?.kind) ? undefined : cands[0])
+    /* Группа (спека v2): кандидаты — её члены, а несёт трафик выбранный член, не устройство. */
+    const grp = st?.group
+    const cands = grp ? grp.members : st?.devices?.length ? st.devices : st?.device ? [st.device] : []
+    const active = grp ? (grp.selected ?? undefined) : st?.device || (isTunnelKind(st?.kind) ? undefined : cands[0])
     /* Части пула зовутся подписками, а не «vpn-2»: имя части — служебное, человек его не давал. */
     const { spec } = usePending()
     const remembered = subsRemembered() ?? []
@@ -539,7 +541,12 @@ function RuleRow({
                     <span className="min-w-0 truncate text-[11px] text-muted-foreground">
                         {st?.kind === 'direct'
                             ? 'напрямую'
-                            : [via, facts?.ping && facts.ping.ms >= 0 ? `${facts.ping.ms} мс` : null]
+                            : [
+                                  via,
+                                  facts?.ping && facts.ping.ms >= 0 ? `${facts.ping.ms} мс` : null,
+                                  grp && !grp.selected ? 'члены не отвечают' : null,
+                                  st?.node_down ? 'узел не отвечает' : null,
+                              ]
                                   .filter(Boolean)
                                   .join(' · ') || 'не поднят'}
                     </span>

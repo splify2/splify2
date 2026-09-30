@@ -155,3 +155,22 @@ export function poolsSupported(status: Status | null): boolean {
 export function xsLinkSupported(status: Status | null): boolean {
     return Array.isArray(status?.features) && status.features.includes('xslink')
 }
+
+/** Какого модуля движка не хватает выходу: имя модуля (пакет `steer-<имя>`) либо null.
+ *
+ *  Модули движка 2.0 — отдельные пакеты (vless, xsteer, obfs, tgws, hysteria2). Список
+ *  установленных приходит от бэкенда (`engine.modules`); поля нет — бэкенд старее, и тогда
+ *  утверждать нечего: null, а не «не хватает». */
+export function missingModule(
+    o: { kind: string; obfs?: unknown } | undefined | null,
+    modules: string[] | undefined | null,
+): string | null {
+    if (!o || !Array.isArray(modules)) return null
+    const need =
+        o.kind === 'vless' || o.kind === 'hysteria2' || o.kind === 'xsteer' || o.kind === 'tgws'
+            ? o.kind
+            : o.kind === 'interface' && o.obfs
+              ? 'obfs'
+              : null
+    return need && !modules.includes(need) ? need : null
+}

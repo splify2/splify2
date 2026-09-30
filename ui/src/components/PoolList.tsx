@@ -6,6 +6,7 @@ import { Card, CardHeader, CardTitle } from '@/components/ui/card'
 import HubRow from '@/components/HubRow'
 import PoolEditor from '@/components/PoolEditor'
 import { rpc } from '@/lib/rpc'
+import { missingModule } from '@/lib/engine'
 import { pending } from '@/lib/pending'
 import { country } from '@/lib/geo'
 import { devList, EMPTY_SPEC, isPart, type Spec } from '@/lib/model'
@@ -159,8 +160,11 @@ export default function PoolList({
                         const rules = spec.channels.filter((c) => c.out === name).length
                         /* Строка отвечает на «куда ведёт и работает ли»: где выходит сейчас,
                          * из чего собран, сколько правил на нём висит. */
+                        const need = missingModule(o, live.build?.modules)
                         const state =
-                            o.kind === 'direct'
+                            need
+                                ? `нужен пакет steer-${need}`
+                                : o.kind === 'direct'
                                 ? 'напрямую, мимо туннеля'
                                 : o.kind === 'zapret'
                                   /* У этого выхода нет ни устройства, ни страны: трафик
@@ -215,7 +219,7 @@ export default function PoolList({
                                 }
                                 title={name}
                                 state={state}
-                                alarm={o.kind !== 'direct' && st?.up === false}
+                                alarm={!!need || (o.kind !== 'direct' && st?.up === false)}
                                 onClick={() => setEditing(o.kind === 'group' ? `${GROUP_PREFIX}${name}` : name)}
                             />
                         )

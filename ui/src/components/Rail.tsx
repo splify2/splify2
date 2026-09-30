@@ -1,4 +1,4 @@
-import { House, Route, Settings, ShieldCheck } from 'lucide-react'
+import { House, Lock, Route, Settings, ShieldCheck } from 'lucide-react'
 import EngineToggle from '@/components/EngineToggle'
 import { type Live } from '@/lib/live'
 import { assetUrl } from '@/lib/assets'
@@ -28,6 +28,7 @@ const ITEMS: { id: SectionId; label: string; icon: typeof House }[] = [
     { id: 'home', label: 'Главная', icon: House },
     { id: 'rules', label: 'Правила', icon: Route },
     { id: 'vpn', label: 'VPN', icon: ShieldCheck },
+    { id: 'dns', label: 'DNS', icon: Lock },
     { id: 'settings', label: 'Настройки', icon: Settings },
 ]
 
