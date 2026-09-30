@@ -54,7 +54,7 @@ geo_refresh() {  # ВЫХОД
     _gr_dev="$("$STEER" status --spec "$SPEC" 2>/dev/null |
         sed -n "s/.*\"$1\":{[^}]*\"device\":\"\([^\"]*\)\".*/\1/p" | head -1)"
     [ -n "$_gr_dev" ] || return 1
-    command -v curl >/dev/null 2>&1 || return 1
+    command -v "$GEO_CURL" >/dev/null 2>&1 || return 1
     _gr_url="$(uci -q get splify2.main.geo_url)"
     [ -n "$_gr_url" ] || _gr_url="$GEO_URL_DEFAULT"
     # ОДИН запрос на всё: адрес, страна и время ответа. Времени здесь взяться неоткуда,
@@ -66,7 +66,7 @@ geo_refresh() {  # ВЫХОД
     # `time_total` — это весь путь: установка соединения, TLS и ответ. Оно и есть та
     # задержка, которую человек чувствует, открывая страницу через этот выход; ICMP до
     # узла к ней ближе не становится, а через TUN он и не ходит.
-    _gr_out="$(curl -4 -fsS --interface "$_gr_dev" --connect-timeout 4 --max-time 8 \
+    _gr_out="$("$GEO_CURL" -4 -fsS --interface "$_gr_dev" --connect-timeout 4 --max-time 8 \
         -w '\nsplify_ms=%{time_total}\n' "$_gr_url" 2>/dev/null)"
     _gr_ip="$(printf '%s\n' "$_gr_out" | sed -n 's/^ip=\(.*\)$/\1/p' | head -1)"
     _gr_cc="$(printf '%s\n' "$_gr_out" | sed -n 's/^loc=\([A-Za-z][A-Za-z]\)$/\1/p' | head -1)"
@@ -584,6 +584,9 @@ case "$2" in
             fi
             json_init
             json_add_string output "$output"
+            # Без curl мерить нечем вовсе, и это не то же, что «выход молчит»: человеку нужно
+            # знать, что поставить (splify2#32), а не гадать по пустым строкам.
+            command -v "$GEO_CURL" >/dev/null 2>&1 || json_add_boolean curl 0
             [ -n "$_geo_ip" ] && json_add_string ip "$_geo_ip"
             [ -n "$_geo_cc" ] && json_add_string cc "$_geo_cc"
             # Время ответа того же запроса. Ноль означает «не мерили» — так читаются и
@@ -597,6 +600,9 @@ case "$2" in
 
         json_init
         json_add_string output "$output"
+        # Без curl мерить нечем вовсе, и это не то же, что «выход молчит»: человеку нужно
+        # знать, что поставить (splify2#32), а не гадать по пустым строкам.
+        command -v "$GEO_CURL" >/dev/null 2>&1 || json_add_boolean curl 0
         if geo_refresh "$output"; then
             read -r _geo_at _geo_cc _geo_ip _geo_id _geo_ms < "$GEO_DIR/geo-$output"
             [ "${_geo_cc:-}" = "-" ] && _geo_cc=''

@@ -791,6 +791,9 @@ export const rpc = {
         ms?: number
         at?: number
         cached?: boolean
+        /** false — на роутере нет curl, и мерить нечем. Поля нет — curl есть (или бэкенд
+         *  постарше, который об этом не говорит). */
+        curl?: boolean
         why?: string
     }>('outbound_geo', ['output', 'fresh']),
 

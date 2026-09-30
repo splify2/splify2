@@ -1657,6 +1657,18 @@ check "vless_probe: флаг вместо имени выхода — отказ
 out="$(rpcd outbound_probe '{"output":"a/b"}')"
 check "outbound_probe: имя с косой — отказ" "false" "$(printf '%s' "$out" | jget ok)"
 
+# БЕЗ curl страна и отклик выходов не меряются вовсе, и обзор молча оставлял пустые строки
+# (splify2#32): «выход молчит» и «мерить нечем» выглядели одинаково. Ответ обязан сказать
+# второе полем curl=false — и не говорить его там, где curl есть.
+export GEO_CURL=/nonexistent/curl
+out="$(rpcd outbound_geo '{"output":"vless"}')"
+check "outbound_geo без curl: так и сказано" "false" "$(printf '%s' "$out" | jget curl)"
+out="$(rpcd outbound_geo '{"output":"vless","fresh":true}')"
+check "outbound_geo без curl, свежий запрос: так и сказано" "false" "$(printf '%s' "$out" | jget curl)"
+unset GEO_CURL
+out="$(rpcd outbound_geo '{"output":"vless"}')"
+check "outbound_geo с curl: поля curl нет" "" "$(printf '%s' "$out" | jget curl)"
+
 # ИМЯ ПОДПИСКИ НЕ ЛАТИНИЦЕЙ. sub_slug оставлял от «Дом» пустоту (tr побайтно превращал каждый
 # байт UTF-8 в подчёркивание, sed снимал хвост), а sub_use на пустом имени подставлял main —
 # то есть вторая подписка человека молча ПЕРЕЗАПИСЫВАЛА основную, а sub_del по такому имени

@@ -112,6 +112,9 @@ const DOT: Record<string, string> = {
 function useFacts(live: Live) {
     const [facts, setFacts] = useState<Record<string, Facts>>({})
     const [busy, setBusy] = useState(false)
+    /* Мерить нечем: на роутере нет curl. Без этого признака пустые страна и отклик выглядели
+     * так же, как молчащий выход (splify2#32). */
+    const [noCurl, setNoCurl] = useState(false)
     const done = useRef('')
     /* Состояние читается через ссылку, а не из замыкания: проход по выходам живёт секунды —
      * шесть секунд таймаута на выход, — и за это время успевает приехать новый снимок. Взяв
@@ -150,6 +153,7 @@ function useFacts(live: Live) {
                 alive.map(async (n) => {
                     try {
                         const g = await deadline(rpc.outboundGeo(n, fresh), 25000)
+                        setNoCurl(g.curl === false)
                         setFacts((f) => ({
                             ...f,
                             [n]: {
@@ -173,7 +177,7 @@ function useFacts(live: Live) {
         // eslint-disable-next-line react-hooks/exhaustive-deps
     }, [key, measure])
 
-    return { facts, busy, refresh: () => void measure(names, true) }
+    return { facts, busy, noCurl, refresh: () => void measure(names, true) }
 }
 
 export default function Home({
@@ -186,7 +190,7 @@ export default function Home({
 }) {
     const v = verdictNow(live)
     const { spec } = usePending()
-    const { facts, busy, refresh } = useFacts(live)
+    const { facts, busy, noCurl, refresh } = useFacts(live)
     const outputs = Object.entries(live.status?.outputs || {})
 
     /* R-064: «движок стоит, а туннеля нет». Состояние, при котором интерфейс работает, правила
@@ -378,7 +382,7 @@ export default function Home({
                     <ExplainCard />
                 </div>
                 <div className="min-w-0">
-                    <OutputsColumn live={live} facts={facts} busy={busy} onRefresh={refresh} />
+                    <OutputsColumn live={live} facts={facts} busy={busy} noCurl={noCurl} onRefresh={refresh} />
                 </div>
             </div>
         </div>
@@ -574,11 +578,12 @@ function RuleRow({
  *  Порядок постоянный — подписка, затем туннели по имени: блоки, переставляющиеся местами при
  *  каждом опросе, человек перечитывает заново каждый раз. */
 function OutputsColumn({
-    live, facts, busy, onRefresh,
+    live, facts, busy, noCurl, onRefresh,
 }: {
     live: Live
     facts: Record<string, Facts>
     busy: boolean
+    noCurl?: boolean
     onRefresh: () => void
 }) {
     /* Какой выход к какой подписке относится — знает СПЕКА, а не состояние: `steer status`
@@ -640,6 +645,11 @@ function OutputsColumn({
                     {busy ? 'меряем…' : 'проверить'}
                 </button>
             </div>
+            {noCurl && (
+                <p className="text-xs text-warning-fg">
+                    Не установлен curl: страна и отклик выходов не измеряются. Установите пакет curl.
+                </p>
+            )}
 
             {/* По блоку на КАЖДУЮ ПОДПИСКУ: остаток и сроки у них свои, и один блок на две
                 панели смешал бы их числа. Локации — строками внутри своей подписки. */}
