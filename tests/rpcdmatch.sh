@@ -2648,8 +2648,28 @@ check "спеки нет — она заводится чтением" "yes" \
       "$([ -s "$T/etc/spec.json" ] && echo yes || echo no)"
 check "и в ней есть постоянный выход direct" "direct" \
       "$(printf '%s' "$out" | python3 -c 'import json,sys; d=json.load(sys.stdin); print(",".join(k for k,v in d["outputs"].items() if v.get("kind")=="direct"))')"
-check "каналов в ней нет — это точная запись того, что есть" "0" \
-      "$(printf '%s' "$out" | python3 -c 'import json,sys; print(len(json.load(sys.stdin)["channels"]))')"
+check "правил в ней нет — это точная запись того, что есть" "0" \
+      "$(printf '%s' "$out" | python3 -c 'import json,sys; print(len(json.load(sys.stdin).get("rules", [])))')"
+check "и это спека v2, а не прежняя" "2" \
+      "$(printf '%s' "$out" | python3 -c 'import json,sys; print(json.load(sys.stdin)["version"])')"
+# Рядом лежит spec.yaml — спека ведётся руками: второй файл не заводится вовсе, и запись через
+# интерфейс отвергается словами (движок при двух спеках не читает ни одну).
+rm -f "$T/etc/spec.json"
+printf 'version: 2\n' > "$T/etc/spec.yaml"
+rpcd spec_get >/dev/null
+check "при spec.yaml рядом второй файл не заводится" "no" "$([ -s "$T/etc/spec.json" ] && echo yes || echo no)"
+out="$(rpcd spec_set '{"spec":"{\"version\":2}"}')"
+check "запись спеки при двух файлах отвергается" "false" "$(printf '%s' "$out" | jget ok)"
+check "и причина названа" "yes" "$(printf '%s' "$out" | jget error | grep -q 'spec.yaml' && echo yes || echo no)"
+rm -f "$T/etc/spec.yaml"
+printf '{"version":2}\n' > "$T/etc/spec.json"
+# Прежняя v1 перед заменой на v2 остаётся копией рядом — один раз, старейшая.
+printf '{"schema":1,"outputs":{},"channels":[]}\n' > "$T/etc/spec.json"
+rm -f "$T/etc/spec.json.v1.bak"
+out="$(rpcd spec_set '{"spec":"{\"version\":2}"}')"
+check "v1 перед заменой на v2 сохранена копией" "yes" "$(grep -q schema "$T/etc/spec.json.v1.bak" && echo yes || echo no)"
+out="$(rpcd spec_set '{"spec":"{\"version\":2,\"outputs\":{}}"}')"
+check "а вторая замена копию не затирает" "yes" "$(grep -q schema "$T/etc/spec.json.v1.bak" && echo yes || echo no)"
 printf '{"schema":1,"outputs":{},"channels":[{"name":"чужой","out":"vl","match":{"any":true}}]}\n' \
     > "$T/etc/spec.json"
 rpcd spec_get >/dev/null
@@ -3658,6 +3678,41 @@ out="$(rpcd apply)"
 check "у устройства есть своя зона — нашей не появляется" "" "$(zone_id_by_name steer_clients)"
 check "ему хватает проброса из его зоны" "lan ts" "$(fwd_srcs steer_iface)"
 rm -f "$T/uci.store"; : > "$T/uci.store"
+
+# ---- спека v2: бэкенд читает её так же, как прежнюю v1 ------------------------------------
+# Интерфейс пишет v2 (`lists`, `rules`, `subscription`, `lan.devices`); до первого сохранения на
+# диске может лежать v1. Читатели оболочки понимают обе формы.
+mkdir -p "$T/etc/subs"
+printf 'vless://k@h:443#n\n' > "$T/etc/subs/v2.txt"
+cat > "$T/etc/spec.json" <<EOF
+{"version":2,"lan":{"devices":["br-lan"]},
+ "lists":{"a":{"domains_file":["$T/lists/domains/v2only.lst"]},"b":{"prefixes_file":["$T/lists/v2pfx.lst"]}},
+ "outputs":{"direct":{"kind":"direct"},"nl":{"kind":"tunnel","protocol":"vless","subscription":"$T/etc/subs/v2.txt","nodes":[0,2]}},
+ "rules":[{"name":"Новости","to":["a"],"out":"nl"},{"name":"Всё","to":"all","out":"direct","enabled":false}]}
+EOF
+rm -f "$T/lists/domains/v2only.lst" "$T/lists/v2pfx.lst"
+printf '{"categories":[],"domain_lists":[],"base_url":"https://example.invalid/l"}\n' > "$T/etc/manifest.json"
+out="$(rpcd apply)"
+check "доскачивание видит файлы списков спеки v2" "yes;yes" \
+      "$([ -s "$T/lists/domains/v2only.lst" ] && echo yes || echo no);$([ -s "$T/lists/v2pfx.lst" ] && echo yes || echo no)"
+check "подписка выхода tunnel найдена по ключу subscription" "1;2" \
+      "$(rpcd sub_list | python3 -c 'import json,sys
+d=[d for d in json.load(sys.stdin)["subs"] if d["name"]=="v2"]
+print("%s;%s" % (d[0]["used"], d[0]["used_nodes"]) if d else "нет")')"
+rep="$(rpcd support_report | jget text)"
+check "отчёт читает правила v2 с видом списка" "yes;yes;yes" \
+      "$(printf '%s' "$rep" | grep -q 'Новости -> nl (доменные списки)' && echo yes || echo no);$(printf '%s' "$rep" | grep -q 'Всё -> direct (весь трафик) \[ВЫКЛЮЧЕНО\]' && echo yes || echo no);$(printf '%s' "$rep" | grep -q 'vless://' && echo no || echo yes)"
+# Архив со спекой v2 принимается восстановлением.
+out="$(printf '%s\n' 'splify2-backup 2' '[spec]' '{"version":2,"outputs":{"direct":{"kind":"direct"}},"rules":[{"name":"x","to":"all","out":"direct"}]}' | backup_put)"
+check "архив со спекой v2 принимается" "true" "$(printf '%s' "$out" | jget ok)"
+out="$(printf '%s\n' 'splify2-backup 2' '[spec]' '{"version":2,"rules":[{"name":"x","to":"all","out":"a;reboot"}]}' | backup_put)"
+check "имя выхода с разделителем в правиле v2 отвергается" "false" "$(printf '%s' "$out" | jget ok)"
+out="$(printf '%s\n' 'splify2-backup 2' '[spec]' '{"version":2,"lists":{"a":{"domains_file":["/etc/passwd"]}}}' | backup_put)"
+check "список вне каталога списков в v2 отвергается" "false" "$(printf '%s' "$out" | jget ok)"
+out="$(printf '%s\n' 'splify2-backup 2' '[spec]' '{"version":2,"dns":{"upstreams":{"g":{"url":"file:///etc/shadow"}}}}' | backup_put)"
+check "чужая схема в адресе DNS отвергается" "false" "$(printf '%s' "$out" | jget ok)"
+out="$(printf '%s\n' 'splify2-backup 2' '[spec]' '{"version":2,"outputs":{"t":{"kind":"awg","conf":"/etc/shadow"}}}' | backup_put)"
+check "файл настройки вне каталога движка отвергается" "false" "$(printf '%s' "$out" | jget ok)"
 
 printf '\n%s\n' "$([ "$fails" -eq 0 ] && echo 'все проверки прошли' || echo "ЕСТЬ ПРОВАЛЫ: $fails")"
 [ "$fails" -eq 0 ]

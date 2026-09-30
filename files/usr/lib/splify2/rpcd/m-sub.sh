@@ -125,7 +125,8 @@ sub_used_by() {  # PATH -> ЧИСЛО
     # пустоту, а интерфейс показывал «подписок нет».
     _u=0
     if [ -s "$SPEC" ]; then
-        _u="$(jsonfilter -i "$SPEC" -e '@.outputs[*].sub_file' 2>/dev/null |
+        # `subscription` — ключ спеки v2, `sub_file` — прежней v1 (до переноса интерфейсом).
+        _u="$(jsonfilter -i "$SPEC" -e '@.outputs[*].subscription' -e '@.outputs[*].sub_file' 2>/dev/null |
               grep -Fx -c -- "$1" 2>/dev/null)"
     fi
     case "${_u:-}" in ''|*[!0-9]*) _u=0 ;; esac
@@ -165,7 +166,7 @@ spec_output_names() {  # -> имена выходов по одному на с�
 sub_outputs_using() {  # PATH -> имена выходов по одному на строку
     [ -s "$SPEC" ] || return 0
     for _oo in $(spec_output_names); do
-        [ "$(jsonfilter -i "$SPEC" -e "@.outputs['$_oo'].sub_file" 2>/dev/null)" = "$1" ] || continue
+        [ "$(spec_out_sub "$_oo")" = "$1" ] || continue
         printf '%s\n' "$_oo"
     done
 }
@@ -174,7 +175,7 @@ sub_nodes_used() {  # PATH -> ЧИСЛО
     _un=0
     [ -s "$SPEC" ] || { printf '0'; return; }
     for _uo in $(spec_output_names); do
-        [ "$(jsonfilter -i "$SPEC" -e "@.outputs['$_uo'].sub_file" 2>/dev/null)" = "$1" ] || continue
+        [ "$(spec_out_sub "$_uo")" = "$1" ] || continue
         _uc="$(jsonfilter -i "$SPEC" -e "@.outputs['$_uo'].nodes[*]" 2>/dev/null | grep -c .)"
         case "${_uc:-}" in ''|*[!0-9]*) _uc=0 ;; esac
         _un=$((_un + _uc))

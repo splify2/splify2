@@ -5,8 +5,8 @@
 // deliberately does not model channels itself — a second model would be a second
 // thing to keep in sync with the engine's contract.
 
+import { decodeSpec } from './specv2'
 import {
-    normalizeSpec,
     toCatalog,
     type AllowDomains,
     type Narrow,
@@ -180,12 +180,12 @@ export const rpc = {
      *  precisely what must not be reinterpreted on the way through. */
     /** Единственный вход спеки в интерфейс — поэтому и приведение написаний стоит здесь,
      *  а не в четырёх потребителях `match` по отдельности (I-041, splicicd#7). */
-    specGet: () => specGetRaw().then(normalizeSpec),
+    specGet: () => specGetRaw().then(decodeSpec),
 
     /** Снимок спеки в момент последнего apply — по нему считается «Применить · N».
      *  На старом бэкенде метода нет: вызывающий обязан ловить отказ (pending.ts ловит,
      *  и тогда применённым считается сохранённое — счётчик стартует с нуля). */
-    appliedGet: () => appliedGetRaw().then(normalizeSpec),
+    appliedGet: () => appliedGetRaw().then(decodeSpec),
     /** warn — сохранение прошло, но что-то требует внимания: например список, который не
      *  скачался, из-за чего его канал не поднимется. Это не ошибка сохранения. */
     specSet: declare<{ ok: boolean; error?: string; warn?: string }>('spec_set', ['spec']),

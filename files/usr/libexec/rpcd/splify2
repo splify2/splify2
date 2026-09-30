@@ -294,7 +294,10 @@ FW_OWNED="${FW_OWNED:-/etc/splify2/fw-owned}"
 # СТОИТ ПЕРВОЙ, и это не вкусовщина: пробросы «зона клиентов -> зона туннеля» заводит
 # синхронизация ЗОНЫ ТУННЕЛЯ, спрашивая fw_client_zones. Пока зоны клиентов нет, та её не
 # назовёт — значит завести её надо раньше, чем синхронизируются зоны туннелей.
-FW_ZONES="steer_clients:clients:0 steer_vless:vless,xsteer:0 steer_iface:interface:1"
+#
+# hysteria2 (QUIC-клиент со своим TUN, как vless) идёт в зону туннелей движка, awg (WireGuard
+# в ядре, адреса наружу меняются masquerade, как у обычного интерфейса) — в зону интерфейсов.
+FW_ZONES="steer_clients:clients:0 steer_vless:vless,hysteria2,xsteer:0 steer_iface:interface,awg:1"
 
 # Релизы GitHub: версия, которой ставится пакет, и НАЗВАНИЕ, которым выпуск называют.
 #

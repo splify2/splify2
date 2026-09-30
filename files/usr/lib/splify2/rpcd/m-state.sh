@@ -320,7 +320,7 @@ case "$2" in
         # члены пула добираются из самой спеки: пул из wg-a и wg-b — это два наших
         # исходящих, и второй иначе был бы предложен источником.
         _cn_ours=" $("$STEER" outputs --devices --spec "$SPEC" 2>/dev/null | tr '\n' ' ')"
-        _cn_ours="$_cn_ours$(jsonfilter -i "$SPEC" -e '@.outputs[*].devices[*]' 2>/dev/null |
+        _cn_ours="$_cn_ours$(jsonfilter -i "$SPEC" -e '@.outputs[*].devices[*]' -e '@.outputs[*].device' 2>/dev/null |
                              tr '\n' ' ')"
 
         # 2. ЧЕРЕЗ УСТРОЙСТВО ИДЁТ МАРШРУТ ПО УМОЛЧАНИЮ — значит наружу роутер уходит через
@@ -1024,7 +1024,40 @@ case "$2" in
         sr_line "-- правила (из спеки) --"
         _sr_spec="$(cat "$SPEC" 2>/dev/null)"
         _sr_rules=0
-        if [ -n "$_sr_spec" ] && json_load "$_sr_spec" 2>/dev/null && json_select channels 2>/dev/null; then
+        # Спека v2: правила — `rules`, списки — `lists` (вид списка по ключам списка, на который
+        # ссылается `to`). Прежняя v1 читается ниже, пока интерфейс не переписал файл.
+        _sr_n2="$(jsonfilter -i "$SPEC" -e '@.rules[*].out' 2>/dev/null | grep -c .)"
+        case "${_sr_n2:-}" in ''|*[!0-9]*) _sr_n2=0 ;; esac
+        if [ "$_sr_n2" -gt 0 ]; then
+            _sr_i=0
+            while [ "$_sr_i" -lt "$_sr_n2" ]; do
+                _sr_rn="$(jsonfilter -i "$SPEC" -e "@.rules[$_sr_i].name" 2>/dev/null)"
+                _sr_ro="$(jsonfilter -i "$SPEC" -e "@.rules[$_sr_i].out" 2>/dev/null)"
+                _sr_ren="$(jsonfilter -i "$SPEC" -e "@.rules[$_sr_i].enabled" 2>/dev/null)"
+                _sr_to="$(jsonfilter -i "$SPEC" -e "@.rules[$_sr_i].to[*]" -e "@.rules[$_sr_i].to" 2>/dev/null)"
+                _sr_mkind="вид списка не назван"
+                for _sr_l in $_sr_to; do
+                    case "$_sr_l" in
+                        all) _sr_mkind="весь трафик"; break ;;
+                        *[!A-Za-z0-9_.-]*|'') continue ;;
+                    esac
+                    if [ -n "$(jsonfilter -i "$SPEC" -e "@.lists['$_sr_l'].domains_file[*]" 2>/dev/null)" ]; then
+                        _sr_mkind="доменные списки"; break
+                    elif [ -n "$(jsonfilter -i "$SPEC" -e "@.lists['$_sr_l'].prefixes_file[*]" 2>/dev/null)" ]; then
+                        _sr_mkind="адресные списки"; break
+                    elif [ "$(jsonfilter -i "$SPEC" -e "@.lists['$_sr_l'].all" 2>/dev/null)" = true ]; then
+                        _sr_mkind="весь трафик"; break
+                    fi
+                done
+                case "$_sr_ren" in
+                    0|false) _sr_rst=" [ВЫКЛЮЧЕНО]" ;;
+                    *) _sr_rst="" ;;
+                esac
+                sr_line "${_sr_rn:-без имени} -> ${_sr_ro:-выход не назван} ($_sr_mkind)$_sr_rst"
+                _sr_rules=$((_sr_rules + 1))
+                _sr_i=$((_sr_i + 1))
+            done
+        elif [ -n "$_sr_spec" ] && json_load "$_sr_spec" 2>/dev/null && json_select channels 2>/dev/null; then
             json_get_keys _sr_rs
             for _sr_r in $_sr_rs; do
                 json_select "$_sr_r" 2>/dev/null || continue

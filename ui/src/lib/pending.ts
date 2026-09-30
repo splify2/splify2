@@ -1,7 +1,8 @@
 import { useEffect, useState } from 'react'
 import { notify } from '@/lib/notify'
 import { rpc } from '@/lib/rpc'
-import { EMPTY_SPEC, expandNarrow, type Channel, type Spec } from '@/lib/model'
+import { EMPTY_SPEC, type Channel, type Spec } from '@/lib/model'
+import { encodeSpec, wasV1 } from '@/lib/specv2'
 
 /** Автосохранение и счётчик неприменённого — одно место на весь экран.
  *
@@ -83,9 +84,15 @@ class PendingStore {
             rpc.appliedGet().catch(() => null),
         ])
         if (!this.saved) {
-            this.saved = saved
-            this.applied = applied ?? saved
+            /* Спека прежнего формата (v1) переписывается в v2 сразу, без участия человека:
+             * движок 2.0 v1 больше не читает. Смысл правил не меняется, поэтому счётчик
+             * «Применить · N» остаётся нулём (сравнение идёт по модели, а не по записи), а
+             * бэкенд перед заменой оставляет копию прежнего файла рядом. */
+            const migrate = wasV1(saved)
+            this.saved = migrate ? { ...saved, schema: undefined } : saved
+            this.applied = applied ?? this.saved
             this.emit()
+            if (migrate) this.edit(this.saved)
         }
         return this.saved
     }
@@ -126,10 +133,10 @@ class PendingStore {
         this.inflight = true
         this.writing = this.writing.then(async () => {
             try {
-                /* В форме движка: правила с сужением подсетей разворачиваются в канал и его
-                 * спутник (model.ts, expandNarrow). В памяти и в `applied` остаётся форма
+                /* В форме движка (спека v2, specv2.ts): правила с сужением подсетей разворачиваются
+                 * в правило и его спутника, пулы — в группы. В памяти и в `applied` остаётся форма
                  * интерфейса — иначе счётчик «Применить · N» сравнивал бы разные формы. */
-                const r = await rpc.specSet(JSON.stringify(expandNarrow(spec)))
+                const r = await rpc.specSet(JSON.stringify(encodeSpec(spec)))
                     .catch((e) => ({ ok: false, error: String(e instanceof Error ? e.message : e) }))
                 if (!r.ok) {
                     /* Отказ dry-run — это не «потеряно»: спека осталась в памяти, человек

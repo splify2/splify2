@@ -27,6 +27,9 @@ run() {  # ИМЯ КОМАНДА...
 
 run listsmatch sh "$ROOT/tests/listsmatch.sh"
 run rpcdmatch  sh "$ROOT/tests/rpcdmatch.sh"
+# Тот же объект rpcd, но против настоящего движка: спека v2, которую пишет интерфейс, обязана
+# пройти его разбор, а негодная — вернуться его словами.
+run enginematch sh "$ROOT/tests/enginematch.sh"
 run pkgmatch   sh "$ROOT/tests/pkgmatch.sh"
 # Автообновление подписок: задание крона само ничего не качает — оно зовёт объект rpcd по тем
 # подпискам, у которых срок вышел. Стенд про то, кого позвали и кого не тронули.

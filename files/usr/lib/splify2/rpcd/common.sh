@@ -183,6 +183,27 @@ manifest_url() {
     [ -n "$_mu" ] && printf '%s' "$_mu" || printf '%s' "$MANIFEST_URL_DEFAULT"
 }
 
+# ЧТЕНИЕ СПЕКИ ИЗ ОБОЛОЧКИ. Интерфейс пишет спеку v2 (JSON с `"version": 2`), но до первого
+# сохранения на диске может лежать прежняя v1 (`schema`, `channels`, `sub_file`), поэтому все
+# читатели ниже понимают обе формы; разбор самой спеки — дело движка и интерфейса.
+
+# Файлы списков, на которые ссылается спека: v2 — `lists.*.prefixes_file|domains_file`, v1 —
+# `channels[].match.*_files`. Перечень (массив) — форма, которую пишет интерфейс; одиночная
+# строка в руками написанной спеке здесь не видна, и такой файл доскачать не выйдет.
+spec_list_files() {  # ФАЙЛ_СПЕКИ -> пути по одному в строке
+    jsonfilter -i "$1" \
+        -e '@.lists[*].prefixes_file[*]' -e '@.lists[*].domains_file[*]' \
+        -e '@.channels[*].match.prefixes_files[*]' \
+        -e '@.channels[*].match.domains_files[*]' 2>/dev/null
+}
+
+# Файл подписки выхода: v2 — `subscription`, v1 — `sub_file`.
+spec_out_sub() {  # ИМЯ_ВЫХОДА -> путь
+    _sos="$(jsonfilter -i "$SPEC" -e "@.outputs['$1'].subscription" 2>/dev/null)"
+    [ -n "$_sos" ] || _sos="$(jsonfilter -i "$SPEC" -e "@.outputs['$1'].sub_file" 2>/dev/null)"
+    printf '%s' "$_sos"
+}
+
 fetch_missing_lists() {  # ПУТЬ_К_СПЕКЕ
     _spec="$1"
     # КАТАЛОГА МОЖЕТ НЕ БЫТЬ НА ДИСКЕ ВОВСЕ — и это не редкость: свежий роутер, где вкладку
@@ -203,9 +224,7 @@ fetch_missing_lists() {  # ПУТЬ_К_СПЕКЕ
     # первой же строке, и вместе с первым издателем молча выпадал второй, которому манифест
     # не нужен вовсе.
     _ad_ready=0
-    for _f in $(jsonfilter -i "$_spec" \
-        -e '@.channels[*].match.prefixes_files[*]' \
-        -e '@.channels[*].match.domains_files[*]' 2>/dev/null | sort -u); do
+    for _f in $(spec_list_files "$_spec" | sort -u); do
         [ -s "$_f" ] && continue
         _rel="${_f#"$LISTS"/}"
         [ "$_rel" = "$_f" ] && continue     # файл вне каталога списков — не наш

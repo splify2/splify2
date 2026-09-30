@@ -136,7 +136,7 @@ Vercel), роутер — в этом, а схема одна.
 | `geo.asn` | int | номер автономной системы; **имя провайдера сводит панель, не роутер** |
 | `geo.at` | int | когда измерено |
 | `out[].i` | int | порядковый номер выхода в спеке (не имя) |
-| `out[].kind` | `direct`\|`interface`\|`vless`\|`xsteer`\|`tgws`\|`awg`\|`group`\|`other` | вид выхода |
+| `out[].kind` | `direct`\|`interface`\|`vless`\|`hysteria2`\|`xsteer`\|`tgws`\|`awg`\|`group`\|`zapret`\|`other` | вид выхода |
 | `out[].up` | bool\|null | поднят; null — движок не сказал |
 | `out[].cc` | 2 буквы | страна ЭТОГО выхода, из кэша |
 | `out[].probe` | `probing`\|`failed`\|`no_such_node` | состояние пробы |

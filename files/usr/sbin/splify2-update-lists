@@ -166,10 +166,14 @@ shrank() {  # НОВОЕ_ЧИСЛО ПРЕЖНЕЕ_ЧИСЛО
 # Файлы, на которые ссылаются каналы — по виду, потому что подгонять надо только
 # адресные.
 used_files() {  # ip|domains
+    # Спека v2 (`lists`) и прежняя v1 (`channels`): до первого сохранения интерфейсом на
+    # диске может лежать любая.
     if [ "$1" = ip ]; then
-        jsonfilter -i "$SPEC" -e '@.channels[*].match.prefixes_files[*]' 2>/dev/null
+        jsonfilter -i "$SPEC" -e '@.lists[*].prefixes_file[*]' \
+            -e '@.channels[*].match.prefixes_files[*]' 2>/dev/null
     else
-        jsonfilter -i "$SPEC" -e '@.channels[*].match.domains_files[*]' 2>/dev/null
+        jsonfilter -i "$SPEC" -e '@.lists[*].domains_file[*]' \
+            -e '@.channels[*].match.domains_files[*]' 2>/dev/null
     fi
 }
 

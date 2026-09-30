@@ -160,11 +160,32 @@ backup_check_spec() {  # ФАЙЛ
                 echo "устройство «$dev» у выхода $o: так имя устройства не выглядит"
                 return 1
             fi
+            # `sub_file` — прежняя спека v1, `subscription` — v2. Проверяются оба ключа:
+            # архив прежнего выпуска остаётся годным, а новый не проезжает мимо проверки.
             json_get_var sf sub_file
             if [ -n "$sf" ] && ! backup_safe_path "$sf"; then
                 echo "файл подписки «$sf» у выхода $o лежит вне каталогов настроек"
                 return 1
             fi
+            sf=''
+            json_get_var sf subscription
+            if [ -n "$sf" ] && ! backup_safe_path "$sf"; then
+                echo "файл подписки «$sf» у выхода $o лежит вне каталогов настроек"
+                return 1
+            fi
+            # Файлы настройки туннелей и обхода (conf, strategy) читает движок от root: только
+            # под каталогом настроек и без «..».
+            for cf in conf strategy; do
+                sf=''
+                json_get_var sf "$cf"
+                if [ -n "$sf" ]; then
+                    case "$sf" in
+                        *..*|*[\ \"\'\`\$\;\|\&\<\>]*) echo "путь «$sf» у выхода $o недопустим"; return 1 ;;
+                        /etc/steer/*|"${SPEC%/*}"/*) ;;
+                        /*) echo "файл «$sf» у выхода $o лежит вне каталога настроек движка"; return 1 ;;
+                    esac
+                fi
+            done
             json_select ..
         done
         json_select ..
@@ -189,6 +210,31 @@ backup_check_spec() {  # ФАЙЛ
         -e '@.channels[*].match.prefixes_files[*]' -e '@.channels[*].match.domains_files[*]' \
         -e '@.channels[*].match.prefixes_file'    -e '@.channels[*].match.domains_file' 2>/dev/null); do
         backup_safe_path "$p" || { echo "список «$p» лежит вне каталога списков"; return 1; }
+    done
+    # ---- спека v2: правила, списки, клиенты, DNS --------------------------------------
+    # Те же доводы, что у каналов выше, для новых ключей. Выход правила и имена членов групп
+    # уезжают в имена наборов и командные строки — строгая проверка; имя правила — ярлык.
+    for v in $(jsonfilter -i "$1" -e '@.rules[*].out' -e '@.outputs[*].members[*]' \
+               -e '@.outputs[*].over' -e '@.dns.upstreams[*].out' 2>/dev/null); do
+        backup_safe_word "$v" || { echo "имя выхода «$v» в правиле или группе — только латиница, цифры, точка, двоеточие, дефис"; return 1; }
+    done
+    for v in $(jsonfilter -i "$1" -e '@.lan.devices[*]' 2>/dev/null); do
+        backup_safe_word "$v" || { echo "lan.devices «$v»: имя устройства так не выглядит"; return 1; }
+    done
+    for v in $(jsonfilter -i "$1" -e '@.rules[*].name' 2>/dev/null); do
+        backup_safe_label "$v" || { echo "имя правила «$v»: кавычки, доллар и разделители команд в имени недопустимы"; return 1; }
+    done
+    for p in $(jsonfilter -i "$1" -e '@.lists[*].prefixes_file[*]' -e '@.lists[*].domains_file[*]' \
+               -e '@.lists[*].srs[*]' 2>/dev/null); do
+        backup_safe_path "$p" || { echo "список «$p» лежит вне каталога списков"; return 1; }
+    done
+    # Адрес сервера DNS уезжает в запросы резолвера: без пробелов, кавычек и подстановок.
+    for v in $(jsonfilter -i "$1" -e '@.dns.upstreams[*].url' 2>/dev/null); do
+        case "$v" in
+            https://*|tls://*|quic://*|udp://*|tcp://*) ;;
+            *) echo "DNS «$v»: ждём https://, tls://, quic://, udp:// или tcp://"; return 1 ;;
+        esac
+        case "$v" in *[\ \"\'\`\$\;\|\&\<\>]*) echo "DNS «$v»: недопустимые символы"; return 1 ;; esac
     done
     return 0
 }
@@ -566,7 +612,7 @@ case "$2" in
             # «Применить · N» показала бы ноль на только что заменённой настройке.
             if [ ! -s "$APPLIED" ]; then
                 if [ -s "$SPEC" ]; then cp "$SPEC" "$APPLIED" 2>/dev/null
-                else printf '{"schema":1,"outputs":{},"channels":[]}\n' > "$APPLIED"
+                else printf '{"version":2}\n' > "$APPLIED"
                 fi
             fi
             cp "$D/spec" "$SPEC.new.$$" && mv "$SPEC.new.$$" "$SPEC" ||

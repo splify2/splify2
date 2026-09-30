@@ -16,7 +16,17 @@
  *  DPI. Первый вид, у которого «нужна метка» и «есть устройство» разошлись. splify2 таких
  *  выходов больше не создаёт и обход не настраивает (движок вид сохранил); уже стоящий в
  *  спеке выход читается и записывается обратно как есть, чтобы правка правил его не портила. */
-export type OutputKind = 'interface' | 'direct' | 'vless' | 'xsteer' | 'zapret'
+export type OutputKind =
+    | 'interface' | 'direct' | 'vless' | 'hysteria2' | 'xsteer' | 'awg' | 'tgws' | 'group' | 'zapret'
+
+/** Как группа выбирает член (спека v2, docs/spec-v2.md): `order` — первый живой, `latency` —
+ *  самый быстрый с допуском, `manual` — выбор человека (`steer select`), `balance` — ядро
+ *  раскидывает новые соединения по живым членам по весам. */
+export type GroupPick = 'order' | 'latency' | 'manual' | 'balance'
+
+/** IPv6 от хоста на том конце туннеля: `routed` — хост маршрутизует префикс, `nat` — один адрес
+ *  и masquerade IPv6, `off` — выход IPv6 не несёт. Нет ключа — несёт, если несёт его вид. */
+export type Ipv6Mode = 'routed' | 'nat' | 'off'
 
 /** Что делать с трафиком выхода, когда ни одно устройство не отвечает.
  *
@@ -79,6 +89,35 @@ export interface Output {
      *  мажора, spec.c: `else js_skip(j)`), — то есть спека с частями законна на любом движке,
      *  который умеет пул. Признак живёт только в интерфейсе. */
     part_of?: string
+    /** Выход-подложка, через который идёт трафик самого туннеля (спека v2 `over`, в v1 `via`).
+     *  Пусто — напрямую. */
+    over?: string
+    /** IPv6 от хоста (interface, awg): см. Ipv6Mode. `prefix` — только при `routed`. */
+    ipv6?: Ipv6Mode
+    prefix?: string
+    /** kind=vless: фильтр узлов подписки по транспорту (`tcp`, `grpc`, `xhttp`, `ws`,
+     *  `httpupgrade`). Фильтр, а не замена: транспорт — свойство входа на сервере, и узлы с
+     *  ним приходят из подписки. Пусто — любые. */
+    transport?: string[]
+    /** kind=xsteer и kind=awg: файл настройки; kind=tgws: домен моста. Пусто — умолчание
+     *  движка (`/etc/steer/xsteer/<имя>.conf`, `/etc/steer/awg/<имя>.conf`). */
+    conf?: string
+    stream?: string
+    stream_port?: number
+    domain?: string
+    /** kind=group и пул (interface с несколькими `devices`): как выбирается член и её
+     *  параметры. У пула из устройств бывают только `order` и `latency`. */
+    members?: string[]
+    pick?: GroupPick
+    default?: string
+    tolerance?: number
+    interval?: number
+    url?: string
+    idle_timeout?: number
+    weights?: number[]
+    /** Ключи выхода, которых модель не знает: записываются обратно как есть, чтобы правка
+     *  правил не стирала то, что человек дописал руками или что появится в новых движках. */
+    extra?: Record<string, unknown>
 }
 
 /** Служебная часть пула — см. `Output.part_of`. Одной функцией, чтобы «спрятать части» было
@@ -243,9 +282,14 @@ export interface Channel {
     /** Arrays, like the engine: several lists feeding one channel is the normal case,
      *  and the compiler merges channels that agree on output/clients/mode into ONE set
      *  and ONE rule — so a dozen enabled lists cost two rules per packet, not a dozen. */
+    /** Сервер DNS для имён этого правила: имя из `dns.upstreams` либо сразу адрес (спека v2,
+     *  `dns:` у правила). Нет — общий (`dns.upstream`) или прежний путь наверх. */
+    dns?: string | Upstream
     match: {
         prefixes_files?: string[]
         domains_files?: string[]
+        /** Наборы sing-box (`.srs`): имена, подсети и сужение в одном файле. */
+        srs_files?: string[]
         mode?: DomainMode
         any?: boolean
         /** СХЕМА 2: сужение канала по транспорту и портам назначения. В спеке на диске
@@ -280,12 +324,39 @@ export interface Narrow {
     ports?: string[]
 }
 
+/** Сервер DNS резолвера движка (спека v2, `dns.upstreams`). `url` выбирает транспорт:
+ *  `https://` — DoH, `tls://` — DoT, `quic://` — DoQ, `udp://` и `tcp://` — обычный DNS.
+ *  `out` — выход, через который уходит запрос к серверу (пусто или `direct` — напрямую);
+ *  `ips` — адреса сервера (имя тогда не разрешается); `bootstrap` — серверы обычного DNS,
+ *  которыми разрешается имя сервера. */
+export interface Upstream {
+    url: string
+    out?: string
+    ips?: string[]
+    bootstrap?: string[]
+}
+
+/** Раздел `dns` спеки v2. */
+export interface DnsSpec {
+    /** Режим доменных правил без своего `resolve`; по умолчанию `fakeip`. */
+    mode?: DomainMode
+    /** Записей в кэше ответов; 0 или нет — кэша нет. */
+    cache?: number
+    cache_ttl?: { min?: number; max?: number; negative?: number }
+    /** Общий сервер для имён под правилами, у которых своего нет. */
+    upstream?: string
+    /** Серверы обычного DNS для разрешения имён серверов DoT/DoH/DoQ. */
+    bootstrap?: string[]
+    upstreams?: Record<string, Upstream>
+}
+
 export interface Spec {
-    /** 1 или 2. Разница ровно в трёх полях канала: `proto`, `ports` и `scope`. Спека,
-     *  в которой их нет, обязана оставаться схемой 1 — движок постарше отвергает
-     *  незнакомый номер целиком (это лучше, чем понять настройку наполовину), а
-     *  поднимать номер без нужды значит отрезать роутеры, где движок ещё не обновлён. */
-    schema: 1 | 2
+    /** Номер формы записи. В модели интерфейса он больше не нужен: на диск уезжает спека v2
+     *  (`version: 2`), а прежняя v1 (`schema`) читается и при первом сохранении переписывается.
+     *  Поле осталось необязательным ради старых фикстур и ради признака «прочитана v1». */
+    schema?: 1 | 2
+    /** Раздел `dns` спеки v2. */
+    dns?: DnsSpec
     /** Подсети клиентов для каналов без `from`. Способ описать тех же клиентов АДРЕСОМ
      *  вместо устройства — и способ их ОГРАНИЧИТЬ: гостевая подсеть на том же мосту
      *  нарочно остаётся вне списка. Вместе с несколькими `lan_devices` движок такую спеку
@@ -854,7 +925,6 @@ export function routedOutputs(outputs: Record<string, Output> | undefined | null
 /** What a fresh install starts from: nothing routed anywhere. An empty channel list
  *  is a valid spec, and it beats guessing which lists someone wants. */
 export const EMPTY_SPEC: Spec = {
-    schema: 1,
     outputs: { [DIRECT]: { name: DIRECT, kind: 'direct' } },
     channels: [],
 }

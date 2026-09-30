@@ -453,7 +453,7 @@ tm_sub_host() {  # ССЫЛКА -> «домен deep» либо пусто
 # вычищаются вместе с кавычками.
 tm_list_files() {
     tr -d '\r\n' < "$SPEC" 2>/dev/null |
-        sed 's/"\(prefixes_files\|domains_files\)"[[:space:]]*:[[:space:]]*\[/\n@@[/g' |
+        sed 's/"\(prefixes_files\|domains_files\|prefixes_file\|domains_file\)"[[:space:]]*:[[:space:]]*\[/\n@@[/g' |
         sed -n 's/^@@\[\([^]]*\)\].*/\1/p' |
         tr ',' '\n' | tr -d '" \t' | grep . | sort -u
 }
@@ -581,7 +581,7 @@ tm_build() {
         _tm_i=$((_tm_i + 1))
         _tm_obj="$(printf '%s' "$_tm_st" | grep -o "\"$_tm_name\":{[^{}]*\(}[^{}]*\)\?" | head -1)"
         _tm_kindv="$(tm_field "$_tm_obj" kind)"
-        case "$_tm_kindv" in direct|interface|vless|zapret|obfs|xsteer|tgws) ;; *) _tm_kindv=other ;; esac
+        case "$_tm_kindv" in direct|interface|vless|hysteria2|zapret|obfs|xsteer|tgws|awg|group) ;; *) _tm_kindv=other ;; esac
         [ "$_tm_first" = 1 ] || printf ','
         _tm_first=0
         printf '{"i":%s,"kind":' "$_tm_i"
