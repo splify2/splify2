@@ -471,7 +471,7 @@ case "${1:-}" in
         [ -n "$_m" ] && : > "$_m"
         exit 0
         ;;
-    vless-probe|vless-nodes)
+    vless-probe|vless-nodes|hysteria2-probe|hysteria2-nodes)
         [ -n "${STEER_NOISE:-}" ] && echo "$STEER_NOISE" >&2
         [ -n "${STEER_JSON:-}" ] && printf '%s\n' "$STEER_JSON"
         exit "${STEER_RC:-0}"
@@ -1956,6 +1956,39 @@ check "узлы подписки спрашиваются у движка пут
 check "и ответ движка отдан дословно" "x" "$(printf '%s' "$out" | jget sub_file)"
 out="$(rpcd vless_nodes '{"sub":"/etc/passwd"}')"
 check "чужой путь вместо подписки отвергается" "false" "$(printf '%s' "$out" | jget ok)"
+# Смешанная подписка (46 ссылок vless:// и 5 hysteria2://, первая — vless; ключи выдуманы): файл
+# один, клиенты два. Бэкенд не делит узлы сам — каждый метод отдаёт движку тот же путь своей
+# командой, и ответ каждого клиента приходит дословно: узлы VLESS и hysteria2 редактор
+# складывает уже сам.
+cp "$T/etc/subs/green.txt" "$T/green.keep"
+: > "$T/etc/subs/green.txt"
+_i=1
+while [ "$_i" -le 46 ]; do
+    printf 'vless://00000000-0000-0000-0000-%012d@v%d.example.invalid:443?security=tls&sni=x.example.invalid#vless-%d\n' "$_i" "$_i" "$_i" >> "$T/etc/subs/green.txt"
+    _i=$((_i + 1))
+done
+_i=1
+while [ "$_i" -le 5 ]; do
+    printf 'hysteria2://00000000-0000-0000-0000-%012d@h%d.example.invalid:443/?sni=x.example.invalid&fm=%%7B%%22quicParams%%22%%3A%%7B%%22debug%%22%%3Afalse%%7D%%7D#hy-%d\n' "$_i" "$_i" "$_i" >> "$T/etc/subs/green.txt"
+    _i=$((_i + 1))
+done
+check "в смешанной подписке 51 ссылка" "51" "$(grep -c '://' "$T/etc/subs/green.txt")"
+: > "$T/steer.log"
+out="$(STEER_JSON='{"output":"","usable":5,"skipped":0,"foreign":46,"nodes":[{"index":0,"name":"hy-1"}]}' \
+       rpcd hysteria2_nodes "{\"sub\":\"$T/etc/subs/green.txt\"}")"
+check "смешанная подписка: hysteria2_nodes зовёт hysteria2-nodes по тому же файлу" \
+      "hysteria2-nodes $T/etc/subs/green.txt --spec $T/etc/spec.json" "$(tail -1 "$T/steer.log")"
+check "и ответ hysteria2-клиента дословно" "5" "$(printf '%s' "$out" | jget usable)"
+out="$(STEER_JSON='{"output":"","usable":46,"skipped":0,"foreign":5,"nodes":[]}' \
+       rpcd vless_nodes "{\"sub\":\"$T/etc/subs/green.txt\"}")"
+check "смешанная подписка: vless_nodes зовёт vless-nodes по тому же файлу" \
+      "vless-nodes $T/etc/subs/green.txt --spec $T/etc/spec.json" "$(tail -1 "$T/steer.log")"
+check "и ответ VLESS-клиента сообщает о чужих ссылках" "5" "$(printf '%s' "$out" | jget foreign)"
+: > "$T/steer.log"
+rpcd hysteria2_probe "{\"sub\":\"$T/etc/subs/green.txt\",\"node\":3}" > /dev/null
+check "проба узла hysteria2 идёт командой hysteria2-probe" "1" "$(grep -c '^hysteria2-probe ' "$T/steer.log")"
+check "и не командой vless-probe" "0" "$(grep -c '^vless-probe ' "$T/steer.log")"
+mv "$T/green.keep" "$T/etc/subs/green.txt"
 # Остаток второй подписки спрашивается по ЕЁ файлу: общий файл означал бы, что обзор
 # показывает остаток одной панели под именем другой.
 out="$(rpcd sub_quota '{"name":"green"}')"
