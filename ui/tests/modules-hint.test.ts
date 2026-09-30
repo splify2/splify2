@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest'
-import { missingModule } from '@/lib/engine'
+import { missingModule, specV2Unsupported } from '@/lib/engine'
+import type { Status } from '@/lib/model'
 
 // Модули движка 2.0 — отдельные пакеты. Экран называет недостающий пакет, но только когда
 // бэкенд сообщил список установленных: нет списка — утверждать нечего.
@@ -22,5 +23,22 @@ describe('какого модуля не хватает выходу', () => {
     })
     it('списка модулей нет — не утверждаем', () => {
         expect(missingModule({ kind: 'hysteria2' }, undefined)).toBeNull()
+    })
+})
+
+describe('читает ли движок спеку v2', () => {
+    const st = (features?: string[]) => ({ features }) as unknown as Status
+    it('признак spec_schema2 — читает', () => {
+        expect(specV2Unsupported(st(['status_cache', 'spec_schema2']))).toBe(false)
+    })
+    it('промежуточная сборка с groups, но без spec_schema2 — тоже читает', () => {
+        expect(specV2Unsupported(st(['groups']))).toBe(false)
+    })
+    it('перечень есть, а обоих признаков нет — не читает', () => {
+        expect(specV2Unsupported(st(['status_cache', 'xsteer_state']))).toBe(true)
+    })
+    it('перечня нет — утверждать нечего', () => {
+        expect(specV2Unsupported(st(undefined))).toBe(false)
+        expect(specV2Unsupported(null)).toBe(false)
     })
 })

@@ -515,6 +515,12 @@ PersistentKeepalive = 25}" ;;
         esac
         exit "${XS_LINK_RC:-0}"
         ;;
+    # Команды демона (`steer ctl check`): ответ — одна строка JSON, как у настоящего сокета.
+    ctl)
+        cat > /dev/null
+        [ -n "${CTL_RESP:-}" ] && printf '%s\n' "$CTL_RESP"
+        exit "${CTL_RC:-0}"
+        ;;
     sub-hwid)
         printf '{"hwid":"%s","os":"OpenWrt 25.12.5","model":"Xiaomi AX3000T"}\n' \
                "${STEER_HWID-splify2-9c53221f0abc9c53}"
@@ -1618,6 +1624,26 @@ check "отвергнутая спека не сохраняется" "false" "$
 check "после отказа кандидата не остаётся" "" \
       "$(ls "$T/etc"/spec.json.new.* 2>/dev/null)"
 
+# Проверка через демона (`steer ctl check`), когда его сокет есть: отказ приходит в поле stderr
+# ответа, успех — code 0, а отказ самого демона (поле error) не считается проверкой и
+# переходит на прямой dry-run. Без сокета — прямой dry-run, как выше.
+: > "$T/steer.sock"
+: > "$T/steer.log"
+out="$(STEER_SOCK="$T/steer.sock" CTL_RESP='{"v":1,"cmd":"check","code":1,"stdout":"","stderr":"отказ демона"}' \
+    rpcd spec_set "$(spec_req "$(vless_spec 1)")")"
+check "отказ через демона: спека не сохраняется" "false" "$(printf '%s' "$out" | jget ok)"
+check "отказ через демона: причина из ответа" "yes" \
+      "$(printf '%s' "$out" | grep -q 'отказ демона' && echo yes || echo no)"
+check "через демона dry-run напрямую не зовётся" "0" "$(grep -c '^apply --dry-run' "$T/steer.log")"
+out="$(STEER_SOCK="$T/steer.sock" CTL_RESP='{"v":1,"cmd":"check","code":0,"stdout":"","stderr":""}' \
+    rpcd spec_set "$(spec_req "$(vless_spec 1)")")"
+check "успех через демона: спека сохранена" "true" "$(printf '%s' "$out" | jget ok)"
+: > "$T/steer.log"
+out="$(STEER_SOCK="$T/steer.sock" CTL_RESP='{"v":1,"cmd":"check","error":"internal","message":"занят"}' \
+    rpcd spec_set "$(spec_req "$(vless_spec 1)")")"
+check "отказ самого демона: проверка падает на прямой dry-run" "1" "$(grep -c '^apply --dry-run' "$T/steer.log")"
+rm -f "$T/steer.sock"
+
 # Фикстуры возвращаются к исходным: проверки ниже писаны против них.
 printf '{"schema":1,"outputs":{},"channels":[]}\n' > "$T/etc/spec.json"
 rm -f "$T/var/vless-dirty" "$T/var/obfs-dirty" "$T/etc/spec.applied.json"
@@ -2068,7 +2094,7 @@ check "функция вызывается трижды: spec_set, apply, backup
       "$(rpcd_src | grep -c 'fetch_missing_lists "')"
 # spec_set и apply живут в группе spec, восстановление — в группе backup.
 set_line=$(grep -n 'set_warn="$(fetch_missing_lists' "$RPCD_DIR/m-spec.sh" | cut -d: -f1)
-dry_line=$(grep -n 'apply --dry-run --spec "$tmp"' "$RPCD_DIR/m-spec.sh" | cut -d: -f1)
+dry_line=$(grep -n 'engine_check "$tmp"' "$RPCD_DIR/m-spec.sh" | cut -d: -f1)
 check "в spec_set загрузка идёт ДО проверки движком" "yes" \
       "$([ -n "$set_line" ] && [ -n "$dry_line" ] && [ "$set_line" -lt "$dry_line" ] && echo yes || echo no)"
 # Порядок ищется ВНУТРИ ветки, а не по всему файлу: `fetch_warn=` встречается и в apply, и
