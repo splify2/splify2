@@ -259,7 +259,8 @@ export default function CatalogTab({ onUseInRule }: Props) {
                         className="min-w-0 flex-1 bg-transparent py-2 text-sm outline-none"
                     />
                 </div>
-                <div className="flex gap-1" role="tablist" aria-label="Что показывать">
+                {/* Bode: переключатель «все / используются» — сегментами, как в приложении. */}
+                <div className="flex gap-0.5 rounded-xl bg-muted p-0.5" role="tablist" aria-label="Что показывать">
                     {([
                         ['all', `все · ${services.length}`],
                         ['used', `используются · ${usedCount}`],
@@ -270,11 +271,11 @@ export default function CatalogTab({ onUseInRule }: Props) {
                             aria-selected={only === id}
                             onClick={() => setOnly(id)}
                             className={[
-                                'rounded-md px-3 py-1.5 text-sm transition-colors',
+                                'h-8 rounded-lg px-3 text-sm transition-colors',
                                 'focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary',
                                 only === id
                                     ? 'bg-primary text-primary-foreground'
-                                    : 'text-muted-foreground hover:text-foreground',
+                                    : 'bg-transparent text-subtle hover:text-foreground',
                             ].join(' ')}
                         >
                             {label}
