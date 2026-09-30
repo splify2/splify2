@@ -744,10 +744,6 @@ srs_rpcd() {  # МЕТОД ВХОД   (тег издателя переопре�
     printf '%s\n' "$2" | env SANDBOX="$T" PATH="$T/bin:$PATH" SRS_TAG="${SRS_TAG_NOW:-$AD_TAG}" \
         JSHN_SH="$ROOT/tests/stub/jshn.sh" RPCD_LIB="$ROOT/files/usr/lib/splify2/rpcd" \
         FETCH_SH="$ROOT/files/usr/lib/splify2/fetch.sh" \
-        ZAPRET_SH="$ROOT/files/usr/lib/splify2/zapret.sh" \
-        DOH_SH="$ROOT/files/usr/lib/splify2/doh.sh" \
-        ZP_DIR="$T/zapret" ZP_CONF="$T/etc/config-zapret" ZP_NFQWS="$T/bin/nfqws-missing" \
-        ZP_INIT="$T/bin/initd-zapret" ZP_RCD="$T/rcd" DOH_CONF="$T/etc/config-doh" \
         INITD="$T/bin/initd-steer" \
         AD_SH="$ROOT/files/usr/share/splify2/allow-domains.sh" \
         AD_TAG_DEFAULT="${SRS_TAG_NOW:-$AD_TAG}" \

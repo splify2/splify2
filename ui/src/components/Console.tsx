@@ -29,8 +29,6 @@ import EngineToggle from '@/components/EngineToggle'
 
 const RulesTab = lazy(() => import('@/components/tabs/RulesTab'))
 const Vpn = lazy(() => import('@/components/sections/Vpn'))
-const Doh = lazy(() => import('@/components/sections/Doh'))
-const Zapret = lazy(() => import('@/components/sections/Zapret'))
 const Settings = lazy(() => import('@/components/sections/Settings'))
 
 const FALLBACK = <div className="p-5 text-sm text-muted-foreground">Загрузка…</div>
@@ -151,8 +149,6 @@ export default function Console() {
                             />
                         )}
                         {section === 'vpn' && <Vpn live={live} />}
-                        {section === 'doh' && <Doh live={live} />}
-                        {section === 'zapret' && <Zapret />}
                         {section === 'settings' && (
                             <Settings
                                 live={live}

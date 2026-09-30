@@ -1,4 +1,4 @@
-import { House, Lock, Route, Settings, ShieldCheck, Waves } from 'lucide-react'
+import { House, Route, Settings, ShieldCheck } from 'lucide-react'
 import EngineToggle from '@/components/EngineToggle'
 import { type Live } from '@/lib/live'
 import { assetUrl } from '@/lib/assets'
@@ -28,13 +28,6 @@ const ITEMS: { id: SectionId; label: string; icon: typeof House }[] = [
     { id: 'home', label: 'Главная', icon: House },
     { id: 'rules', label: 'Правила', icon: Route },
     { id: 'vpn', label: 'VPN', icon: ShieldCheck },
-    /* DoH и Zapret — РАЗДЕЛЫ, а не подпункты настроек, и это не про важность, а про то, как
-       ими пользуются. В настройки заходят раз в жизни; сюда — каждый раз, когда что-то
-       перестало открываться: сменить резолвер, сменить стратегию, посмотреть, что показала
-       проверка. Пункт, за которым ходят регулярно, обязан быть в рельсе — иначе его ищут
-       прокруткой по складу, а именно от склада («Логи steer») этот дизайн и уходил. */
-    { id: 'doh', label: 'DoH', icon: Lock },
-    { id: 'zapret', label: 'Zapret', icon: Waves },
     { id: 'settings', label: 'Настройки', icon: Settings },
 ]
 

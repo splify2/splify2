@@ -94,13 +94,10 @@ printf 'vless://8f14e45f-ceea-467a-9fb2-1111deadbeef@203.0.113.9:443?sni=a#Germa
 # файла — самый вероятный способ утечки адреса, потому что читаются одной строкой.
 printf '%s %s %s %s %s\n' "$(date +%s)" "DE" "203.0.113.77" "wan:3" "120" > "$T/var/geo-vpn-${CANARY}"
 
-# Обход DPI: активная стратегия правлена руками — значит её имени в пакете быть не должно
-# вовсе, вместо него слово `custom`.
-printf '#v1\n--filter-tcp=443\n' > "$T/zapret/strategies.txt"
+# Чужие настройки обхода DPI и https-dns-proxy, с канарейкой внутри: пакет их не читает вовсе,
+# так что метка в него попасть не может.
 printf "config zapret 'config'\n\toption NFQWS_OPT '\n#myown-%s\n--filter-tcp=443\n'\n" \
     "$CANARY" > "$T/etc/config-zapret"
-
-# Резолвер DoH, вписанный руками: не из нашего каталога, значит его ссылка не уезжает.
 printf "config https-dns-proxy\n\toption resolver_url 'https://dns-%s.example/dns-query'\n" \
     "$CANARY" > "$T/etc/config-doh"
 
@@ -159,11 +156,6 @@ build() {
     BUILD_ID_FILE="$T/etc/build-id" TM_BOOT_FILE="$T/var/boot" TM_EVENTS="$T/var/events" \
     RPCD_OBJ="$T/rpcd-obj" TM_NET_FILE="$T/var/net" UCI_SPLIFY2="$T/etc/config-splify2" \
     TM_CRASH_FILE="$T/var/crash" \
-    ZAPRET_SH="$ROOT/files/usr/lib/splify2/zapret.sh" \
-    DOH_SH="$ROOT/files/usr/lib/splify2/doh.sh" \
-    ZP_DIR="$T/zapret" ZP_CATALOG="$T/zapret/strategies.txt" ZP_CONF="$T/etc/config-zapret" \
-    ZP_NFQWS="$T/bin/nfqws-missing" ZP_INIT="$T/bin/initd-zapret" ZP_RCD="$T/rcd" \
-    DOH_CONF="$T/etc/config-doh" DOH_INIT="$T/bin/initd-doh" \
     sh -c '. files/usr/lib/splify2/telemetry.sh; tm_build'
 }
 pkt="$(build)"
@@ -193,7 +185,7 @@ check "имени правила в пакете нет" "0" "$(printf '%s' "$pk
 check "имени своего списка в пакете нет" "0" "$(printf '%s' "$pkt" | grep -c 'vasya' || true)"
 check "ссылки резолвера DoH в пакете нет" "0" "$(printf '%s' "$pkt" | grep -c 'dns-query' || true)"
 check "правленной руками стратегии по имени нет" "0" "$(printf '%s' "$pkt" | grep -c 'myown' || true)"
-check "и вместо неё сказано «custom»" "1" "$(printf '%s' "$pkt" | grep -c '"strategy":"custom"' || true)"
+check "и слова «custom» про стратегию в пакете нет" "0" "$(printf '%s' "$pkt" | grep -c '"strategy"' || true)"
 
 # ---- и то, что уехать ДОЛЖНО -------------------------------------------------------------
 # Без этих проверок все запреты выше проходили бы на пустом пакете.
@@ -454,11 +446,6 @@ send() {  # АРГУМЕНТЫ команды отправки
     TM_CRASH_FILE="$T/var/crash" TM_NOW_STAMP="$T/var/now-stamp" \
     TM_UPTIME="${TM_UPTIME_FIXTURE:-$T/var/uptime-old}" \
     TM_CURL="$T/bin/curl" \
-    ZAPRET_SH="$ROOT/files/usr/lib/splify2/zapret.sh" \
-    DOH_SH="$ROOT/files/usr/lib/splify2/doh.sh" \
-    ZP_DIR="$T/zapret" ZP_CATALOG="$T/zapret/strategies.txt" ZP_CONF="$T/etc/config-zapret" \
-    ZP_NFQWS="$T/bin/nfqws-missing" ZP_INIT="$T/bin/initd-zapret" ZP_RCD="$T/rcd" \
-    DOH_CONF="$T/etc/config-doh" DOH_INIT="$T/bin/initd-doh" \
     sh files/usr/sbin/splify2-telemetry "$@"
 }
 ukey() { sed -n "s|^splify2.main.$1=||p" "$T/uci.db" | tail -n1; }
@@ -735,11 +722,11 @@ check "и отметка на него не потрачена" "no" \
 # А ПОСЛЕ ВЫДЕРЖКИ внеплановая отправка снова уходит: ограничитель гасит повторы, а не
 # следующее падение через час.
 printf '%s\n' "$(( $(date +%s) - 600 ))" > "$T/var/now-stamp"
-send --now zapret_down >/dev/null 2>&1
+send --now xsteer_down >/dev/null 2>&1
 check "после выдержки внеплановая отправка снова уходит" "yes" \
       "$([ -e "$T/curl.argv" ] && echo yes || echo no)"
 pkt="$(cat "$T/curl.body" 2>/dev/null)"
-check "и «что упало» выведено из причины" "zapret" "$(j 'd["crash"]["what"]')"
+check "и «что упало» выведено из причины" "xsteer" "$(j 'd["crash"]["what"]')"
 rm -f "$T/var/crash" "$T/var/now-stamp"
 
 # ---- согласие решает, уедет ли что-нибудь ----
@@ -808,28 +795,10 @@ send --send >/dev/null 2>&1
 check "временный файл с пакетом убран" "0" \
       "$(ls /tmp/splify2-telemetry.* 2>/dev/null | grep -c . || true)"
 
-# ---- расхождение стратегии с каталогом: поле считалось БЕЗ имени стратегии ---------------
-#
-# `zp_drifted_global` принимает ИМЯ стратегии первым аргументом и первой же строкой выходит,
-# если его нет. Здесь её звали вовсе без аргументов — вызов выглядел настоящим (знакомое имя,
-# глушилка вывода, `&& echo 1 || echo 0`), а отвечал «не разошлась» ВСЕГДА. Тот же класс, что
-# I-156, и та же цена: панель по построению не могла увидеть ни одного роутера с расхождением,
-# а «расхождений нет ни у кого» неотличимо от «мы этого не измеряем».
-#
-# На самом роутере признак при этом считался верно — вкладка обхода и отчёт для поддержки
-# зовут ту же функцию с именем, — поэтому увидеть ошибку можно было только со стороны панели.
-printf '#v1\n--filter-tcp=443\n' > "$T/zapret/strategies.txt"
-printf "config zapret 'config'\n\toption NFQWS_OPT '\n#v1\n--filter-tcp=443\n'\n" \
-    > "$T/etc/config-zapret"
+# ---- обход DPI и DoH из пакета убраны ----------------------------------------------------
 pkt="$(build 2>/dev/null)"
-check "стратегия из каталога уезжает по имени" "v1" "$(j 'd["zapret"]["strategy"]')"
-check "совпавшая с каталогом расхождением не считается" "False" "$(j 'd["zapret"]["drifted"]')"
-
-# Каталог обновился, применённое осталось прежним — это и есть то состояние, ради которого
-# поле заведено, и именно оно не уезжало.
-printf '#v1\n--filter-tcp=443\n--dpi-desync=fake\n' > "$T/zapret/strategies.txt"
-pkt="$(build 2>/dev/null)"
-check "изменившаяся в каталоге уезжает расхождением" "True" "$(j 'd["zapret"]["drifted"]')"
+check "в пакете нет раздела про обход DPI" "0" "$(printf '%s' "$pkt" | grep -c '"zapret"' || true)"
+check "и нет раздела про DoH" "0" "$(printf '%s' "$pkt" | grep -c '"doh"' || true)"
 
 # ---- README — одно из трёх мест, где человек узнаёт о телеметрии --------------------
 #

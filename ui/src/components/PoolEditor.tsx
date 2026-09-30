@@ -408,13 +408,13 @@ export default function PoolEditor({
         onSave({ ...spec, outputs })
     }
 
-    /* Выход kind=zapret правится НЕ ЗДЕСЬ, и открывать для него общий редактор нельзя: тот
-     * знает подписки и устройства и на «Сохранить» переписал бы его как выход без единого
-     * устройства. То есть один клик по строке в списке молча превращал бы работающий обход в
-     * выход, который никуда не ведёт.
+    /* Выход kind=zapret (его могли завести прежние версии или руками) правится НЕ ЗДЕСЬ, и
+     * открывать для него общий редактор нельзя: тот знает подписки и устройства и на
+     * «Сохранить» переписал бы его как выход без единого устройства. То есть один клик по
+     * строке в списке молча превращал бы работающий обход в выход, который никуда не ведёт.
      *
-     * Показываем то немногое, что здесь и правится (режим отказа и удаление), а за стратегией
-     * отправляем во вкладку Zapret — там она и живёт. */
+     * Показываем то немногое, что здесь и правится (режим отказа и удаление). Создавать такие
+     * выходы и выбирать стратегию splify2 больше не умеет — обход DPI из него убран. */
     if (existing?.kind === 'zapret') {
         return (
             <div className="space-y-4">
@@ -443,8 +443,8 @@ export default function PoolEditor({
                     </CardHeader>
                     <CardContent className="space-y-3 text-sm">
                         <div className="text-muted-foreground">
-                            Устройства у этого выхода нет: трафик идёт обычным маршрутом через обход DPI. Стратегия
-                            выбирается во вкладке Zapret.
+                            Устройства у этого выхода нет: трафик идёт обычным маршрутом через обход DPI.
+                            Стратегия настраивается вне splify2.
                         </div>
                         <div className="space-y-1.5">
                             <div className="sp-label uppercase tracking-wide text-muted-foreground">
@@ -874,7 +874,7 @@ export default function PoolEditor({
                             <CardTitle>Если всё упало</CardTitle>
                         </CardHeader>
                         <CardContent className="space-y-1">
-                            {(['drop', 'direct', 'zapret'] as OnFail[]).map((v) => (
+                            {(['drop', 'direct'] as OnFail[]).map((v) => (
                                 <Radio key={v} on={onFail === v} onClick={() => setOnFail(v)}>
                                     {ON_FAIL_TEXT[v]}
                                 </Radio>

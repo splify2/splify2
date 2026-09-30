@@ -12,7 +12,6 @@ import ListsSourceCard from '@/components/ListsSourceCard'
 import SelfUpdateCard from '@/components/SelfUpdateCard'
 import TelemetryCard from '@/components/TelemetryCard'
 import XsteerPanel from '@/components/XsteerPanel'
-import ZmFixCard from '@/components/ZmFixCard'
 import { rpc } from '@/lib/rpc'
 import { pending, usePending } from '@/lib/pending'
 import { type ServiceEntry, type Spec } from '@/lib/model'
@@ -92,7 +91,6 @@ export default function Settings({
                             />
                             <FetchCard />
                             <ListsSourceCard />
-                            <ZmFixCard />
                         </div>
                     )}
                     {screen === 'catalog' && <CatalogTab onUseInRule={onUseInRule} />}

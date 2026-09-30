@@ -60,7 +60,6 @@ const ANSWER: Record<string, unknown> = {
     vless_nodes: { output: 'vl', sub_file: '', node: -1, usable: 0, skipped: 0, foreign: 0, nodes: [] },
     outbound_probe: { output: '', state: 'ok', ms: 42, how: 'ping' },
     outbound_geo: { output: '', cc: 'NL', ip: '1.2.3.4' },
-    zm_fix: { on: false },
     fetch_mode: { mode: 'auto', out: '' },
     steer_versions: { arch: 'x', versions: [] },
     splify2_versions: { current: '1.2.5', versions: [] },

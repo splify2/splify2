@@ -307,7 +307,6 @@ run_purge() {  # КЛЮЧИ СКРИПТА
     STEER_DIR="$T/etc/steer" \
     UCI_SPLIFY2="$T/etc/config/splify2" \
     DOH_CONF="$T/etc/config/https-dns-proxy" \
-    DOH_LIB="${PURGE_DOH_LIB:-$ROOT/files/usr/lib/splify2/doh.sh}" \
     CRONTAB="$T/etc/crontabs/root" \
     CRON_INITD="$T/bin/initd-cron" \
     INITD="$T/bin/initd-steer" \
@@ -389,18 +388,14 @@ check "срок вызова rpcd снят" "no" "$(has 'rpcd.@rpcd[0].timeout=1
 # Ключ ЧУЖОГО пакета не удаляется, а возвращается к его умолчанию: ноль в нём — это наше
 # «обход выключен», и уйти, оставив человека без автозапуска обхода, значило бы наследить.
 check "run_on_boot возвращён zapret-у" "1" "$(val 'zapret\.config\.run_on_boot')"
-# КОНФИГ DoH НЕ УДАЛЯЕТСЯ, А ВОССТАНАВЛИВАЕТСЯ. `doh_write` переписывает этот файл чужого
-# пакета целиком, и до запуска 65 чужая настройка терялась безвозвратно; теперь она лежит
-# копией в том же файле. Уйти, не вернув её, значило бы наследить ровно тем, чего эта
-# команда и призвана не делать.
-check "конфиг DoH на месте — он восстановлен, а не удалён" "yes" \
+# КОНФИГ https-dns-proxy ЭТА ВЕРСИЯ НЕ ВОССТАНАВЛИВАЕТ. Файл записывала прежняя версия splify2
+# (с копией чужой редакции внутри), а писателя этого файла в коде больше нет: настройка
+# принадлежит человеку. Файл остаётся как есть, вместе с копией, и об этом сказано.
+check "конфиг https-dns-proxy на месте как был" "yes" \
     "$(exists "$T/etc/config/https-dns-proxy")"
-check "и в нём чужая редакция" "1" \
+check "и чужая редакция в копии цела" "1" \
     "$(grep -c 'dns.foreign' "$T/etc/config/https-dns-proxy")"
-check "нашей настройки в нём не осталось" "0" \
-    "$(grep -c 'cloudflare-dns' "$T/etc/config/https-dns-proxy")"
-check "и метки копии тоже" "0" \
-    "$(grep -c 'splify2_state' "$T/etc/config/https-dns-proxy")"
+check "и сказано, что его записывала прежняя версия" "yes" "$(outhas 'прежняя версия splify2')"
 check "каталог /etc/splify2 удалён" "no" "$(exists "$T/etc/splify2")"
 check "каталог настроек движка удалён" "no" "$(exists "$T/etc/steer")"
 check "настройка splify2 удалена" "no" "$(exists "$T/etc/config/splify2")"
@@ -499,8 +494,9 @@ check "и при показе ничего не удалено" "yes" "$(has 'sp
 check "и признак загрузки на месте" "yes" "$(exists "$T/var/run/splify2-boot-id")"
 
 # ---- чужой конфиг https-dns-proxy --------------------------------------------------
-# force_dns '1' пишет сам пакет и пишет Zapret Manager; ноль пишем только мы (doh.sh). Значит
-# файл с единицей — не наш, и удалять его нельзя: у человека там мог быть свой резолвер.
+# force_dns '1' пишет сам пакет и пишет Zapret Manager; метку копии (`splify2_state`) ставила
+# только прежняя версия splify2. Файл без метки — не наш, и удалять его нельзя: у человека
+# там мог быть свой резолвер.
 setup tun-vless 120 0 1
 run_purge --yes
 check "чужой конфиг DoH оставлен" "yes" "$(exists "$T/etc/config/https-dns-proxy")"
@@ -549,22 +545,6 @@ run_purge --yes-please
 check "неизвестный ключ — отказ" "2" "$rc"
 check "и ничего не удалено" "" "$(del_seq)"
 check "и спека на месте" "yes" "$(exists "$T/etc/steer/spec.json")"
-
-# ---- нечем восстановить — не сносим -------------------------------------------------
-#
-# Команду зовут и ПОСЛЕ снятия пакетов, когда /usr/lib/splify2/doh.sh на роутере уже нет.
-# Копия чужой настройки при этом в файле лежит, а вернуть её нечем. Удалить файл в такой
-# ситуации значило бы снести чужой резолвер безвозвратно — а оставленный наш человек хотя
-# бы увидит и уберёт сам. Необратимое хуже заметного.
-setup
-PURGE_DOH_LIB="$T/нет-такой-библиотеки"
-export PURGE_DOH_LIB
-run_purge --yes
-unset PURGE_DOH_LIB
-check "без библиотеки конфиг DoH оставлен" "yes" "$(exists "$T/etc/config/https-dns-proxy")"
-check "и сказано, почему" "yes" "$(outhas 'восстановить нечем')"
-check "чужая редакция в копии цела" "1" \
-    "$(grep -c 'dns.foreign' "$T/etc/config/https-dns-proxy")"
 
 printf '\n%d проверок пройдено' "$pass"
 if [ "$fail" -gt 0 ]; then printf ', %d ПРОВАЛЕНО\n' "$fail"; exit 1; fi
