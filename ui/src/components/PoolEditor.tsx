@@ -1,7 +1,8 @@
 import { useEffect, useMemo, useState } from 'react'
 import { ArrowDown, ArrowUp, Check, Gauge, GripVertical, LoaderCircle, Search, Trash2, X } from 'lucide-react'
 import { Button } from '@/components/ui/button'
-import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
+import { Block, CardHead, DangerButton, FieldRow, Group, ScreenHeader } from '@/components/ui/layout'
+import { Field, inputCls } from '@/components/formbits'
 import { notify } from '@/lib/notify'
 import { rpc, type VlessNodesReply } from '@/lib/rpc'
 import { subsRemember, subsRemembered } from '@/lib/subs'
@@ -466,15 +467,13 @@ export default function PoolEditor({
     if (existing?.kind === 'zapret') {
         return (
             <div className="space-y-4">
-                <div className="flex flex-wrap items-center justify-between gap-2">
-                    <div className="sp-title">{name}</div>
-                    <div className="flex gap-2">
-                        <Button variant="destructive" onClick={remove}>
-                            <Trash2 className="h-4 w-4" aria-hidden="true" /> Удалить
-                        </Button>
-                        <Button variant="secondary" onClick={onCancel}>
-                            <X className="h-4 w-4" aria-hidden="true" /> Закрыть
-                        </Button>
+                {/* Bode: шапка экрана — стрелка назад (прежняя «Закрыть»), имя, основное действие
+                    справа; удаление — обведённой красной кнопкой внизу, как в приложении. */}
+                <ScreenHeader
+                    title={name}
+                    back={onCancel}
+                    backLabel="Закрыть"
+                    right={
                         <Button
                             onClick={() => {
                                 const outputs = { ...spec.outputs, [name!]: { ...existing, on_fail: onFail } }
@@ -483,66 +482,69 @@ export default function PoolEditor({
                         >
                             <Check className="h-4 w-4" aria-hidden="true" /> Сохранить выход
                         </Button>
+                    }
+                />
+                <Block>
+                    <CardHead title="Обход DPI" />
+                    <p className="text-sm text-subtle">
+                        Устройства у этого выхода нет: трафик идёт обычным маршрутом через обход DPI.
+                        Стратегия настраивается вне splify2.
+                    </p>
+                    <div className="border-t border-border pt-1">
+                        <FieldRow label="Если обход не работает">
+                            <select
+                                value={onFail}
+                                onChange={(e) => setOnFail(e.currentTarget.value as OnFail)}
+                                className={`${inputCls} w-full`}
+                            >
+                                {(['drop', 'direct'] as OnFail[]).map((v) => (
+                                    <option key={v} value={v}>{ON_FAIL_TEXT[v]}</option>
+                                ))}
+                            </select>
+                        </FieldRow>
                     </div>
-                </div>
-                <Card>
-                    <CardHeader>
-                        <CardTitle>Обход DPI</CardTitle>
-                    </CardHeader>
-                    <CardContent className="space-y-3 text-sm">
-                        <div className="text-muted-foreground">
-                            Устройства у этого выхода нет: трафик идёт обычным маршрутом через обход DPI.
-                            Стратегия настраивается вне splify2.
-                        </div>
-                        <div className="space-y-1.5">
-                            <div className="sp-label uppercase tracking-wide text-muted-foreground">
-                                Если обход не работает
-                            </div>
-                            {(['drop', 'direct'] as OnFail[]).map((v) => (
-                                <Radio key={v} on={onFail === v} onClick={() => setOnFail(v)}>
-                                    {ON_FAIL_TEXT[v]}
-                                </Radio>
-                            ))}
-                        </div>
-                    </CardContent>
-                </Card>
+                </Block>
+                <DangerButton full onClick={remove}>
+                    <Trash2 aria-hidden="true" /> Удалить
+                </DangerButton>
             </div>
         )
     }
 
     const subsInRows = new Set(rows.filter((r) => r.kind !== 'dev').map((r) => (r as { sub: string }).sub))
 
+    /* Bode 26.10, раскладка по образцу приложения Splify2.
+     *
+     * Шапка экрана: стрелка назад (она и есть прежняя «Отмена» — подпись для чтения с экрана
+     * та же), заголовок, «Сохранить выход» справа. Сохранение стоит В ШАПКЕ, а не внизу, как
+     * «Готово» в приложении: здесь под формой — перечень локаций на несколько экранов, и
+     * основное действие, уехавшее под него, пришлось бы искать прокруткой. Удаление — внизу
+     * колонки обведённой красной кнопкой: оно редкое и не должно стоять рядом с сохранением.
+     *
+     * Каждый вопрос — своей карточкой с заголовком: имя, порядок, «если всё упало»,
+     * дополнительно; и каждая подписка — своей карточкой, а её локации — строками этой
+     * карточки через волосяную линию. Прежде все подписки и свои туннели стояли подписями
+     * внутри одной карточки «Что можно взять», и где кончается одна подписка и начинается
+     * другая, было видно только по мелкой подписи прописными. */
     return (
         <div className="space-y-4">
-            <div className="flex flex-wrap items-center justify-between gap-2">
-                <input
-                    value={title}
-                    onChange={(e) => setTitle(e.currentTarget.value)}
-                    placeholder="имя выхода"
-                    aria-label="имя выхода"
-                    className="h-[38px] min-w-0 flex-1 rounded-lg border border-border bg-background px-3 text-sm sm:max-w-[16rem]"
-                />
-                <div className="flex flex-wrap gap-2">
-                    {name && (
-                        <Button variant="destructive" onClick={remove}>
-                            <Trash2 className="h-4 w-4" aria-hidden="true" /> Удалить
-                        </Button>
-                    )}
-                    <Button variant="secondary" onClick={onCancel}>
-                        <X className="h-4 w-4" aria-hidden="true" /> Отмена
-                    </Button>
+            <ScreenHeader
+                title={name || 'Добавить выход'}
+                back={onCancel}
+                backLabel="Отмена"
+                right={
                     <Button onClick={save}>
                         <Check className="h-4 w-4" aria-hidden="true" /> Сохранить выход
                     </Button>
-                </div>
-            </div>
+                }
+            />
 
             <div className="grid gap-4 xl:grid-cols-[minmax(0,1fr)_minmax(0,26rem)]">
                 {/* ---- слева: что можно взять ------------------------------------------ */}
-                <Card>
-                    <CardHeader className="space-y-3">
-                        <CardTitle>Что можно взять</CardTitle>
-                        <label className="flex h-9 items-center gap-2 rounded-lg border border-border bg-background px-3">
+                <div className="min-w-0 space-y-4">
+                    <Block>
+                        <CardHead title="Что можно взять" />
+                        <label className="flex h-10 items-center gap-2 rounded-lg border border-border bg-background px-3">
                             <Search className="h-4 w-4 shrink-0 text-muted-foreground" aria-hidden="true" />
                             <input
                                 value={query}
@@ -557,17 +559,13 @@ export default function PoolEditor({
                                 </button>
                             )}
                         </label>
-                    </CardHeader>
-                    <CardContent className="space-y-5">
+                    </Block>
                         {subs.length === 0 && (
-                            <div>
-                                <div className="sp-label uppercase tracking-wide text-muted-foreground">
-                                    Подписки
-                                </div>
-                                <p className="mt-2 text-xs text-muted-foreground">
+                            <Group head={<CardHead title="Подписки" />}>
+                                <p className="py-3 text-xs text-muted-foreground">
                                     подписок нет — добавьте в подпункте VLESS
                                 </p>
-                            </div>
+                            </Group>
                         )}
                         {subs.map((s) => {
                             const nodes = nodesBySub[s.path]
@@ -612,52 +610,61 @@ export default function PoolEditor({
                                   : all.filter((x) => picked.has(pickKey(x.proto, x.nd.index)) || spare-- > 0)
                             const folded = !q && !openSubs[s.path] && shown.length < all.length
                             if (q && !shown.length && !all.length) return null
+                            /* Подписка — своя карточка: название слева, число локаций справа,
+                               проверка всех узлов строкой ниже (в строку заголовка она на узком
+                               экране не помещалась вместе с названием). Строки — через
+                               волосяную линию; список — <ul> внутри Group, а не строки самой
+                               Group: кнопка замера стоит в одной строке <li> с выбором узла. */
                             return (
-                                <div key={s.path}>
-                                    <div className="flex items-baseline justify-between gap-2">
-                                        <div className="sp-label uppercase tracking-wide text-muted-foreground">
-                                            {subTitle(s.path)}
+                                <Group
+                                    key={s.path}
+                                    head={
+                                        <div className="space-y-1">
+                                            <CardHead
+                                                title={subTitle(s.path)}
+                                                meta={
+                                                    !s.present
+                                                        ? <span className="text-warning-fg">не скачана</span>
+                                                        : nodes
+                                                          ? `локаций: ${all.length}${picked.size ? ` · взято: ${picked.size}` : any ? ' · взята любая' : ''}`
+                                                          : undefined
+                                                }
+                                            />
+                                            {s.present && nodes && (hy.length > 0 || nodes.length > 0) && (
+                                                <div className="flex flex-wrap justify-end gap-x-3 gap-y-1 text-xs">
+                                                    {/* Проверка всех узлов подписки — рядом с их числом:
+                                                        вопрос «какие из них живые» задают до выбора, а
+                                                        не после. Повторное нажатие останавливает. */}
+                                                    {([
+                                                        { proto: 'vless' as Proto, list: nodes },
+                                                        { proto: 'hysteria2' as Proto, list: hy },
+                                                    ]).filter((t) => t.list.length > 0).map((t) => {
+                                                        const id = probeSub(s.path, t.proto)
+                                                        /* В смешанной подписке кнопок две — по протоколу: номера
+                                                           и клиенты у них свои. */
+                                                        const what = mixed && nodes.length > 0 ? ` ${PROTO_LABEL[t.proto]}` : ''
+                                                        return (
+                                                            <button
+                                                                key={t.proto}
+                                                                type="button"
+                                                                onClick={() => void probe.probeAll(id, t.list.map((n) => n.index))}
+                                                                disabled={!!probe.batchSub && probe.batchSub !== id}
+                                                                className="flex items-center gap-1 bg-transparent p-0 text-primary disabled:opacity-50"
+                                                            >
+                                                                {probe.batchSub === id
+                                                                    ? <LoaderCircle className="h-3.5 w-3.5 animate-spin" aria-hidden="true" />
+                                                                    : <Gauge className="h-3.5 w-3.5" aria-hidden="true" />}
+                                                                {probe.batchSub === id ? `остановить (осталось ${probe.left})` : `проверить все${what}`}
+                                                            </button>
+                                                        )
+                                                    })}
+                                                </div>
+                                            )}
                                         </div>
-                                        {!s.present && (
-                                            <span className="text-[11px] text-warning-fg">не скачана</span>
-                                        )}
-                                        {s.present && nodes && (
-                                            <span className="flex items-center gap-2 text-[11px] text-muted-foreground">
-                                                <span>
-                                                    локаций: {all.length}
-                                                    {picked.size ? ` · взято: ${picked.size}` : any ? ' · взята любая' : ''}
-                                                </span>
-                                                {/* Проверка всех узлов подписки — рядом с их числом:
-                                                    вопрос «какие из них живые» задают до выбора, а
-                                                    не после. Повторное нажатие останавливает. */}
-                                                {([
-                                                    { proto: 'vless' as Proto, list: nodes },
-                                                    { proto: 'hysteria2' as Proto, list: hy },
-                                                ]).filter((t) => t.list.length > 0).map((t) => {
-                                                    const id = probeSub(s.path, t.proto)
-                                                    /* В смешанной подписке кнопок две — по протоколу: номера
-                                                       и клиенты у них свои. */
-                                                    const what = mixed && nodes.length > 0 ? ` ${PROTO_LABEL[t.proto]}` : ''
-                                                    return (
-                                                        <button
-                                                            key={t.proto}
-                                                            type="button"
-                                                            onClick={() => void probe.probeAll(id, t.list.map((n) => n.index))}
-                                                            disabled={!!probe.batchSub && probe.batchSub !== id}
-                                                            className="flex items-center gap-1 bg-transparent p-0 text-primary underline decoration-dotted disabled:opacity-50"
-                                                        >
-                                                            {probe.batchSub === id
-                                                                ? <LoaderCircle className="h-3 w-3 animate-spin" aria-hidden="true" />
-                                                                : <Gauge className="h-3 w-3" aria-hidden="true" />}
-                                                            {probe.batchSub === id ? `остановить (осталось ${probe.left})` : `проверить все${what}`}
-                                                        </button>
-                                                    )
-                                                })}
-                                            </span>
-                                        )}
-                                    </div>
-                                    <ul className="mt-2 space-y-0.5">
-                                        <li>
+                                    }
+                                >
+                                    <ul className="divide-y divide-border">
+                                        <li className="py-1">
                                             <Choice
                                                 on={any}
                                                 round
@@ -677,7 +684,7 @@ export default function PoolEditor({
                                                «ошибка»: это и есть следующий шаг. В смешанной подписке
                                                узлы VLESS остаются выбираемыми, а сказано о недостающей
                                                половине. */
-                                            <li className="px-2.5 py-1 text-xs text-muted-foreground">
+                                            <li className="px-2.5 py-2.5 text-xs text-muted-foreground">
                                                 {live?.build?.modules && !live.build.modules.includes('hysteria2')
                                                     ? (nodes.length === 0
                                                         ? 'Узлов нет: для ссылок hysteria2 не установлен пакет steer-hysteria2.'
@@ -700,15 +707,15 @@ export default function PoolEditor({
                                             </li>
                                         )}
                                         {nodes === undefined && s.present && (
-                                            <li className="px-2.5 py-1 text-xs text-muted-foreground">узлы читаются…</li>
+                                            <li className="px-2.5 py-2.5 text-xs text-muted-foreground">узлы читаются…</li>
                                         )}
                                         {nodes === null && s.present && (
-                                            <li className="px-2.5 py-1 text-xs text-muted-foreground">
+                                            <li className="px-2.5 py-2.5 text-xs text-muted-foreground">
                                                 локации появятся после «Применить»
                                             </li>
                                         )}
                                         {q && nodes && !shown.length && (
-                                            <li className="px-2.5 py-1 text-xs text-muted-foreground">ничего не нашлось</li>
+                                            <li className="px-2.5 py-2.5 text-xs text-muted-foreground">ничего не нашлось</li>
                                         )}
                                         {shown.map(({ nd, proto }) => {
                                             const cc = ccFromName(nd.name);
@@ -727,7 +734,7 @@ export default function PoolEditor({
                                             const pr = probe.probes[key]
                                             const label = plainName(nd.name) || `узел ${nd.index + 1}`
                                             return (
-                                                <li key={`${proto}:${nd.index}`} className="flex items-center gap-1">
+                                                <li key={`${proto}:${nd.index}`} className="flex items-center gap-1 py-1">
                                                     <Choice
                                                         on={on}
                                                         /* Квадрат — набор, круг — одно из. Движок
@@ -780,7 +787,7 @@ export default function PoolEditor({
                                             )
                                         })}
                                         {(folded || (!q && openSubs[s.path] && all.length > FOLD)) && (
-                                            <li>
+                                            <li className="py-1">
                                                 <button
                                                     type="button"
                                                     onClick={() => setOpenSubs((m) => ({ ...m, [s.path]: !m[s.path] }))}
@@ -791,17 +798,14 @@ export default function PoolEditor({
                                             </li>
                                         )}
                                     </ul>
-                                </div>
+                                </Group>
                             )
                         })}
 
-                        <div>
-                            <div className="sp-label uppercase tracking-wide text-muted-foreground">
-                                Свои туннели
-                            </div>
-                            <ul className="mt-2 space-y-0.5">
+                        <Group head={<CardHead title="Свои туннели" />}>
+                            <ul className="divide-y divide-border">
                                 {offered.length === 0 && (
-                                    <li className="text-xs text-muted-foreground">
+                                    <li className="py-3 text-xs text-muted-foreground">
                                         туннельных устройств нет
                                     </li>
                                 )}
@@ -817,7 +821,7 @@ export default function PoolEditor({
                                             (o.device === t.name || o.devices?.includes(t.name)),
                                     )?.[0]
                                     return (
-                                        <li key={t.name}>
+                                        <li key={t.name} className="py-1">
                                             <Choice
                                                 on={on}
                                                 disabled={busy && !on}
@@ -830,26 +834,55 @@ export default function PoolEditor({
                                     )
                                 })}
                             </ul>
-                        </div>
-                    </CardContent>
-                </Card>
+                        </Group>
+                </div>
 
-                {/* ---- справа: порядок и отказ -------------------------------------------
+                {/* ---- справа: имя, порядок и отказ --------------------------------------
                     На широком экране колонка липнет к верху и остаётся на виду, пока человек
                     листает локации; на узком идёт ПЕРВОЙ — выбранное важнее перечня, из которого
                     выбирают, а перечень на телефоне длиной в несколько экранов. */}
-                <div className="order-first space-y-4 xl:order-none xl:sticky xl:top-4 xl:self-start">
-                    <Card>
-                        <CardHeader>
-                            <CardTitle>Порядок предпочтения</CardTitle>
-                        </CardHeader>
-                        <CardContent className="space-y-2">
+                {/* На узком экране колонка — `contents`: её карточки становятся пунктами сетки
+                    сами и встают ПЕРВЫМИ (order-first), а удаление — последним (order-last), в
+                    самом низу под перечнем, как «Удалить правило» в приложении. Иначе кнопка
+                    удаления оказывалась посреди экрана, между настройками и перечнем локаций. */}
+                <div className="contents xl:sticky xl:top-4 xl:block xl:min-w-0 xl:space-y-4 xl:self-start">
+                    {/* Имя и «если всё упало» — одной карточкой, как верх карточки выхода в
+                        приложении: «если всё упало [список]» строкой «подпись — поле». Сегментами
+                        эти два варианта не встали: на 390 пикселях «остановить трафик»
+                        обрезалось до «остановить тра…». */}
+                    <Block className="order-first xl:order-none">
+                        <Field label="имя выхода">
+                            <input
+                                value={title}
+                                onChange={(e) => setTitle(e.currentTarget.value)}
+                                placeholder="имя выхода"
+                                aria-label="имя выхода"
+                                className={`${inputCls} w-full`}
+                            />
+                        </Field>
+                        <div className="border-t border-border pt-1">
+                            <FieldRow label="Если всё упало">
+                                <select
+                                    value={onFail}
+                                    onChange={(e) => setOnFail(e.currentTarget.value as OnFail)}
+                                    className={`${inputCls} w-full`}
+                                >
+                                    {(['drop', 'direct'] as OnFail[]).map((v) => (
+                                        <option key={v} value={v}>{ON_FAIL_TEXT[v]}</option>
+                                    ))}
+                                </select>
+                            </FieldRow>
+                        </div>
+                    </Block>
+
+                    <Block className="order-first xl:order-none">
+                        <CardHead title="Порядок предпочтения" meta={rows.length || undefined} />
                             {rows.length === 0 ? (
                                 <p className="text-xs text-muted-foreground">
                                     ничего не выбрано — отметьте локации или туннели в списке «Что можно взять»
                                 </p>
                             ) : (
-                                <ol className="space-y-1" aria-label="порядок предпочтения">
+                                <ol aria-label="порядок предпочтения">
                                     {rows.map((r, i) => {
                                         const nd = r.kind === 'node' ? nodeOf(r.sub, r.idx, r.proto) : undefined
                                         const cc = r.kind === 'node' ? ccFromName(nd?.name) : undefined
@@ -867,9 +900,11 @@ export default function PoolEditor({
                                               ? `${subTitle(r.sub)} · ${PROTO_LABEL[r.proto]}`
                                               : subTitle(r.sub)
                                         /* Соседние локации одной подписки — одна часть пула, и это
-                                           видно: строки слиты в один блок без зазора. Граница блока
+                                           видно: между ними нет волосяной линии, а слева их
+                                           объединяет общая полоса цвета акцента. Граница блока
                                            показывает, где кончается переключение внутри клиента
-                                           и начинается сторож движка. */
+                                           и начинается сторож движка. Строки своих туннелей
+                                           полосы не несут — они части сами по себе. */
                                         const prev = rows[i - 1]
                                         const joined = !!prev && prev.kind === 'node' && r.kind === 'node' && prev.sub === r.sub && prev.proto === r.proto
                                         return (
@@ -895,13 +930,10 @@ export default function PoolEditor({
                                                        кнопки справа уезжают за её край и режутся (владелец: «сами
                                                        пилюли обрезаются»). Ужимаются название и подпись подписки;
                                                        кнопки — нет. */
-                                                    'flex min-w-0 items-center gap-2 rounded-xl border p-2 transition-colors',
-                                                    over === i && drag !== null && drag !== i
-                                                        ? 'border-primary bg-primary/10'
-                                                        : r.kind === 'dev'
-                                                          ? 'border-border'
-                                                          : 'border-primary/40 bg-primary/5',
-                                                    joined ? '-mt-1 rounded-t-none border-t-0' : '',
+                                                    'flex min-h-[44px] min-w-0 items-center gap-2 border-l-2 py-1.5 pl-2 transition-colors',
+                                                    i > 0 && !joined ? 'border-t border-t-border' : '',
+                                                    r.kind === 'dev' ? 'border-l-transparent' : 'border-l-primary/50',
+                                                    over === i && drag !== null && drag !== i ? 'bg-primary/10' : '',
                                                     drag === i ? 'opacity-50' : '',
                                                 ].join(' ')}
                                             >
@@ -975,23 +1007,10 @@ export default function PoolEditor({
                                     </>
                                 )}
                             </p>
-                        </CardContent>
-                    </Card>
-
-                    <Card>
-                        <CardHeader>
-                            <CardTitle>Если всё упало</CardTitle>
-                        </CardHeader>
-                        <CardContent className="space-y-1">
-                            {(['drop', 'direct'] as OnFail[]).map((v) => (
-                                <Radio key={v} on={onFail === v} onClick={() => setOnFail(v)}>
-                                    {ON_FAIL_TEXT[v]}
-                                </Radio>
-                            ))}
-                        </CardContent>
-                    </Card>
+                    </Block>
 
                     <OutputAdvanced
+                        className="order-first xl:order-none"
                         adv={adv}
                         onChange={setAdv}
                         spec={spec}
@@ -1003,12 +1022,19 @@ export default function PoolEditor({
                             pool: rows.length > 1,
                         }}
                     />
+
+                    {name && (
+                        <div className="order-last xl:order-none">
+                            <DangerButton full onClick={remove}>
+                                <Trash2 aria-hidden="true" /> Удалить
+                            </DangerButton>
+                        </div>
+                    )}
                 </div>
             </div>
         </div>
     )
 }
-
 /** Строка выбора: квадратная отметка — набор, круглая (`round`) — одно из нескольких. */
 function Choice({
     on, onClick, disabled, title, hint, flag, dot, round, trail,
@@ -1031,7 +1057,7 @@ function Choice({
             type="button"
             disabled={disabled}
             onClick={onClick}
-            className={`flex w-full items-center gap-2.5 select-none rounded-lg bg-transparent px-2.5 py-1.5 text-left text-[13px] focus:outline-none focus:shadow-none focus-visible:ring-2 focus-visible:ring-primary disabled:opacity-50 ${
+            className={`flex w-full items-center gap-2.5 select-none rounded-lg bg-transparent min-h-[40px] px-2.5 py-1.5 text-left text-[13px] focus:outline-none focus:shadow-none focus-visible:ring-2 focus-visible:ring-primary disabled:opacity-50 ${
                 on ? 'bg-primary/10 text-primary' : 'hover:bg-accent'
             }`}
         >
@@ -1064,25 +1090,6 @@ function Choice({
                 «любая рабочая» обрезалось до «любая р…». */}
             {hint && <span className="hidden shrink-0 text-[11px] text-muted-foreground sm:inline">{hint}</span>}
             {trail && <span className="shrink-0 text-[11px] tabular-nums">{trail}</span>}
-        </button>
-    )
-}
-
-/** Строка выбора с круглой отметкой: одно из нескольких. */
-function Radio({ on, onClick, children }: { on: boolean; onClick: () => void; children: React.ReactNode }) {
-    return (
-        <button
-            type="button"
-            onClick={onClick}
-            className={`flex w-full items-center gap-2.5 select-none rounded-lg bg-transparent px-2.5 py-2 text-left text-[13px] focus:outline-none focus:shadow-none focus-visible:ring-2 focus-visible:ring-primary ${
-                on ? 'bg-primary/10 text-primary' : 'hover:bg-accent'
-            }`}
-        >
-            <span
-                className={`h-4 w-4 shrink-0 rounded-full border ${on ? 'border-[5px] border-primary' : 'border-input'}`}
-                aria-hidden="true"
-            />
-            <span className="min-w-0 flex-1">{children}</span>
         </button>
     )
 }

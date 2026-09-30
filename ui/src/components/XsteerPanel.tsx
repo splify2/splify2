@@ -2,7 +2,7 @@ import { useCallback, useEffect, useState } from 'react'
 import { Check, Copy, ExternalLink, Link2, RefreshCw } from 'lucide-react'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
-import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
+import { Block, CardHead, KV } from '@/components/ui/layout'
 import { Hint } from '@/components/ui/hint'
 import { rpc, type XsteerTunnel } from '@/lib/rpc'
 import { human, type Live } from '@/lib/live'
@@ -23,7 +23,12 @@ import { xsLinkSupported } from '@/lib/engine'
  *
  *  И ссылка. Она здесь, а не только на странице сети, потому что вопрос «перенести этот доступ
  *  на телефон» — это вопрос про работающий туннель, а не про его настройку; ту же кнопку на
- *  странице настройки человек ищет после того, как всё уже настроено. */
+ *  странице настройки человек ищет после того, как всё уже настроено.
+ *
+ *  Bode 26.10, раскладка по образцу приложения Splify2: интерфейс — карточка, открывающаяся
+ *  строкой «точка · имя · устройство — Настроить», под ней факты полосами «подпись слева,
+ *  значение справа» (как сервер, рукопожатие и объём у выхода в приложении), ниже волосяной
+ *  линией — ссылка xs://. */
 
 /** Секунды человеческим сроком. Отдельная функция, а не `${n} с`: «3600 с назад» человек
  *  считает глазами, а «час назад» читает. */
@@ -68,13 +73,9 @@ function offloadLabel(o?: { gso: boolean; gro: boolean; rx: boolean }) {
     }
 }
 
+/** Факт полосой: общий KV из layout, значение — начертанием потяжелее, как было. */
 function Row({ label, children }: { label: React.ReactNode; children: React.ReactNode }) {
-    return (
-        <div className="flex items-baseline justify-between gap-2">
-            <span className="text-subtle">{label}</span>
-            <span className="font-medium text-right">{children}</span>
-        </div>
-    )
+    return <KV k={label} v={<span className="font-medium">{children}</span>} />
 }
 
 export default function XsteerPanel({ live }: { live: Live }) {
@@ -167,24 +168,20 @@ export default function XsteerPanel({ live }: { live: Live }) {
 
     if (dead)
         return (
-            <Card>
-                <CardHeader>
-                    <CardTitle>Роутер не рассказывает про xsteer</CardTitle>
-                </CardHeader>
-                <CardContent className="text-[13px] text-subtle">
+            <Block>
+                <CardHead title="Роутер не рассказывает про xsteer" />
+                <p className="text-sm text-subtle">
                     Установленный splify2 состояние туннелей не отдаёт — обновите splify2. Сами туннели работают.
-                </CardContent>
-            </Card>
+                </p>
+            </Block>
         )
 
     if (names.length === 0)
         return (
-            <Card>
-                <CardHeader>
-                    <CardTitle>Интерфейсов xsteer нет</CardTitle>
-                </CardHeader>
-                <CardContent className="space-y-2">
-                    <p className="text-[13px] text-subtle">
+            <Block>
+                <CardHead title="Интерфейсов xsteer нет" />
+                <div className="space-y-2">
+                    <p className="text-sm text-subtle">
                         Туннель создаётся как обычный интерфейс: зона фаервола, адрес и MTU ему
                         нужны так же, как остальным. Ссылку <code>xs://</code> можно вставить прямо
                         на странице создания — поля заполнятся сами.
@@ -196,12 +193,12 @@ export default function XsteerPanel({ live }: { live: Live }) {
                         Создать в настройках сети
                         <ExternalLink className="h-3.5 w-3.5" aria-hidden="true" />
                     </a>
-                </CardContent>
-            </Card>
+                </div>
+            </Block>
         )
 
     return (
-        <div className="space-y-3">
+        <div className="space-y-4">
             {names.map((iface) => {
                 const t = tunnels[iface]
                 const st = t.state
@@ -219,18 +216,21 @@ export default function XsteerPanel({ live }: { live: Live }) {
                 const n = note[iface]
 
                 return (
-                    <Card key={iface}>
-                        <CardHeader className="flex-row items-center justify-between gap-2 space-y-0">
-                            <CardTitle className="flex items-center gap-2">
-                                <span
-                                    className={`h-2 w-2 shrink-0 rounded-full ${
-                                        up && !stale ? 'bg-success' : 'bg-destructive'
-                                    }`}
-                                    aria-hidden="true"
-                                />
-                                {iface}
-                                <span className="text-[11px] font-normal text-subtle">{t.device}</span>
-                            </CardTitle>
+                    <Block key={iface}>
+                        <CardHead
+                            title={
+                                <span className="flex min-w-0 items-center gap-2">
+                                    <span
+                                        className={`h-2 w-2 shrink-0 rounded-full ${
+                                            up && !stale ? 'bg-success' : 'bg-destructive'
+                                        }`}
+                                        aria-hidden="true"
+                                    />
+                                    <span className="truncate">{iface}</span>
+                                    <span className="shrink-0 text-xs font-normal text-subtle">{t.device}</span>
+                                </span>
+                            }
+                            action={
                             <a
                                 href="/cgi-bin/luci/admin/network/network"
                                 className="inline-flex items-center gap-1.5 text-xs text-primary underline decoration-dotted"
@@ -238,8 +238,9 @@ export default function XsteerPanel({ live }: { live: Live }) {
                                 Настроить
                                 <ExternalLink className="h-3.5 w-3.5" aria-hidden="true" />
                             </a>
-                        </CardHeader>
-                        <CardContent className="space-y-1.5 text-[13px]">
+                            }
+                        />
+                        <div className="space-y-1.5 text-[13px]">
                             {st === null ? (
                                 <p className="text-subtle">
                                     Туннель не поднимался в эту загрузку: интерфейс выключен или
@@ -340,7 +341,7 @@ export default function XsteerPanel({ live }: { live: Live }) {
                               * оставить её открытой на чужом мониторе у всякого, кто просто
                               * смотрел состояние туннеля. Поэтому нажатие. */}
                             {links && (
-                                <div className="space-y-2 border-t pt-2">
+                                <div className="space-y-2 border-t border-border pt-3">
                                     {link[iface] ? (
                                         <div className="space-y-1">
                                             <p className="text-subtle">
@@ -410,7 +411,7 @@ export default function XsteerPanel({ live }: { live: Live }) {
                                 </div>
                             )}
                             {!links && (
-                                <p className="border-t pt-2 text-subtle">
+                                <p className="border-t border-border pt-3 text-subtle">
                                     Ссылки <code>xs://</code> понимает steer 1.5.0 и новее — на
                                     установленном движке этого умения нет.
                                 </p>
@@ -418,8 +419,8 @@ export default function XsteerPanel({ live }: { live: Live }) {
                             {n && (
                                 <p className={n.bad ? 'text-destructive' : 'text-success'}>{n.text}</p>
                             )}
-                        </CardContent>
-                    </Card>
+                        </div>
+                    </Block>
                 )
             })}
         </div>

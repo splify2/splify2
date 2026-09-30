@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react'
-import { ChevronLeft, Globe, Network, ShieldCheck } from 'lucide-react'
-import HubRow from '@/components/HubRow'
+import { Globe, Network, ShieldCheck } from 'lucide-react'
+import { Group, ScreenHeader, TapRow } from '@/components/ui/layout'
 import PoolList from '@/components/PoolList'
 import IfacesPanel from '@/components/IfacesPanel'
 import VlessScreen from '@/components/VlessScreen'
@@ -18,7 +18,13 @@ import { type Live } from '@/lib/live'
  *
  *  Подпункт открывается НА МЕСТЕ раздела, а не отдельной вкладкой рельса: рельс отвечает за
  *  четыре роли, и раздувать его до четырнадцати пунктов значит вернуть строку вкладок, из
- *  которой видно треть. */
+ *  которой видно треть.
+ *
+ *  Bode 26.10, раскладка по образцу приложения Splify2 для телефона: три входа — строками
+ *  ОДНОЙ карточки (как перечень в «Настройках»), выходы — строками второй карточки со своим
+ *  заголовком и счётчиком, подпункт открывается с шапкой «← заголовок». Прежде каждый вход и
+ *  каждый выход был отдельной карточкой, и восемь карточек подряд читались как восемь разных
+ *  вещей, а не как два перечня. */
 
 type Screen = 'root' | 'ifaces' | 'vless' | 'xsteer'
 
@@ -43,19 +49,10 @@ export default function Vpn({ live }: { live: Live }) {
     if (screen !== 'root') {
         return (
             <div className="space-y-4">
-                {/* Одна строка: откуда пришли и где мы. Заголовок раздела над ней уже стоит,
-                    и третья строка «VPN / ‹ VPN / VLESS» читалась как заикание. */}
-                <div className="flex flex-wrap items-baseline gap-2">
-                    <button
-                        type="button"
-                        onClick={() => setScreen('root')}
-                        className="flex items-center gap-1 text-sm text-primary"
-                    >
-                        <ChevronLeft className="h-4 w-4" aria-hidden="true" /> VPN
-                    </button>
-                    <span className="text-sm text-muted-foreground">/</span>
-                    <h2 className="sp-title">{TITLE[screen]}</h2>
-                </div>
+                {/* Шапка вложенного экрана: стрелка назад и заголовок. Прежняя строка «‹ VPN /
+                    VLESS» делала то же, но на другом языке, чем «Настройки»; теперь оба раздела
+                    открывают подпункт одинаково. Подпись стрелки — «VPN»: это то, куда она ведёт. */}
+                <ScreenHeader title={TITLE[screen]} back={() => setScreen('root')} backLabel="VPN" />
                 {screen === 'ifaces' && <IfacesPanel live={live} />}
                 {screen === 'vless' && <VlessScreen />}
                 {screen === 'xsteer' && <XsteerPanel live={live} />}
@@ -85,16 +82,16 @@ export default function Vpn({ live }: { live: Live }) {
      * с нуля, то есть закрывала бы редактор в момент открытия. */
     return (
         <div className="space-y-4">
-            {!editing && <div className="space-y-2.5">
+            {!editing && <Group>
                 {/* «Свои туннели», а не «VPN»: строка «VPN» внутри раздела VPN не говорила,
                     что за ней — WireGuard, AmneziaWG и прочие устройства самого роутера. */}
-                <HubRow
+                <TapRow
                     icon={ShieldCheck}
                     title="Свои туннели"
-                    state={ifaceDevs.length ? `взяты: ${ifaceDevs.join(', ')}` : 'WireGuard, AmneziaWG, OpenVPN — ни один не взят'}
+                    subtitle={ifaceDevs.length ? `взяты: ${ifaceDevs.join(', ')}` : 'WireGuard, AmneziaWG, OpenVPN — ни один не взят'}
                     onClick={() => setScreen('ifaces')}
                 />
-                <HubRow
+                <TapRow
                     icon={Globe}
                     title="VLESS"
                     /* «ВЗЯТЫ», а не «подписок» — и это не придирка к слову. Оба числа
@@ -107,25 +104,24 @@ export default function Vpn({ live }: { live: Live }) {
                        Пусто — «ни одна не взята», а не «подписок нет»: подписки могут быть
                        заведены и не использоваться ни одним выходом, и прежний текст в этом
                        случае прямо врал. */
-                    state={
+                    subtitle={
                         vlessCount
                             ? `взяты: ${subCount === 1 ? '1 подписка' : subCount >= 2 && subCount <= 4 ? `${subCount} подписки` : `${subCount} подписок`} · ${vlessCount === 1 ? '1 локация' : vlessCount >= 2 && vlessCount <= 4 ? `${vlessCount} локации` : `${vlessCount} локаций`}`
                             : 'ни одна подписка не взята выходом'
                     }
                     onClick={() => setScreen('vless')}
                 />
-                <HubRow
+                <TapRow
                     icon={Network}
                     title="XSTEER"
-                    state={xs.length ? xs.join(', ') : 'интерфейсов нет'}
+                    subtitle={xs.length ? xs.join(', ') : 'интерфейсов нет'}
                     onClick={() => setScreen('xsteer')}
                 />
-            </div>}
+            </Group>}
 
-            <div className="space-y-3">
-                {!editing && <h2 className="sp-sub">Выходы</h2>}
-                <PoolList live={live} onEditingChange={setEditing} />
-            </div>
+            {/* Заголовок «Выходы» — у самой карточки списка (PoolList), как у карточек
+                приложения: название слева, счётчик справа. */}
+            <PoolList live={live} onEditingChange={setEditing} />
         </div>
     )
 }

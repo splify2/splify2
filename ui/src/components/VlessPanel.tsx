@@ -17,6 +17,10 @@ import type { Output, VlessNode, VlessProbe, VlessSkip } from '@/lib/model'
 // Умолчание — «первый рабочий» (node = -1), и оно намеренно первое в списке: зашитый
 // номер молча перестаёт быть тем узлом при обновлении подписки, а проверка находит живой
 // сама.
+//
+// Bode 26.10, раскладка по образцу приложения Splify2: «узлов N · выбран» и «Проверить все» —
+// строкой заголовка над списком, «Первый рабочий» — первой строкой того же списка, узлы —
+// строками через волосяную линию, а не отдельными плашками.
 
 interface Props {
     name: string
@@ -225,7 +229,7 @@ export default function VlessPanel({ name, output, onChange, saved }: Props) {
     const left = Object.keys(phase).length
 
     return (
-        <div className="space-y-2 rounded-md border border-border p-2">
+        <div className="space-y-3 rounded-lg border border-border p-3">
             <div className="flex flex-wrap items-end gap-2">
                 <label className="flex flex-1 flex-col gap-1 text-xs">
                     Ссылка на подписку или vless://
@@ -233,13 +237,13 @@ export default function VlessPanel({ name, output, onChange, saved }: Props) {
                         value={url}
                         onChange={(e) => setUrl(e.currentTarget.value)}
                         placeholder="https://example.com/sub/xxxxx  —  или  vless://…"
-                        className="w-full rounded-md border border-border bg-background px-2 py-1 text-sm"
+                        className="h-[38px] w-full rounded-lg border border-border bg-background px-3 text-sm"
                         aria-label="Ссылка на подписку или vless://"
                         aria-invalid={urlBad || undefined}
                         aria-describedby={urlErr ? `sub-url-err-${name}` : undefined}
                     />
                 </label>
-                <Button variant="secondary" size="sm" disabled={busy === 'sub'} onClick={fetchSub}>
+                <Button variant="secondary" className="h-[38px]" disabled={busy === 'sub'} onClick={fetchSub}>
                     {sub?.present
                         ? <><RefreshCw className="mr-1 h-4 w-4" aria-hidden="true" /> Обновить</>
                         : <><Download className="mr-1 h-4 w-4" aria-hidden="true" /> Загрузить</>}
@@ -325,7 +329,7 @@ export default function VlessPanel({ name, output, onChange, saved }: Props) {
             )}
 
             {nodes && (
-                <div className="space-y-1">
+                <div className="space-y-2">
                     {/* СПИСОК БЕЗ СВЁРТКИ. Раньше узлы прятались за кнопкой «Показать узлы
                       * (29)», и владелец сказал прямо: она незаметна, а второй спойлер внутри
                       * панели, которая сама раскрывается, не нужен. Теперь наверху выбор
@@ -334,7 +338,7 @@ export default function VlessPanel({ name, output, onChange, saved }: Props) {
                       * прячет саму возможность выбрать. */}
                     {nodes.length > 0 && (
                         <div className="flex flex-wrap items-center gap-2">
-                            <span className="text-xs text-muted-foreground">
+                            <span className="text-sm text-subtle">
                                 узлов {nodes.length} · выбран: {chosenName}
                             </span>
                             <Button
@@ -349,7 +353,8 @@ export default function VlessPanel({ name, output, onChange, saved }: Props) {
                         </div>
                     )}
 
-                    <label className="flex items-center gap-2 rounded-lg border border-border bg-muted px-2 py-1.5 text-sm">
+                    <div className="divide-y divide-border border-y border-border">
+                    <label className="flex min-h-[44px] items-center gap-2 py-1.5 text-sm">
                         <input
                             type="radio"
                             name={`node-${name}`}
@@ -364,13 +369,13 @@ export default function VlessPanel({ name, output, onChange, saved }: Props) {
                         </span>
                     </label>
 
-                    <div className={`${LIST_MAX} space-y-0.5 overflow-y-auto pr-1`}>
+                    <div className={`${LIST_MAX} divide-y divide-border overflow-y-auto pr-1`}>
                     {nodes.map((n) => {
                         const p = probes[n.index]
                         const ph = phase[n.index]
                         const err = fails[n.index]
                         return (
-                            <div key={n.index} className="flex flex-wrap items-center gap-2 py-0.5 text-sm">
+                            <div key={n.index} className="flex min-h-[44px] flex-wrap items-center gap-2 py-1 text-sm">
                                 <input
                                     type="radio"
                                     name={`node-${name}`}
@@ -418,6 +423,7 @@ export default function VlessPanel({ name, output, onChange, saved }: Props) {
                         )
                     })}
 
+                    </div>
                     </div>
                 </div>
             )}

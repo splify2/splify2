@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useState } from 'react'
 import { LoaderCircle, Plus, RefreshCw, Trash2 } from 'lucide-react'
 import { Button } from '@/components/ui/button'
-import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
+import { Block, CardHead, DangerButton, FieldRow, KV } from '@/components/ui/layout'
 import { notify } from '@/lib/notify'
 import { rpc } from '@/lib/rpc'
 import { human } from '@/lib/live'
@@ -16,7 +16,13 @@ import { subsRemember, subsRemembered } from '@/lib/subs'
  *  файл и свой остаток, а выход выбирает подписку, из которой берёт локацию.
  *
  *  Локации здесь НЕ выбираются: локация — свойство выхода, и выбирают её там, где выход
- *  собирают. Два места, назначающие узел, разошлись бы на первом же переключении. */
+ *  собирают. Два места, назначающие узел, разошлись бы на первом же переключении.
+ *
+ *  Bode 26.10, раскладка по образцу экрана «Подписки» приложения Splify2: карточка подписки —
+ *  название, ссылка, состояние, строка «Обновлять [как часто]», а внизу две кнопки в ряд:
+ *  «Обновить» и обведённая красная «Удалить». Прежде обе стояли подчёркнутыми словами в строке
+ *  заголовка, рядом с названием, и удаление читалось как ссылка. Новая подписка — своей
+ *  карточкой с полями друг под другом и основной кнопкой во всю ширину. */
 
 interface Sub {
     name: string
@@ -204,105 +210,75 @@ export default function VlessScreen() {
     if (subs === null) return <div className="p-5 text-sm text-muted-foreground">Загрузка…</div>
 
     return (
-        <div className="space-y-3">
+        <div className="space-y-4">
             {subs.map((s) => (
-                <Card key={s.name}>
-                    <CardHeader className="flex-row flex-wrap items-baseline justify-between gap-x-2 gap-y-1 space-y-0">
-                        {/* Название опознанного источника ведёт к самому продавцу: из панели
-                            человеку к нему всё равно идти — за продлением, за вопросом, —
-                            и пусть идёт по нажатию, а не поиском в переписке.
+                <Block key={s.name}>
+                    {/* Название опознанного источника ведёт к самому продавцу: из панели
+                        человеку к нему всё равно идти — за продлением, за вопросом, —
+                        и пусть идёт по нажатию, а не поиском в переписке.
 
-                            Признак приходит с бэкенда полем `link` и разбирается ТАМ (sub_brand
-                            в m-sub.sh). Здесь ссылка только рисуется: опознавать источник второй
-                            раз по адресу подписки значило бы завести второй признак того же
-                            самого, и однажды они разойдутся — молча, потому что и название, и
-                            ссылка по отдельности выглядят исправными.
+                        Признак приходит с бэкенда полем `link` и разбирается ТАМ (sub_brand
+                        в m-sub.sh). Здесь ссылка только рисуется: опознавать источник второй
+                        раз по адресу подписки значило бы завести второй признак того же
+                        самого, и однажды они разойдутся — молча, потому что и название, и
+                        ссылка по отдельности выглядят исправными.
 
-                            rel обязателен: target=_blank без noopener отдаёт открытой странице
-                            доступ к window.opener, а ведёт ссылка наружу. */}
-                        <CardTitle>
-                            {s.link ? (
-                                <a
-                                    href={s.link}
-                                    target="_blank"
-                                    rel="noopener noreferrer"
-                                    className="text-primary underline decoration-dotted underline-offset-2"
-                                >
-                                    {s.title || s.name}
-                                </a>
-                            ) : (
-                                (s.title || s.name)
-                            )}
-                        </CardTitle>
-                        <div className="flex items-center gap-3 text-xs">
-                            {s.kind === 'url' && (
-                                <button
-                                    type="button"
-                                    onClick={() => void refresh(s)}
-                                    disabled={busy === s.name}
-                                    className="sp-row flex items-center gap-1.5 bg-transparent p-0 text-primary underline decoration-dotted disabled:opacity-60"
-                                >
-                                    {busy === s.name ? (
-                                        <LoaderCircle className="h-3.5 w-3.5 animate-spin" aria-hidden="true" />
-                                    ) : (
-                                        <RefreshCw className="h-3.5 w-3.5" aria-hidden="true" />
-                                    )}
-                                    {busy === s.name ? 'Обновляем…' : 'Обновить'}
-                                </button>
-                            )}
-                            <button
-                                type="button"
-                                onClick={() => void remove(s)}
-                                disabled={busy === s.name}
-                                aria-label={`удалить ${s.title || s.name}`}
-                                className="sp-row flex items-center gap-1.5 bg-transparent p-0 text-destructive underline decoration-dotted disabled:opacity-60"
-                            >
-                                {busy === s.name ? (
-                                    <LoaderCircle className="h-3.5 w-3.5 animate-spin" aria-hidden="true" />
+                        rel обязателен: target=_blank без noopener отдаёт открытой странице
+                        доступ к window.opener, а ведёт ссылка наружу. */}
+                    <div className="space-y-1">
+                        <CardHead
+                            title={
+                                s.link ? (
+                                    <a
+                                        href={s.link}
+                                        target="_blank"
+                                        rel="noopener noreferrer"
+                                        className="text-primary underline decoration-dotted underline-offset-2"
+                                    >
+                                        {s.title || s.name}
+                                    </a>
                                 ) : (
-                                    <Trash2 className="h-3.5 w-3.5" aria-hidden="true" />
-                                )}
-                                {busy === s.name ? 'Удаляем…' : 'Удалить'}
-                            </button>
-                        </div>
-                    </CardHeader>
-                    <CardContent className="space-y-1 text-[13px]">
+                                    (s.title || s.name)
+                                )
+                            }
+                        />
                         <div className="truncate font-mono text-xs text-subtle">
                             {s.kind === 'links' ? 'ссылки vless://' : s.url || '—'}
                         </div>
-                        <div className="flex flex-wrap gap-x-3 text-xs text-muted-foreground">
-                            {s.present ? (
-                                <>
-                                    <span>{human(s.bytes || 0)}</span>
-                                    {s.mtime ? <span>обновлена {agoText(Date.now() - s.mtime * 1000)}</span> : null}
-                                </>
-                            ) : (
-                                <span className="text-warning-fg">не скачана</span>
-                            )}
-                            {/* Число говорит, ЧЕМ ЗАНЯТА подписка, а не сколько в ней
-                                узлов, и подпись обязана это называть. «выходов: 0» читалось
-                                как «подписка ничего не даёт», хотя означало «её пока никто
-                                не использует» — а это разные новости. Рядом стоит число
-                                локаций: выход бывает пулом и берёт из подписки несколько
-                                строк, и без него «выходов: 1» спорило с пулом, где человек
-                                только что выбрал две. */}
-                            <span>
-                                {s.used
-                                    ? `взята выходами: ${s.used}${s.used_nodes ? ` · локаций: ${s.used_nodes}` : ''}`
-                                    : 'не используется'}
-                            </span>
-                        </div>
-                        {/* Обновление по часам есть только у подписки: вставленные руками
-                            ссылки обновлять неоткуда. */}
-                        {s.kind === 'url' && (
-                            <div className="flex flex-wrap items-center gap-x-2 gap-y-1 pt-1 text-xs text-muted-foreground">
-                                <label htmlFor={`auto-${s.name}`}>Обновлять</label>
+                    </div>
+                    <div className="flex flex-wrap gap-x-3 gap-y-0.5 text-xs text-muted-foreground">
+                        {s.present ? (
+                            <>
+                                <span>{human(s.bytes || 0)}</span>
+                                {s.mtime ? <span>обновлена {agoText(Date.now() - s.mtime * 1000)}</span> : null}
+                            </>
+                        ) : (
+                            <span className="text-warning-fg">не скачана</span>
+                        )}
+                        {/* Число говорит, ЧЕМ ЗАНЯТА подписка, а не сколько в ней
+                            узлов, и подпись обязана это называть. «выходов: 0» читалось
+                            как «подписка ничего не даёт», хотя означало «её пока никто
+                            не использует» — а это разные новости. Рядом стоит число
+                            локаций: выход бывает пулом и берёт из подписки несколько
+                            строк, и без него «выходов: 1» спорило с пулом, где человек
+                            только что выбрал две. */}
+                        <span>
+                            {s.used
+                                ? `взята выходами: ${s.used}${s.used_nodes ? ` · локаций: ${s.used_nodes}` : ''}`
+                                : 'не используется'}
+                        </span>
+                    </div>
+                    {/* Обновление по часам есть только у подписки: вставленные руками
+                        ссылки обновлять неоткуда. */}
+                    {s.kind === 'url' && (
+                        <div className="border-t border-border pt-1">
+                            <FieldRow label="Обновлять" caption={nextText(s.auto || 0, s.auto_at) || undefined}>
                                 <select
                                     id={`auto-${s.name}`}
                                     value={String(s.auto || 0)}
                                     disabled={busy === s.name}
                                     onChange={(e) => void setAuto(s, Number(e.currentTarget.value))}
-                                    className="h-[30px] rounded-lg border border-border bg-background px-2 text-xs disabled:opacity-60"
+                                    className="h-[38px] w-full rounded-lg border border-border bg-background px-3 text-sm disabled:opacity-60"
                                 >
                                     {AUTO_CHOICES.map((c) => (
                                         <option key={c.min} value={String(c.min)}>
@@ -310,26 +286,51 @@ export default function VlessScreen() {
                                         </option>
                                     ))}
                                 </select>
-                                {nextText(s.auto || 0, s.auto_at) ? (
-                                    <span>{nextText(s.auto || 0, s.auto_at)}</span>
-                                ) : null}
-                            </div>
+                            </FieldRow>
+                        </div>
+                    )}
+                    <div className={`grid gap-2 ${s.kind === 'url' ? 'grid-cols-2' : 'grid-cols-1'}`}>
+                        {s.kind === 'url' && (
+                            <Button
+                                variant="outline"
+                                className="h-10 w-full"
+                                onClick={() => void refresh(s)}
+                                disabled={busy === s.name}
+                            >
+                                {busy === s.name ? (
+                                    <LoaderCircle className="h-4 w-4 animate-spin" aria-hidden="true" />
+                                ) : (
+                                    <RefreshCw className="h-4 w-4" aria-hidden="true" />
+                                )}
+                                {busy === s.name ? 'Обновляем…' : 'Обновить'}
+                            </Button>
                         )}
-                    </CardContent>
-                </Card>
+                        <DangerButton
+                            full
+                            onClick={() => void remove(s)}
+                            disabled={busy === s.name}
+                            label={`удалить ${s.title || s.name}`}
+                        >
+                            {busy === s.name ? (
+                                <LoaderCircle className="animate-spin" aria-hidden="true" />
+                            ) : (
+                                <Trash2 aria-hidden="true" />
+                            )}
+                            {busy === s.name ? 'Удаляем…' : 'Удалить'}
+                        </DangerButton>
+                    </div>
+                </Block>
             ))}
 
-            <Card>
-                <CardHeader>
-                    <CardTitle>Добавить подписку</CardTitle>
-                </CardHeader>
-                <CardContent className="flex flex-wrap gap-2">
+            <Block>
+                <CardHead title="Добавить подписку" />
+                <div className="grid gap-2 sm:grid-cols-[10.5rem_minmax(0,1fr)]">
                     <input
                         value={name}
                         onChange={(e) => setName(e.currentTarget.value)}
                         placeholder="имя (необязательно)"
                         aria-label="имя подписки"
-                        className="h-[38px] w-[10.5rem] rounded-lg border border-border bg-background px-3 text-sm"
+                        className="h-10 w-full min-w-0 rounded-lg border border-border bg-background px-3 text-sm"
                     />
                     <input
                         value={url}
@@ -337,24 +338,23 @@ export default function VlessScreen() {
                         onKeyDown={(e) => e.key === 'Enter' && add()}
                         placeholder="ссылка подписки или vless://"
                         aria-label="ссылка подписки"
-                        className="h-[38px] min-w-[14rem] flex-1 rounded-lg border border-border bg-background px-3 font-mono text-[13px]"
+                        className="h-10 w-full min-w-0 rounded-lg border border-border bg-background px-3 font-mono text-[13px]"
                     />
-                    <Button onClick={add} disabled={!!busy}>
-                        {busy === '__adding__' ? (
-                            <LoaderCircle className="h-4 w-4 animate-spin" aria-hidden="true" />
-                        ) : (
-                            <Plus className="h-4 w-4" aria-hidden="true" />
-                        )}
-                        {busy === '__adding__' ? 'Добавляем…' : 'Добавить'}
-                    </Button>
-                </CardContent>
-            </Card>
+                </div>
+                <Button className="h-10 w-full" onClick={add} disabled={!!busy}>
+                    {busy === '__adding__' ? (
+                        <LoaderCircle className="h-4 w-4 animate-spin" aria-hidden="true" />
+                    ) : (
+                        <Plus className="h-4 w-4" aria-hidden="true" />
+                    )}
+                    {busy === '__adding__' ? 'Добавляем…' : 'Добавить'}
+                </Button>
+            </Block>
 
             {hwid && (
-                <div className="flex items-baseline justify-between gap-2 px-1 text-xs">
-                    <span className="text-subtle">HWID</span>
-                    <span className="font-mono text-muted-foreground">{hwid}</span>
-                </div>
+                <Block>
+                    <KV k="HWID" v={<span className="select-all font-mono text-muted-foreground">{hwid}</span>} />
+                </Block>
             )}
         </div>
     )

@@ -221,3 +221,46 @@ export function FieldRow({ label, caption, children }: { label: ReactNode; capti
         </label>
     )
 }
+
+/** Удаление: обведённая красная кнопка внизу экрана или карточки, как «Удалить правило» в
+ *  приложении. Не залитая: заливка — у основного действия, а удаление не должно спорить с ним
+ *  за взгляд. `full` — во всю ширину (низ экрана); без него — по содержимому (ряд кнопок). */
+export function DangerButton({
+    children, onClick, disabled, full, label,
+}: {
+    children: ReactNode
+    onClick: () => void
+    disabled?: boolean
+    full?: boolean
+    /** Имя для чтения с экрана, когда подпись кнопки не называет, ЧТО удаляется. */
+    label?: string
+}) {
+    return (
+        <button
+            type="button"
+            onClick={onClick}
+            disabled={disabled}
+            aria-label={label}
+            className={`inline-flex h-10 items-center justify-center gap-2 rounded-lg border border-destructive/50 bg-transparent px-4 text-sm font-medium text-destructive transition-colors duration-200 hover:bg-destructive/10 focus:outline-none focus-visible:ring-2 focus-visible:ring-destructive disabled:opacity-60 [&_svg]:size-4 [&_svg]:shrink-0 ${full ? 'w-full' : ''}`}
+        >
+            {children}
+        </button>
+    )
+}
+
+/** Полоска доли: трафик правила относительно самого нагруженного, как в «Трафике по
+ *  правилам» приложения. `value` — от 0 до 1; `muted` — серым (правило «напрямую»: оно
+ *  никуда не уводит, и акцентный цвет на нём читался бы как ещё один туннель). */
+export function Meter({ value, muted }: { value: number; muted?: boolean }) {
+    const w = Math.max(0, Math.min(1, Number.isFinite(value) ? value : 0))
+    return (
+        <div className="h-1.5 overflow-hidden rounded-full bg-muted" aria-hidden="true">
+            <div
+                className={`h-full rounded-full transition-[width] duration-500 ${muted ? 'bg-muted-foreground' : 'bg-primary'}`}
+                /* Ненулевой трафик не рисуется пустой полоской: доля в полпроцента от
+                   самого большого правила — это всё-таки не ноль. */
+                style={{ width: w > 0 ? `max(${Math.round(w * 100)}%, 6px)` : '0' }}
+            />
+        </div>
+    )
+}

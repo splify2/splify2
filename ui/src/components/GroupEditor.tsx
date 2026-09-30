@@ -1,7 +1,7 @@
 import { useMemo, useState } from 'react'
-import { ArrowDown, ArrowUp, Check, Trash2, X } from 'lucide-react'
+import { ArrowDown, ArrowUp, Check, Trash2 } from 'lucide-react'
 import { Button } from '@/components/ui/button'
-import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
+import { Block, CardHead, DangerButton, FieldRow, ScreenHeader } from '@/components/ui/layout'
 import { Chip, Field, NumField, Radio, inputCls } from '@/components/formbits'
 import { notify } from '@/lib/notify'
 import { rpc } from '@/lib/rpc'
@@ -15,7 +15,15 @@ import { type Live } from '@/lib/live'
  *  допуском, выбор человека и раздача новых соединений по весам.
  *
  *  Пул из устройств и подписок (`PoolEditor`) — частный случай «первый живой» со своими
- *  служебными членами; здесь члены — обычные выходы списка и другие группы. */
+ *  служебными членами; здесь члены — обычные выходы списка и другие группы.
+ *
+ *  Bode 26.10, раскладка по образцу приложения Splify2 — та же, что у редактора выхода: шапка
+ *  «← имя · Сохранить группу», карточки с заголовками (имя, как выбирать, члены), выбранные
+ *  члены — строками одной карточки через волосяную линию, удаление — обведённой красной
+ *  кнопкой внизу. Способ выбора остаётся радиосписком: у каждого из четырёх вариантов есть
+ *  строка-следствие под названием, и в сегменты она не помещается. «Если все члены упали» —
+ *  строкой «подпись — список» в карточке имени, как «если всё упало» у выхода в приложении:
+ *  сегментами «остановить трафик» на телефоне обрезалось. */
 
 const NAME_RE = /^[A-Za-z0-9_-]{1,24}$/
 
@@ -142,41 +150,57 @@ export default function GroupEditor({ spec, name, live, onSave, onCancel }: {
 
     return (
         <div className="space-y-4">
-            <div className="flex flex-wrap items-center justify-between gap-2">
-                <input
-                    value={title}
-                    onChange={(e) => setTitle(e.currentTarget.value)}
-                    placeholder="имя группы"
-                    aria-label="имя группы"
-                    className={`${inputCls} flex-1 sm:max-w-[16rem]`}
-                />
-                <div className="flex flex-wrap gap-2">
-                    {name && (
-                        <Button variant="destructive" onClick={remove}>
-                            <Trash2 className="h-4 w-4" aria-hidden="true" /> Удалить
-                        </Button>
-                    )}
-                    <Button variant="secondary" onClick={onCancel}>
-                        <X className="h-4 w-4" aria-hidden="true" /> Отмена
-                    </Button>
+            <ScreenHeader
+                title={name || 'Добавить группу'}
+                back={onCancel}
+                backLabel="Отмена"
+                right={
                     <Button onClick={save}>
                         <Check className="h-4 w-4" aria-hidden="true" /> Сохранить группу
                     </Button>
-                </div>
-            </div>
+                }
+            />
 
             <div className="grid gap-4 xl:grid-cols-2">
-                <Card>
-                    <CardHeader><CardTitle>Как выбирать</CardTitle></CardHeader>
-                    <CardContent className="space-y-1">
+                <div className="min-w-0 space-y-4">
+                <Block>
+                    <Field label="имя группы">
+                        <input
+                            value={title}
+                            onChange={(e) => setTitle(e.currentTarget.value)}
+                            placeholder="имя группы"
+                            aria-label="имя группы"
+                            className={`${inputCls} w-full`}
+                        />
+                    </Field>
+                    <div className="border-t border-border pt-1">
+                        <FieldRow label="Если все члены упали">
+                            <select
+                                value={onFail}
+                                onChange={(e) => setOnFail(e.currentTarget.value as OnFail)}
+                                className={`${inputCls} w-full`}
+                            >
+                                {(['drop', 'direct'] as OnFail[]).map((v) => (
+                                    <option key={v} value={v}>{ON_FAIL_TEXT[v]}</option>
+                                ))}
+                            </select>
+                        </FieldRow>
+                    </div>
+                </Block>
+                <Block>
+                    <CardHead title="Как выбирать" />
+                    <div className="divide-y divide-border">
                         {(Object.keys(PICK_TEXT) as GroupPick[]).map((p) => (
-                            <Radio key={p} on={pick === p} onClick={() => setPick(p)}>
-                                <span className="font-medium">{PICK_TEXT[p].title}</span>
-                                <span className="block text-xs text-muted-foreground">{PICK_TEXT[p].hint}</span>
-                            </Radio>
+                            <div key={p} className="py-1">
+                                <Radio on={pick === p} onClick={() => setPick(p)}>
+                                    <span className="font-medium">{PICK_TEXT[p].title}</span>
+                                    <span className="block text-xs text-muted-foreground">{PICK_TEXT[p].hint}</span>
+                                </Radio>
+                            </div>
                         ))}
-                        {pick === 'latency' && (
-                            <div className="grid gap-3 pt-3 sm:grid-cols-2">
+                    </div>
+                {pick === 'latency' && (
+                            <div className="grid gap-3 border-t border-border pt-3 sm:grid-cols-2">
                                 <NumField label="Допуск, мс" value={tolerance} onChange={setTolerance} placeholder="50" min={0} max={60000} />
                                 <NumField label="Замер раз в, с" value={interval} onChange={setInterval} placeholder="180" min={5} max={86400} />
                                 <div className="sm:col-span-2">
@@ -191,20 +215,12 @@ export default function GroupEditor({ spec, name, live, onSave, onCancel }: {
                                 </div>
                             </div>
                         )}
-                        <div className="space-y-1 pt-3">
-                            <div className="sp-label uppercase tracking-wide text-muted-foreground">Если все члены упали</div>
-                            {(['drop', 'direct'] as OnFail[]).map((v) => (
-                                <Radio key={v} on={onFail === v} onClick={() => setOnFail(v)}>
-                                    {ON_FAIL_TEXT[v]}
-                                </Radio>
-                            ))}
-                        </div>
-                    </CardContent>
-                </Card>
+                </Block>
+                </div>
 
-                <Card>
-                    <CardHeader><CardTitle>Члены</CardTitle></CardHeader>
-                    <CardContent className="space-y-3">
+                <div className="min-w-0 space-y-4">
+                <Block>
+                    <CardHead title="Члены" meta={members.length || undefined} />
                         {candidates.length === 0 && (
                             <p className="text-sm text-muted-foreground">Других выходов пока нет — сначала заведите их.</p>
                         )}
@@ -214,9 +230,11 @@ export default function GroupEditor({ spec, name, live, onSave, onCancel }: {
                             ))}
                         </div>
                         {members.length > 0 && (
-                            <ol className="space-y-1.5">
+                            /* Выбранные члены — строками через волосяную линию, как узлы выхода
+                               в приложении; порядок — номером слева. */
+                            <ol className="divide-y divide-border border-t border-border">
                                 {members.map((m, i) => (
-                                    <li key={m} className="flex items-center gap-2 rounded-lg border border-border px-2.5 py-1.5 text-sm">
+                                    <li key={m} className="flex min-h-[44px] items-center gap-2 py-1.5 text-sm">
                                         <span className="w-5 shrink-0 text-xs text-muted-foreground">{i + 1}</span>
                                         <span className="min-w-0 flex-1 truncate font-medium">{m}</span>
                                         {g && (
@@ -262,8 +280,13 @@ export default function GroupEditor({ spec, name, live, onSave, onCancel }: {
                         {pick === 'manual' && g?.select && (
                             <p className="text-xs text-muted-foreground">Выбран: {g.select}</p>
                         )}
-                    </CardContent>
-                </Card>
+                </Block>
+                {name && (
+                    <DangerButton full onClick={remove}>
+                        <Trash2 aria-hidden="true" /> Удалить
+                    </DangerButton>
+                )}
+                </div>
             </div>
         </div>
     )

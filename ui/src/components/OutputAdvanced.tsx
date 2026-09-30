@@ -1,4 +1,4 @@
-import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
+import { Block, CardHead, FieldRow, Segmented } from '@/components/ui/layout'
 import { Chip, Field, NumField, Radio, inputCls } from '@/components/formbits'
 import { isPart, isTunnelKind, type Ipv6Mode, type Output, type Spec } from '@/lib/model'
 
@@ -6,6 +6,11 @@ import { isPart, isTunnelKind, type Ipv6Mode, type Output, type Spec } from '@/l
 // выход идёт сам туннель, фильтр транспорта узлов, IPv6 от хоста и способ выбора в пуле.
 // Живёт отдельно от редактора состава, чтобы тот не рос дальше: состав отвечает на «через что
 // выходить», а здесь — «как именно».
+//
+// Bode 26.10, раскладка по образцу приложения Splify2: одна карточка «Дополнительно», в ней
+// вопросы — через волосяную линию. «Через выход» — строкой «подпись слева, список справа», как
+// «через выход» у выхода в приложении; способ выбора в пуле (два варианта) — сегментами; IPv6
+// (четыре варианта с длинными подписями, в сегменты на телефоне не помещаются) — радиосписком.
 
 export interface Adv {
     /** Выход-подложка для самого туннеля (`over`); пусто — напрямую. */
@@ -65,7 +70,9 @@ export function advApply(o: Output, adv: Adv, role: 'top' | 'tunnel'): Output {
     return out
 }
 
-export default function OutputAdvanced({ adv, onChange, spec, self, show }: {
+export default function OutputAdvanced({ adv, onChange, spec, self, show, className }: {
+    /** Классы карточки: место в сетке редактора. */
+    className?: string
     adv: Adv
     onChange: (a: Adv) => void
     spec: Spec
@@ -89,13 +96,11 @@ export default function OutputAdvanced({ adv, onChange, spec, self, show }: {
         .map(([n]) => n)
 
     return (
-        <Card>
-            <CardHeader>
-                <CardTitle>Дополнительно</CardTitle>
-            </CardHeader>
-            <CardContent className="space-y-5">
+        <Block className={className}>
+            <CardHead title="Дополнительно" />
+            <div className="divide-y divide-border [&>*]:py-3 [&>*:first-child]:pt-0 [&>*:last-child]:pb-0">
                 {show.tunnel && (
-                    <Field label="Туннель идёт через выход">
+                    <FieldRow label="Туннель идёт через выход">
                         <select
                             value={adv.over}
                             onChange={(e) => set({ over: e.currentTarget.value })}
@@ -104,11 +109,11 @@ export default function OutputAdvanced({ adv, onChange, spec, self, show }: {
                             <option value="">напрямую</option>
                             {unders.map((n) => <option key={n} value={n}>{n}</option>)}
                         </select>
-                    </Field>
+                    </FieldRow>
                 )}
                 {show.tunnel && show.vless && (
                     <div className="space-y-2">
-                        <div className="sp-label uppercase tracking-wide text-muted-foreground">Транспорт узлов</div>
+                        <div className="text-sm text-subtle">Транспорт узлов</div>
                         <div className="flex flex-wrap gap-2">
                             <Chip on={adv.transport.length === 0} onClick={() => set({ transport: [] })}>любой</Chip>
                             {TRANSPORTS.map((t) => (
@@ -127,7 +132,7 @@ export default function OutputAdvanced({ adv, onChange, spec, self, show }: {
                 )}
                 {show.iface && (
                     <div className="space-y-1">
-                        <div className="sp-label uppercase tracking-wide text-muted-foreground">IPv6 от хоста</div>
+                        <div className="pb-1 text-sm text-subtle">IPv6 от хоста</div>
                         <Radio on={adv.ipv6 === ''} onClick={() => set({ ipv6: '' })}>по умолчанию</Radio>
                         <Radio on={adv.ipv6 === 'routed'} onClick={() => set({ ipv6: 'routed' })}>префикс хоста</Radio>
                         <Radio on={adv.ipv6 === 'nat'} onClick={() => set({ ipv6: 'nat' })}>один адрес хоста</Radio>
@@ -147,10 +152,17 @@ export default function OutputAdvanced({ adv, onChange, spec, self, show }: {
                     </div>
                 )}
                 {show.pool && (
-                    <div className="space-y-1">
-                        <div className="sp-label uppercase tracking-wide text-muted-foreground">Как выбирать из списка</div>
-                        <Radio on={adv.pick === 'order'} onClick={() => set({ pick: 'order' })}>первый живой</Radio>
-                        <Radio on={adv.pick === 'latency'} onClick={() => set({ pick: 'latency' })}>самый быстрый</Radio>
+                    <div className="space-y-2">
+                        <div className="text-sm text-subtle">Как выбирать из списка</div>
+                        <Segmented<Adv['pick']>
+                            label="Как выбирать из списка"
+                            items={[
+                                { value: 'order', label: 'первый живой' },
+                                { value: 'latency', label: 'самый быстрый' },
+                            ]}
+                            value={adv.pick}
+                            onChange={(v) => set({ pick: v })}
+                        />
                         {adv.pick === 'latency' && (
                             <div className="grid gap-3 pt-2 sm:grid-cols-2">
                                 <NumField label="Допуск, мс" value={adv.tolerance} onChange={(v) => set({ tolerance: v })} placeholder="50" min={0} max={60000} />
@@ -159,7 +171,7 @@ export default function OutputAdvanced({ adv, onChange, spec, self, show }: {
                         )}
                     </div>
                 )}
-            </CardContent>
-        </Card>
+            </div>
+        </Block>
     )
 }

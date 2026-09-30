@@ -1,5 +1,7 @@
 import { useState } from 'react'
 import { Badge } from '@/components/ui/badge'
+import { FieldRow, ToggleRow } from '@/components/ui/layout'
+import { inputCls } from '@/components/formbits'
 import { isIp4 } from '@/lib/validate'
 import type { Obfs, Output } from '@/lib/model'
 
@@ -20,6 +22,11 @@ import type { Obfs, Output } from '@/lib/model'
 // обязаны знать друг о друге, и вывести одну из другой нельзя: ключи и пиры WireGuard
 // живут в /etc/config/network и движку не принадлежат. Расхождение молчаливо — WireGuard
 // шлёт в никуда, — поэтому оно названо прямо в подсказке, а не в документации.
+//
+// Bode 26.10, раскладка по образцу приложения Splify2: выключатель у правого края строки,
+// пояснение под подписью; поля — строками «подпись слева, поле справа» через волосяную линию.
+// Прежде здесь стояла галочка и три поля в ряд, которые на телефоне ломались на три строки
+// разной ширины.
 
 const LOCAL_ADDR = '127.0.0.1'
 
@@ -75,57 +82,56 @@ export default function ObfsPanel({ output, onChange }: Props) {
     const lportBad = !isPort(lport)
 
     return (
-        <div className="rounded-md border border-border p-2">
-            <label className="flex items-center gap-2 text-sm">
-                <input
-                    type="checkbox"
-                    checked={on}
-                    onChange={(e) => toggle(e.currentTarget.checked)}
-                    aria-label="WireGuard поверх TCP"
-                />
-                WireGuard поверх TCP
-                {on && <Badge variant="secondary">обфускация включена</Badge>}
-            </label>
-            <p className="mt-1 text-xs text-muted-foreground">
-                Прячет туннель в поток, похожий на обычный TCP. Нужно там, где UDP режут: маршрутизация выглядит
-                исправной, а туннель не поднимается.
-                На другой стороне должен работать <code>steer obfs-server</code> или phantun.
-            </p>
+        <div className="rounded-lg border border-border px-3 py-1">
+            <ToggleRow
+                label={
+                    <span className="flex flex-wrap items-center gap-2">
+                        WireGuard поверх TCP
+                        {on && <Badge variant="secondary">обфускация включена</Badge>}
+                    </span>
+                }
+                caption={
+                    <>
+                        Прячет туннель в поток, похожий на обычный TCP. Нужно там, где UDP режут: маршрутизация выглядит
+                        исправной, а туннель не поднимается.
+                        На другой стороне должен работать <code>steer obfs-server</code> или phantun.
+                    </>
+                }
+                on={on}
+                onToggle={() => toggle(!on)}
+                switchLabel="WireGuard поверх TCP"
+            />
 
             {on && (
-                <div className="mt-2 space-y-2">
-                    <div className="flex flex-wrap items-end gap-3">
-                        <label className="flex flex-col gap-1 text-xs">
-                            Сервер обфускации
-                            <input
-                                value={host}
-                                placeholder="203.0.113.10"
-                                onChange={(e) => { setHost(e.currentTarget.value); push({ host: e.currentTarget.value }) }}
-                                className="w-40 rounded-md border border-border bg-background px-2 py-1 text-sm"
-                                aria-label="Адрес сервера обфускации"
-                            />
-                        </label>
-                        <label className="flex flex-col gap-1 text-xs">
-                            Порт
-                            <input
-                                value={sport}
-                                placeholder="4567"
-                                onChange={(e) => { setSport(e.currentTarget.value); push({ sport: e.currentTarget.value }) }}
-                                className="w-20 rounded-md border border-border bg-background px-2 py-1 text-sm"
-                                aria-label="Порт сервера обфускации"
-                            />
-                        </label>
-                        <label className="flex flex-col gap-1 text-xs">
-                            Локальный порт (= Endpoint пира)
-                            <input
-                                value={lport}
-                                onChange={(e) => { setLport(e.currentTarget.value); push({ lport: e.currentTarget.value }) }}
-                                className="w-24 rounded-md border border-border bg-background px-2 py-1 text-sm"
-                                aria-label="Локальный порт обфускатора"
-                            />
-                        </label>
-                    </div>
+                <div className="divide-y divide-border border-t border-border">
+                    <FieldRow label="Сервер обфускации">
+                        <input
+                            value={host}
+                            placeholder="203.0.113.10"
+                            onChange={(e) => { setHost(e.currentTarget.value); push({ host: e.currentTarget.value }) }}
+                            className={`${inputCls} w-full font-mono`}
+                            aria-label="Адрес сервера обфускации"
+                        />
+                    </FieldRow>
+                    <FieldRow label="Порт">
+                        <input
+                            value={sport}
+                            placeholder="4567"
+                            onChange={(e) => { setSport(e.currentTarget.value); push({ sport: e.currentTarget.value }) }}
+                            className={`${inputCls} w-full font-mono`}
+                            aria-label="Порт сервера обфускации"
+                        />
+                    </FieldRow>
+                    <FieldRow label="Локальный порт (= Endpoint пира)">
+                        <input
+                            value={lport}
+                            onChange={(e) => { setLport(e.currentTarget.value); push({ lport: e.currentTarget.value }) }}
+                            className={`${inputCls} w-full font-mono`}
+                            aria-label="Локальный порт обфускатора"
+                        />
+                    </FieldRow>
 
+                    <div className="space-y-1.5 py-2.5">
                     {/* Адрес, а не имя: движок имена не разрешает — резолвить пришлось бы через
                         DNS, который сам может идти в этот туннель. Говорим об этом до
                         сохранения, а не отказом движка после. */}
@@ -153,6 +159,7 @@ export default function ObfsPanel({ output, onChange }: Props) {
                         на 12 байт больше, чем поверх UDP, поэтому у интерфейса туннеля
                         обычно <code>1428</code> вместо 1440, одинаково с обеих сторон.
                     </p>
+                    </div>
                 </div>
             )}
         </div>

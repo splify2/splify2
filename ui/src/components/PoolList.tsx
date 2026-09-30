@@ -2,8 +2,7 @@ import { useEffect, useState } from 'react'
 import { ArrowRight, Globe, Layers, Plus, ShieldCheck, Waves } from 'lucide-react'
 import GroupEditor from '@/components/GroupEditor'
 import { Button } from '@/components/ui/button'
-import { Card, CardHeader, CardTitle } from '@/components/ui/card'
-import HubRow from '@/components/HubRow'
+import { CardHead, Empty, Group, TapRow } from '@/components/ui/layout'
 import PoolEditor from '@/components/PoolEditor'
 import { rpc } from '@/lib/rpc'
 import { missingModule } from '@/lib/engine'
@@ -18,7 +17,12 @@ import { type Live } from '@/lib/live'
  *  Строка выхода читается как в дизайн-паке — «имя · через что идёт сейчас», а под ней состав
  *  и запас. Прежний вид (спойлер на каждый выход со своей настройкой внутри) отвечал на другой
  *  вопрос: он показывал, КАК выход устроен, тогда как со списка спрашивают, КУДА он ведёт и
- *  работает ли. Настройка открывается по нажатию, целым экраном. */
+ *  работает ли. Настройка открывается по нажатию, целым экраном.
+ *
+ *  Bode 26.10: выходы — строками ОДНОЙ карточки через волосяную линию, с заголовком «Выходы» и
+ *  счётчиком справа, как карточки приложения Splify2. Кнопки добавления — под карточкой, во всю
+ *  её ширину: это основное действие экрана, и в приложении оно стоит там же, внизу перечня.
+ *  Наверху справа они стояли мелкими и читались как фильтр списка. */
 
 /** Метка в состоянии «что правим»: редактор группы, а не пула. Имя выхода латиницей без
  *  двоеточия, так что столкнуться с настоящим именем она не может. */
@@ -126,33 +130,37 @@ export default function PoolList({
      * и виден там, где выбирают: в редакторе правила (см. model.ts, withDirect). */
     const rows = Object.entries(spec.outputs).filter(([, o]) => !isPart(o) && o.kind !== 'direct')
 
+    /* Кнопки добавления — одни на оба состояния: пустой перечень прежде показывал свою
+     * «Добавить выход» в карточке и вторую такую же над ней. */
+    const adds = (
+        <div className="grid gap-2 sm:grid-cols-2">
+            <Button variant="secondary" className="h-10 w-full" onClick={() => setEditing(GROUP_PREFIX)}>
+                <Layers className="h-4 w-4" aria-hidden="true" /> Добавить группу
+            </Button>
+            <Button className="h-10 w-full" onClick={() => setEditing('')}>
+                <Plus className="h-4 w-4" aria-hidden="true" /> Добавить выход
+            </Button>
+        </div>
+    )
+
     return (
         <div className="space-y-3">
-            <div className="flex flex-wrap justify-end gap-2">
-                <Button variant="secondary" onClick={() => setEditing(GROUP_PREFIX)}>
-                    <Layers className="h-4 w-4" aria-hidden="true" /> Добавить группу
-                </Button>
-                <Button onClick={() => setEditing('')}>
-                    <Plus className="h-4 w-4" aria-hidden="true" /> Добавить выход
-                </Button>
-            </div>
-
             {rows.length === 0 ? (
-                <Card>
-                    <CardHeader>
-                        <CardTitle>Выходов нет</CardTitle>
-                        <p className="mt-1 text-xs text-muted-foreground">
-                            Добавьте выход (свой туннель или подписку), чтобы правила могли направлять через него трафик.
-                        </p>
-                        <div className="mt-3">
-                            <Button onClick={() => setEditing('')} size="sm">
-                                <Plus className="mr-1 h-4 w-4" aria-hidden="true" /> Добавить выход
-                            </Button>
-                        </div>
-                    </CardHeader>
-                </Card>
+                <Group head={<CardHead title="Выходы" />}>
+                    <Empty
+                        icon={Globe}
+                        text={
+                            <>
+                                <span className="block font-medium text-foreground">Выходов нет</span>
+                                <span className="mt-1 block text-xs">
+                                    Добавьте выход (свой туннель или подписку), чтобы правила могли направлять через него трафик.
+                                </span>
+                            </>
+                        }
+                    />
+                </Group>
             ) : (
-                <div className="space-y-2.5">
+                <Group head={<CardHead title="Выходы" meta={rows.length} />}>
                     {rows.map(([name, o]) => {
                         const st = live.status?.outputs?.[name]
                         const g = geo[name]
@@ -204,7 +212,7 @@ export default function PoolList({
                                       .filter(Boolean)
                                       .join(' · ')
                         return (
-                            <HubRow
+                            <TapRow
                                 key={name}
                                 icon={
                                     o.kind === 'direct'
@@ -218,14 +226,15 @@ export default function PoolList({
                                               : ShieldCheck
                                 }
                                 title={name}
-                                state={state}
+                                subtitle={state}
                                 alarm={!!need || (o.kind !== 'direct' && st?.up === false)}
                                 onClick={() => setEditing(o.kind === 'group' ? `${GROUP_PREFIX}${name}` : name)}
                             />
                         )
                     })}
-                </div>
+                </Group>
             )}
+            {adds}
         </div>
     )
 }
