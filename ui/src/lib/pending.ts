@@ -126,7 +126,10 @@ class PendingStore {
     /** Дописать на роутер всё, что ещё не уехало. Последовательно: два spec_set
      *  вперегонки — это гонка, в которой побеждает случайный. */
     async flush() {
-        if (!this.dirty || !this.saved) return
+        /* Писать нечего — но запись, начатая раньше, может ещё лететь: dirty снимается в НАЧАЛЕ
+         * записи. Ждём её, иначе apply() шёл в rpc.apply, пока spec_set на роутере ещё
+         * проверял спеку, и зона фаервола приводилась к прежней спеке (tests/apply-waits-save). */
+        if (!this.dirty || !this.saved) { await this.writing; return }
         this.dirty = false
         if (this.timer) { clearTimeout(this.timer); this.timer = null }
         const { spec, drafts } = writable(this.saved)
