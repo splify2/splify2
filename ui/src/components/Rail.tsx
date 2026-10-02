@@ -55,7 +55,7 @@ export default function Rail({ live, section, onSection, counts }: RailProps) {
             {/* ── широкий экран: колонка слева ─────────────────────────────────────── */}
             {/* self-stretch: у подложки есть нижняя граница высоты (см. .sp-root), и рельс
                 обязан тянуться вместе с ней — иначе под ним видна ступенька другого фона. */}
-            <aside className="hidden shrink-0 self-stretch flex-col gap-4 border-r border-border bg-rail p-4 lg:flex lg:w-[236px]">
+            <aside className="sp-glass-rail hidden shrink-0 self-stretch flex-col gap-4 border-r border-border bg-rail p-4 lg:flex lg:w-[236px]">
                 <div className="flex items-center gap-2.5 px-1.5">
                     {/* Логотип — тот же знак, что на иконке (favicon.svg из сборки), а не квадрат
                         с буквой, который стоял здесь заглушкой (владелец: «у нас же логотип
@@ -126,7 +126,7 @@ export default function Rail({ live, section, onSection, counts }: RailProps) {
                 меню у темы спрятано, и панель была целой; отсюда «не всегда». */}
             <nav
                 aria-label={S.rail.razdely}
-                className="sp-bottom-bar fixed bottom-0 z-40 flex border-t border-border bg-rail lg:hidden"
+                className="sp-glass-rail sp-bottom-bar fixed bottom-0 z-40 flex border-t border-border bg-rail lg:hidden"
             >
                 {ITEMS.map(({ id, label, icon: Icon }) => {
                     const on = section === id

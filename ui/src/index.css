@@ -145,6 +145,16 @@
     --sp-input: #d9dee9;
     --sp-ring: var(--primary, #5e72e4);
     --sp-card-shadow: 0 0 1rem 0 rgba(136, 152, 170, 0.15);
+    /* Стекло: карточка и рельс полупрозрачны над подложкой с двумя мягкими пятнами акцента и
+     * размывают её. Непрозрачность держит контраст текста: под стеклом светлая подложка, и
+     * подписи (--sp-muted-foreground) остаются ≥ 4,5:1. Без backdrop-filter — сплошная карточка. */
+    --sp-glass: rgba(255, 255, 255, 0.5);
+    --sp-glass-rail: rgba(255, 255, 255, 0.38);
+    --sp-glass-edge: rgba(255, 255, 255, 0.9);
+    --sp-glass-border: rgba(140, 157, 175, 0.22);
+    --sp-glass-blur: blur(26px) saturate(150%);
+    --sp-glass-spot1: rgba(94, 114, 228, 0.26);
+    --sp-glass-spot2: rgba(17, 205, 239, 0.22);
     /* Andromeda: кнопка и поле — 10, вложенный блок — 12 (rounded-xl), карточка — 16
      * (rounded-2xl), бейдж — 6 (rounded-sm). Отсюда считаются только первые и последний:
      * rounded-lg = --radius, rounded-md = −2, rounded-sm = −4 (см. tailwind.config.js).
@@ -188,6 +198,12 @@
     --sp-input: #3a3d47;
     --sp-ring: var(--dark-primary, #5e72e4);
     --sp-card-shadow: 0 0 0.5rem 0 rgba(0, 0, 0, 0.35);
+    --sp-glass: rgba(255, 255, 255, 0.05);
+    --sp-glass-rail: rgba(255, 255, 255, 0.03);
+    --sp-glass-edge: rgba(255, 255, 255, 0.08);
+    --sp-glass-border: rgba(208, 228, 239, 0.12);
+    --sp-glass-spot1: rgba(94, 114, 228, 0.22);
+    --sp-glass-spot2: rgba(17, 205, 239, 0.10);
   }
 }
 
@@ -732,3 +748,39 @@
     display: block;
     vertical-align: middle;
   }
+
+/* ---- стекло ----------------------------------------------------------------------------
+ * Подложка пульта — свой фон плюс два мягких пятна акцента (левый верх и правый низ): стекло
+ * без того, что под ним, выглядит просто серым. Пятна приколоты к подложке (background-attachment
+ * не fixed — в shadow root и на телефоне fixed дорог и дёргается при прокрутке). */
+.splify-react-root .sp-root {
+  background:
+    radial-gradient(ellipse at 85% 12%, var(--sp-glass-spot1), transparent 55%),
+    radial-gradient(ellipse at 8% 85%, var(--sp-glass-spot2), transparent 55%),
+    var(--sp-background);
+}
+@supports ((backdrop-filter: blur(1px)) or (-webkit-backdrop-filter: blur(1px))) {
+  .splify-react-root .sp-glass {
+    background-color: var(--sp-glass);
+    -webkit-backdrop-filter: var(--sp-glass-blur);
+    backdrop-filter: var(--sp-glass-blur);
+    border-color: var(--sp-glass-border);
+    box-shadow: inset 0 1px 0 var(--sp-glass-edge), var(--sp-card-shadow);
+  }
+  .splify-react-root .sp-glass-rail {
+    background-color: var(--sp-glass-rail);
+    border-color: var(--sp-glass-border);
+    -webkit-backdrop-filter: var(--sp-glass-blur);
+    backdrop-filter: var(--sp-glass-blur);
+  }
+  /* Вложенная карточка не размывает ещё раз: двойной blur — двойная цена и мутный текст. */
+  .splify-react-root .sp-glass .sp-glass {
+    -webkit-backdrop-filter: none;
+    backdrop-filter: none;
+    background-color: transparent;
+  }
+}
+@media (prefers-reduced-transparency: reduce) {
+  .splify-react-root .sp-glass { background-color: var(--sp-card); backdrop-filter: none; -webkit-backdrop-filter: none; }
+  .splify-react-root .sp-glass-rail { background-color: var(--sp-rail); backdrop-filter: none; -webkit-backdrop-filter: none; }
+}

@@ -14,7 +14,7 @@ const Card = React.forwardRef<
       // читался только под углом, и вложенные блоки выглядели «выпавшими» из неё.
       // Радиус и отступ на узком экране мельче: 16 + 16 из дизайн-пака рассчитаны на
       // широкий, а на 390 пикселях они вместе с отступом раздела съедали треть ширины.
-      "rounded-xl border border-border bg-card text-card-foreground shadow-card lg:rounded-2xl",
+      "sp-glass rounded-xl border border-border bg-card text-card-foreground shadow-card lg:rounded-2xl",
       className
     )}
     {...props}
