@@ -5,7 +5,7 @@ import { Block, CardHead, FieldRow, ScreenHeader, Segmented } from '@/components
 import { rpc } from '@/lib/rpc'
 import { isClientAddr } from '@/lib/validate'
 import { usePending } from '@/lib/pending'
-import { type Channel, type Narrow, type OutputStatus, type ServiceEntry, devList, isPart, isTunnelKind } from '@/lib/model'
+import { type Channel, type Narrow, type OutputStatus, type ServiceEntry, type Upstream, devList, isPart, isTunnelKind } from '@/lib/model'
 
 /** Редактор правила — на месте таблицы, а не в модальном окне.
  *
@@ -22,6 +22,10 @@ import { type Channel, type Narrow, type OutputStatus, type ServiceEntry, devLis
  *  формах не набирают. Двоеточие есть и у IPv6, поэтому запись годна, если она MAC ЛИБО адрес
  *  (`isClientAddr`): `aa:bb:cc` не проходит ни то, ни другое. */
 const MAC = /^([0-9a-f]{2}:){5}[0-9a-f]{2}$/i
+
+/** Значение пункта «свой адрес» в выборе сервера DNS правила: имя апстрима так не назовёшь
+ *  (имена — буквы, цифры, `_ - .`), и с выбранным по имени он не спутается. */
+const OWN_DNS = ' own'
 
 export { pathFor, srsPathFor, ruleFiles, onRouter, srsOf, selectedIds, isDomains } from '@/lib/rulefiles'
 import { pathFor, srsPathFor, ruleFiles, onRouter, srsOf, selectedIds, isDomains, serviceFiles, overridePortOf, withOverridePort } from '@/lib/rulefiles'
@@ -77,6 +81,14 @@ export default function RuleEditor({
     /* Серверы DNS из раздела «DNS»: правило может выбрать свой вместо общего. */
     const { spec: fullSpec } = usePending()
     const upstreamNames = Object.keys(fullSpec?.dns?.upstreams || {})
+    /** Свой сервер прямо в правиле (`dns: { url, out, ips }` спеки v2): адрес и выход — тем же
+     *  набором, что у сервера раздела «DNS». Выходы — с устройством, через которые ядро умеет
+     *  направить запрос (как в разделе «DNS»). */
+    const ownDns: Upstream | undefined = ch.dns && typeof ch.dns !== 'string' ? ch.dns : undefined
+    const dnsOuts = Object.entries(fullSpec?.outputs || {})
+        .filter(([, o]) => !isPart(o) && o.kind !== 'direct' && o.kind !== 'zapret' && o.kind !== 'tgws' && o.kind !== 'group')
+        .map(([n]) => n)
+    const setOwnDns = (u: Upstream) => onChange({ ...ch, dns: u })
     const hasDomains = isDomains(ch)
     /** Подмена порта у доменов правила (`override_port`, см. lib/rulefiles.ts). Ядро делает её
      *  по карте fake-IP, поэтому поле есть только в этом режиме — с учётом общего режима DNS,
@@ -594,15 +606,16 @@ export default function RuleEditor({
                                 {portBad && <p className="text-destructive">{S.ruleEditor.portOt1Do65535}</p>}
                             </div>
                         )}
-                        {hasDomains && upstreamNames.length > 0 && (
+                        {hasDomains && (
                             <label className="flex items-center justify-between gap-3 text-xs">
                                 <span className="text-subtle">{S.ruleEditor.serverDns}</span>
                                 <select
-                                    value={typeof ch.dns === 'string' ? ch.dns : ''}
+                                    value={typeof ch.dns === 'string' ? ch.dns : ownDns ? OWN_DNS : ''}
                                     onChange={(e) => {
                                         const v = e.currentTarget.value
                                         const next = { ...ch }
-                                        if (v) next.dns = v
+                                        if (v === OWN_DNS) next.dns = ownDns ?? { url: 'https://' }
+                                        else if (v) next.dns = v
                                         else delete next.dns
                                         onChange(next)
                                     }}
@@ -610,8 +623,47 @@ export default function RuleEditor({
                                 >
                                     <option value="">{S.ruleEditor.poUmolchaniyu}</option>
                                     {upstreamNames.map((n) => <option key={n} value={n}>{n}</option>)}
+                                    <option value={OWN_DNS}>{S.ruleEditor.svoyAdresDns}</option>
                                 </select>
                             </label>
+                        )}
+                        {hasDomains && ownDns && (
+                            <div className="space-y-1 text-xs">
+                                <FieldRow label={S.ruleEditor.adresDns}>
+                                    <input
+                                        value={ownDns.url}
+                                        onChange={(e) => setOwnDns({ ...ownDns, url: e.currentTarget.value.trim() })}
+                                        placeholder="https://dns.example/dns-query"
+                                        className="w-full rounded-lg border border-border bg-background px-2 py-1.5 font-mono text-sm"
+                                    />
+                                </FieldRow>
+                                <FieldRow label={S.ruleEditor.dnsCherezVyhod}>
+                                    <select
+                                        value={ownDns.out || ''}
+                                        onChange={(e) => {
+                                            const { out: _o, ...rest } = ownDns
+                                            const v = e.currentTarget.value
+                                            setOwnDns(v ? { ...rest, out: v } : rest)
+                                        }}
+                                        className="w-full rounded-lg border border-border bg-background px-2 py-1.5 text-sm"
+                                    >
+                                        <option value="">{S.ruleEditor.dnsNapryamuyu}</option>
+                                        {dnsOuts.map((o) => <option key={o} value={o}>{o}</option>)}
+                                    </select>
+                                </FieldRow>
+                                <FieldRow label={S.ruleEditor.dnsAdresaServera}>
+                                    <input
+                                        defaultValue={(ownDns.ips || []).join(', ')}
+                                        onBlur={(e) => {
+                                            const ips = e.currentTarget.value.split(/[\s,]+/).map((x) => x.trim()).filter(Boolean)
+                                            const { ips: _i, ...rest } = ownDns
+                                            setOwnDns(ips.length ? { ...rest, ips } : rest)
+                                        }}
+                                        placeholder="1.1.1.1, 1.0.0.1"
+                                        className="w-full rounded-lg border border-border bg-background px-2 py-1.5 font-mono text-sm"
+                                    />
+                                </FieldRow>
+                            </div>
                         )}
                     </Block>
                 </div>

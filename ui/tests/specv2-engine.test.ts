@@ -217,6 +217,21 @@ describe.skipIf(!HAVE)('кодек v2 против движка: «кому» с
     })
 })
 
+describe.skipIf(!HAVE)('кодек v2 против движка: свой сервер DNS у правила', () => {
+    it('правило с dns-отображением ядро принимает, и круг его не меняет', () => {
+        const v2 = {
+            version: 2,
+            outputs: { wg0: { kind: 'interface', device: 'wg0' } },
+            lists: { n: { domains_file: [dom] } },
+            rules: [{ name: 'n', to: ['n'], out: 'wg0', dns: { url: 'tls://one.one.one.one', out: 'wg0', ips: ['1.1.1.1'] } }],
+        }
+        const before = ruleset(v2, 'rdns-a.json')
+        const ui = decodeSpec(v2)
+        expect(ui.channels[0].dns).toEqual({ url: 'tls://one.one.one.one', out: 'wg0', ips: ['1.1.1.1'] })
+        expect(ruleset(encodeSpec(ui), 'rdns-b.json')).toBe(before)
+    })
+})
+
 describe.skipIf(HAVE)('кодек v2 против движка — ПРОПУЩЕН', () => {
     it('нет движка (make -C ../steer all)', () => {
         expect(HAVE).toBe(false)
