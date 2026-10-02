@@ -417,10 +417,12 @@ export default function PoolEditor({
                 let pn = oldParts.find(([k, p]) => !used.has(k) && keyOf(p) === want)?.[0]
                     ?? oldParts.find(([k, p]) => !used.has(k) && p.sub_file === g.sub && p.kind === g.proto)?.[0]
                 if (!pn || used.has(pn)) {
-                    const stem = n.slice(0, DEV_NAME_MAX - 2)
+                    /* Первый свободный номер; основа укорачивается под его длину, чтобы имя
+                     * осталось в пределе имени устройства. */
+                    const at = (k: number) => `${n.slice(0, DEV_NAME_MAX - 1 - String(k).length)}-${k}`
                     let k = 1
-                    while (used.has(`${stem}-${k}`) && k < 9) k++
-                    pn = `${stem}-${k}`
+                    while (used.has(at(k))) k++
+                    pn = at(k)
                 }
                 used.add(pn)
                 /* Отказ части — всегда «остановить»: за судьбу трафика при отказе ВСЕГО пула
@@ -428,10 +430,6 @@ export default function PoolEditor({
                  * раньше, чем сторож перешёл к следующей строке. */
                 outputs[pn] = vlessOut(pn, g, 'drop', n)
                 devices.push(pn)
-            }
-            if (devices.length > 16) {
-                notify(S.poolEditor.vPuleNeBolshe, 'warning')
-                return
             }
             outputs[n] = carry(advApply(
                 { name: n, kind: 'interface', devices, device: devices[0], on_fail: onFail }, adv, 'top'))

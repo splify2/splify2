@@ -611,7 +611,6 @@ export const ru = {
         vyhodUzheEst: (p0: unknown) => `Выход «${p0}» уже есть`,
         vyberiteCherezChtoVyhodit: "Выберите, через что выходить",
         imyaVyhodaPodpiskiNe: (p0: unknown) => `Имя выхода подписки — не длиннее ${p0} символов: оно становится именем устройства`,
-        vPuleNeBolshe: "В пуле не больше шестнадцати частей — таков предел ядра; соседние локации одной подписки считаются одной частью",
         vyhodZanyatPravilami: (p0: unknown, p1: unknown) => `Выход «${p0}» занят правилами: ${p1}`,
         zakryt: "Закрыть",
         sohranitVyhod: " Сохранить выход",
