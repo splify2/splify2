@@ -15,13 +15,16 @@ STEER=${STEER:-/usr/sbin/steer}
 PING_STATE=${PING_STATE:-/tmp/splify2-ping}
 UCI_SPLIFY2=${UCI_SPLIFY2:-/etc/config/splify2}
 
-# Без файла настройки `uci set` молча ничего не пишет. В объекте rpcd функция своя (common.sh),
-# у команды отправки её нет — тогда идентификатор считался бы ядром каждый раз заново.
+# Без файла настройки и секции main `uci set` молча ничего не пишет. В объекте rpcd функция
+# своя (common.sh), у команды отправки её нет — тогда идентификатор считался бы ядром каждый
+# раз заново.
 command -v uci_file >/dev/null 2>&1 || uci_file() {
-    [ -f "$UCI_SPLIFY2" ] && return 0
-    mkdir -p "$(dirname "$UCI_SPLIFY2")" 2>/dev/null
-    touch "$UCI_SPLIFY2" 2>/dev/null
-    [ -f "$UCI_SPLIFY2" ]
+    if [ ! -f "$UCI_SPLIFY2" ]; then
+        mkdir -p "$(dirname "$UCI_SPLIFY2")" 2>/dev/null
+        touch "$UCI_SPLIFY2" 2>/dev/null
+        [ -f "$UCI_SPLIFY2" ] || return 1
+    fi
+    uci -q get splify2.main >/dev/null 2>&1 || uci -q set splify2.main=splify2
 }
 
 # Согласие: ключа нет или 1 — включено, 0 — выключено. Непонятное значение — тоже отказ:

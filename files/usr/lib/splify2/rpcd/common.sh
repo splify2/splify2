@@ -455,11 +455,15 @@ engine_reload_clean() {
     "$STEER" reload --spec "$SPEC" >/dev/null 2>&1
 }
 
+# Файл настроек и секция main в нём: без секции `uci set splify2.main.X` отвечает «Entry not
+# found», и запись молча не происходит (так было на роутере, где файл удалили руками).
 uci_file() {
-    [ -f "$UCI_SPLIFY2" ] && return 0
-    mkdir -p "$(dirname "$UCI_SPLIFY2")" 2>/dev/null
-    touch "$UCI_SPLIFY2" 2>/dev/null
-    [ -f "$UCI_SPLIFY2" ]
+    if [ ! -f "$UCI_SPLIFY2" ]; then
+        mkdir -p "$(dirname "$UCI_SPLIFY2")" 2>/dev/null
+        touch "$UCI_SPLIFY2" 2>/dev/null
+        [ -f "$UCI_SPLIFY2" ] || return 1
+    fi
+    uci -q get splify2.main >/dev/null 2>&1 || uci -q set splify2.main=splify2
 }
 
 # Устройства выходов перечисленных видов. Имена спрашиваются у движка флагом --devices, а не
