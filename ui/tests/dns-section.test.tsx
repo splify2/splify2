@@ -20,6 +20,7 @@ vi.mock('@/lib/rpc', () => ({
 vi.mock('@/lib/notify', () => ({ notify: vi.fn() }))
 
 import Dns from '@/components/sections/Dns'
+import { S } from '@/copy'
 
 // Раздел DNS: серверы резолвера движка (DoH, DoT, DoQ, обычный DNS), выход для запроса, общий
 // сервер, кэш и режим. Проверяется то, что уходит в спеку, и что состояние серверов видно.
@@ -78,5 +79,33 @@ describe('раздел DNS', () => {
         await screen.findByLabelText('имя сервера google')
         fireEvent.click(screen.getByLabelText('убрать google'))
         expect(edit).not.toHaveBeenCalled()
+    })
+
+    it('bootstrap у отдельного сервера уходит в его upstream', async () => {
+        render(<Dns />)
+        await screen.findByLabelText('имя сервера google')
+        await userEvent.type(screen.getByLabelText(S.dns.razreshatImyaCherez), '1.1.1.1, 9.9.9.9')
+        await userEvent.tab()
+        const next = edit.mock.calls.at(-1)![0] as Spec
+        expect(next.dns?.upstreams?.google.bootstrap).toEqual(['1.1.1.1', '9.9.9.9'])
+    })
+
+    it('сроки кэша — в dns.cache_ttl, пока кэш включён', async () => {
+        render(<Dns />)
+        await screen.findByLabelText('имя сервера google')
+        fireEvent.input(screen.getByLabelText(S.dns.hranitNeMenshe), { target: { value: '60' } })
+        let next = edit.mock.calls.at(-1)![0] as Spec
+        expect(next.dns?.cache_ttl).toEqual({ min: 60 })
+        fireEvent.input(screen.getByLabelText(S.dns.hranitNeDolshe), { target: { value: '7200' } })
+        fireEvent.input(screen.getByLabelText(S.dns.otritsatelnyyOtvetHranit), { target: { value: '5' } })
+        next = edit.mock.calls.at(-1)![0] as Spec
+        expect(next.dns?.cache_ttl).toEqual({ min: 60, max: 7200, negative: 5 })
+    })
+
+    it('сроков кэша нет, пока кэш выключен', async () => {
+        current = { ...current, dns: { ...current.dns, cache: undefined } }
+        render(<Dns />)
+        await screen.findByLabelText('имя сервера google')
+        expect(screen.queryByLabelText(S.dns.hranitNeMenshe)).toBeNull()
     })
 })

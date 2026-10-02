@@ -109,6 +109,33 @@ export default function Dns(_props: { live?: Live }) {
         setUp(name, { url: 'https://' })
     }
 
+    /** Срок записи кэша (`dns.cache_ttl`): поле пустое — умолчание ядра (`def`). */
+    type TtlKey = 'min' | 'max' | 'negative'
+    function setTtl(k: TtlKey, v: number | undefined) {
+        const t = { ...(dns.cache_ttl || {}) }
+        if (v === undefined) delete t[k]
+        else t[k] = v
+        const next: DnsSpec = { ...dns, cache_ttl: t }
+        if (!Object.keys(t).length) delete next.cache_ttl
+        setDns(next)
+    }
+    const ttlInput = (k: TtlKey, def: number, min: number, max: number) => (
+        <input
+            type="number"
+            inputMode="numeric"
+            value={dns.cache_ttl?.[k] ?? ''}
+            min={min}
+            max={max}
+            placeholder={String(def)}
+            onChange={(e) => {
+                const v = e.currentTarget.value.trim()
+                const n = Number(v)
+                setTtl(k, v === '' || !Number.isInteger(n) ? undefined : Math.min(max, Math.max(min, n)))
+            }}
+            className={`${inputCls} w-full`}
+        />
+    )
+
     const state = (n: string) => log?.upstreams?.find((u) => u.name === n)
     const mode: DomainMode = dns.mode || 'fakeip'
 
@@ -179,6 +206,18 @@ export default function Dns(_props: { live?: Live }) {
                                             defaultValue={(u.ips || []).join(', ')}
                                             onBlur={(e) => setUp(n, { ...u, ips: listOf(e.currentTarget.value) })}
                                             placeholder="1.1.1.1, 1.0.0.1"
+                                            className={`${inputCls} w-full font-mono`}
+                                        />
+                                    </FieldRow>
+                                    <FieldRow label={S.dns.razreshatImyaCherez}>
+                                        <input
+                                            defaultValue={(u.bootstrap || []).join(', ')}
+                                            onBlur={(e) => {
+                                                const bs = listOf(e.currentTarget.value)
+                                                const { bootstrap: _b, ...rest } = u
+                                                setUp(n, bs.length ? { ...rest, bootstrap: bs } : rest)
+                                            }}
+                                            placeholder={S.dns.poUmolchaniyuObschie}
                                             className={`${inputCls} w-full font-mono`}
                                         />
                                     </FieldRow>
@@ -255,6 +294,16 @@ export default function Dns(_props: { live?: Live }) {
                             className={`${inputCls} w-full`}
                         />
                     </FieldRow>
+                    {!!dns.cache && (
+                        <>
+                            <FieldRow label={S.dns.hranitNeMenshe}>{ttlInput('min', 10, 0, 86400)}</FieldRow>
+                            <FieldRow label={S.dns.hranitNeDolshe}>{ttlInput('max', 3600, 1, 604800)}</FieldRow>
+                            <FieldRow label={S.dns.otritsatelnyyOtvetHranit}>{ttlInput('negative', 30, 0, 86400)}</FieldRow>
+                            {(dns.cache_ttl?.min ?? 10) > (dns.cache_ttl?.max ?? 3600) && (
+                                <p className="py-1 text-xs text-destructive">{S.dns.minBolsheMax}</p>
+                            )}
+                        </>
+                    )}
                     {log?.cache && (
                         <div className="py-2.5">
                             <KV

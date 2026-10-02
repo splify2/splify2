@@ -139,7 +139,10 @@ describe.skipIf(!HAVE)('кодек v2 против движка', () => {
                 eu: { kind: 'group', pick: 'manual', members: ['wg0', 'wg1'], default: 'wg1' },
                 bal: { kind: 'group', pick: 'balance', members: ['wg0', 'wg1'], weights: [2, 1] },
             },
-            dns: { cache: 512, bootstrap: ['1.1.1.1'], upstream: 'g', upstreams: { g: { url: 'https://dns.google/dns-query', out: 'wg0' } } },
+            dns: {
+                cache: 512, cache_ttl: { min: 60, max: 7200, negative: 5 }, bootstrap: ['1.1.1.1'], upstream: 'g',
+                upstreams: { g: { url: 'https://dns.google/dns-query', out: 'wg0' }, q: { url: 'quic://dns.adguard-dns.com', bootstrap: ['9.9.9.9'] } },
+            },
             rules: [
                 { name: 'kids', for: 'kids', to: 'all', out: 'eu', scope: 'device' },
                 { name: 'work', to: ['work'], out: 'fast', resolve: 'realip', dns: 'g' },
@@ -151,6 +154,8 @@ describe.skipIf(!HAVE)('кодек v2 против движка', () => {
         expect(ui.outputs.eu.kind).toBe('group')
         expect(ui.outputs.eu.pick).toBe('manual')
         expect(ui.dns?.upstreams?.g.out).toBe('wg0')
+        expect(ui.dns?.upstreams?.q.bootstrap).toEqual(['9.9.9.9'])
+        expect(encodeSpec(ui).dns).toEqual(v2.dns)
         expect(ui.channels.map((c) => c.name)).toEqual(['kids', 'work', 'udp'])
         const after = ruleset(encodeSpec(ui), 'd.json')
         expect(after).toBe(before)

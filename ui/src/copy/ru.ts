@@ -238,6 +238,12 @@ export const ru = {
         n0BezKesha: "0 — без кэша",
         kesh: "кэш",
         vKesheIzPopadaniy: (p0: unknown, p1: unknown, p2: unknown, p3: unknown) => `в кэше ${p0} из ${p1} · попаданий ${p2}, промахов ${p3}`,
+        razreshatImyaCherez: "Разрешать имя через (обычный DNS)",
+        poUmolchaniyuObschie: "общие серверы ниже",
+        hranitNeMenshe: "Хранить ответ не меньше, с",
+        hranitNeDolshe: "Хранить ответ не дольше, с",
+        otritsatelnyyOtvetHranit: "Ответ «нет такого имени» хранить, с",
+        minBolsheMax: "«Не меньше» больше, чем «не дольше» — ядро такие настройки не примет.",
     },
     engine: {
         ustanovit: "Установить",
