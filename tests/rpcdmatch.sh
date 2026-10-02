@@ -64,6 +64,9 @@ case "$1" in
         exit "${APK_ADD_RC:-0}"
         ;;
     list)
+        # APK_LIST — свой перечень установленного (ядро 2.0, прежнее 1.5.9, коннектор); без него —
+        # прежний: steer-extended 0.9.5 и интерфейс.
+        if [ -n "${APK_LIST:-}" ]; then printf '%s\n' "$APK_LIST"; exit 0; fi
         echo "steer-extended-0.9.5-r1 aarch64_cortex-a53 {steer-extended}"
         echo "luci-app-splify2-0.7.6-r1 all {luci-app-splify2}"
         ;;
@@ -838,6 +841,8 @@ rpcd() {  # МЕТОД [JSON_ЗАПРОСА]  — вызов метода; дл�
         PM_FIXTURE="${PM_FIXTURE:-}" \
         UPDATE_LISTS="${UPDATE_LISTS:-$T/bin/update-lists}" \
         ENGINE_ENABLED="${ENGINE_ENABLED:-0}" \
+        APK_LIST="${APK_LIST:-}" \
+        MODULE_DIR="${MODULE_DIR_FIXTURE:-$T/mods}" \
         sh "$SCRIPT" call "$1" 2>"$T/stderr"
 }
 
@@ -1076,6 +1081,33 @@ check "минимум — та константа, что объявлена в 
 # на неё отказом, и минимум младше 2.0.0 одобрял бы ядро, на котором не применится ничего.
 check "минимум — не младше 2.0.0: спеку v2 читает только ядро 2.0" "2.0.0" \
       "$(printf '%s\n%s\n' "$(printf '%s' "$out" | jget min_version)" 2.0.0 | sort -V | head -n 1)"
+
+# ---- модули ядра 2.0: перечень с proxy, VLESS — по модулю ------------------------------
+# Модули — бинарники steer-<модуль> рядом с steerd (MODULE_DIR на стенде). steer-proxy (trojan,
+# shadowsocks, socks, http, vmess) — такой же модуль, как остальные: без него в перечне выход
+# прокси выглядел бы так, будто модуля нет, хотя он стоит.
+mkdir -p "$T/mods"
+for m in vless proxy; do printf '#!/bin/sh\n' > "$T/mods/steer-$m"; chmod +x "$T/mods/steer-$m"; done
+CORE_LIST="steer-core-2.0.0-r1 aarch64_cortex-a53 {steer-core}
+steer-vless-2.0.0-r1 aarch64_cortex-a53 {steer-vless}
+steer-proxy-2.0.0-r1 aarch64_cortex-a53 {steer-proxy}"
+out="$(APK_LIST="$CORE_LIST" rpcd engine)"
+check "engine называет модуль proxy среди стоящих" '["vless", "proxy"]' "$(printf '%s' "$out" | jget modules)"
+check "VLESS — по модулю steer-vless" "true" "$(printf '%s' "$out" | jget vless)"
+# Без модуля steer-vless ядро 2.0 VLESS не умеет, что бы ни печатал его отказ: признак — файл
+# модуля, а не подстрока «steer-extended» в тексте `steer vless ''` (заглушка там молчит, и
+# прежний разбор принимал молчание за «умеет»).
+rm -f "$T/mods/steer-vless"
+: > "$T/steer.log"
+out="$(APK_LIST="$CORE_LIST" rpcd engine)"
+check "ядро 2.0 без steer-vless VLESS не умеет" "false" "$(printf '%s' "$out" | jget vless)"
+check "и отказ ядра для этого не спрашивали" "0" "$(grep -c '^vless' "$T/steer.log" 2>/dev/null || true)"
+# Прежнее ядро 1.x — один бинарник: клиент VLESS вшит в пакет steer-extended.
+out="$(APK_LIST="steer-extended-1.5.9-r1 aarch64_cortex-a53 {steer-extended}" rpcd engine)"
+check "ядро 1.x: VLESS — по пакету steer-extended" "true" "$(printf '%s' "$out" | jget vless)"
+out="$(APK_LIST="steer-1.5.9-r1 aarch64_cortex-a53 {steer}" rpcd engine)"
+check "ядро 1.x без steer-extended VLESS не умеет" "false" "$(printf '%s' "$out" | jget vless)"
+rm -rf "$T/mods"
 
 # ---- R-042: интерфейс должен уметь обновлять сам себя --------------------------
 # Движок из интерфейса ставится с первого дня, а сам интерфейс — нет: его обновляли
