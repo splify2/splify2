@@ -72,3 +72,33 @@ export function selectedIds(ch: Channel, services: ServiceEntry[]): string[] {
 export function isDomains(ch: Channel) {
     return (ch.match.domains_files?.length ?? 0) > 0
 }
+
+/** Подмена порта назначения у доменов правила (`override_port` списка спеки v2): число или
+ *  `undefined` — подмены нет. Хранится по файлам (`file_extra`, см. lib/specv2.ts): ядро
+ *  принимает её только у списка имён (`domains_file` без подсетей, наборов и `all`) и только в
+ *  режиме fakeip, поэтому у правила она — свойство его доменных файлов, и кодек сам уводит их
+ *  отдельным списком, когда рядом подсети. */
+export function overridePortOf(ch: Channel): number | undefined {
+    for (const f of ch.match.domains_files || []) {
+        const v = ch.file_extra?.[f]?.override_port
+        if (typeof v === 'number') return v
+    }
+    return undefined
+}
+
+/** Правило с подменой порта `port` у всех его доменных файлов (`undefined` — без подмены).
+ *  У остальных файлов ключ снимается: подсети и наборы его не несут, а файл, ушедший из
+ *  правила, не должен вернуться с прежним портом. Прочие ключи файлов остаются как есть. */
+export function withOverridePort(ch: Channel, port: number | undefined): Channel {
+    const doms = new Set(ch.match.domains_files || [])
+    const fx: Record<string, Record<string, unknown>> = {}
+    for (const [f, x] of Object.entries(ch.file_extra || {})) {
+        const { override_port: _op, ...rest } = x
+        if (Object.keys(rest).length) fx[f] = rest
+    }
+    if (port !== undefined) for (const f of doms) fx[f] = { ...(fx[f] || {}), override_port: port }
+    const next: Channel = { ...ch }
+    if (Object.keys(fx).length) next.file_extra = fx
+    else delete next.file_extra
+    return next
+}

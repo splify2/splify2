@@ -169,6 +169,19 @@ describe.skipIf(!HAVE)('кодек v2 против движка: ключи, к�
         expect(before).toContain(': 8443')
         expect(ruleset(encodeSpec(decodeSpec(v2)), 'op-b.json')).toBe(before)
     })
+
+    it('порт из редактора правила: домены с подменой рядом с подсетями ядро принимает', () => {
+        const rs = ruleset(encodeSpec({
+            outputs: { direct: { name: 'direct', kind: 'direct' }, wg0: { name: 'wg0', kind: 'interface', device: 'wg0' } },
+            channels: [{
+                name: 'yt', out: 'wg0',
+                match: { domains_files: [dom, dom2], prefixes_files: [news], mode: 'fakeip' },
+                file_extra: { [dom]: { override_port: 8443 }, [dom2]: { override_port: 8443 } },
+            }],
+        }), 'op-ui.json')
+        expect(rs).toContain(': 8443')
+        expect(rs).toContain('10.0.0.0/8')
+    })
 })
 
 describe.skipIf(!HAVE)('кодек v2 против движка: адреса и MAC в одном правиле', () => {

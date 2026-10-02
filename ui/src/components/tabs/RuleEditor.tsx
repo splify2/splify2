@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { Search, Trash2 } from 'lucide-react'
 import { Button } from '@/components/ui/button'
-import { Block, CardHead, ScreenHeader, Segmented } from '@/components/ui/layout'
+import { Block, CardHead, FieldRow, ScreenHeader, Segmented } from '@/components/ui/layout'
 import { rpc } from '@/lib/rpc'
 import { isClientAddr } from '@/lib/validate'
 import { usePending } from '@/lib/pending'
@@ -24,7 +24,7 @@ import { type Channel, type Narrow, type OutputStatus, type ServiceEntry, devLis
 const MAC = /^([0-9a-f]{2}:){5}[0-9a-f]{2}$/i
 
 export { pathFor, srsPathFor, ruleFiles, onRouter, srsOf, selectedIds, isDomains } from '@/lib/rulefiles'
-import { pathFor, srsPathFor, ruleFiles, onRouter, srsOf, selectedIds, isDomains, serviceFiles } from '@/lib/rulefiles'
+import { pathFor, srsPathFor, ruleFiles, onRouter, srsOf, selectedIds, isDomains, serviceFiles, overridePortOf, withOverridePort } from '@/lib/rulefiles'
 
 
 import { S } from '@/copy'
@@ -78,6 +78,11 @@ export default function RuleEditor({
     const { spec: fullSpec } = usePending()
     const upstreamNames = Object.keys(fullSpec?.dns?.upstreams || {})
     const hasDomains = isDomains(ch)
+    /** Подмена порта у доменов правила (`override_port`, см. lib/rulefiles.ts). Ядро делает её
+     *  по карте fake-IP, поэтому поле есть только в этом режиме — с учётом общего режима DNS,
+     *  если у правила своего нет. */
+    const port = overridePortOf(ch)
+    const fakeip = (ch.match.mode ?? fullSpec?.dns?.mode ?? 'fakeip') === 'fakeip'
     /** Правило-исключение — это канал в выход `direct`, стоящий выше туннельных. Отдельной
      *  сущности в движке нет и не нужно: метку раздаёт первое совпадение, поэтому верхнее
      *  правило забирает сервис себе и оставляет его на обычном пути. */
@@ -153,7 +158,8 @@ export default function RuleEditor({
             },
             narrow: Object.keys(narrow).length ? narrow : undefined,
         }
-        onChange(next)
+        /* Подмена порта — свойство доменов правила: новый доменный файл получает её тоже. */
+        onChange(port === undefined ? next : withOverridePort(next, port))
         if (set) return
         /* Сужение неизвестно (набор ещё не разбирали) — узнать сейчас, а не при следующем
          * открытии каталога: list_fetch разбирает набор и отдаёт `narrow` тем же ответом.
@@ -199,7 +205,7 @@ export default function RuleEditor({
         const doms = (ch.match.domains_files || []).filter((f) => f !== file)
         const srs = (ch.match.srs_files || []).filter((f) => f !== file)
         const narrow = ch.narrow ? Object.fromEntries(Object.entries(ch.narrow).filter(([f]) => f !== file)) : undefined
-        onChange({
+        const next: Channel = {
             ...ch,
             narrow: narrow && Object.keys(narrow).length ? narrow : undefined,
             match: {
@@ -209,7 +215,20 @@ export default function RuleEditor({
                 srs_files: srs.length ? srs : undefined,
                 mode: doms.length || srs.length ? (ch.match.mode ?? 'fakeip') : undefined,
             },
-        })
+        }
+        onChange(port === undefined ? next : withOverridePort(next, port))
+    }
+
+    /** Порт назначения у доменов правила, как его набирает человек: строкой, чтобы набор
+     *  «70000» не обрывался на «7000». В правило уходит только годное число (ядро: 1..65535). */
+    const [portText, setPortText] = useState(() => (port === undefined ? '' : String(port)))
+    const portOk = (t: string) => /^[1-9]\d{0,4}$/.test(t) && Number(t) <= 65535
+    const portBad = portText.trim() !== '' && !portOk(portText.trim())
+    function setPort(v: string) {
+        setPortText(v)
+        const t = v.trim()
+        if (t === '') onChange(withOverridePort(ch, undefined))
+        else if (portOk(t)) onChange(withOverridePort(ch, Number(t)))
     }
 
     /* Bode 26.10: редактор по образцу экрана правила в приложении Splify2.
@@ -545,12 +564,12 @@ export default function RuleEditor({
                                 <Segmented
                                     label={S.ruleEditor.rezhimDomenov}
                                     value={ch.match.mode ?? 'fakeip'}
-                                    onChange={(m) =>
-                                        onChange({
-                                            ...ch,
-                                            match: { ...ch.match, mode: m },
-                                        })
-                                    }
+                                    onChange={(m) => {
+                                        const next: Channel = { ...ch, match: { ...ch.match, mode: m } }
+                                        /* В realip подмены порта нет (ядро такое правило не примет). */
+                                        onChange(m === 'realip' ? withOverridePort(next, undefined) : next)
+                                        if (m === 'realip') setPortText('')
+                                    }}
                                     items={[
                                         { value: 'fakeip', label: S.ruleEditor.fakeIpTochnee },
                                         { value: 'realip', label: S.ruleEditor.realIpDeshevle },
@@ -558,6 +577,21 @@ export default function RuleEditor({
                                 />
                                 <p className="text-muted-foreground">
                                     {S.ruleEditor.fakeIpKazhdomuDomenu}</p>
+                            </div>
+                        )}
+                        {hasDomains && fakeip && (
+                            <div className="text-xs">
+                                <FieldRow label={S.ruleEditor.portNaznacheniya}>
+                                    <input
+                                        type="text"
+                                        inputMode="numeric"
+                                        value={portText}
+                                        placeholder={S.ruleEditor.portKakUZaprosa}
+                                        onChange={(e) => setPort(e.currentTarget.value)}
+                                        className="w-32 rounded-lg border border-border bg-background px-2 py-1.5 text-sm"
+                                    />
+                                </FieldRow>
+                                {portBad && <p className="text-destructive">{S.ruleEditor.portOt1Do65535}</p>}
                             </div>
                         )}
                         {hasDomains && upstreamNames.length > 0 && (
