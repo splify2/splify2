@@ -1045,6 +1045,6 @@ export const ru = {
         xsKlyuch2030: "xs://<ключ>@203.0.113.7:443?pk=<ключ хаба>&ip=10.77.0.2/24",
         prinyatIPodnyatZanovo: "Принять и поднять заново",
         ssylki: "Ссылки ",
-        ponimaetSteer15: " понимает steer 1.5.0 и новее — на установленном ядре этого умения нет.",
+        nuzhnoRabotayuscheeYadro: " — нужно работающее ядро steer 2.0 или новее.",
     },
 }

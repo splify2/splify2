@@ -393,7 +393,7 @@ export default function XsteerPanel({ live }: { live: Live }) {
                             )}
                             {!links && (
                                 <p className="border-t border-border pt-3 text-subtle">
-                                    {S.xsteerPanel.ssylki}<code>xs://</code> {S.xsteerPanel.ponimaetSteer15}</p>
+                                    {S.xsteerPanel.ssylki}<code>xs://</code> {S.xsteerPanel.nuzhnoRabotayuscheeYadro}</p>
                             )}
                             {n && (
                                 <p className={n.bad ? 'text-destructive' : 'text-success'}>{n.text}</p>
