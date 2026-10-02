@@ -70,7 +70,8 @@ describe('пул узлов туннеля в редакторе выхода', 
         render(<PoolEditor spec={{ outputs: {}, channels: [] }} live={WITH} onCancel={() => {}} onSave={(n) => { saved = n }} />)
         for (const n of [/Амстердам/, /Франкфурт/, /Хельсинки/]) await click(n)
         expect(card()).toBeInTheDocument()
-        expect(screen.getByText('не больше 3')).toBeInTheDocument()
+        /* Предел — взятые номера: подсказка говорит, что сделать, а не просто «не больше 3». */
+        expect(screen.getByText('взято 3 узла — для большего возьмите ещё узлы или «любая рабочая»')).toBeInTheDocument()
         /* Один узел — раздачи нет. */
         expect(screen.queryByRole('button', { name: 'Сайт — на одном узле' })).toBeNull()
         await click('больше узлов сразу')

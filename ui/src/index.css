@@ -728,24 +728,28 @@
   border-color: var(--an-glass-border);
   color: var(--an-text-secondary);
 }
+/* Доли и чернила темы — переменными с :root/.dark документа: пульт живёт в shadow root, и правило
+ * «.dark .splify-react-root …» внутри него не видит .dark на <html> (селектор не пересекает
+ * границу), а пользовательские свойства наследуются сквозь неё. Так и было: в тёмной теме бейдж
+ * протокола оставался с почти чёрным текстом светлой. */
+:root {
+  --sp-cb-wash: 12%; --sp-cb-edge: 28%; --sp-cb-ink: 45%; --sp-cb-ink-to: #0b0d14;
+  --sp-cbw-wash: var(--an-warn-soft); --sp-cbw-ink: var(--an-warn-ink);
+}
+.dark {
+  --sp-cb-wash: 16%; --sp-cb-edge: 34%; --sp-cb-ink: 40%; --sp-cb-ink-to: #ffffff;
+  --sp-cbw-wash: color-mix(in srgb, var(--an-warn) 12%, transparent);
+  --sp-cbw-ink: color-mix(in srgb, var(--an-warn) 70%, #ffffff);
+}
 .splify-react-root .sp-cb-proto {
-  --cb-wash: color-mix(in srgb, var(--cb) 12%, transparent);
-  border-color: color-mix(in srgb, var(--cb) 28%, transparent);
-  color: color-mix(in srgb, var(--cb) 45%, #0b0d14);
+  --cb-wash: color-mix(in srgb, var(--cb) var(--sp-cb-wash), transparent);
+  border-color: color-mix(in srgb, var(--cb) var(--sp-cb-edge), transparent);
+  color: color-mix(in srgb, var(--cb) var(--sp-cb-ink), var(--sp-cb-ink-to));
 }
 .splify-react-root .sp-cb-warn {
-  --cb-wash: var(--an-warn-soft);
+  --cb-wash: var(--sp-cbw-wash);
   border-color: var(--an-warn-border);
-  color: var(--an-warn-ink);
-}
-.dark .splify-react-root .sp-cb-proto {
-  --cb-wash: color-mix(in srgb, var(--cb) 16%, transparent);
-  border-color: color-mix(in srgb, var(--cb) 34%, transparent);
-  color: color-mix(in srgb, var(--cb) 40%, #ffffff);
-}
-.dark .splify-react-root .sp-cb-warn {
-  --cb-wash: color-mix(in srgb, var(--an-warn) 12%, transparent);
-  color: color-mix(in srgb, var(--an-warn) 70%, #ffffff);
+  color: var(--sp-cbw-ink);
 }
 .splify-react-root .sp-cb[data-tone="1"] { --cb: var(--an-cat-1); }
 .splify-react-root .sp-cb[data-tone="2"] { --cb: var(--an-cat-2); }

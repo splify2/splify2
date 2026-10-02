@@ -818,6 +818,7 @@ export const ru = {
         uzlovSrazu: "Сколько узлов работают сразу",
         uzlovSrazuPole: "узлов сразу",
         uzlovSrazuIz: (n: number) => `не больше ${n}`,
+        uzlovSrazuVzyato: (n: number) => `${n % 10 === 1 && n % 100 !== 11 ? 'взят' : 'взято'} ${plural(n, 'узел', 'узла', 'узлов')} — для большего возьмите ещё узлы или «любая рабочая»`,
         razdacha: "Раздача",
         byConnection: "Каждое соединение — на любой узел",
         bySite: "Сайт — на одном узле",

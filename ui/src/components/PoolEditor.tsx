@@ -444,6 +444,8 @@ export default function PoolEditor({
         }
         return Math.min(Math.max(m, 1), ACTIVE_MAX)
     })()
+    /** Предел задан взятыми номерами, а не узлами подписки: тогда подсказка говорит, что сделать. */
+    const capByPicked = activeCap < ACTIVE_MAX && manyGroups.some((g) => g.nodes.length > 0 && g.nodes.length === activeCap)
     const activeNow = adv.active ?? 1
     const setActive = (v: number | undefined) => setAdv({ ...adv, active: v === undefined ? undefined : Math.max(1, Math.min(v, ACTIVE_MAX)) })
     /** Состояние туннелей этого выхода — самого и его частей: какие узлы работают сейчас. */
@@ -1313,7 +1315,8 @@ export default function PoolEditor({
                         <Block className="order-first xl:order-none">
                             <CardHead
                                 title={S.poolEditor.uzlovSrazu}
-                                meta={activeCap < ACTIVE_MAX ? S.poolEditor.uzlovSrazuIz(activeCap) : undefined}
+                                meta={capByPicked ? S.poolEditor.uzlovSrazuVzyato(activeCap)
+                                    : activeCap < ACTIVE_MAX ? S.poolEditor.uzlovSrazuIz(activeCap) : undefined}
                             />
                             <div className="flex items-center gap-2">
                                 <IconBtn label={S.poolEditor.menshe} onClick={() => setActive(Math.min(activeNow, activeCap) - 1)} disabled={activeNow <= 1}>
