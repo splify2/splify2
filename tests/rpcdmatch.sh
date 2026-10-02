@@ -2501,6 +2501,23 @@ check "в архив уезжают все восемь полей uci, а не 
 check "шапка предупреждает и о приватных ключах" "yes" \
       "$(printf '%s\n' "$doc" | sed -n '1,10p' | grep -q 'приватные ключи' && echo yes || echo no)"
 
+# OpenWrt 25.12 по умолчанию собирает busybox БЕЗ stat («stat: not found» на QEMU-стенде
+# 25.12.5): проверка владельца и прав через stat отвечала «чужой», и архив не выгружался и не
+# восстанавливался вовсе — «архив собрался с чужими правами». Заглушка stat здесь — такой
+# роутер: команды нет.
+printf '#!/bin/sh\necho "sh: stat: not found" >&2\nexit 127\n' > "$T/bin/stat"; chmod +x "$T/bin/stat"
+out="$(rpcd backup_get '{"offset":0}')"
+check "архив выгружается и без stat (busybox OpenWrt 25.12)" "true" "$(printf '%s' "$out" | jget ok)"
+rm -f "$T/var/backup.out"
+out="$(printf '%s\n' 'splify2-backup 3' '[select]' 'eu wg1' | backup_put)"
+check "архив восстанавливается и без stat" "true" "$(printf '%s' "$out" | jget ok)"
+rm -f "$T/bin/stat"
+: > "$T/var/backup.out"; chmod 644 "$T/var/backup.out"
+out="$(rpcd backup_get '{"offset":0}')"
+check "подложенный открытый файл и без stat пересоздаётся закрытым" "600" \
+      "$(stat -c %a "$T/var/backup.out" 2>/dev/null)"
+rm -f "$T/var/backup.out"
+
 # Экспорт не отдаёт файл, который его же импорт откажется принять: иначе человек узнал бы
 # об этом в тот день, когда бекап понадобился.
 out="$(BACKUP_MAX_BYTES=1024 rpcd backup_get '{"offset":0}')"

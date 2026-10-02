@@ -390,7 +390,7 @@ case "$2" in
             rm -f "$BACKUP_OUT"
             ( umask 077; backup_build > "$BACKUP_OUT" ) ||
                 { rm -f "$BACKUP_OUT"; fail "не удалось собрать архив"; }
-            own_file "$BACKUP_OUT" && [ "$(stat -c %a "$BACKUP_OUT" 2>/dev/null)" = 600 ] ||
+            private_file "$BACKUP_OUT" ||
                 { rm -f "$BACKUP_OUT"; fail "архив собрался с чужими правами — в /tmp кто-то подложил файл"; }
         fi
         [ -s "$BACKUP_OUT" ] || fail "архив не собран — запросите его с начала"
@@ -461,7 +461,7 @@ case "$2" in
         [ -f "$BACKUP_IN" ] || ( umask 077; : > "$BACKUP_IN" )
         # Накопитель обязан быть нашим и закрытым — иначе чужие ключи из архива дописываются в
         # файл, который читает подложивший.
-        own_file "$BACKUP_IN" && [ "$(stat -c %a "$BACKUP_IN" 2>/dev/null)" = 600 ] ||
+        private_file "$BACKUP_IN" ||
             { rm -f "$BACKUP_IN"; fail "накопитель архива с чужими правами — в /tmp кто-то подложил файл"; }
         printf '%s' "$text" >> "$BACKUP_IN" || { rm -f "$BACKUP_IN"; fail "не записалось — кончилось место?"; }
         case "$final" in
