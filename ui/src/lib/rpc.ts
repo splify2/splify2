@@ -123,6 +123,16 @@ declare global {
  *
  *  Мост, однажды полученный, запоминается: `rpc.declare` у LuCI не бесплатный, а методов
  *  под сорок. */
+/** Модуль ядра 2.0 в ответе steer_modules. */
+export interface SteerModule {
+    name: string
+    installed: boolean
+    version?: string
+    needed: boolean
+    /** Выходы спеки, которым он нужен, через запятую. */
+    outputs?: string
+}
+
 function declare<T>(method: string, params: string[] = []) {
     let call: ((...a: unknown[]) => Promise<unknown>) | null = null
     return (...args: unknown[]): Promise<T> => {
@@ -448,6 +458,9 @@ export const rpc = {
          *  Тумблеру «остановить всё» нужны оба. */
         enabled?: boolean
         running?: boolean
+        /** Кем занято ядро, если его ведёт steer-box-connector (podkop, forkop): тогда службу
+         *  steer не включаем и пакеты ядра не трогаем. Нет поля — ядро наше. */
+        busy?: string
     }>('engine'),
 
     /** Остановить всё: сервис и правила в ядре. Снимает и автозапуск — иначе перезагрузка
@@ -505,9 +518,9 @@ export const rpc = {
         note?: string
     }>('steer_versions'),
 
-    /** Скачать и поставить движок выбранной версии и варианта. Вариант — выбор человека:
-     *  он зависит от того, поднимает ли туннель сам движок, и пакетный менеджер такого не
-     *  решает.
+    /** Скачать и поставить ядро выбранной версии. Ядро 2.0 — steer-core и модули одной
+     *  транзакцией: `modules` (через пробел) — какие поставить вместе с ним; бэкенд добавит
+     *  уже стоящие и нужные спеке. `extended` — только у выпусков 1.x.
      *
      *  restarted — поднялся ли движок после установки. Отдельное поле, а не следствие
      *  `ok`: замена пакета останавливает сервис и сносит таблицу nft, поэтому «пакет
@@ -526,7 +539,24 @@ export const rpc = {
         removed?: boolean
         /** Каким путём приехал пакет, если прямая ссылка релиза не отдала — см. listFetch. */
         via?: string
-    }>('steer_install', ['version', 'extended']),
+        /** Ядро 2.0: модули, поставленные вместе с ним. */
+        modules?: string[]
+    }>('steer_install', ['version', 'extended', 'modules']),
+
+    /** Модули ядра 2.0 для карточки в «О ПО»: стоит ли, версия пакета, нужен ли спеке и каким
+     *  выходам. `core` — версия steer-core; пусто — ставить модули некуда. */
+    steerModules: declare<{
+        core: string
+        busy?: string
+        modules: SteerModule[]
+    }>('steer_modules'),
+
+    /** Поставить модуль версией стоящего steer-core. */
+    steerModuleAdd: declare<{ ok: boolean; error?: string; installed?: string; via?: string; output?: string }>(
+        'steer_module_add', ['module']),
+
+    /** Снять модуль. Нужный спеке не снимается — отказ называет выходы. */
+    steerModuleDel: declare<{ ok: boolean; error?: string }>('steer_module_del', ['module']),
 
     /** Подписка: где лежит, откуда взята, когда обновлялась.
      *

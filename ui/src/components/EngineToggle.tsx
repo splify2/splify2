@@ -88,8 +88,12 @@ export default function EngineToggle({
                     {eng.present ? (
                         <>
                             <div className="text-[11px] text-muted-foreground">{S.engineToggle.yadro}</div>
+                            {/* Версия и модули рядом с ядром — то, что стоит, а не вариант сборки:
+                                в ядре 2.0 вариантов нет, есть steer-core и модули. */}
                             <div className="truncate text-[13px]">
-                                steer {eng.version || '—'} · {eng.vless ? 'extended' : 'basic'}
+                                {['steer ' + (eng.version || '—'), eng.busy ? S.engineToggle.zanyato(eng.busy) : (eng.modules || []).join(', ')]
+                                    .filter(Boolean)
+                                    .join(' · ')}
                             </div>
                         </>
                     ) : (
@@ -114,7 +118,12 @@ export default function EngineToggle({
                 </div>
             )}
 
-            {eng.present && (
+            {/* Ядро ведёт steer-box-connector (podkop, forkop): службу steer поверх него не
+                поднимаем и не гасим — вместо кнопки состояние. */}
+            {eng.present && eng.busy && (
+                <p className="text-[12px] text-muted-foreground">{S.engineToggle.yadroZanyato(eng.busy)}</p>
+            )}
+            {eng.present && !eng.busy && (
                 <div>
                     <Button
                         variant={off ? 'secondary' : 'destructive'}

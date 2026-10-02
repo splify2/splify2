@@ -157,6 +157,15 @@ export function xsLinkSupported(status: Status | null): boolean {
     return Array.isArray(status?.features) && status.features.includes('xslink')
 }
 
+/** Модули ядра 2.0 (пакеты steer-<модуль>) в порядке показа — тот же, что у бэкенда
+ *  (m-engine.sh, STEER_MODULES). */
+export const STEER_MODULES = ['vless', 'hysteria2', 'proxy', 'xsteer', 'obfs', 'tgws']
+
+/** Модули к первой установке ядра: туннели по подписке и ссылкам — VLESS, hysteria2 и протоколы
+ *  прокси. Пакеты 2.0.0 трёх модулей вместе — 120–240 КБ (aarch64 — mipsel; распакованными
+ *  250–560 КБ) при пакете steer-core около 1,1 МБ, а без них подписка не заработает. */
+export const DEFAULT_MODULES = ['vless', 'hysteria2', 'proxy']
+
 /** Какой модуль ядра нужен выходу: имя модуля (пакет `steer-<имя>`) либо null.
  *
  *  Модель держит vless, hysteria2 и пять протоколов прокси своими видами (протоколы прокси — один

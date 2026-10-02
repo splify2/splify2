@@ -8,6 +8,7 @@ import CustomLists from '@/components/CustomLists'
 import EngineCard from '@/components/EngineCard'
 import FetchCard from '@/components/FetchCard'
 import ListsSourceCard from '@/components/ListsSourceCard'
+import ModulesCard from '@/components/ModulesCard'
 import SelfUpdateCard from '@/components/SelfUpdateCard'
 import TelemetryCard from '@/components/TelemetryCard'
 import XsteerPanel from '@/components/XsteerPanel'
@@ -88,6 +89,7 @@ export default function Settings({
                                 releases={live.releases}
                                 onInstalled={live.refresh}
                             />
+                            <ModulesCard onChanged={live.refresh} />
                             <SelfUpdateCard info={live.selfUpdate} onInstalled={live.refresh} />
                             {/* Отчёт о работе живёт здесь, а не среди общих выключателей:
                                 «О ПО» — раздел про сам продукт и про то, что он о себе

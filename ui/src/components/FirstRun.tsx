@@ -9,9 +9,8 @@ import { S } from '@/copy'
  *  ни применить её. Человек заполнял подписку, нажимал «Применить» и получал отказ на последнем
  *  шаге — то есть узнавал причину после всей работы, а не до.
  *
- *  Выбор варианта сборки остаётся человеку: зависимость apk умеет только «нужен steer», и
- *  угадав за него, мы либо кладём лишний мегабайт, либо не кладём VLESS и получаем «outbound не
- *  работает» уже после настройки всего остального. Поэтому объяснение стоит РЯДОМ с выбором. */
+ *  Модули протоколов (VLESS, hysteria2, прокси…) выбираются в карточке ниже: ядро 2.0 ставится
+ *  пакетом steer-core с ними одной транзакцией. */
 export default function FirstRun({ live }: { live: Live }) {
     return (
         <div className="sp-root an-backdrop text-foreground">
@@ -23,25 +22,13 @@ export default function FirstRun({ live }: { live: Live }) {
                           * не выносим: человеку нужно не устройство продукта, а то, что до
                           * установки движка ничего не заработает, и с чего начать. */}
                         {S.firstRun.marshrutizatsieyZanimaetsya}<b>steer</b>{S.firstRun.pokaEgoNetProveryat}</p>
-                    <ul className="mt-3 space-y-1.5 text-sm">
-                        <li>
-                            <b>extended</b>
-                            <span className="text-muted-foreground">
-                                {' '}{S.firstRun.podnimaetVlessRealitySam}</span>
-                        </li>
-                        <li>
-                            <b>basic</b>
-                            <span className="text-muted-foreground">
-                                {' '}{S.firstRun.tolkoMarshrutizatsiyaPoGotovym}</span>
-                        </li>
-                    </ul>
                 </div>
 
                 <EngineCard engine={live.build} releases={live.releases} onInstalled={live.refresh} />
 
                 <p className="text-xs text-muted-foreground">
                     {S.firstRun.paketMozhnoPostavitI}{' '}
-                    <code className="font-mono">apk add --allow-untrusted ./steer-extended-*.apk</code>{S.firstRun.naRoutereS64}</p>
+                    <code className="font-mono">apk add --allow-untrusted ./steer-core-*.apk ./steer-vless-*.apk</code>{S.firstRun.naRoutereS64}</p>
             </div>
         </div>
     )

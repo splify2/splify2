@@ -4,6 +4,7 @@ import GroupEditor from '@/components/GroupEditor'
 import { Button } from '@/components/ui/button'
 import { CardHead, Empty, Group, TapRow } from '@/components/ui/layout'
 import PoolEditor from '@/components/PoolEditor'
+import ModuleOffer from '@/components/ModuleOffer'
 import { rpc } from '@/lib/rpc'
 import { missingModule } from '@/lib/engine'
 import { outDownWord, outExtras } from '@/lib/outstate'
@@ -261,6 +262,14 @@ export default function PoolList({
                         )
                     })}
                 </Group>
+            )}
+            {/* Выходу не хватает модуля ядра — предложить его поставить. Не при коннекторе:
+                ядро тогда не наше. */}
+            {!live.build?.busy && (
+                <ModuleOffer
+                    modules={[...new Set(rows.map(([, o]) => missingModule(o, live.build?.modules)).filter((m): m is string => !!m))]}
+                    onDone={live.refresh}
+                />
             )}
             {adds}
         </div>

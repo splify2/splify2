@@ -43,8 +43,10 @@ export interface Build {
     version?: string
     /** Не старше какой версии должен быть движок для этого интерфейса — см. rpc.engine. */
     min_version?: string
-    /** Модули, стоящие рядом с движком (vless, xsteer, obfs, tgws, hysteria2). */
+    /** Модули, стоящие рядом с ядром (vless, hysteria2, proxy, xsteer, obfs, tgws). */
     modules?: string[]
+    /** Кем занято ядро, если его ведёт steer-box-connector (podkop, forkop) — см. rpc.engine. */
+    busy?: string
     /** Поднимется ли движок после перезагрузки. Именно это снимает «Остановить всё», и
      *  именно поэтому подпись тумблера читает состояние, а не помнит своё: между двумя
      *  открытиями страницы движок могли остановить из консоли. */
