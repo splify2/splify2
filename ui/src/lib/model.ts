@@ -22,6 +22,24 @@ import { S } from '@/copy'
  *  прокси-протоколы steer-proxy и всё, что появится позже. Тоже читается и пишется как есть. */
 export type OutputKind =
     | 'interface' | 'direct' | 'vless' | 'hysteria2' | 'xsteer' | 'awg' | 'tgws' | 'group' | 'zapret' | 'tunnel'
+    | ProxyKind
+
+/** Протоколы прокси модуля steer-proxy (steer/docs/proxy.md). В спеке v2 каждый — `kind: tunnel`
+ *  с этим `protocol`, в `steer status` — `kind` с тем же именем; модель держит их своими видами
+ *  выхода, как vless и hysteria2: подписка, номера узлов (среди пригодных узлов СВОЕГО протокола)
+ *  и устройство из имени у них те же. */
+export const PROXY_KINDS = ['trojan', 'shadowsocks', 'socks', 'http', 'vmess'] as const
+export type ProxyKind = (typeof PROXY_KINDS)[number]
+
+export function isProxyKind(k: string | undefined | null): k is ProxyKind {
+    return (PROXY_KINDS as readonly string[]).includes(k || '')
+}
+
+/** Виды, у которых есть ключ `insecure` (не проверять сертификат узлов): у них есть TLS. У
+ *  hysteria2 это параметр ссылки узла, у shadowsocks и socks TLS нет — ядро такой ключ отвергает. */
+export function insecureApplies(k: string | undefined | null): boolean {
+    return k === 'vless' || k === 'trojan' || k === 'vmess' || k === 'http'
+}
 
 /** Как группа выбирает член (спека v2, docs/spec-v2.md): `order` — первый живой, `latency` —
  *  самый быстрый с допуском, `manual` — выбор человека (`steer select`), `balance` — ядро
@@ -122,6 +140,9 @@ export interface Output {
      *  shadowsocks, socks, http, vmess из steer-proxy, будущие). vless и hysteria2 — свои виды
      *  выхода, а такой туннель интерфейс не правит: читает и пишет обратно как есть. */
     protocol?: string
+    /** vless, trojan, vmess, http: не проверять сертификат узлов с TLS (спека v2 `insecure`).
+     *  Выключено — ключа нет; узлы подписки с allowInsecure без него ядро пропускает. */
+    insecure?: boolean
     /** Ключи выхода, которых модель не знает: записываются обратно как есть, чтобы правка
      *  правил не стирала то, что человек дописал руками или что появится в новых движках. */
     extra?: Record<string, unknown>
@@ -133,11 +154,11 @@ export function isPart(o: Output | undefined | null): boolean {
     return !!o?.part_of
 }
 
-/** Туннель по подписке: клиент VLESS или hysteria2. В спеке v2 оба — `kind: tunnel` с разным
- *  `protocol`, и для всего, что не зависит от протокола (подписка, узлы, устройство из имени),
+/** Туннель по подписке: клиент VLESS, hysteria2 или прокси (steer-proxy). В спеке v2 все —
+ *  `kind: tunnel` с разным `protocol`, и для всего, что не зависит от протокола (подписка, узлы, устройство из имени),
  *  это один вид. */
 export function isTunnelKind(k: string | undefined | null): boolean {
-    return k === 'vless' || k === 'hysteria2'
+    return k === 'vless' || k === 'hysteria2' || isProxyKind(k)
 }
 
 /** Устройства выхода списком, какой бы формой они ни были записаны: `devices` либо

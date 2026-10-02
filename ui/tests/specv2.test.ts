@@ -195,6 +195,46 @@ describe('чтение v2 и круг', () => {
             expect((encodeSpec(s).outputs as Record<string, Record<string, unknown>>).p).toEqual(t)
         }
     })
+
+    it('прокси steer-proxy — свои виды выхода: подписка, узлы и insecure в модели, а не в extra', () => {
+        for (const protocol of ['trojan', 'vmess', 'http']) {
+            const s = decodeSpec({ version: 2, outputs: {
+                p: { kind: 'tunnel', protocol, subscription: '/etc/steer/subs/p.txt', nodes: [1], insecure: true },
+            } })
+            expect(s.outputs.p).toMatchObject({ kind: protocol, sub_file: '/etc/steer/subs/p.txt', nodes: [1], insecure: true })
+            expect(s.outputs.p.extra).toBeUndefined()
+            /* Снятый переключатель — ключа нет: ядро читает отсутствие как «проверять». */
+            const off = encodeSpec({ ...s, outputs: { ...s.outputs, p: { ...s.outputs.p, insecure: false } } })
+            expect((off.outputs as Record<string, Record<string, unknown>>).p.insecure).toBeUndefined()
+        }
+        for (const protocol of ['shadowsocks', 'socks']) {
+            const s = decodeSpec({ version: 2, outputs: { p: { kind: 'tunnel', protocol, subscription: '/s.txt' } } })
+            expect(s.outputs.p.kind).toBe(protocol)
+            /* У ss и socks TLS нет — insecure им модель не пишет, даже если поле стоит. */
+            const doc = encodeSpec({ ...s, outputs: { ...s.outputs, p: { ...s.outputs.p, insecure: true } } })
+            expect((doc.outputs as Record<string, Record<string, unknown>>).p).toEqual({ kind: 'tunnel', protocol, subscription: '/s.txt' })
+        }
+        const v = decodeSpec({ version: 2, outputs: { v: { kind: 'tunnel', protocol: 'vless', subscription: '/s.txt', insecure: true } } })
+        expect(v.outputs.v.insecure).toBe(true)
+    })
+
+    it('часть пула на подписке прокси узнаётся частью, как у vless', () => {
+        const doc = {
+            version: 2,
+            outputs: {
+                'vpn-1': { kind: 'tunnel', protocol: 'trojan', subscription: '/s.txt', nodes: [0] },
+                'vpn-2': { kind: 'tunnel', protocol: 'shadowsocks', subscription: '/s.txt' },
+                'vpn.vpn-1': { kind: 'interface', device: 'vpn-1' },
+                'vpn.vpn-2': { kind: 'interface', device: 'vpn-2' },
+                vpn: { kind: 'group', members: ['vpn.vpn-1', 'vpn.vpn-2'], pick: 'order' },
+            },
+            rules: [{ name: 'r', lists: [], out: 'vpn' }],
+        }
+        const s = decodeSpec(doc)
+        expect(s.outputs.vpn.devices).toEqual(['vpn-1', 'vpn-2'])
+        expect(s.outputs['vpn-1']).toMatchObject({ kind: 'trojan', part_of: 'vpn' })
+        expect(s.outputs['vpn-2']).toMatchObject({ kind: 'shadowsocks', part_of: 'vpn' })
+    })
 })
 
 describe('ключи, которых модель не знает, доезжают обратно', () => {

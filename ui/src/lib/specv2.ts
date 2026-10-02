@@ -44,7 +44,10 @@
 // поменять маршрутизацию.
 
 import {
+    insecureApplies,
+    isTunnelKind,
     normalizeSpec,
+    PROXY_KINDS,
     withDirect,
     type Channel,
     type DnsSpec,
@@ -119,11 +122,11 @@ export function decodeSpec(raw: unknown): Spec {
 // ---------------------------------------------------------------------------------------
 // чтение v2
 
-/** Протоколы туннеля, которые модель интерфейса знает как свои виды выхода. Остальные (trojan,
- *  shadowsocks, socks, http, vmess из steer-proxy и любой будущий) читаются видом `tunnel` с
- *  протоколом как есть: прежде они читались как vless и уезжали обратно `protocol: vless` —
+/** Протоколы туннеля, которые модель интерфейса знает как свои виды выхода: vless, hysteria2 и
+ *  прокси steer-proxy (trojan, shadowsocks, socks, http, vmess). Незнакомый протокол читается
+ *  видом `tunnel` с протоколом как есть: прежде они читались как vless и уезжали обратно `protocol: vless` —
  *  туннель молча менял протокол при первом же сохранении любой правки. */
-const OWN_TUNNEL = new Set(['vless', 'hysteria2'])
+const OWN_TUNNEL = new Set<string>(['vless', 'hysteria2', ...PROXY_KINDS])
 
 function decodeOutput(name: string, o: J): Output {
     const kindRaw = str(o.kind) || 'direct'
@@ -162,13 +165,19 @@ function decodeOutput(name: string, o: J): Output {
         const ox = rest(o.obfs, OBFS_KEYS)
         if (ox) out.obfs.extra = ox
     }
-    if (kind === 'vless' || kind === 'hysteria2' || kind === 'tunnel') {
+    if (isTunnelKind(kind) || kind === 'tunnel') {
         const sub = str(take('subscription'))
         if (sub) out.sub_file = sub
         if (Array.isArray(o.nodes) && o.nodes.every((n) => Number.isInteger(n))) {
             used.add('nodes')
             if (o.nodes.length) out.nodes = o.nodes as number[]
         }
+    }
+    /* insecure — только у видов с TLS; у остальных ядро ключ отвергает, и такой (чужой) ключ
+     * уезжает в extra и обратно как есть, а не исчезает молча. */
+    if (insecureApplies(kind) && typeof o.insecure === 'boolean') {
+        used.add('insecure')
+        if (o.insecure) out.insecure = true
     }
     if (kind === 'vless' || kind === 'hysteria2') {
         const tr = arr(take('transport'))
@@ -403,7 +412,7 @@ function decodeV2(d: J): Spec {
         outputs[gname] = pool
         /* Части пула: туннели, чьё устройство названо членом, без ссылок из правил. */
         for (const o of Object.values(outputs)) {
-            if ((o.kind === 'vless' || o.kind === 'hysteria2') && !o.part_of && !referenced.has(o.name) &&
+            if (isTunnelKind(o.kind) && !o.part_of && !referenced.has(o.name) &&
                 devices.includes(deviceOf(o))) o.part_of = gname
         }
     }
@@ -505,7 +514,12 @@ function encodeOutput(o: Output): J {
             put('prefix', o.ipv6 === 'routed' ? o.prefix : undefined)
             break
         case 'vless':
-        case 'hysteria2': {
+        case 'hysteria2':
+        case 'trojan':
+        case 'shadowsocks':
+        case 'socks':
+        case 'http':
+        case 'vmess': {
             out.kind = 'tunnel'
             out.protocol = o.kind
             put('subscription', o.sub_file)
@@ -513,6 +527,7 @@ function encodeOutput(o: Output): J {
             put('nodes', nodes)
             put('device', o.device)
             if (o.kind === 'vless' && o.transport?.length) put('transport', o.transport.length === 1 ? o.transport[0] : o.transport)
+            if (o.insecure && insecureApplies(o.kind)) out.insecure = true
             break
         }
         case 'tunnel':

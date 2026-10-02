@@ -10,7 +10,7 @@ import { outDownWord, outExtras } from '@/lib/outstate'
 import { hasHelper, helperWords, useHelpers } from '@/lib/helper'
 import { pending } from '@/lib/pending'
 import { country } from '@/lib/geo'
-import { devList, EMPTY_SPEC, isPart, type Spec } from '@/lib/model'
+import { devList, EMPTY_SPEC, isPart, isTunnelKind, type Spec } from '@/lib/model'
 import { subsRemember, subsRemembered, type SubRow } from '@/lib/subs'
 import { type Live } from '@/lib/live'
 
@@ -206,7 +206,7 @@ export default function PoolList({
                                           .join(' · ')
                                   : [
                                       country(g?.cc),
-                                      o.kind === 'vless' || o.kind === 'hysteria2'
+                                      isTunnelKind(o.kind)
                                           ? S.poolList.podpiska
                                           : devs
                                                 /* Устройство служебной части называется
@@ -241,7 +241,7 @@ export default function PoolList({
                                 icon={
                                     o.kind === 'direct'
                                         ? ArrowRight
-                                        : o.kind === 'vless' || o.kind === 'hysteria2'
+                                        : isTunnelKind(o.kind)
                                           ? Globe
                                           : o.kind === 'group'
                                             ? Layers
