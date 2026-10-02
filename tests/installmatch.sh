@@ -342,7 +342,7 @@ for what in ядра интерфейса; do
 done
 check "установщик ставит пакеты через fetch_pkg — с адресами из version.json" "2" \
     "$(grep -c '^ *fetch_pkg ' "$ROOT/install.sh")"
-check "отказ ведёт на страницу релизов" "2" \
+check "отказы ведут на страницу релизов (версии ядра и интерфейса, ядро старше 2.0, переход по opkg)" "4" \
     "$(grep -c 'Пакеты\|Пакет можно поставить руками' "$ROOT/install.sh")"
 
 # ---- обнаружение splify первой версии (R-018) ----------------------------------
@@ -441,8 +441,12 @@ rm -f "$V1BOX/etc/init.d/splify" "$SB/nftset"
 # Главное ограничение из roadmap (R-018, риск): автоматическое удаление чужой
 # настройки недопустимо. Проверяется буквально — в установщике нет ни одной команды
 # удаления пакета или файлов.
-check "установщик ничего не удаляет" "0" \
-    "$(grep -c 'apk del\|opkg remove\|rm -rf /etc\|uci -q delete' "$ROOT/install.sh")"
+# Единственное, что установщик снимает, — прежние пакеты СВОЕГО ядра при переходе на steer-core
+# (pm_drop_old у opkg, pm_forget_old — уборка world у apk), и только по своим именам.
+check "установщик ничего не удаляет (кроме прежнего своего ядра)" "0" \
+    "$(sed '/^pm_drop_old() {/,/^}/d; /^pm_forget_old() {/,/^}/d' "$ROOT/install.sh" | grep -c 'apk del\|opkg remove\|rm -rf /etc\|uci -q delete')"
+check "снимаются только имена прежнего ядра" "2" \
+    "$(sed -n '/^pm_drop_old() {/,/^}/p; /^pm_forget_old() {/,/^}/p' "$ROOT/install.sh" | grep -c 'steer|steer-extended|libsteer|libsteer-wolfssl)')"
 
 # Ловушки set -e. Чтение отсутствующего ключа uci — не ошибка установки, а `_rt="$(uci -q get …)"`
 # под set -e завершал скрипт молча ПОСЛЕ установки пакетов: без рестарта rpcd, пустой спеки и
@@ -473,19 +477,62 @@ check "docs/guide.md объясняет, что делать с первой в�
 check "README ведёт на docs/guide.md" "да" \
     "$(grep -qF 'docs/guide.md' "$ROOT/README.md" && echo да || echo нет)"
 
-# ---- вес вариантов движка назван и совпадает везде (R-044) ---------------------
-# Варианты уже были и в установщике, и в интерфейсе, но снаружи их просили как
-# отсутствующие: вес был назван только у расширенного и только словами «больше на».
-# Риск теперь другой — что три места разойдутся в числах, поэтому они и сверяются.
-has() { grep -qF "$2" "$ROOT/$1" && echo да || echo нет; }
-# Строки интерфейса живут в словаре ui/src/copy/ru.ts (EngineCard берёт их оттуда).
-for f in install.sh ui/src/copy/ru.ts; do
-    check "вес расширенного назван в $f" "да" "$(has "$f" 'флеше ~500 КБ')"
-    check "вес базового назван в $f" "да" "$(has "$f" 'флеше ~250 КБ')"
-done
-# README с веса пакетов прежней схемы снят: страница описывает спеку v2 и пакеты steer 2.0, а
-# размеры пакетов берутся из ассетов выпуска, которого ещё нет. Сверка установщика и карточки
-# выше остаётся; проверка README на числа вернётся вместе с установщиком под steer-core.
+# ---- ядро 2.0: модули вместо вариантов -------------------------------------------------
+# Вариантов «базовый/расширенный» больше нет: ядро — steer-core, протоколы — модули. Состав
+# установки: выбор человека (умолчание — vless, hysteria2, proxy), уже стоящие модули и, при
+# переходе со steer-extended 1.x, вшитые в него vless, xsteer, obfs, tgws.
+eval "$(sed -n '/^REPO_STEER=/p; /^pm_names() {/,/^}/p; /^pm_has() {/,/^}/p; /^STEER_MODULES=/p; /^STEER_DEFAULT_MODULES=/p; /^steer_mods() {/,/^}/p; /^steer_version() {/,/^}/p; /^BOX_INITD=/p; /^box_busy() {/,/^}/p' "$ROOT/install.sh")"
+check "функция steer_mods достана из install.sh" "steer_mods" "$(command -v steer_mods >/dev/null && echo steer_mods)"
+check "умолчание к первой установке — vless hysteria2 proxy" "vless hysteria2 proxy" "$STEER_DEFAULT_MODULES"
+: > "$SB/pkglist"
+check "чистый роутер: выбор человека как есть, по порядку" "vless proxy tgws" "$(steer_mods 'tgws proxy vless')"
+printf '%s\n' 'steer-extended-1.5.9-r1 x86_64 {steer-extended} (GPL-2.0)' > "$SB/pkglist"
+check "steer-extended 1.5.9: к выбору — вшитые в него модули" "vless hysteria2 proxy xsteer obfs tgws" \
+    "$(steer_mods "$STEER_DEFAULT_MODULES")"
+printf '%s\n' 'steer-1.5.9-r1 x86_64 {steer} (GPL-2.0)' > "$SB/pkglist"
+check "steer 1.5.9: только выбор (имя steer не путается со steer-core)" "proxy" "$(steer_mods proxy)"
+check "  и steer-core не считается стоящим" "нет" "$(pm_has steer-core && echo да || echo нет)"
+printf '%s\n' 'steer-core-2.0.0-r1 x86_64 {steer-core}' 'steer-obfs-2.0.0-r1 x86_64 {steer-obfs}' > "$SB/pkglist"
+check "стоящий модуль входит в состав" "vless obfs" "$(steer_mods vless)"
+: > "$SB/pkglist"
+
+# Версия ядра: стабильная 1.5.9 этому интерфейсу не годится (он пишет спеку v2) — тогда
+# предварительная из перечня, если она 2.0 или новее.
+relreset
+mkrel "$SB/resp-rel-raw"
+sed -i 's/"prerelease": null/"prerelease": "2.0.0"/' "$SB/resp-rel-raw"
+check "стабильная 1.x — берётся предварительная 2.0.0" "2.0.0" "$(steer_version 2>/dev/null | tail -1)"
+relreset
+mkrel "$SB/resp-rel-raw"
+check "предварительной нет — версия как есть (установщик откажет словами)" "1.5.9" "$(steer_version 2>/dev/null | tail -1)"
+check "отказ на ядре старше 2.0 назван" "1" "$(grep -c 'этому интерфейсу нужно ядро 2.0 или новее' "$ROOT/install.sh")"
+relreset
+
+# Пакеты 2.0: ядро и модули — одной транзакцией, прежнее ядро — в ней же (`!имя`).
+check "ядро и модули ставятся одним pm_add" "1" "$(grep -c 'if ! pm_add \$FILES \$EXTRA' "$ROOT/install.sh")"
+check "имена файлов — steer-core и steer-<модуль>" "1" "$(grep -c 'for _p in steer-core ' "$ROOT/install.sh")"
+check "прежних пакетов steer-extended/steer больше не ставит" "0" \
+    "$(grep -c 'steer-extended-\${SV}\|\"steer-\${SV}' "$ROOT/install.sh")"
+
+# Спека — v2, как в uci-defaults: ядро 2.0 прежнюю схему не читает.
+check "пустая спека — v2" "1" "$(grep -c "printf '{\"version\":2,\"outputs\":{\"direct\":{\"kind\":\"direct\"}}}" "$ROOT/install.sh")"
+check "спеки v1 установщик не пишет" "0" "$(grep -c '"schema":1' "$ROOT/install.sh")"
+
+# Коннектор steer-box-connector: ядро — его, установщик ядро не ставит и службу steer не включает.
+mkdir -p "$SB/box"; BOX_INITD="$SB/box/sing-box"
+printf '# sing-box от steer-box-connector\n' > "$BOX_INITD"
+check "коннектор узнаётся по его службе sing-box" "да" "$(box_busy && echo да || echo нет)"
+printf '# sing-box\n' > "$BOX_INITD"
+check "чужой sing-box коннектором не считается" "нет" "$(box_busy && echo да || echo нет)"
+check "при коннекторе служба steer не включается" "1" "$(grep -c 'init.d/steer \] && ! box_busy' "$ROOT/install.sh")"
+
+# Модули перечислены одинаково в установщике, бэкенде и интерфейсе.
+check "перечень модулей установщика = бэкенда" \
+    "$(sed -n 's/^STEER_MODULES="\(.*\)"/\1/p' "$ROOT/files/usr/lib/splify2/rpcd/m-engine.sh")" "$STEER_MODULES"
+check "перечень модулей установщика = интерфейса" "$STEER_MODULES" \
+    "$(sed -n "s/^export const STEER_MODULES = \[\(.*\)\]/\1/p" "$ROOT/ui/src/lib/engine.ts" | tr -d "'," )"
+check "умолчание установщика = интерфейса" "$STEER_DEFAULT_MODULES" \
+    "$(sed -n "s/^export const DEFAULT_MODULES = \[\(.*\)\]/\1/p" "$ROOT/ui/src/lib/engine.ts" | tr -d "'," )"
 
 # ---- установка файла пакета: пустые списки/индексы не валят установку ------------------
 # У 26.9 две зависимости (https-dns-proxy, ip-full), у 1.2.5 не было ни одной, поэтому

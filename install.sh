@@ -26,18 +26,17 @@
 # выкладка того же владельца.
 #
 # Форма `sh -c "$(...)"`, а не `... | sh`: через конвейер установщику достаётся не терминал,
-# и вопрос про вариант движка он не задаёт вовсе — молча берёт расширенный.
+# и вопрос про модули ядра он не задаёт вовсе — молча берёт умолчание.
 #
 # Что делает: определяет архитектуру, предупреждает, если на роутере стоит splify первой
 # версии, ставит движок steer, если его нет, ставит интерфейс, включает службу. Ничего не
 # спрашивает, если спрашивать не о чем. Версии и адреса пакетов — из перечня выпусков
 # splify2/releases (version.json, со сверкой sha256), а GitHub API и обходы выше — запасной путь.
 #
-# Почему движок ставится отсюда, а не объявлен зависимостью пакета. Зависимость apk умеет
-# только «нужен пакет steer», а выбор между базовым и расширенным — это выбор ЧЕЛОВЕКА, и
-# зависит он от того, поднимает ли туннель сам движок. Пакетный менеджер такого не решает, а
-# угадать за него значит либо поставить лишние полмегабайта, либо не поставить нужное и
-# получить «выход vless не работает» без объяснения.
+# Почему ядро ставится отсюда, а не объявлено зависимостью пакета. Ядро 2.0 — пакет steer-core и
+# модули протоколов (steer-vless, steer-hysteria2, steer-proxy, …), и какие модули нужны, решает
+# человек: зависимость пакета умеет только «нужен steer-core», а угадать за него значит либо
+# положить лишнее, либо не положить нужное и получить «выход не работает» без объяснения.
 set -eu
 
 REPO_STEER=splify2/steer
@@ -106,28 +105,28 @@ pm_installed() {
 # зависимости нет, дело не в списках, и крутить это по кругу незачем. Прежняя редакция знала
 # это только про opkg («беда, которой нет у apk») — у 1.2.5 зависимостей не было, и ветка apk
 # отказа просто не встречала; у 26.9 их две (https-dns-proxy, ip-full).
-pm_add() {
+pm_add() {  # ФАЙЛ... [!ИМЯ...] — одной транзакцией
     if [ "$PM" = apk ]; then
-        out="$(apk add --allow-untrusted --force-overwrite "$1" 2>&1)"
+        out="$(apk add --allow-untrusted --force-overwrite "$@" 2>&1)"
         [ $? = 0 ] && return 0
         case "$out" in
             *"unable to select packages"*)
                 info "нет индексов пакетов — обновляю (apk update)"
                 apk update >/dev/null 2>&1
-                apk add --allow-untrusted --force-overwrite "$1" >/dev/null 2>&1
+                apk add --allow-untrusted --force-overwrite "$@" >/dev/null 2>&1
                 return $?
                 ;;
         esac
         printf '%s\n' "$out" >&2
         return 1
     fi
-    out="$(opkg install --force-overwrite "$1" 2>&1)"
+    out="$(opkg install --force-overwrite "$@" 2>&1)"
     [ $? = 0 ] && return 0
     case "$out" in
         *"cannot find dependency"*|*"unresolved"*|*"incompatible with the architectures"*)
             info "нет списков пакетов — обновляю (opkg update)"
             opkg update >/dev/null 2>&1
-            opkg install --force-overwrite "$1" >/dev/null 2>&1
+            opkg install --force-overwrite "$@" >/dev/null 2>&1
             return $?
             ;;
     esac
@@ -260,38 +259,95 @@ TXT
     fi
 fi
 
-# ---- какой движок стоит сейчас ------------------------------------------------
-have_steer=no
-have_ext=no
-if pm_installed | grep -q '^steer-extended'; then
-    have_steer=yes; have_ext=yes
-elif pm_installed | grep -q '^steer'; then
-    have_steer=yes
-fi
+# ---- какое ядро стоит сейчас --------------------------------------------------
+# Имена установленных пакетов — точные, без версий: «steer» не должно совпадать со «steer-core».
+pm_names() {
+    if [ "$PM" = apk ]; then
+        pm_installed | sed -n 's/^\([^ ]*\)-[0-9][^ -]*-r[0-9]* .*/\1/p'
+    else
+        pm_installed | awk '{print $1}'
+    fi
+}
 
-# ---- выбор варианта движка ----------------------------------------------------
-# Спрашиваем ТОЛЬКО если движка нет и есть кому ответить. При запуске без терминала
-# (из скрипта, по ssh с перенаправленным вводом) берём расширенный: он умеет всё, что
-# базовый, и не спросить — безопаснее, чем поставить половину и оставить человека с
-# нерабочим выходом vless.
-WANT_EXT=yes
-if [ "$have_steer" = yes ]; then
-    info "ядро уже стоит$([ "$have_ext" = yes ] && echo ' (расширенный)' || echo ' (базовый)')"
+pm_has() {  # ИМЯ
+    pm_names | grep -qx "$1"
+}
+
+# Модули ядра 2.0 в порядке показа (тот же перечень, что у бэкенда, m-engine.sh STEER_MODULES) и
+# умолчание к первой установке: VLESS, hysteria2 и протоколы прокси — туннели по подписке и
+# ссылкам. Пакеты 2.0.0 этих трёх вместе — 120–240 КБ (aarch64 — mipsel) при steer-core около
+# 1,1 МБ, а без них подписка не заработает; xsteer, обфускатор и мост Telegram ставятся из
+# интерфейса, когда понадобятся.
+STEER_MODULES="vless hysteria2 proxy xsteer obfs tgws"
+STEER_DEFAULT_MODULES="vless hysteria2 proxy"
+
+# Какие модули поставить: выбор человека, уже стоящие (модуль зависит от steer-core точной
+# версии — транзакция без него не пройдёт) и, при переходе со steer-extended 1.x, вшитые в него
+# vless, xsteer, obfs, tgws — переход не отнимает того, что работало.
+steer_mods() {  # ВЫБОР
+    _sm_have=" $1 "
+    for _sm in $STEER_MODULES; do
+        if pm_has "steer-$_sm"; then _sm_have="$_sm_have$_sm "; fi
+    done
+    if pm_has steer-extended && ! pm_has steer-core; then
+        _sm_have="$_sm_have vless xsteer obfs tgws "
+    fi
+    _sm_out=""
+    for _sm in $STEER_MODULES; do
+        case "$_sm_have" in *" $_sm "*) _sm_out="$_sm_out $_sm" ;; esac
+    done
+    printf '%s\n' "${_sm_out# }"
+}
+
+# Ядро ведёт steer-box-connector (sing-box для podkop и forkop на ядре steer): его пакет зависит
+# от steer-core точной версии, и служба steer рядом с ним делила бы таблицу nft и метки. Тогда
+# ядро не ставится и не включается — это пакеты коннектора, а не наши. Признак — тот же, что у
+# скриптов пакетов ядра: чья служба /etc/init.d/sing-box.
+BOX_INITD="${BOX_INITD:-/etc/init.d/sing-box}"
+box_busy() {
+    grep -q steer-box-connector "$BOX_INITD" 2>/dev/null
+}
+
+HAVE_CORE=no
+if pm_has steer-core; then HAVE_CORE=yes; fi
+# Прежние пакеты ядра: 1.x (steer, steer-extended) и промежуточной раскладки (libsteer,
+# libsteer-wolfssl). steer-core заменяет их — снимаются они в той же транзакции.
+STEER_OLD=""
+for _n in steer steer-extended libsteer libsteer-wolfssl; do
+    if pm_has "$_n"; then STEER_OLD="$STEER_OLD $_n"; fi
+done
+
+# ---- модули ядра ----------------------------------------------------------------
+# Спрашиваем ТОЛЬКО если ядро 2.0 ставится и есть кому ответить. Без терминала (из скрипта, по
+# ssh с перенаправленным вводом) — умолчание.
+WANT_MODULES="$STEER_DEFAULT_MODULES"
+if box_busy; then
+    info "ядро ведёт steer-box-connector — пакеты ядра не трогаю"
+elif [ "$HAVE_CORE" = yes ]; then
+    info "ядро уже стоит (steer-core); обновляется оно из интерфейса"
 elif [ -t 0 ]; then
     say ""
-    say "Какое ядро поставить?"
+    say "Какие модули ядра поставить?"
     cat <<'TXT'
-  1) расширенный — умеет поднимать туннель VLESS/Reality сам: вставили ссылку
-     подписки, и всё. На флеше ~500 КБ. Берите этот, если туннеля ещё нет.
-  2) базовый — только маршрутизация. Туннель поднимаете вы: wireguard, amneziawg,
-     что угодно уже работающее. На флеше ~250 КБ. Берите, если туннель уже настроен.
+  vless      VLESS
+  hysteria2  Hysteria2
+  proxy      Trojan, Shadowsocks, SOCKS, HTTP, VMess
+  xsteer     XSTEER
+  obfs       WireGuard поверх TCP
+  tgws       мост Telegram
+  Остальные можно поставить и снять потом: Настройки → О ПО → Модули ядра.
 TXT
-    printf '  Ваш выбор [1]: '
-    read -r ans || ans=1
-    case "${ans:-1}" in
-        2) WANT_EXT=no ;;
-        *) WANT_EXT=yes ;;
-    esac
+    printf '  Через пробел [%s]: ' "$STEER_DEFAULT_MODULES"
+    read -r ans || ans=""
+    if [ -n "${ans:-}" ]; then
+        WANT_MODULES=""
+        for _m in $ans; do
+            case " $STEER_MODULES " in
+                *" $_m "*) WANT_MODULES="$WANT_MODULES $_m" ;;
+                *) info "такого модуля нет: $_m — пропускаю" ;;
+            esac
+        done
+    fi
 fi
 
 # ---- перечень выпусков splify2/releases ---------------------------------------
@@ -560,21 +616,74 @@ EOF
     die "контрольная сумма $3 не сошлась ни на одном адресе — файл не тот, что в перечне выпусков"
 }
 
-# ---- движок -------------------------------------------------------------------
-if [ "$have_steer" = no ]; then
-    SV="$(latest "$REPO_STEER")"
+# ---- ядро ---------------------------------------------------------------------
+# Последняя стабильная версия; если она старше 2.0 (этот интерфейс пишет спеку v2, а её читает
+# только ядро 2.0) — предварительная из перечня выпусков, если она 2.0 или новее.
+steer_version() {
+    _sv="$(latest "$REPO_STEER")"
+    case "${_sv%%.*}" in ''|0|1)
+        _sp="$(rel_get && rel_val products/steer/prerelease || true)"
+        case "$_sp" in ''|*[!0-9.]*) ;; *) case "${_sp%%.*}" in 0|1) ;; *) _sv="$_sp" ;; esac ;; esac
+        ;;
+    esac
+    printf '%s\n' "$_sv"
+}
+
+# Снять прежние пакеты ядра у opkg (у него нет `!имя` в транзакции): только наши имена 1.x и
+# промежуточной раскладки — чужого установщик не снимает.
+pm_drop_old() {  # ИМЕНА
+    for _d in "$@"; do
+        case "$_d" in steer|steer-extended|libsteer|libsteer-wolfssl) opkg remove --force-depends "$_d" >/dev/null 2>&1 || true ;; esac
+    done
+}
+
+# Убрать из /etc/apk/world запреты `!имя` и имя steer после перехода: пакетов они уже не
+# касаются (прежние сняты в транзакции, steer-core называет себя steer сам).
+pm_forget_old() {  # ИМЕНА
+    for _d in "$@"; do
+        case "$_d" in steer|steer-extended|libsteer|libsteer-wolfssl) apk del "$_d" >/dev/null 2>&1 || true ;; esac
+    done
+}
+
+if ! box_busy && [ "$HAVE_CORE" = no ]; then
+    SV="$(steer_version)"
     [ -n "$SV" ] || die "не удалось узнать версию ядра: не ответили ни перечень выпусков splify2/releases, ни api.github.com, ни raw.githubusercontent.com, ни зеркало на gitlab.com. Пакеты можно поставить руками с https://github.com/$REPO_STEER/releases"
-    if [ "$WANT_EXT" = yes ]; then
-        PKG="steer-extended-${SV}-1_${ARCH}.$(pm_ext)"
-    else
-        PKG="steer-${SV}-1_${ARCH}.$(pm_ext)"
-    fi
+    case "${SV%%.*}" in 0|1) die "последний выпуск ядра — $SV, а этому интерфейсу нужно ядро 2.0 или новее. Пакеты steer-core и модули можно поставить руками с https://github.com/$REPO_STEER/releases" ;; esac
+    MODS="$(steer_mods "$WANT_MODULES")"
     say ""
-    say "Ядро steer $SV"
-    info "$PKG"
-    fetch_pkg steer "$SV" "$PKG" "$TMP/$PKG" "$REPO_STEER"
-    pm_add "$TMP/$PKG" || die "ядро не установилось"
-    info "установлен"
+    say "Ядро steer $SV${MODS:+ · модули: $MODS}"
+    FILES=""
+    for _p in steer-core $(for _m in $MODS; do printf 'steer-%s ' "$_m"; done); do
+        _f="${_p}-${SV}-1_${ARCH}.$(pm_ext)"
+        info "$_f"
+        fetch_pkg steer "$SV" "$_f" "$TMP/$_f" "$REPO_STEER"
+        FILES="$FILES $TMP/$_f"
+    done
+    # Одной транзакцией: модуль зависит от steer-core точной версии. Прежнее ядро у apk снимается
+    # в ней же: `!имя` (у steer — снятием закрепления имени за файлом 1.x в world, после чего
+    # steer-core замещает его по replaces). /etc/steer — спека, списки, подписки — пакетам не
+    # принадлежит и остаётся на месте.
+    EXTRA=""
+    if [ "$PM" = apk ]; then
+        for _n in $STEER_OLD; do
+            case "$_n" in
+                steer) apk add steer >/dev/null 2>&1 || true ;;
+                *) EXTRA="$EXTRA !$_n" ;;
+            esac
+        done
+    fi
+    # shellcheck disable=SC2086
+    if ! pm_add $FILES $EXTRA; then
+        [ "$PM" = opkg ] && [ -n "$STEER_OLD" ] || die "ядро не установилось"
+        info "прежнее ядро мешает — снимаю его и ставлю заново"
+        # shellcheck disable=SC2086
+        pm_drop_old $STEER_OLD
+        # shellcheck disable=SC2086
+        pm_add $FILES || die "ядро не установилось, а прежнее снято: поставьте пакеты руками с https://github.com/$REPO_STEER/releases"
+    fi
+    # shellcheck disable=SC2086
+    [ "$PM" = apk ] && pm_forget_old $STEER_OLD
+    info "установлено"
 fi
 
 # ---- интерфейс ----------------------------------------------------------------
@@ -608,12 +717,15 @@ fi
 # свежепоставленный роутер выглядит сломанным: пульт висит в «Загрузке», а исправный движок
 # объявляется не отвечающим. Выход `direct` в спеке есть сразу — «пустить напрямую» не
 # настройка, а то, что роутер делает без нас, и правилу-исключению нужен адрес назначения.
-if [ ! -s /etc/steer/spec.json ]; then
+# Форма — спека v2, как в uci-defaults: ядро 2.0 читает её, а прежнюю (`schema`) интерфейс при
+# первом открытии переписал бы сам. Две спеки рядом ядро отвергает — при spec.yaml не пишем.
+if [ ! -s /etc/steer/spec.json ] && [ ! -s /etc/steer/spec.yaml ]; then
     mkdir -p /etc/steer 2>/dev/null
-    printf '{"schema":1,"outputs":{"direct":{"kind":"direct"}},"channels":[]}\n' \
+    printf '{"version":2,"outputs":{"direct":{"kind":"direct"}}}\n' \
         > /etc/steer/spec.json 2>/dev/null || true
 fi
-if [ -x /etc/init.d/steer ]; then
+# При коннекторе служба steer не включается: ядро ведёт он (box_busy).
+if [ -x /etc/init.d/steer ] && ! box_busy; then
     /etc/init.d/steer enable >/dev/null 2>&1 || true
 fi
 
