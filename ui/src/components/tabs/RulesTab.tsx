@@ -21,7 +21,8 @@ import {
 import { type Live } from '@/lib/live'
 import { Hint } from '@/components/ui/hint'
 import { Block, Group } from '@/components/ui/layout'
-import RuleEditor, { pathFor, ruleFiles, selectedIds, srsOf } from '@/components/tabs/RuleEditor'
+import RuleEditor from '@/components/tabs/RuleEditor'
+import { pathFor, ruleFiles, selectedIds, srsOf } from '@/lib/rulefiles'
 
 /** Правила: единственное место, где что-то назначается.
  *

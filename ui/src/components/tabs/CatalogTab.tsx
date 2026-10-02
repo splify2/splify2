@@ -5,7 +5,7 @@ import { notify } from '@/lib/notify'
 import { rpc } from '@/lib/rpc'
 import CustomLists from '@/components/CustomLists'
 import { Hint } from '@/components/ui/hint'
-import { ruleFiles, srsPathFor } from '@/components/tabs/RuleEditor'
+import { ruleFiles, srsPathFor } from '@/lib/rulefiles'
 import {
     toAllowDomainsServices,
     toCatalog,
