@@ -42,10 +42,119 @@ pkg_arch() {
     ( . "$OPENWRT_RELEASE"; printf '%s' "${DISTRIB_ARCH:-}" )
 }
 
+# ПЕРЕЧЕНЬ ВЫПУСКОВ splify2/releases — ПЕРВЫЙ ИСТОЧНИК версий и адресов файлов (решение
+# владельца). version.json пишет выпуск каждого проекта: последние версии продукта (до десяти
+# стабильных и текущая предварительная), у каждого файла — sha256 и адреса, сначала выпуск в
+# splify2/releases, потом исходный выпуск проекта. Читается с трёх адресов по порядку
+# (FETCH_REL_URLS в fetch.sh: raw.githubusercontent.com, jsDelivr, сайт splify2.github.io) и без
+# счётчика запросов api.github.com. Не ответил ни один, файл не той схемы или продукта в нём нет
+# — прежний путь целиком: api.github.com, затем VERSION ветки dist.
+#
+# Память — та же, что у перечня (GH_CACHE_TTL_MIN), и по тем же правилам: только свой файл, и
+# читается он jsonfilter-ом как данные. Отказ тоже помнится на тот же срок: иначе там, где все
+# три адреса закрыты, каждое открытие страницы и каждая установка ждали бы их заново.
+rel_valid() {  # ФАЙЛ
+    [ "$(jsonfilter -i "$1" -e '@.schema' 2>/dev/null)" = 1 ]
+}
+
+rel_fresh() {  # ФАЙЛ
+    own_file "$1" && [ -z "$(find "$1" -mmin "+$GH_CACHE_TTL_MIN" 2>/dev/null)" ]
+}
+
+rel_load() {
+    REL_F="${GH_CACHE:-/tmp/splify2-releases.json}.version.json"
+    rel_fresh "$REL_F" && rel_valid "$REL_F" && return 0
+    rel_fresh "$REL_F.none" && return 1
+    rm -f "$REL_F" "$REL_F.none"
+    # Срок на адрес — 20 секунд, как у прежнего похода на api.github.com, а не 60, как у пакетов:
+    # файл в десятки килобайт, а там, где адрес закрыт молча, три адреса по минуте держали бы
+    # страницу три минуты до запасного пути.
+    _rl_t="$FETCH_TIMEOUT"; FETCH_TIMEOUT=20
+    for _rl_u in $FETCH_REL_URLS; do
+        fetch_once "$_rl_u" "$REL_F" || continue
+        rel_valid "$REL_F" && { FETCH_TIMEOUT="$_rl_t"; return 0; }
+        rm -f "$REL_F"
+    done
+    FETCH_TIMEOUT="$_rl_t"
+    ( umask 077; : > "$REL_F.none" ) 2>/dev/null
+    return 1
+}
+
+# Перечень версий продукта из version.json — в GH_VERS/GH_NAMES, предварительная — в GH_PRE.
+# Отбор тот же, что у api.github.com ниже (только цифры и точки — то, что примет установка).
+# Названия выпуска в version.json может не быть — тогда версия называет себя сама; поле `name`
+# читается по версиям, только если оно есть хоть у одной (иначе лишних запусков jsonfilter нет).
+gh_load_rel() {  # ПРОДУКТ
+    rel_load || return 1
+    _gr_p="@.products['$1']"
+    _gr_v="$(jsonfilter -i "$REL_F" -e "$_gr_p.versions[*].version" 2>/dev/null)"
+    [ -n "$_gr_v" ] || return 1
+    _gr_any="$(jsonfilter -i "$REL_F" -e "$_gr_p.versions[*].name" 2>/dev/null)"
+    _gr_i=0
+    while IFS= read -r _gr_ver; do
+        _gr_name=""
+        [ -z "$_gr_any" ] || _gr_name="$(jsonfilter -i "$REL_F" -e "$_gr_p.versions[$_gr_i].name" 2>/dev/null)"
+        _gr_i=$((_gr_i + 1))
+        case "$_gr_ver" in ''|*[!0-9.]*) continue ;; esac
+        # Черта — разделитель разметки GH_NAMES, перевод строки сломал бы память (строка на поле).
+        case "$_gr_name" in ''|*"|"*|*"
+"*) _gr_name="$_gr_ver" ;; esac
+        GH_VERS="$GH_VERS$_gr_ver "
+        GH_NAMES="$GH_NAMES$_gr_ver=$_gr_name|"
+    done <<EOF
+$_gr_v
+EOF
+    GH_PRE="$(jsonfilter -i "$REL_F" -e "$_gr_p.prerelease" 2>/dev/null)"
+    case " $GH_VERS" in *" $GH_PRE "*) ;; *) GH_PRE="" ;; esac
+    [ -n "$GH_VERS" ] && return 0
+    GH_NAMES="|"; GH_PRE=""
+    return 1
+}
+
+# Файл выпуска по version.json: sha256 — в REL_SUM, адреса по порядку — в REL_URLS (через
+# пробел). Версия и файл ищутся по значению: имена пакетов 1.5.x (steer, steer-extended) и 2.0
+# (steer-core и модули) лежат в перечне как есть, а имя файла собирается так же, как для
+# выпусков. Адрес берётся, только если он https, из безопасных знаков (дальше он перебирается
+# словами, и `*` или `?` раскрылись бы как шаблон) и кончается именем файла.
+rel_asset() {  # ПРОДУКТ ВЕРСИЯ ИМЯ_ФАЙЛА
+    REL_SUM=""; REL_URLS=""
+    rel_load || return 1
+    _ra_p="@.products['$1'].versions"
+    _ra_i=0; _ra_hit=""
+    while IFS= read -r _ra_x; do
+        [ "$_ra_x" = "$2" ] && { _ra_hit=1; break; }
+        _ra_i=$((_ra_i + 1))
+    done <<EOF
+$(jsonfilter -i "$REL_F" -e "$_ra_p[*].version" 2>/dev/null)
+EOF
+    [ -n "$_ra_hit" ] || return 1
+    _ra_p="$_ra_p[$_ra_i].assets"
+    _ra_j=0; _ra_hit=""
+    while IFS= read -r _ra_x; do
+        [ "$_ra_x" = "$3" ] && { _ra_hit=1; break; }
+        _ra_j=$((_ra_j + 1))
+    done <<EOF
+$(jsonfilter -i "$REL_F" -e "$_ra_p[*].name" 2>/dev/null)
+EOF
+    [ -n "$_ra_hit" ] || return 1
+    while IFS= read -r _ra_x; do
+        case "$_ra_x" in
+            https://*[!A-Za-z0-9._~:/%+@=-]*) ;;
+            https://?*/"$3") REL_URLS="$REL_URLS $_ra_x" ;;
+            *[!0-9a-f]*) ;;
+            *) [ "${#_ra_x}" = 64 ] && REL_SUM="$_ra_x" ;;
+        esac
+    done <<EOF
+$(jsonfilter -i "$REL_F" -e "$_ra_p[$_ra_j].sha256" -e "$_ra_p[$_ra_j].urls[*]" 2>/dev/null)
+EOF
+    [ -n "$REL_URLS" ]
+}
+
 gh_load() {  # ВЛАДЕЛЕЦ/РЕПОЗИТОРИЙ
     GH_VERS=""
     GH_NAMES="|"
     GH_NOTE=""
+    GH_PRE=""
     _gl_c="${GH_CACHE:-/tmp/splify2-releases.json}.$(printf '%s' "$1" | tr -c 'A-Za-z0-9' '_').cache"
     # ПАМЯТЬ — ДАННЫЕ, А НЕ КОД, и только СВОЯ. Файл лежит в /tmp под предсказуемым именем, а
     # /tmp на роутере пишут все процессы, включая непривилегированные (nobody у
@@ -58,12 +167,14 @@ gh_load() {  # ВЛАДЕЛЕЦ/РЕПОЗИТОРИЙ
         GH_VERS="$(sed -n '1p' "$_gl_c" 2>/dev/null)"
         GH_NAMES="$(sed -n '2p' "$_gl_c" 2>/dev/null)"
         GH_NOTE="$(sed -n '3p' "$_gl_c" 2>/dev/null)"
+        GH_PRE="$(sed -n '4p' "$_gl_c" 2>/dev/null)"
         [ -n "$GH_VERS" ] && return 0
-        GH_VERS=""; GH_NAMES="|"; GH_NOTE=""
+        GH_VERS=""; GH_NAMES="|"; GH_NOTE=""; GH_PRE=""
     fi
-    gh_load_api "$1" || gh_load_version "$1" || return 1
+    # Продукт в version.json называется как репозиторий без владельца: steer, splify2.
+    gh_load_rel "${1#*/}" || gh_load_api "$1" || gh_load_version "$1" || return 1
     rm -f "$_gl_c"
-    ( umask 077; printf '%s\n%s\n%s\n' "$GH_VERS" "$GH_NAMES" "$GH_NOTE" > "$_gl_c" 2>/dev/null )
+    ( umask 077; printf '%s\n%s\n%s\n%s\n' "$GH_VERS" "$GH_NAMES" "$GH_NOTE" "$GH_PRE" > "$_gl_c" 2>/dev/null )
     return 0
 }
 
@@ -164,6 +275,9 @@ gh_add_releases() {
     # Почему список такой, какой есть. Только когда есть что сказать: примечание на здоровом
     # пути было бы шумом, а на больном — единственным объяснением, почему версия одна.
     [ -n "$GH_NOTE" ] && json_add_string note "$GH_NOTE"
+    # Какая из версий предварительная — по полю prerelease перечня выпусков, а не по виду строки.
+    [ -n "$GH_PRE" ] && json_add_string prerelease "$GH_PRE"
+    return 0
 }
 
 # Расширение файла пакета для этого менеджера и суффикс архитектуры у пакета без
@@ -411,10 +525,12 @@ case "$2" in
         url="https://github.com/splify2/splify2/releases/download/v${ver}/${name}"
         tmp="/tmp/${name}"
         rm -f "$tmp"
-        # Через download(), а не своим wget: у этой ссылки тот же изъян, что у списков —
-        # она перенаправляет на release-assets.githubusercontent.com, и там, где этот хост
-        # закрыт, обновление из интерфейса не работало вовсе (splify2#15).
-        if ! download "$url" "$tmp"; then
+        # Сначала адреса и sha256 из перечня выпусков (rel_asset), затем прежняя лестница
+        # download() по этой же ссылке, а не свой wget: ссылка перенаправляет на
+        # release-assets.githubusercontent.com, и там, где этот хост закрыт, обновление из
+        # интерфейса не работало вовсе (splify2#15).
+        rel_asset splify2 "$ver" "$name"
+        if ! download_rel "$tmp" "$REL_SUM" "$url" $REL_URLS; then
             rm -f "$tmp"
             json_add_boolean ok 0
             json_add_string error "не скачалось: $name (нет такой версии?)${FETCH_NOTE:+ — $FETCH_NOTE}"
@@ -477,7 +593,9 @@ case "$2" in
         url="https://github.com/splify2/steer/releases/download/v${ver}/${name}"
         tmp="/tmp/${name}"
         rm -f "$tmp"
-        if ! download "$url" "$tmp"; then
+        # Адреса и sha256 — из перечня выпусков, затем прежняя лестница по этой ссылке.
+        rel_asset steer "$ver" "$name"
+        if ! download_rel "$tmp" "$REL_SUM" "$url" $REL_URLS; then
             rm -f "$tmp"
             json_add_boolean ok 0
             json_add_string error "не скачалось: $name (нет такой версии для $arch?)${FETCH_NOTE:+ — $FETCH_NOTE}"

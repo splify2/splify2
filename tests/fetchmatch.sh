@@ -496,6 +496,80 @@ check "чужой хост: обхода по GitHub нет, помог тунн
 check "к api.github.com за чужим файлом не ходили" "" \
       "$(grep -c 'api.github.com' "$S/curl.log" | sed 's/^0$//')"
 
+# ---- 9b. файл выпуска по адресам из version.json ------------------------------------
+# Перечень выпусков splify2/releases называет для файла адреса по порядку (выпуск в
+# splify2/releases, потом исходный выпуск проекта) и sha256. download_rel идёт по ним, сверяя
+# сумму, и только потом — прежней лестницей по запасному адресу (прямая ссылка, зеркало, хосты
+# GitHub, ветка dist).
+REL1=https://github.com/splify2/releases/releases/download/steer-v1.2.1/steer-1.2.1-1_x86_64.apk
+sum() { printf '%s\n' "$1" | sha256sum | cut -d' ' -f1; }
+runrel() {  # ЗАПАСНОЙ_URL SHA256 [URL...]
+    rm -f "$T/got"
+    env PATH="${RELPATH:-$T/bin:$PATH}" STATE="$S" \
+        FETCH_STEER="$T/bin/steer" FETCH_SPEC="$S/spec.json" \
+        FETCH_CACHE="$T/cache" FETCH_CONNECT_TIMEOUT=1 FETCH_TIMEOUT=5 \
+        sh -c '
+            . "$1"; fb="$2"; sm="$3"; shift 3
+            if download_rel "$OUT" "$sm" "$fb" "$@"; then echo RC=0; else echo RC=1; fi
+            printf "NOTE=%s\n" "$FETCH_NOTE"
+        ' _ "$FETCH" "$@"
+}
+
+reset
+res="$(runrel "$REL" "$(sum "direct:$REL1")" "$REL1" "$REL")"
+check "version.json: файл взят с первого адреса" "direct:$REL1" "$(cat "$T/got" 2>/dev/null)"
+check "version.json: запрос был один — сумма сошлась" "1" "$(grep -c . "$S/curl.log")"
+check "version.json: удачный первый адрес ничего не объясняет" "NOTE=" "$(echo "$res" | grep '^NOTE=')"
+
+reset
+res="$(runrel "$REL" "$(sum "direct:$REL")" "$REL1" "$REL")"
+check "сумма первого не сошлась — взят второй адрес" "direct:$REL" "$(cat "$T/got" 2>/dev/null)"
+check "несовпадение суммы названо" "yes" \
+      "$(echo "$res" | grep -q 'NOTE=.*контрольная сумма' && echo yes || echo no)"
+
+reset
+printf 'githubusercontent.com\nreleases/download\n' > "$S/blocked-always"
+printf 'gitlab.com\t%s\n' "$T/mirror-pkg" > "$S/serve"
+res="$(runrel "$REL" "$(sum PKG-from-mirror)" "$REL1" "$REL")"
+check "адреса version.json закрыты — прежняя лестница: зеркало, ветка dist" "PKG-from-mirror" \
+      "$(cat "$T/got" 2>/dev/null)"
+check "запасной адрес был в version.json — напрямую его второй раз не спрашивали" "1" \
+      "$(grep -c "^$REL " "$S/curl.log")"
+check "оба адреса version.json спрошены по порядку" "$REL1;$REL" \
+      "$(grep -o '^https://github.com[^ ]*' "$S/curl.log" | head -2 | tr '\n' ';' | sed 's/;$//')"
+
+reset
+printf 'gitlab.com\t%s\n' "$T/mirror-pkg" > "$S/serve"
+printf 'releases/download\n' > "$S/blocked-always"
+res="$(runrel "$REL" "$(sum другое)" "$REL1" "$REL")"
+check "сумма не сошлась нигде — отказ" "RC=1" "$(echo "$res" | grep '^RC=')"
+check "и файла нет" "no" "$([ -e "$T/got" ] && echo yes || echo no)"
+check "причина названа" "yes" "$(echo "$res" | grep -q 'NOTE=.*контрольная сумма' && echo yes || echo no)"
+
+# Запасной адрес не из version.json (версии там нет) — его прямой заход обязателен.
+reset
+res="$(runrel "$REL" "")"
+check "адресов нет — прежний путь целиком, с прямым заходом" "direct:$REL" "$(cat "$T/got" 2>/dev/null)"
+
+# Включённый туннель — и адреса version.json идут через него первым.
+reset
+echo always > "$S/uci.splify2_main_fetch_via_tunnel"
+printf 'Name:\tgithub.com\nAddress: 140.82.121.4\n' > "$S/dns/github.com"
+res="$(runrel "$REL" "$(sum "direct:$REL1")" "$REL1" "$REL")"
+check "туннель включён: первый адрес version.json — через туннель" "yes" \
+      "$(head -1 "$S/curl.log" | grep -q "^$REL1 four=yes" && echo yes || echo no)"
+check "через туннель и взят" "direct:$REL1" "$(cat "$T/got" 2>/dev/null)"
+
+# Без sha256sum на роутере сверять нечем — файл принимается с первого адреса.
+mkdir -p "$T/nosha"
+for f in /usr/bin/* /bin/*; do
+    case "${f##*/}" in sha256sum) continue ;; esac
+    [ -e "$T/nosha/${f##*/}" ] || ln -s "$f" "$T/nosha/${f##*/}" 2>/dev/null
+done
+reset
+res="$(RELPATH="$T/bin:$T/nosha" runrel "$REL" "$(sum другое)" "$REL1" "$REL")"
+check "без sha256sum файл берётся без сверки" "direct:$REL1" "$(cat "$T/got" 2>/dev/null)"
+
 # ---- 10. разбор адресов ------------------------------------------------------------
 parts() {
     env PATH="$T/bin:$PATH" STATE="$S" sh -c '. "$1"; fetch_gh_parts "$2" || echo НЕ_РАЗОБРАН' _ "$FETCH" "$1"

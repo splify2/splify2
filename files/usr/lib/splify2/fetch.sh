@@ -42,6 +42,10 @@ FETCH_GITLAB=${FETCH_GITLAB:-https://gitlab.com}
 FETCH_CODELOAD=${FETCH_CODELOAD:-https://codeload.github.com}
 FETCH_DIST_BRANCH=${FETCH_DIST_BRANCH:-dist}
 FETCH_CACHE=${FETCH_CACHE:-/tmp/splify2-fetch}
+# Перечень выпусков splify2/releases — три адреса одного version.json, по порядку. Читает его
+# объект rpcd (m-engine.sh) ПЕРВЫМ, раньше api.github.com; адреса файлов из него качает
+# download_rel ниже.
+FETCH_REL_URLS=${FETCH_REL_URLS:-"https://raw.githubusercontent.com/splify2/releases/main/version.json https://cdn.jsdelivr.net/gh/splify2/releases@main/version.json https://splify2.github.io/releases/version.json"}
 
 # Почему скачивание пошло не напрямую — одной строкой для человека. Вызывающий печатает её
 # предупреждением: молчание здесь означало бы, что списки то обновляются, то нет, и понять
@@ -382,10 +386,24 @@ fetch_via_tunnel() {  # URL ФАЙЛ
 # маршрутизации, поэтому работают и на роутере, где ещё ничего не настроено. Туннель стоит
 # первым потому, что его включает тот, у кого GitHub закрыт насовсем: по своему адресу файл
 # едет одним запросом, а обход — это лишние запросы, в худшем случае архив ветки целиком.
-download() {  # URL ФАЙЛ
+#
+# Третий аргумент `detours` — только обходы, без туннеля и прямого адреса: их для этого адреса
+# уже прошёл download_rel (адрес был среди адресов version.json), и второй заход стоил бы ещё
+# одного ожидания там, где адрес закрыт.
+download() {  # URL ФАЙЛ [detours]
     FETCH_NOTE=""
     _dl_tmp="$2.tmp"
     rm -f "$_dl_tmp"
+    if [ "${3:-}" = detours ]; then
+        if fetch_github "$1" "$_dl_tmp"; then
+            FETCH_DIRECT_DEAD=1
+            mv "$_dl_tmp" "$2"
+            return 0
+        fi
+        rm -f "$_dl_tmp"
+        fetch_tunnel_on || FETCH_NOTE="${FETCH_NOTE:+$FETCH_NOTE; }скачивание через туннель выключено"
+        return 1
+    fi
 
     # Включён туннель — идём туда ПЕРВЫМ. Выключен — не трогаем его вовсе, остаются прямой
     # адрес и обходные адреса самого GitHub.
@@ -429,5 +447,65 @@ download() {  # URL ФАЙЛ
     # Сказать, что туннель мог бы спасти, но выключен: иначе в журнале остаётся «не
     # скачалось» без единой подсказки, куда смотреть.
     fetch_tunnel_on || FETCH_NOTE="${FETCH_NOTE:+$FETCH_NOTE; }скачивание через туннель выключено"
+    return 1
+}
+
+# ---- файлы из перечня выпусков ------------------------------------------------------
+# Один заход по адресу, без обходов по хостам GitHub: туннель (если человек его включил) и
+# прямой адрес — то же, с чего начинает download. Обходы здесь не к месту: адреса version.json —
+# это выпуск в splify2/releases (его ветки dist нет вовсе) и исходный выпуск проекта, обход
+# которого download_rel делает сам, один раз, в конце.
+fetch_once() {  # URL ФАЙЛ
+    _fo1="$2.tmp"
+    rm -f "$_fo1"
+    if fetch_tunnel_on && fetch_via_tunnel "$1" "$_fo1"; then
+        mv "$_fo1" "$2"
+        return 0
+    fi
+    if fetch_get "$1" "$_fo1" && [ -s "$_fo1" ]; then
+        mv "$_fo1" "$2"
+        return 0
+    fi
+    rm -f "$_fo1"
+    return 1
+}
+
+# Сверка с sha256 из version.json. Суммы нет или нет sha256sum — сверять нечем, и файл
+# принимается, как принимался до перечня выпусков.
+fetch_sum_ok() {  # ФАЙЛ SHA256
+    [ -n "$2" ] || return 0
+    command -v sha256sum >/dev/null 2>&1 || return 0
+    _fs="$(sha256sum "$1" 2>/dev/null)"
+    [ "${_fs%% *}" = "$2" ]
+}
+
+# Файл выпуска: адреса из version.json по порядку со сверкой sha256 (не сошлось — следующий
+# адрес), затем прежняя лестница по ЗАПАСНОМУ адресу — прямой ссылке выпуска проекта, которую
+# download сводит к ветке dist (зеркало gitlab.com, contents API, архив через codeload). Ветка
+# dist держит только последнюю версию, и в version.json её адресов нет — поэтому обход через неё
+# остаётся здесь. Сумма сверяется и у файла, взятого лестницей: имя то же, и файл обязан быть
+# тем же. Адресов нет (версии нет в перечне, перечень не ответил) — это ровно прежний download.
+download_rel() {  # ФАЙЛ SHA256 ЗАПАСНОЙ_URL [URL...]
+    _dr_f="$1"; _dr_sum="$2"; _dr_fb="$3"
+    shift 3
+    _dr_mode=""; _dr_bad=""
+    for _dr_u in "$@"; do
+        FETCH_NOTE=""
+        [ "$_dr_u" = "$_dr_fb" ] && _dr_mode=detours
+        fetch_once "$_dr_u" "$_dr_f" || continue
+        if fetch_sum_ok "$_dr_f" "$_dr_sum"; then
+            [ -z "$_dr_bad" ] || FETCH_NOTE="контрольная сумма не сошлась ($_dr_bad) — взято с $_dr_u"
+            return 0
+        fi
+        rm -f "$_dr_f"
+        _dr_bad="${_dr_bad:+$_dr_bad, }$_dr_u"
+    done
+    if ! download "$_dr_fb" "$_dr_f" $_dr_mode; then
+        [ -z "$_dr_bad" ] || FETCH_NOTE="контрольная сумма не сошлась ($_dr_bad)${FETCH_NOTE:+; $FETCH_NOTE}"
+        return 1
+    fi
+    fetch_sum_ok "$_dr_f" "$_dr_sum" && return 0
+    rm -f "$_dr_f"
+    FETCH_NOTE="контрольная сумма не сошлась ни на одном адресе — файл не тот, что в перечне выпусков"
     return 1
 }

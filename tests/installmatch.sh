@@ -39,6 +39,15 @@ url=""
 for a in "$@"; do case "$a" in http*) url="$a" ;; esac; done
 echo "$url" >> "$SB/wget.log"
 case "$url" in
+    # Перечень выпусков splify2/releases — три адреса одного version.json, у каждого свой ответ:
+    # проверяется и порядок, и переход к следующему адресу.
+    *raw.githubusercontent.com/splify2/releases/*) f="$SB/resp-rel-raw" ;;
+    *cdn.jsdelivr.net/*)       f="$SB/resp-rel-cdn" ;;
+    *splify2.github.io/*)      f="$SB/resp-rel-pages" ;;
+    # Файлы выпуска: сначала выпуск в splify2/releases, потом исходный выпуск проекта (его же
+    # адрес собирает и прежний путь, dl_url).
+    *github.com/splify2/releases/releases/download/*) f="$SB/resp-asset-rel" ;;
+    *github.com/*/releases/download/*) f="$SB/resp-asset-src" ;;
     # contents API — отдельная ветка: это ТРЕТИЙ путь к версии, и смешивать его с
     # ответом про релизы значило бы проверять «api ответил» вместо «ответил чем».
     *api.github.com*contents*) f="$SB/resp-contents" ;;
@@ -154,13 +163,185 @@ check "зеркало молчит — тогда ветка dist через х�
     "$(fetch "$url" "$SB/pkg.apk" splify2/steer steer-2.0.2-1_x86_64.apk >/dev/null 2>&1; cat "$SB/pkg.apk" 2>/dev/null)"
 rm -f "$SB/resp-codeload" "$TMP"/*.tgz
 
+# ---- перечень выпусков splify2/releases: version.json раньше api.github.com ------------
+#
+# Решение владельца: версии и адреса файлов установщик берёт СНАЧАЛА из version.json
+# репозитория splify2/releases (три адреса одного файла по порядку), а api.github.com, VERSION
+# ветки dist, зеркало и хосты GitHub остаются запасным путём в прежнем порядке. Файл качается по
+# urls из version.json по порядку со сверкой sha256, затем — прежней лестницей по имени файла.
+eval "$(sed -n '/^REL_JSON_URLS=/p; /^TAB=/p; /^rel_flat() {/,/^}/p; /^rel_get() {/,/^}/p; /^rel_val() {/,/^}/p; /^rel_stable() {/,/^}/p; /^rel_asset() {/,/^}/p; /^sum_ok() {/,/^}/p; /^fetch_pkg() {/,/^}/p' "$ROOT/install.sh")"
+check "функции перечня выпусков достаны из install.sh" "rel_get fetch_pkg" \
+    "$(command -v rel_get >/dev/null && printf 'rel_get '; command -v fetch_pkg >/dev/null && printf fetch_pkg)"
+
+relreset() { rm -f "$SB"/resp-* "$TMP"/version.* "$TMP"/*.tgz "$SB/wget.log"; : > "$SB/wget.log"; }
+sha() { sha256sum "$1" | cut -d' ' -f1; }
+printf 'PKG-REL\n' > "$SB/body-rel"
+printf 'PKG-SRC\n' > "$SB/body-src"
+printf 'PKG-BAD\n' > "$SB/body-bad"
+# version.json в том виде, в каком его пишет scripts/publish.py (json.dump, indent=1): старые имена
+# пакетов steer 1.5.x как есть, у каждого файла — размер, sha256 и два адреса.
+mkrel() {  # ФАЙЛ [ОТСТУП]  — отступ 0 даёт version.json одной строкой
+    python3 - "$1" "${2:-1}" "$(sha "$SB/body-rel")" <<'PY'
+import json, sys
+out, ind, s = sys.argv[1], int(sys.argv[2]), sys.argv[3]
+def a(prod, tag, src, name):
+    return {"name": name, "size": 8, "sha256": s,
+            "urls": [f"https://github.com/splify2/releases/releases/download/{tag}/{name}",
+                     f"https://github.com/{src}/releases/download/v{tag.split('-v')[-1]}/{name}"]}
+def v(prod, ver, src, names, ch="stable"):
+    tag = f"{prod}-v{ver}"
+    return {"version": ver, "channel": ch, "date": "2026-09-25", "tag": tag,
+            "source": f"https://github.com/{src}/releases/tag/v{ver}",
+            "changelog": f"changelogs/{prod}/{ver}.md", "assets": [a(prod, tag, src, n) for n in names]}
+doc = {"schema": 1, "updated": "2026-10-02T10:17:36Z", "products": {
+  "steer": {"title": "Ядро steer", "repo": "splify2/steer", "stable": "1.5.9", "prerelease": None,
+            "versions": [v("steer", "1.5.9", "splify2/steer", ["steer-1.5.9-1_x86_64.apk", "steer-extended-1.5.9-1_x86_64.apk", "steer-extended-1.5.9-1_x86_64.ipk"]),
+                         v("steer", "1.5.8", "splify2/steer", ["steer-extended-1.5.8-1_x86_64.apk"])]},
+  "splify2": {"title": "splify2", "repo": "splify2/splify2", "stable": "26.9.2", "prerelease": None,
+              "versions": [v("splify2", "26.9.2", "splify2/splify2", ["luci-app-splify2-26.9.2-1_noarch.apk"])]}}}
+with open(out, "w") as f:
+    json.dump(doc, f, ensure_ascii=False, indent=ind if ind else None)
+    f.write("\n")
+PY
+}
+
+# ---- версия: version.json первым, и спрошен он первым ----------------------------------
+relreset
+mkrel "$SB/resp-rel-raw"
+printf '{"tag_name": "v1.2.3", "name": "x"}\n' > "$SB/resp-api"
+check "версия ядра берётся из version.json, а не из api.github.com" "1.5.9" "$(latest splify2/steer 2>/dev/null)"
+check "версия интерфейса — оттуда же" "26.9.2" "$(latest splify2/splify2 2>/dev/null)"
+check "первым спрошен version.json на raw.githubusercontent.com" \
+    "https://raw.githubusercontent.com/splify2/releases/main/version.json" "$(head -1 "$SB/wget.log")"
+check "к api.github.com при живом version.json не ходили" "0" "$(grep -c 'api.github.com' "$SB/wget.log")"
+check "version.json скачан один раз на оба продукта" "1" "$(grep -c 'version.json' "$SB/wget.log")"
+
+# Тот же файл одной строкой (без отступов) — разбор не зависит от того, как его отформатировали.
+relreset
+mkrel "$SB/resp-rel-raw" 0
+check "version.json одной строкой читается так же" "1.5.9" "$(latest splify2/steer 2>/dev/null)"
+
+# На роутере awk — из busybox, на машине стенда — gawk или mawk, и регулярные выражения у них
+# расходятся (`\]` внутри скобок gawk понимает как знак, POSIX — нет: значение `null,` уходило с
+# запятой, и схема не узнавалась). Разбор сверяется со всеми, какие есть.
+mkrel "$SB/rel.json"
+python3 - "$SB/rel.json" > "$SB/flat.want" <<'PY'
+import json, sys
+def walk(v, p):
+    if isinstance(v, dict):
+        for k, x in v.items(): yield from walk(x, p + [k])
+    elif isinstance(v, list):
+        for i, x in enumerate(v): yield from walk(x, p + [str(i)])
+    else:
+        yield "/".join(p) + "\t" + ("null" if v is None else str(v).lower() if isinstance(v, bool) else str(v))
+print("\n".join(walk(json.load(open(sys.argv[1])), [])))
+PY
+for awkbin in gawk mawk "busybox awk"; do
+    set -- $awkbin
+    command -v "$1" >/dev/null 2>&1 || continue
+    [ "$1" != busybox ] || busybox awk 'BEGIN{}' 2>/dev/null || continue
+    mkdir -p "$SB/awk-$1"
+    printf '#!/bin/sh\nexec %s "$@"\n' "$awkbin" > "$SB/awk-$1/awk"; chmod +x "$SB/awk-$1/awk"
+    check "разбор version.json под $awkbin совпадает с python" "" \
+        "$(PATH="$SB/awk-$1:$PATH" rel_flat "$SB/rel.json" | diff - "$SB/flat.want" | head -3)"
+done
+
+# ---- адреса version.json по порядку ----------------------------------------------------
+relreset
+mkrel "$SB/resp-rel-cdn"
+check "raw молчит — version.json с cdn.jsdelivr.net" "1.5.9" "$(latest splify2/steer 2>/dev/null)"
+check "адрес jsDelivr — второй по порядку" \
+    "https://cdn.jsdelivr.net/gh/splify2/releases@main/version.json" "$(sed -n 2p "$SB/wget.log")"
+relreset
+mkrel "$SB/resp-rel-pages"
+check "молчат raw и jsDelivr — version.json с splify2.github.io" "1.5.9" "$(latest splify2/steer 2>/dev/null)"
+check "адрес сайта — третий по порядку" \
+    "https://splify2.github.io/releases/version.json" "$(sed -n 3p "$SB/wget.log")"
+
+# ---- откат на прежний путь -------------------------------------------------------------
+relreset
+printf '{"tag_name": "v1.2.3", "name": "x"}\n' > "$SB/resp-api"
+check "version.json не отдался ни с одного адреса — версия из api.github.com" "1.2.3" \
+    "$(latest splify2/steer 2>/dev/null)"
+check "откат объявлен вслух" "1" \
+    "$(rm -f "$TMP"/version.*; latest splify2/steer 2>&1 >/dev/null | grep -c 'перечень выпусков')"
+relreset
+printf '<html>не json</html>\n' > "$SB/resp-rel-raw"
+printf '{"schema": 2, "products": {"steer": {"stable": "9.9.9"}}}\n' > "$SB/resp-rel-cdn"
+printf '{"tag_name": "v1.2.3", "name": "x"}\n' > "$SB/resp-api"
+check "битый version.json и чужая схема — версия из api.github.com" "1.2.3" \
+    "$(latest splify2/steer 2>/dev/null)"
+relreset
+printf '1.1.2\n' > "$SB/resp-raw"
+check "молчат и version.json, и api.github.com — VERSION ветки dist, как раньше" "1.1.2" \
+    "$(latest splify2/steer 2>/dev/null)"
+
+# ---- пакет: адреса из version.json по порядку, сверка sha256 ----------------------------
+NAME=steer-extended-1.5.9-1_x86_64.apk
+relreset
+mkrel "$SB/resp-rel-raw"
+cp "$SB/body-rel" "$SB/resp-asset-rel"; cp "$SB/body-src" "$SB/resp-asset-src"
+check "пакет качается с первого адреса version.json — выпуска в splify2/releases" "PKG-REL" \
+    "$(fetch_pkg steer 1.5.9 "$NAME" "$SB/p.apk" splify2/steer >/dev/null 2>&1; cat "$SB/p.apk" 2>/dev/null)"
+check "адрес пакета — из version.json" \
+    "https://github.com/splify2/releases/releases/download/steer-v1.5.9/$NAME" \
+    "$(grep 'releases/download' "$SB/wget.log" | head -1)"
+
+relreset
+mkrel "$SB/resp-rel-raw"
+cp "$SB/body-bad" "$SB/resp-asset-rel"; cp "$SB/body-rel" "$SB/resp-asset-src"
+check "sha256 не сошёлся — следующий адрес из version.json" "PKG-REL" \
+    "$(fetch_pkg steer 1.5.9 "$NAME" "$SB/p.apk" splify2/steer >/dev/null 2>&1; cat "$SB/p.apk" 2>/dev/null)"
+check "несовпадение сказано вслух" "1" \
+    "$(rm -f "$SB/p.apk"; fetch_pkg steer 1.5.9 "$NAME" "$SB/p.apk" splify2/steer 2>&1 | grep -c 'контрольная сумма')"
+
+relreset
+mkrel "$SB/resp-rel-raw"
+printf 'PKG-REL\n' > "$SB/resp-mirror"
+check "оба адреса version.json молчат — прежний путь по имени файла (ветка dist)" "PKG-REL" \
+    "$(fetch_pkg steer 1.5.9 "$NAME" "$SB/p.apk" splify2/steer >/dev/null 2>&1; cat "$SB/p.apk" 2>/dev/null)"
+check "прямой адрес выпуска второй раз не спрашивается — он уже был в version.json" "1" \
+    "$(grep -c "github.com/splify2/steer/releases/download/v1.5.9/$NAME" "$SB/wget.log")"
+
+relreset
+mkrel "$SB/resp-rel-raw"
+cp "$SB/body-bad" "$SB/resp-asset-rel"; cp "$SB/body-bad" "$SB/resp-asset-src"; cp "$SB/body-bad" "$SB/resp-mirror"
+check "sha256 не сошёлся нигде — отказ, файла нет" "отказ;нет" \
+    "$(fetch_pkg steer 1.5.9 "$NAME" "$SB/p.apk" splify2/steer >/dev/null 2>&1 && printf 'ok' || printf 'отказ'; [ -e "$SB/p.apk" ] && printf ';есть' || printf ';нет')"
+
+# Версии в version.json нет (старый выпуск, ушедший из перечня) — прежний путь целиком.
+relreset
+mkrel "$SB/resp-rel-raw"
+cp "$SB/body-src" "$SB/resp-asset-src"
+check "версии нет в version.json — прямой адрес выпуска проекта, как раньше" "PKG-SRC" \
+    "$(fetch_pkg steer 1.5.1 steer-extended-1.5.1-1_x86_64.apk "$SB/p.apk" splify2/steer >/dev/null 2>&1; cat "$SB/p.apk" 2>/dev/null)"
+
+# version.json недоступен — пакет прежним путём, без сверки (сверять не с чем).
+relreset
+cp "$SB/body-src" "$SB/resp-asset-src"
+check "version.json молчит — пакет прежним путём" "PKG-SRC" \
+    "$(fetch_pkg steer 1.5.9 "$NAME" "$SB/p.apk" splify2/steer >/dev/null 2>&1; cat "$SB/p.apk" 2>/dev/null)"
+
+# Без sha256sum на роутере сверка пропускается, а не роняет установку.
+relreset
+mkrel "$SB/resp-rel-raw"
+cp "$SB/body-bad" "$SB/resp-asset-rel"
+# PATH без sha256sum: заглушки стенда плюс ровно те команды, которыми пользуется установщик.
+mkdir -p "$SB/nosha"
+for c in awk sed grep rm cat tr head cut tar mkdir sh; do ln -sf "$(command -v "$c")" "$SB/nosha/$c"; done
+check "без sha256sum файл берётся с первого адреса без сверки" "PKG-BAD" \
+    "$(PATH="$SB/bin:$SB/nosha"; fetch_pkg steer 1.5.9 "$NAME" "$SB/p.apk" splify2/steer >/dev/null 2>&1; cat "$SB/p.apk" 2>/dev/null)"
+relreset
+
 # ---- отказ называет оба хоста -------------------------------------------------
 # Сообщение «нет релизов?» отправляло человека искать релиз, которого не было только у
 # него в сети. Проверяется, что в отказе названы оба источника и ручной путь.
 for what in ядра интерфейса; do
     check "отказ по версии $what называет все источники" "1" \
-        "$(grep -c "не удалось узнать версию $what: не ответили ни api.github.com, ни raw.githubusercontent.com, ни зеркало на gitlab.com" "$ROOT/install.sh")"
+        "$(grep -c "не удалось узнать версию $what: не ответили ни перечень выпусков splify2/releases, ни api.github.com, ни raw.githubusercontent.com, ни зеркало на gitlab.com" "$ROOT/install.sh")"
 done
+check "установщик ставит пакеты через fetch_pkg — с адресами из version.json" "2" \
+    "$(grep -c '^ *fetch_pkg ' "$ROOT/install.sh")"
 check "отказ ведёт на страницу релизов" "2" \
     "$(grep -c 'Пакеты\|Пакет можно поставить руками' "$ROOT/install.sh")"
 

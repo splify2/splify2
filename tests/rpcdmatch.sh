@@ -426,6 +426,34 @@ if [ "$head" = 1 ]; then
     exit "${CURL_HEAD_RC:-0}"
 fi
 [ -n "$dump" ] && printf 'HTTP/2 200\r\n%s\r\n' "${CURL_RESP_HDRS:-}" > "$dump"
+# Перечень выпусков splify2/releases: у каждого из трёх адресов version.json свой файл в песочнице
+# (rel-raw.json, rel-cdn.json, rel-pages.json). Файла нет — адрес не отвечает: так по умолчанию,
+# и все прежние проверки идут прежним путём (api.github.com).
+case "$url" in
+    *version.json)
+        case "$url" in
+            *raw.githubusercontent.com*) f="$SANDBOX/rel-raw.json" ;;
+            *cdn.jsdelivr.net*)          f="$SANDBOX/rel-cdn.json" ;;
+            *splify2.github.io*)         f="$SANDBOX/rel-pages.json" ;;
+            *)                           f="" ;;
+        esac
+        [ -n "$f" ] && [ -f "$f" ] && [ -n "$out" ] && { cp "$f" "$out"; exit 0; }
+        exit 22 ;;
+esac
+# Ответы по образцу адреса: «образец<TAB>файл» в curl.serve; образец из curl.fail — отказ.
+# Нужны файлам выпуска: у адресов из version.json разное содержимое, и сверка sha256 видна только так.
+if [ -f "$SANDBOX/curl.fail" ]; then
+    while IFS= read -r pat; do
+        [ -n "$pat" ] || continue
+        case "$url" in *"$pat"*) exit 22 ;; esac
+    done < "$SANDBOX/curl.fail"
+fi
+if [ -f "$SANDBOX/curl.serve" ] && [ -n "$out" ]; then
+    while IFS='	' read -r pat src; do
+        [ -n "$pat" ] || continue
+        case "$url" in *"$pat"*) cp "$src" "$out"; exit 0 ;; esac
+    done < "$SANDBOX/curl.serve"
+fi
 if [ -n "$out" ]; then
     case "$url" in
         # Набор sing-box: тело двоичное и заглушке безразлично — его разбирает движок,
@@ -1210,6 +1238,137 @@ out="$(APK_ADD_RC=1 APK_ADD_OUT='ERROR: package ip-tiny conflicts with ip-full' 
        rpcd steer_install '{"version":"0.9.6","extended":false}')"
 check "чужой конфликт не снимает движок (I-255)" \
       "" "$(grep -c '^del' "$T/apk.log" | sed 's/^0$//')"
+
+# ---- перечень выпусков splify2/releases: version.json раньше api.github.com ------------------
+# Решение владельца: версии ядра и интерфейса и адреса их файлов роутер берёт СНАЧАЛА из
+# version.json репозитория splify2/releases (raw.githubusercontent.com → jsDelivr → сайт), а
+# api.github.com и VERSION ветки dist остаются запасным путём — в прежнем порядке. Файл качается
+# по urls из version.json по порядку со сверкой sha256, потом — прежней лестницей по имени.
+printf 'PKG-REL\n' > "$T/body-rel"; printf 'PKG-SRC\n' > "$T/body-src"
+relsum() { sha256sum "$1" | cut -d' ' -f1; }
+mkrel() {  # ФАЙЛ SHA256_ФАЙЛОВ
+    python3 - "$1" "$2" <<'PY'
+import json, sys
+out, s = sys.argv[1], sys.argv[2]
+def v(prod, ver, src, names, ch="stable", **kw):
+    tag = f"{prod}-v{ver}"
+    e = {"version": ver, "channel": ch, "date": "2026-09-25", "tag": tag,
+         "source": f"https://github.com/{src}/releases/tag/v{ver}",
+         "changelog": f"changelogs/{prod}/{ver}.md",
+         "assets": [{"name": n, "size": 8, "sha256": s,
+                     "urls": [f"https://github.com/splify2/releases/releases/download/{tag}/{n}",
+                              f"https://github.com/{src}/releases/download/v{ver}/{n}"]} for n in names]}
+    e.update(kw)
+    return e
+A = "aarch64_cortex-a53"
+doc = {"schema": 1, "updated": "2026-10-02T10:17:36Z", "products": {
+  "steer": {"title": "Ядро steer", "repo": "splify2/steer", "stable": "1.5.9", "prerelease": "2.0.0",
+            "versions": [v("steer", "2.0.0", "splify2/steer", [f"steer-core-2.0.0-1_{A}.apk"], "prerelease"),
+                         v("steer", "1.5.9", "splify2/steer", [f"steer-1.5.9-1_{A}.apk", f"steer-extended-1.5.9-1_{A}.apk"]),
+                         v("steer", "1.5.8-rc1", "splify2/steer", [f"steer-1.5.8-rc1-1_{A}.apk"]),
+                         v("steer", "1.5.7", "splify2/steer", [f"steer-extended-1.5.7-1_{A}.apk"], name="1.5.7 Vega")]},
+  "splify2": {"title": "splify2", "repo": "splify2/splify2", "stable": "26.9.2", "prerelease": None,
+              "versions": [v("splify2", "26.9.2", "splify2/splify2", ["luci-app-splify2-26.9.2-1_noarch.apk"]),
+                           v("splify2", "26.9.1", "splify2/splify2", ["luci-app-splify2-26.9.1-1_noarch.apk"])]}}}
+json.dump(doc, open(out, "w"), ensure_ascii=False, indent=1)
+PY
+}
+relclean() { rm -f "$T"/rel-*.json "$T"/var/releases.json.* "$T/curl.serve" "$T/curl.fail"; }
+
+relclean; reset_logs
+mkrel "$T/rel-raw.json" "$(relsum "$T/body-rel")"
+out="$(rpcd steer_versions)"
+check "версии ядра — из version.json: предварительная, стабильные, без «-rc»" '["2.0.0", "1.5.9", "1.5.7"]' \
+      "$(printf '%s' "$out" | jget versions)"
+check "к api.github.com при живом version.json не ходили" "0" "$(cat "$T/wget.log" 2>/dev/null | grep -c 'api.github.com')"
+check "version.json спрошен первым — на raw.githubusercontent.com" \
+      "https://raw.githubusercontent.com/splify2/releases/main/version.json" "$(head -1 "$T/curl.log")"
+check "предварительная названа полем prerelease" "2.0.0" "$(printf '%s' "$out" | jget prerelease)"
+check "название выпуска из version.json, если оно там есть" "1.5.7 Vega" "$(printf '%s' "$out" | jqget names 1.5.7)"
+check "без названия версия называет себя сама" "1.5.9" "$(printf '%s' "$out" | jqget names 1.5.9)"
+check "на основном пути примечания нет" "" "$(printf '%s' "$out" | jget note)"
+rm -f "$T"/var/releases.json.*
+out="$(rpcd splify2_versions)"
+check "версии интерфейса — оттуда же" '["26.9.2", "26.9.1"]' "$(printf '%s' "$out" | jget versions)"
+check "у интерфейса предварительной нет — и поля нет" "" "$(printf '%s' "$out" | jget prerelease)"
+
+# Адреса по порядку: raw молчит — jsDelivr, молчат оба — сайт.
+relclean; reset_logs
+mkrel "$T/rel-pages.json" "$(relsum "$T/body-rel")"
+out="$(rpcd steer_versions)"
+check "raw и jsDelivr молчат — version.json с splify2.github.io" '["2.0.0", "1.5.9", "1.5.7"]' \
+      "$(printf '%s' "$out" | jget versions)"
+check "адреса version.json — по порядку" \
+      "raw.githubusercontent.com cdn.jsdelivr.net splify2.github.io" \
+      "$(grep 'version.json' "$T/curl.log" | sed 's|https://\([^/]*\)/.*|\1|' | tr '\n' ' ' | sed 's/ $//')"
+
+# Откат: недоступен, битый, без нужного продукта — прежний путь (api.github.com, названия оттуда).
+relclean; reset_logs
+out="$(rpcd steer_versions)"
+check "version.json недоступен — версии из api.github.com, как раньше" "26.9 Andromeda" \
+      "$(printf '%s' "$out" | jqget names 26.9)"
+relclean; reset_logs
+printf '<html>не json</html>\n' > "$T/rel-raw.json"
+printf '{"schema": 2, "products": {}}\n' > "$T/rel-cdn.json"
+out="$(rpcd steer_versions)"
+check "битый version.json и чужая схема — версии из api.github.com" '["26.9", "0.9.6", "0.9.4"]' \
+      "$(printf '%s' "$out" | jget versions)"
+relclean; reset_logs
+printf '{"schema": 1, "products": {"xsteer": {"stable": "1.4.3", "prerelease": null, "versions": []}}}\n' > "$T/rel-raw.json"
+out="$(rpcd steer_versions)"
+check "в version.json нет ядра — версии из api.github.com" "26.9 Andromeda" \
+      "$(printf '%s' "$out" | jqget names 26.9)"
+relclean; reset_logs
+out="$(GH_FAIL=1 CURL_BODY='1.2.9' rpcd steer_versions)"
+check "молчат и version.json, и api.github.com — VERSION ветки dist, как раньше" '["1.2.9"]' \
+      "$(printf '%s' "$out" | jget versions)"
+
+# ---- установка: адреса из version.json, сверка sha256 -----------------------------------
+EXT=steer-extended-1.5.9-1_aarch64_cortex-a53.apk
+relclean; reset_logs
+mkrel "$T/rel-raw.json" "$(relsum "$T/body-rel")"
+printf 'splify2/releases/releases/download\t%s\nsplify2/steer/releases/download\t%s\n' "$T/body-rel" "$T/body-src" > "$T/curl.serve"
+out="$(rpcd steer_install '{"version":"1.5.9","extended":true}')"
+check "ядро качается с первого адреса version.json — выпуска в splify2/releases" \
+      "https://github.com/splify2/releases/releases/download/steer-v1.5.9/$EXT" \
+      "$(grep "$EXT" "$T/curl.log" | head -1)"
+check "сумма сошлась — второй адрес не спрашивали, установка удалась" "1;true" \
+      "$(grep -c "$EXT" "$T/curl.log");$(printf '%s' "$out" | jget ok)"
+
+relclean; reset_logs
+mkrel "$T/rel-raw.json" "$(relsum "$T/body-src")"
+printf 'splify2/releases/releases/download\t%s\nsplify2/steer/releases/download\t%s\n' "$T/body-rel" "$T/body-src" > "$T/curl.serve"
+out="$(rpcd steer_install '{"version":"1.5.9","extended":true}')"
+check "сумма первого не сошлась — взят второй адрес, установка удалась" \
+      "https://github.com/splify2/steer/releases/download/v1.5.9/$EXT;true" \
+      "$(grep "$EXT" "$T/curl.log" | sed -n 2p);$(printf '%s' "$out" | jget ok)"
+check "о несовпадении сказано в via" "yes" \
+      "$(printf '%s' "$out" | jget via | grep -q 'контрольная сумма' && echo yes || echo no)"
+
+relclean; reset_logs
+mkrel "$T/rel-raw.json" "$(printf 'другое\n' | sha256sum | cut -d' ' -f1)"
+printf 'splify2/releases/releases/download\t%s\nsplify2/steer/releases/download\t%s\n' "$T/body-rel" "$T/body-src" > "$T/curl.serve"
+printf 'gitlab.com\napi.github.com\ncodeload.github.com\n' > "$T/curl.fail"
+out="$(rpcd steer_install '{"version":"1.5.9","extended":true}')"
+check "сумма не сошлась нигде — не ставится" "false;0" \
+      "$(printf '%s' "$out" | jget ok);$(grep -c '^add' "$T/apk.log")"
+
+relclean; reset_logs
+mkrel "$T/rel-raw.json" "$(relsum "$T/body-rel")"
+printf 'splify2/releases/releases/download\t%s\n' "$T/body-rel" > "$T/curl.serve"
+out="$(rpcd splify2_install '{"version":"26.9.2"}')"
+check "интерфейс качается с первого адреса version.json" \
+      "https://github.com/splify2/releases/releases/download/splify2-v26.9.2/luci-app-splify2-26.9.2-1_noarch.apk" \
+      "$(grep 'luci-app-splify2' "$T/curl.log" | head -1)"
+
+# Версии нет в version.json (ушла из перечня) — прежний адрес выпуска проекта первым.
+relclean; reset_logs
+mkrel "$T/rel-raw.json" "$(relsum "$T/body-rel")"
+out="$(rpcd splify2_install '{"version":"26.8"}')"
+check "версии нет в version.json — прямой адрес выпуска, как раньше" \
+      "https://github.com/splify2/splify2/releases/download/v26.8/luci-app-splify2-26.8-1_noarch.apk" \
+      "$(grep 'luci-app-splify2' "$T/curl.log" | head -1)"
+relclean; reset_logs
 
 # ---- R-037: свои списки доменов и адресов -------------------------------------
 # Вопрос задан снаружи (splicicd#8): маршрутизировать можно только то, что опубликовал

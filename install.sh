@@ -30,7 +30,8 @@
 #
 # Что делает: определяет архитектуру, предупреждает, если на роутере стоит splify первой
 # версии, ставит движок steer, если его нет, ставит интерфейс, включает службу. Ничего не
-# спрашивает, если спрашивать не о чем.
+# спрашивает, если спрашивать не о чем. Версии и адреса пакетов — из перечня выпусков
+# splify2/releases (version.json, со сверкой sha256), а GitHub API и обходы выше — запасной путь.
 #
 # Почему движок ставится отсюда, а не объявлен зависимостью пакета. Зависимость apk умеет
 # только «нужен пакет steer», а выбор между базовым и расширенным — это выбор ЧЕЛОВЕКА, и
@@ -51,6 +52,11 @@ CODELOAD=https://codeload.github.com
 # Зеркало на GitLab: тот же владелец, тот же путь, сырой файл со своего домена.
 MIRROR=https://gitlab.com
 DIST_BRANCH=dist
+# Перечень выпусков splify2/releases: один version.json с последними версиями каждого продукта,
+# размером, sha256 и адресами каждого файла. Три адреса одного и того же файла, по порядку; всё
+# прежнее (api.github.com, VERSION ветки dist, зеркало, хосты GitHub) — запасной путь за ним.
+REL_JSON_URLS="https://raw.githubusercontent.com/splify2/releases/main/version.json https://cdn.jsdelivr.net/gh/splify2/releases@main/version.json https://splify2.github.io/releases/version.json"
+TAB="$(printf '\t')"
 
 say()  { printf '\033[1m%s\033[0m\n' "$*"; }
 info() { printf '  %s\n' "$*"; }
@@ -288,8 +294,122 @@ TXT
     esac
 fi
 
+# ---- перечень выпусков splify2/releases ---------------------------------------
+# Первый источник версий и адресов файлов — version.json репозитория splify2/releases: его
+# пишет выпуск каждого проекта, и в нём для каждой версии названы файлы, их sha256 и адреса —
+# сначала выпуск в splify2/releases, потом исходный выпуск проекта. Один файл на все продукты,
+# без счётчика запросов api.github.com, с трёх адресов: raw.githubusercontent.com, jsDelivr и
+# сайт splify2.github.io. Адреса у них разные (на 2026-10-02: raw — 185.199.108-111.133, сайт —
+# 185.199.108-111.153, jsDelivr — 104.17.207-208.5 у Cloudflare), так что закрытый
+# githubusercontent.com закрывает не все три. Не ответил ни один или файл не тот — прежний путь,
+# ничего не теряя.
+#
+# JSON разбирается awk — тем, что уже нужно установщику: jsonfilter есть на роутере, но не на
+# любой системе, где этот скрипт проверяют. Разбор переводит документ в строки «путь<TAB>значение»
+# (`products/steer/versions/0/assets/3/urls/1<TAB>https://…`) и не зависит от отступов: строка
+# JSON не может содержать перевод строки, поэтому разбор идёт построчно с общим состоянием.
+rel_flat() {  # ФАЙЛ -> строки «путь<TAB>значение»
+    awk '
+    function path(   p, x) { p = k[1]; for (x = 2; x <= d; x++) p = p "/" k[x]; return p }
+    function done_item() { if (t[d] == "a") k[d]++; else wk[d] = 1 }
+    function val(v) { print path() "\t" v; done_item() }
+    {
+        line = $0; n = length(line); i = 1
+        while (i <= n) {
+            c = substr(line, i, 1)
+            if (c == "{") { d++; t[d] = "o"; wk[d] = 1; k[d] = ""; i++ }
+            else if (c == "[") { d++; t[d] = "a"; k[d] = 0; i++ }
+            else if (c == "}" || c == "]") { d--; if (d > 0) done_item(); i++ }
+            else if (c == "\"") {
+                s = ""; i++
+                while (i <= n) {
+                    c = substr(line, i, 1)
+                    if (c == "\\") {
+                        e = substr(line, i + 1, 1)
+                        s = s (e == "n" || e == "t" || e == "r" ? " " : e == "u" ? "\\u" : e)
+                        i += 2; continue
+                    }
+                    if (c == "\"") { i++; break }
+                    s = s c; i++
+                }
+                if (t[d] == "o" && wk[d]) { k[d] = s; wk[d] = 0 } else val(s)
+            }
+            else if (c ~ /[-0-9tfn]/) {
+                s = substr(line, i); sub(/[]} \t\r,].*$/, "", s)
+                i += length(s); val(s)
+            }
+            else i++
+        }
+    }' "$1"
+}
+
+# version.json — один раз на прогон: и обе версии, и оба пакета берутся из одного файла. Итог
+# лежит в $TMP, а не в переменной: latest() зовётся в подоболочке `$(...)`.
+rel_get() {
+    [ -s "$TMP/version.flat" ] && return 0
+    [ -e "$TMP/version.none" ] && return 1
+    for _ru in $REL_JSON_URLS; do
+        rm -f "$TMP/version.json" "$TMP/version.flat"
+        # 20 секунд на адрес: там, где адрес закрыт молча, ожидание без срока держало бы
+        # установку до запасного пути.
+        wget -T 20 -qO "$TMP/version.json" "$_ru" 2>/dev/null || continue
+        rel_flat "$TMP/version.json" > "$TMP/version.flat" 2>/dev/null || continue
+        # Схема — та, под которую написан разбор; иное (страница-заглушка, другая схема) за
+        # перечень не принимается.
+        if grep -q "^schema${TAB}1\$" "$TMP/version.flat"; then
+            return 0
+        fi
+    done
+    rm -f "$TMP/version.json" "$TMP/version.flat"
+    : > "$TMP/version.none"
+    info "перечень выпусков splify2/releases не ответил — версии спрашиваю у GitHub" >&2
+    return 1
+}
+
+rel_val() {  # ПУТЬ -> значение
+    awk -F "$TAB" -v p="$1" '$1 == p { print $2; exit }' "$TMP/version.flat"
+}
+
+# Последняя стабильная версия продукта. Только цифры и точки — тот же барьер, что у VERSION
+# ниже: `null` и мусор версией не считаются, и тогда идёт прежний путь.
+rel_stable() {  # ПРОДУКТ
+    rel_get || return 0
+    _rs="$(rel_val "products/$1/stable")"
+    case "$_rs" in ''|*[!0-9.]*) _rs="" ;; esac
+    printf '%s\n' "$_rs"
+}
+
+# Файл выпуска: печатает «sum <sha256>» и «url <адрес>» по порядку адресов. Версия и файл ищутся
+# по значению, а не по положению: имена пакетов 1.5.x (steer, steer-extended) и 2.0 (steer-core и
+# модули) лежат в version.json как есть, и имя файла собирается так же, как для выпусков.
+rel_asset() {  # ПРОДУКТ ВЕРСИЯ ИМЯ_ФАЙЛА
+    rel_get || return 1
+    awk -F "$TAB" -v pr="products/$1/versions/" -v ver="$2" -v nm="$3" '
+        index($1, pr) != 1 { next }
+        { n = split(substr($1, length(pr) + 1), a, "/") }
+        NR == FNR {
+            if (n == 2 && a[2] == "version" && $2 == ver) vk = a[1]
+            if (n == 4 && a[2] == "assets" && a[4] == "name" && $2 == nm) aj[a[1]] = a[3]
+            next
+        }
+        vk == "" || !(vk in aj) || a[1] != vk || a[2] != "assets" || a[3] != aj[vk] { next }
+        n == 4 && a[4] == "sha256" { print "sum " $2 }
+        n == 5 && a[4] == "urls" { print "url " $2 }
+    ' "$TMP/version.flat" "$TMP/version.flat"
+}
+
+# Сверка с sha256 из version.json. Нет суммы или нет sha256sum на роутере — сверять нечем, и
+# файл принимается, как принимался до version.json.
+sum_ok() {  # ФАЙЛ SHA256
+    [ -n "$2" ] || return 0
+    command -v sha256sum >/dev/null 2>&1 || return 0
+    _so="$(sha256sum "$1" 2>/dev/null)"
+    [ "${_so%% *}" = "$2" ]
+}
+
 # ---- последний релиз ----------------------------------------------------------
-# Версия берётся из релизов, а не зашита: иначе скрипт из main ставил бы прошлое.
+# Версия берётся из релизов, а не зашита: иначе скрипт из main ставил бы прошлое. Первым —
+# перечень выпусков splify2/releases (rel_stable выше); всё ниже — запасной путь.
 #
 # Путей два, и второй не «на всякий случай». У аудитории splify2 api.github.com
 # недоступен чаще, чем сам github.com: его блокируют отдельно, а за CGNAT
@@ -307,6 +427,12 @@ fi
 # и взятая оттуда версия вела к скачиванию файла из релиза, которого нет: «не скачалось»
 # вместо установки — ровно там, где api.github.com и так не отвечает.
 latest() {  # РЕПОЗИТОРИЙ
+    # Продукт в version.json называется как репозиторий без владельца: steer, splify2.
+    ver="$(rel_stable "${1#*/}")"
+    if [ -n "$ver" ]; then
+        echo "$ver"
+        return 0
+    fi
     ver="$(wget -qO- "$API/$1/releases/latest" 2>/dev/null |
         sed -n 's/.*"tag_name": *"v\{0,1\}\([^"]*\)".*/\1/p' | head -1)"
     if [ -z "$ver" ]; then
@@ -376,8 +502,11 @@ gh_file() {  # РЕПОЗИТОРИЙ ВЕТКА ПУТЬ ФАЙЛ
 # Скачать. Если файл есть и в ветке `dist` — при отказе прямого адреса берём оттуда:
 # прямой адрес релиза перенаправляет на `release-assets.githubusercontent.com`, то есть
 # ровно туда, куда закрыт путь.
-fetch() {  # URL ФАЙЛ [РЕПОЗИТОРИЙ ИМЯ_В_DIST]
-    if wget -qO "$2" "$1" 2>/dev/null && [ -s "$2" ]; then
+#
+# Пятый аргумент `detours` — только обходы: прямой адрес уже спрашивали адресом из version.json,
+# и второй заход туда стоил бы ещё одного ожидания там, где он закрыт.
+fetch() {  # URL ФАЙЛ [РЕПОЗИТОРИЙ ИМЯ_В_DIST [detours]]
+    if [ "${5:-}" != detours ] && wget -qO "$2" "$1" 2>/dev/null && [ -s "$2" ]; then
         return 0
     fi
     rm -f "$2"
@@ -392,10 +521,49 @@ dl_url() {  # РЕПОЗИТОРИЙ ВЕРСИЯ ИМЯ
     echo "https://github.com/$1/releases/download/v$2/$3"
 }
 
+# Пакет выпуска. Сначала адреса из version.json по порядку со сверкой sha256 (не сошлось —
+# следующий адрес), затем прежний путь по имени файла: прямая ссылка выпуска и ветка dist.
+# Ветка dist держит только последнюю версию, и её адресов в version.json нет — поэтому обход
+# через неё остаётся здесь. Сумма сверяется и у файла, взятого прежним путём: имя то же, и
+# файл обязан быть тем же.
+fetch_pkg() {  # ПРОДУКТ ВЕРСИЯ ИМЯ ФАЙЛ РЕПОЗИТОРИЙ
+    _fp_sum=""; _fp_urls=""
+    _fp_ra="$(rel_asset "$1" "$2" "$3" 2>/dev/null || true)"
+    while read -r _fp_k _fp_u; do
+        case "$_fp_k" in
+            sum) _fp_sum="$_fp_u" ;;
+            # Адрес — только https и только из безопасных знаков: дальше он перебирается
+            # словами, и `*` или `?` в нём раскрылись бы как шаблон имён файлов.
+            url) case "$_fp_u" in
+                     https://*[!A-Za-z0-9._~:/%+@=-]*) ;;
+                     https://?*) _fp_urls="$_fp_urls $_fp_u" ;;
+                 esac ;;
+        esac
+    done <<EOF
+$_fp_ra
+EOF
+    case "$_fp_sum" in *[!0-9a-f]*) _fp_sum="" ;; esac
+    [ "${#_fp_sum}" = 64 ] || _fp_sum=""
+    _fp_old="$(dl_url "$5" "$2" "$3")"
+    _fp_seen=""
+    for _fp_u in $_fp_urls; do
+        [ "$_fp_u" = "$_fp_old" ] && _fp_seen=detours
+        if wget -qO "$4" "$_fp_u" 2>/dev/null && [ -s "$4" ]; then
+            sum_ok "$4" "$_fp_sum" && return 0
+            info "контрольная сумма не сошлась: $_fp_u — беру со следующего адреса"
+        fi
+        rm -f "$4"
+    done
+    fetch "$_fp_old" "$4" "$5" "$3" $_fp_seen || return 1
+    sum_ok "$4" "$_fp_sum" && return 0
+    rm -f "$4"
+    die "контрольная сумма $3 не сошлась ни на одном адресе — файл не тот, что в перечне выпусков"
+}
+
 # ---- движок -------------------------------------------------------------------
 if [ "$have_steer" = no ]; then
     SV="$(latest "$REPO_STEER")"
-    [ -n "$SV" ] || die "не удалось узнать версию ядра: не ответили ни api.github.com, ни raw.githubusercontent.com, ни зеркало на gitlab.com. Пакеты можно поставить руками с https://github.com/$REPO_STEER/releases"
+    [ -n "$SV" ] || die "не удалось узнать версию ядра: не ответили ни перечень выпусков splify2/releases, ни api.github.com, ни raw.githubusercontent.com, ни зеркало на gitlab.com. Пакеты можно поставить руками с https://github.com/$REPO_STEER/releases"
     if [ "$WANT_EXT" = yes ]; then
         PKG="steer-extended-${SV}-1_${ARCH}.$(pm_ext)"
     else
@@ -404,19 +572,19 @@ if [ "$have_steer" = no ]; then
     say ""
     say "Ядро steer $SV"
     info "$PKG"
-    fetch "$(dl_url "$REPO_STEER" "$SV" "$PKG")" "$TMP/$PKG" "$REPO_STEER" "$PKG"
+    fetch_pkg steer "$SV" "$PKG" "$TMP/$PKG" "$REPO_STEER"
     pm_add "$TMP/$PKG" || die "ядро не установилось"
     info "установлен"
 fi
 
 # ---- интерфейс ----------------------------------------------------------------
 UV="$(latest "$REPO_UI")"
-[ -n "$UV" ] || die "не удалось узнать версию интерфейса: не ответили ни api.github.com, ни raw.githubusercontent.com, ни зеркало на gitlab.com. Пакет можно поставить руками с https://github.com/$REPO_UI/releases"
+[ -n "$UV" ] || die "не удалось узнать версию интерфейса: не ответили ни перечень выпусков splify2/releases, ни api.github.com, ни raw.githubusercontent.com, ни зеркало на gitlab.com. Пакет можно поставить руками с https://github.com/$REPO_UI/releases"
 UI_PKG="luci-app-splify2-${UV}-1_$(pm_suffix)"
 say ""
 say "Интерфейс splify2 $UV"
 info "$UI_PKG"
-fetch "$(dl_url "$REPO_UI" "$UV" "$UI_PKG")" "$TMP/$UI_PKG" "$REPO_UI" "$UI_PKG"
+fetch_pkg splify2 "$UV" "$UI_PKG" "$TMP/$UI_PKG" "$REPO_UI"
 pm_add "$TMP/$UI_PKG" || die "интерфейс не установился"
 info "установлен"
 
