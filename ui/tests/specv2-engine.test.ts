@@ -135,7 +135,7 @@ describe.skipIf(!HAVE)('кодек v2 против движка', () => {
             outputs: {
                 wg0: { kind: 'interface', device: 'wg0', ipv6: 'nat' },
                 wg1: { kind: 'interface', device: 'wg1' },
-                fast: { kind: 'group', pick: 'latency', members: ['wg0', 'wg1'], tolerance: 50 },
+                fast: { kind: 'group', pick: 'latency', members: ['wg0', 'wg1'], tolerance: 50, url: 'http://cp.cloudflare.com/generate_204', idle_timeout: 600, ipv6: 'off' },
                 eu: { kind: 'group', pick: 'manual', members: ['wg0', 'wg1'], default: 'wg1' },
                 bal: { kind: 'group', pick: 'balance', members: ['wg0', 'wg1'], weights: [2, 1] },
             },

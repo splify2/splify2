@@ -10,6 +10,8 @@ import GroupEditor from '@/components/GroupEditor'
 import { rpc } from '@/lib/rpc'
 import type { Live } from '@/lib/live'
 import type { Spec } from '@/lib/model'
+import { S } from '@/copy'
+import { decodeSpec, encodeSpec } from '@/lib/specv2'
 
 // Редактор группы: способ выбора, члены по порядку, веса, выбор вручную. Проверяется то, что
 // уезжает в спеку, и то, что выбор члена идёт отдельным вызовом без apply.
@@ -84,5 +86,50 @@ describe('редактор группы', () => {
         fireEvent.click(screen.getAllByText('Выбрать')[1])
         await waitFor(() => expect(rpc.groupSelect).toHaveBeenCalledWith('eu', 'wg1'))
         expect(onSave).not.toHaveBeenCalled()
+    })
+
+    it('самый быстрый: пауза замера без трафика уходит в idle_timeout', () => {
+        const onSave = vi.fn()
+        render(<GroupEditor spec={spec} onSave={onSave} onCancel={() => {}} />)
+        fireEvent.input(screen.getByLabelText('имя группы'), { target: { value: 'fast' } })
+        fireEvent.click(screen.getByText('Самый быстрый'))
+        fireEvent.click(screen.getByRole('button', { name: 'wg0' }))
+        fireEvent.input(screen.getByLabelText(S.groupEditor.neMeritBezTrafika), { target: { value: '600' } })
+        fireEvent.click(screen.getByText(/Сохранить группу/))
+        expect((onSave.mock.calls[0][0] as Spec).outputs.fast).toMatchObject({ pick: 'latency', idle_timeout: 600 })
+    })
+
+    it('пауза замера есть только у «самого быстрого» — у других способов ядро её не примет', () => {
+        render(<GroupEditor spec={spec} onSave={() => {}} onCancel={() => {}} />)
+        expect(screen.queryByLabelText(S.groupEditor.neMeritBezTrafika)).toBeNull()
+    })
+
+    it('«не пропускать IPv6» пишет ipv6: off группы', () => {
+        const onSave = vi.fn()
+        render(<GroupEditor spec={spec} onSave={onSave} onCancel={() => {}} />)
+        fireEvent.input(screen.getByLabelText('имя группы'), { target: { value: 'g' } })
+        fireEvent.click(screen.getByRole('button', { name: 'wg0' }))
+        fireEvent.click(screen.getByRole('switch', { name: S.groupEditor.nePropuskatIpv6 }))
+        fireEvent.click(screen.getByText(/Сохранить группу/))
+        const g = (onSave.mock.calls[0][0] as Spec).outputs.g
+        expect(g.ipv6).toBe('off')
+        expect((encodeSpec(onSave.mock.calls[0][0] as Spec).outputs as Record<string, unknown>).g).toMatchObject({ ipv6: 'off' })
+    })
+
+    it('сохранение без правок не теряет ipv6: off, idle_timeout и адрес проверки', () => {
+        const doc = {
+            version: 2,
+            outputs: {
+                wg0: { kind: 'interface', device: 'wg0' },
+                wg1: { kind: 'interface', device: 'wg1' },
+                fast: { kind: 'group', pick: 'latency', members: ['wg0', 'wg1'], url: 'https://cp.cloudflare.com/', idle_timeout: 900, ipv6: 'off' },
+            },
+        }
+        const s = decodeSpec(doc)
+        const onSave = vi.fn()
+        render(<GroupEditor spec={s} name="fast" onSave={onSave} onCancel={() => {}} />)
+        fireEvent.click(screen.getByText(/Сохранить группу/))
+        const out = encodeSpec(onSave.mock.calls[0][0] as Spec).outputs as Record<string, unknown>
+        expect(out.fast).toEqual({ ...doc.outputs.fast, on_fail: 'drop' })
     })
 })

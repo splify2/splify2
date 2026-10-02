@@ -1,7 +1,7 @@
 import { useMemo, useState } from 'react'
 import { ArrowDown, ArrowUp, Check, Trash2 } from 'lucide-react'
 import { Button } from '@/components/ui/button'
-import { Block, CardHead, DangerButton, FieldRow, ScreenHeader } from '@/components/ui/layout'
+import { Block, CardHead, DangerButton, FieldRow, ScreenHeader, ToggleRow } from '@/components/ui/layout'
 import { Chip, Field, NumField, Radio, inputCls } from '@/components/formbits'
 import { notify } from '@/lib/notify'
 import { rpc } from '@/lib/rpc'
@@ -61,6 +61,11 @@ export default function GroupEditor({ spec, name, live, onSave, onCancel }: {
     const [tolerance, setTolerance] = useState<number | undefined>(existing?.tolerance)
     const [interval, setInterval] = useState<number | undefined>(existing?.interval)
     const [url, setUrl] = useState(existing?.url || '')
+    /** Пауза замера без трафика (`idle_timeout`, только у «самого быстрого»). */
+    const [idle, setIdle] = useState<number | undefined>(existing?.idle_timeout)
+    /** Группа IPv6 не несёт (`ipv6: off`) — единственное значение ключа у группы: routed и nat
+     *  задаются у члена. */
+    const [noV6, setNoV6] = useState(existing?.ipv6 === 'off')
     const [weights, setWeights] = useState<number[]>(existing?.weights || [])
     const [onFail, setOnFail] = useState<OnFail>(existing?.on_fail === 'direct' ? 'direct' : 'drop')
     const st = name ? live?.status?.outputs?.[name] : undefined
@@ -108,7 +113,9 @@ export default function GroupEditor({ spec, name, live, onSave, onCancel }: {
             if (tolerance !== undefined) g.tolerance = tolerance
             if (interval !== undefined) g.interval = interval
             if (url.trim()) g.url = url.trim()
+            if (idle !== undefined) g.idle_timeout = idle
         }
+        if (noV6) g.ipv6 = 'off'
         if (pick === 'balance') g.weights = members.map((_, k) => weights[k] ?? 1)
         if (existing?.extra) g.extra = existing.extra
         /* Переименование уводит за собой правила и членство в других группах. */
@@ -185,6 +192,7 @@ export default function GroupEditor({ spec, name, live, onSave, onCancel }: {
                                 ))}
                             </select>
                         </FieldRow>
+                        <ToggleRow label={S.groupEditor.nePropuskatIpv6} on={noV6} onToggle={() => setNoV6((v) => !v)} />
                     </div>
                 </Block>
                 <Block>
@@ -203,6 +211,7 @@ export default function GroupEditor({ spec, name, live, onSave, onCancel }: {
                             <div className="grid gap-3 border-t border-border pt-3 sm:grid-cols-2">
                                 <NumField label={S.groupEditor.dopuskMs} value={tolerance} onChange={setTolerance} placeholder="50" min={0} max={60000} />
                                 <NumField label={S.groupEditor.zamerRazVS} value={interval} onChange={setInterval} placeholder="180" min={5} max={86400} />
+                                <NumField label={S.groupEditor.neMeritBezTrafika} value={idle} onChange={setIdle} placeholder={S.groupEditor.n0MeritVsegda} min={0} max={86400} />
                                 <div className="sm:col-span-2">
                                     <Field label={S.groupEditor.adresProverki}>
                                         <input
