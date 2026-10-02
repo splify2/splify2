@@ -1,21 +1,22 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
-import { ArrowDown, ArrowUp, Check, Gauge, GripVertical, LoaderCircle, Search, Trash2, X } from 'lucide-react'
+import { ArrowDown, ArrowUp, Check, Gauge, GripVertical, LoaderCircle, Minus, Plus, Search, Trash2, X } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Block, CardHead, DangerButton, FieldRow, Group, ScreenHeader } from '@/components/ui/layout'
-import { Chip, Field, inputCls } from '@/components/formbits'
+import { Chip, Field, Radio, inputCls } from '@/components/formbits'
 import { notify } from '@/lib/notify'
 import { rpc, type VlessNodesReply } from '@/lib/rpc'
 import { subsRemember, subsRemembered } from '@/lib/subs'
 import Flag from '@/components/Flag'
 import { country } from '@/lib/geo'
 import { ccFromName, plainName } from '@/lib/nodename'
-import { excludeSupported, poolsSupported } from '@/lib/engine'
+import { activeNodesSupported, excludeSupported, poolsSupported } from '@/lib/engine'
 import { latencyTone, probeKey, probeMs, useNodeProbe } from '@/lib/probe'
 import {
-    devList, insecureApplies, isPart, isProxyKind, isTunnelKind, ON_FAIL_TEXT, PROXY_KINDS, TUNNEL_LABEL, type OnFail, type Output, type ProxyKind,
+    devList, insecureApplies, isPart, isProxyKind, isTunnelKind, ON_FAIL_TEXT, PROXY_KINDS, TUNNEL_LABEL, type BalanceBy, type OnFail, type Output, type ProxyKind,
     type Spec, type VlessNode,
 } from '@/lib/model'
 import OutputAdvanced, { advFrom, advApply, type Adv } from '@/components/OutputAdvanced'
+import { PoolNowLine } from '@/components/OutputCards'
 import ConfBadges from '@/components/ConfBadges'
 import { commonBadges, devProto, nodeBadges, PROTO_NAME, type ConfBadge } from '@/lib/badges'
 import { type Live } from '@/lib/live'
@@ -63,6 +64,16 @@ type Row =
     | { kind: 'dev'; dev: string }
 
 const PROTO_LABEL: Record<Proto, string> = TUNNEL_LABEL
+
+/** Раздача соединений между узлами, работающими сразу (`by` туннеля): те же три режима, что у
+ *  группы «поровну по весам», только делятся узлы, а не выходы. */
+const POOL_BY_TEXT: Record<BalanceBy, string> = {
+    connection: S.poolEditor.byConnection,
+    site: S.poolEditor.bySite,
+    site_client: S.poolEditor.bySiteClient,
+}
+/** Предел ядра для `active`. */
+const ACTIVE_MAX = 65536
 /** Порядок протоколов в подписке: строки и кнопки проверки идут в нём. */
 const PROTOS: Proto[] = ['vless', 'hysteria2', ...PROXY_KINDS]
 
@@ -205,6 +216,12 @@ export default function PoolEditor({
      *  без умения: иначе его нельзя было бы снять. */
     const [exclWritten] = useState(() => adv.exclude.length > 0 || adv.exclude_name.length > 0)
     const exclOn = excludeSupported(live?.status) || exclWritten
+    /** Пул узлов туннеля (ключи `active`, `by`, `interval`, `silence`): выбор есть, когда ядро
+     *  называет умение `active_nodes`, — ядро без него спеку с этими ключами отвергает целиком.
+     *  Уже записанное видно и без умения, чтобы его можно было снять. */
+    const [poolWritten] = useState(() => (adv.active ?? 1) > 1 || adv.by !== 'connection' ||
+        adv.nodeInterval !== undefined || adv.silence !== undefined)
+    const poolOn = activeNodesSupported(live?.status) || poolWritten
     /** Поле «не брать со словом в имени» — как его набирает человек; в настройки уходит списком. */
     const [exclText, setExclText] = useState(() => adv.exclude_name.join(', '))
     const [tunnels, setTunnels] = useState<{ name: string; up: boolean; kind: string }[]>([])
@@ -404,6 +421,35 @@ export default function PoolEditor({
         const list = nodesFor(sub, proto)
         return list.length > 0 && list.every(excluded)
     }
+    /** Сколько узлов может работать сразу у группы строк одной подписки: взятых номеров, а у
+     *  «любой рабочей» — узлов протокола, которые ядро может взять (не исключённых и, у VLESS, с
+     *  транспортом из фильтра). Перечень ещё не пришёл — предела не знаем (null): кандидатов
+     *  меньше — ядро держит все. */
+    const capOf = (g: Extract<Group, { kind: 'sub' }>): number | null => {
+        if (g.nodes.length) return g.nodes.length
+        const list = nodesFor(g.sub, g.proto).filter((n) => !excluded(n) &&
+            (g.proto !== 'vless' || !adv.transport.length || adv.transport.includes(n.type)))
+        return list.length || null
+    }
+    /** Группы строк, у которых бывает несколько узлов сразу: все туннели, кроме hysteria2. */
+    const manyGroups = groupsOf(rows).filter((g): g is Extract<Group, { kind: 'sub' }> => g.kind === 'sub' && g.proto !== 'hysteria2')
+    /** Предел поля «сколько узлов сразу»: наибольший по группам (каждой части пишется не больше
+     *  её узлов); хоть у одной не знаем — без предела, кроме ядра. */
+    const activeCap = (() => {
+        let m = 0
+        for (const g of manyGroups) {
+            const c = capOf(g)
+            if (c === null) return ACTIVE_MAX
+            m = Math.max(m, c)
+        }
+        return Math.min(Math.max(m, 1), ACTIVE_MAX)
+    })()
+    const activeNow = adv.active ?? 1
+    const setActive = (v: number | undefined) => setAdv({ ...adv, active: v === undefined ? undefined : Math.max(1, Math.min(v, ACTIVE_MAX)) })
+    /** Состояние туннелей этого выхода — самого и его частей: какие узлы работают сейчас. */
+    const ownStatus = name
+        ? [name, ...partsOf(spec, name).map(([k]) => k)].map((k) => live?.status?.outputs?.[k])
+        : []
     /** Страны узлов всех подписок — то, из чего выбирают «не брать»; отмеченные, которых в
      *  подписках сейчас нет, тоже остаются в перечне: их можно снять. По названию страны. */
     const countries = (() => {
@@ -568,6 +614,18 @@ export default function PoolEditor({
             return
         }
         if (refuseOnOldEngine(rows)) return
+        /* Пул узлов: те же пределы, что у ядра (spec-v2.md, «Пул узлов туннеля»). */
+        if (manyGroups.length && (adv.active ?? 1) > 1) {
+            const a = adv.active!
+            if (!Number.isInteger(a) || a < 1 || a > ACTIVE_MAX) { notify(S.poolEditor.uzlovSrazuVne, 'warning'); return }
+            if (a > activeCap) { notify(S.poolEditor.uzlovSrazuBolshe(activeCap), 'warning'); return }
+        }
+        if (subsInRows.size > 0) {
+            const iv = adv.nodeInterval
+            if (iv !== undefined && (!Number.isInteger(iv) || iv < 5 || iv > 86400)) { notify(S.poolEditor.proverkaVne, 'warning'); return }
+            const si = adv.silence
+            if (si !== undefined && (!Number.isInteger(si) || (si !== 0 && si < 5) || si > 32767)) { notify(S.poolEditor.molchanieVne, 'warning'); return }
+        }
 
         const groups = groupsOf(rows)
         const subGroups = groups.filter((g): g is Extract<Group, { kind: 'sub' }> => g.kind === 'sub')
@@ -1229,7 +1287,9 @@ export default function PoolEditor({
                                 </ol>
                             )}
                             <p className="text-xs text-muted-foreground">
-                                {S.poolEditor.pervayaZhivayaStrokaZabiraet}{pools && (
+                                {S.poolEditor.pervayaZhivayaStrokaZabiraet}
+                                {poolOn && manyGroups.length > 0 && activeNow > 1 && <>{' '}{S.poolEditor.pervyeZhivyeSrazu(Math.min(activeNow, activeCap))}</>}
+                                {pools && (
                                     <>
                                         {' '}{S.poolEditor.strokiMozhnoTaschitMyshyu}</>
                                 )}
@@ -1246,6 +1306,50 @@ export default function PoolEditor({
                             </p>
                     </Block>
 
+                    {poolOn && manyGroups.length > 0 && (
+                        /* Пул узлов туннеля: сколько узлов подписки работают сразу и как между ними
+                           делятся соединения. Предел — сколько узлов можно взять: номеров взято
+                           столько или, у «любой рабочей», столько узлов в подписке. */
+                        <Block className="order-first xl:order-none">
+                            <CardHead
+                                title={S.poolEditor.uzlovSrazu}
+                                meta={activeCap < ACTIVE_MAX ? S.poolEditor.uzlovSrazuIz(activeCap) : undefined}
+                            />
+                            <div className="flex items-center gap-2">
+                                <IconBtn label={S.poolEditor.menshe} onClick={() => setActive(Math.min(activeNow, activeCap) - 1)} disabled={activeNow <= 1}>
+                                    <Minus className="h-4 w-4" />
+                                </IconBtn>
+                                <input
+                                    type="number"
+                                    inputMode="numeric"
+                                    min={1}
+                                    max={activeCap}
+                                    value={adv.active ?? ''}
+                                    placeholder="1"
+                                    aria-label={S.poolEditor.uzlovSrazuPole}
+                                    onChange={(e) => {
+                                        const t = e.currentTarget.value.trim()
+                                        const v = Number(t)
+                                        setActive(t === '' || !Number.isFinite(v) ? undefined : Math.floor(v))
+                                    }}
+                                    className={`${inputCls} w-20 text-center tabular-nums`}
+                                />
+                                <IconBtn label={S.poolEditor.bolshe} onClick={() => setActive(activeNow + 1)} disabled={activeNow >= activeCap}>
+                                    <Plus className="h-4 w-4" />
+                                </IconBtn>
+                            </div>
+                            {activeNow > 1 && (
+                                <div className="border-t border-border pt-1">
+                                    <p className="px-2.5 pt-2 text-xs text-muted-foreground">{S.poolEditor.razdacha}</p>
+                                    {(Object.keys(POOL_BY_TEXT) as BalanceBy[]).map((b) => (
+                                        <Radio key={b} on={adv.by === b} onClick={() => setAdv({ ...adv, by: b })}>{POOL_BY_TEXT[b]}</Radio>
+                                    ))}
+                                </div>
+                            )}
+                            <PoolNowLine sts={ownStatus} none className="border-t border-border pt-2" />
+                        </Block>
+                    )}
+
                     <OutputAdvanced
                         className="order-first xl:order-none"
                         adv={adv}
@@ -1258,6 +1362,8 @@ export default function PoolEditor({
                             insecure: rows.some((r) => r.kind !== 'dev' && insecureApplies(r.proto)),
                             iface: rows.length === 1 && rows[0].kind === 'dev',
                             pool: rows.length > 1,
+                            watch: poolOn,
+                            watchHy2: rows.every((r) => r.kind === 'dev' || r.proto === 'hysteria2'),
                         }}
                     />
 

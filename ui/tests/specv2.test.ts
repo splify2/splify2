@@ -283,6 +283,44 @@ describe('чтение v2 и круг', () => {
         expect(outs(wd).w).toEqual({ kind: 'interface', device: 'wg0' })
     })
 
+    it('пул узлов туннеля: active, by, interval, silence — поля модели, умолчания не пишутся', () => {
+        const outs = (d: Record<string, unknown>) => d.outputs as Record<string, Record<string, unknown>>
+        for (const protocol of ['vless', 'trojan', 'shadowsocks', 'socks', 'http', 'vmess', 'будущий']) {
+            const raw = { kind: 'tunnel', protocol, subscription: '/s.txt', active: 3, by: 'site_client', interval: 30, silence: 0 }
+            const s = decodeSpec({ version: 2, outputs: { p: raw } })
+            expect(s.outputs.p).toMatchObject({ active: 3, by: 'site_client', interval: 30, silence: 0 })
+            expect(s.outputs.p.extra).toBeUndefined()
+            /* Круг — без потерь: тот же объект. */
+            expect(outs(encodeSpec(s)).p).toEqual(raw)
+        }
+        /* Умолчания (active 1, by connection, interval 60, silence 20) — ключей нет, как у
+         * `steer spec convert`; by при active 1 ядро отвергает — его тоже нет. */
+        const d = decodeSpec({ version: 2, outputs: { p: { kind: 'tunnel', protocol: 'vless', subscription: '/s.txt' } } })
+        const put = (x: Partial<Spec['outputs'][string]>) => outs(encodeSpec({ ...d, outputs: { ...d.outputs, p: { ...d.outputs.p, ...x } } })).p
+        expect(put({ active: 1, by: 'site', interval: 60, silence: 20 })).toEqual({ kind: 'tunnel', protocol: 'vless', subscription: '/s.txt' })
+        expect(put({ active: 2, by: 'connection' })).toEqual({ kind: 'tunnel', protocol: 'vless', subscription: '/s.txt', active: 2 })
+        expect(put({ active: 2, by: 'site' })).toMatchObject({ active: 2, by: 'site' })
+    })
+
+    it('пул узлов hysteria2: только interval и silence, умолчание silence — 30', () => {
+        const outs = (d: Record<string, unknown>) => d.outputs as Record<string, Record<string, unknown>>
+        const s = decodeSpec({ version: 2, outputs: { h: { kind: 'tunnel', protocol: 'hysteria2', subscription: '/s.txt', interval: 15, silence: 45 } } })
+        expect(s.outputs.h).toMatchObject({ interval: 15, silence: 45 })
+        expect(outs(encodeSpec(s)).h).toEqual({ kind: 'tunnel', protocol: 'hysteria2', subscription: '/s.txt', interval: 15, silence: 45 })
+        /* 30 — умолчание hysteria2, 20 — нет; active и by модель hysteria2 не пишет. */
+        const h = (x: Partial<Spec['outputs'][string]>) => outs(encodeSpec({ ...s, outputs: { ...s.outputs, h: { ...s.outputs.h, ...x } } })).h
+        expect(h({ interval: undefined, silence: 30, active: 3, by: 'site' })).toEqual({ kind: 'tunnel', protocol: 'hysteria2', subscription: '/s.txt' })
+        expect(h({ interval: undefined, silence: 20 })).toMatchObject({ silence: 20 })
+        /* Записанное руками active у hysteria2 (ядро его отвергнет) — не поле модели, а как есть. */
+        const odd = decodeSpec({ version: 2, outputs: { h: { kind: 'tunnel', protocol: 'hysteria2', subscription: '/s.txt', active: 2 } } })
+        expect(odd.outputs.h.active).toBeUndefined()
+        expect(outs(encodeSpec(odd)).h.active).toBe(2)
+        /* У выхода не-туннеля ключей пула нет. */
+        const w = decodeSpec({ version: 2, outputs: { w: { kind: 'interface', device: 'wg0' } } })
+        const wd = encodeSpec({ ...w, outputs: { ...w.outputs, w: { ...w.outputs.w, active: 3, silence: 0 } } })
+        expect(outs(wd).w).toEqual({ kind: 'interface', device: 'wg0' })
+    })
+
     it('часть пула на подписке прокси узнаётся частью, как у vless', () => {
         const doc = {
             version: 2,

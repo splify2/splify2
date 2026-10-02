@@ -231,6 +231,15 @@ export const ru = {
         ipv6PrefiksNeIzvesten: "префикс IPv6 не определён",
         ipv6AdresomHosta: "IPv6 адресом хоста",
         ipv6NePodmenyaetsya: "IPv6 не подменяется",
+        /* Пул узлов туннеля глазами клиента (объект vless/proxy в status). */
+        rabotayutUzly: (names: string) => `работают узлы: ${names}`,
+        rabotayutIz: (have: number, want: number) => `работают ${have} из ${plural(want, 'узла', 'узлов', 'узлов')}`,
+        rabotayutSrazu: "Работают сразу",
+        rabotayutIzT: (have: number, want: number) => `Работают ${have} из ${plural(want, 'узла', 'узлов', 'узлов')}`,
+        maloKandidatov: (n: number) => `В подписке подходящих узлов — ${n}: работают все.`,
+        ostalnyeNeOtvechayut: "Остальные не отвечают — замена найдётся сама.",
+        zhivyhNet: "живых узлов нет",
+        zhivyhNetT: "Живых узлов нет — замена ищется сама.",
     },
     /** Помощник выхода глазами демона (lib/helper.ts). */
     helperState: {
@@ -675,6 +684,10 @@ export const ru = {
         neMeritBezTrafika: "Не мерить без трафика дольше, с",
         n0MeritVsegda: "0 — мерить всегда",
         neProveryatSertifikat: "Не проверять сертификат узла",
+        slezhka: "Слежка за узлами",
+        proveryatRazVS: "Проверять узел раз в, с",
+        molchanieS: "Считать узел мёртвым после молчания, с",
+        molchanie0: "0 — выключено",
     },
     outputCards: {
         netOtveta: "нет ответа",
@@ -801,6 +814,21 @@ export const ru = {
         neBratSoSlovomPrimer: "LTE, Мобильный",
         neBeretsya: "не берётся",
         vseIsklyucheny: "все узлы исключены",
+        /* Пул узлов туннеля: сколько узлов работают сразу и как делятся соединения. */
+        uzlovSrazu: "Сколько узлов работают сразу",
+        uzlovSrazuPole: "узлов сразу",
+        uzlovSrazuIz: (n: number) => `не больше ${n}`,
+        razdacha: "Раздача",
+        byConnection: "Каждое соединение — на любой узел",
+        bySite: "Сайт — на одном узле",
+        bySiteClient: "Сайт и устройство — на одном узле",
+        pervyeZhivyeSrazu: (n: number) => `Сразу работают первые ${plural(n, 'живой узел', 'живых узла', 'живых узлов')} подписки; на место отказавшего встаёт следующий.`,
+        uzlovSrazuBolshe: (n: number) => `Узлов сразу — не больше, чем можно взять: ${n}`,
+        uzlovSrazuVne: "Узлов сразу — от 1 до 65536",
+        proverkaVne: "Проверка узла — раз в 5–86400 с",
+        molchanieVne: "Молчание узла — 0 или от 5 до 32767 с",
+        menshe: "меньше узлов сразу",
+        bolshe: "больше узлов сразу",
     },
     poolList: {
         pervyyZhivoy: "первый живой",

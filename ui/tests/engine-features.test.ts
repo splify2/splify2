@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { excludeSupported, poolsSupported } from '@/lib/engine'
+import { activeNodesSupported, excludeSupported, poolsSupported } from '@/lib/engine'
 import type { Status } from '@/lib/model'
 
 // Откуда интерфейс знает, что установленный движок понимает смешанный пул.
@@ -72,5 +72,16 @@ describe('excludeSupported: исключение узлов туннеля', () 
         expect(excludeSupported(st({}))).toBe(false)
         expect(excludeSupported(null)).toBe(false)
         expect(excludeSupported(undefined)).toBe(false)
+    })
+})
+
+describe('activeNodesSupported: пул узлов туннеля', () => {
+    // Ядро без умения спеку с `active`, `by`, `interval`, `silence` у туннеля отвергает целиком.
+    it('умение active_nodes в перечне — умеет, нет в перечне или перечня нет — не умеет', () => {
+        expect(activeNodesSupported(st({ features: ['pool', 'groups', 'exclude', 'active_nodes'] }))).toBe(true)
+        expect(activeNodesSupported(st({ features: ['pool', 'groups', 'exclude'] }))).toBe(false)
+        expect(activeNodesSupported(st({}))).toBe(false)
+        expect(activeNodesSupported(null)).toBe(false)
+        expect(activeNodesSupported(undefined)).toBe(false)
     })
 })

@@ -1,6 +1,6 @@
 import { Block, CardHead, FieldRow, Segmented, ToggleRow } from '@/components/ui/layout'
 import { Chip, Field, NumField, Radio, inputCls } from '@/components/formbits'
-import { insecureApplies, isPart, isTunnelKind, type Ipv6Mode, type Output, type Spec } from '@/lib/model'
+import { insecureApplies, isPart, isTunnelKind, type BalanceBy, type Ipv6Mode, type Output, type Spec } from '@/lib/model'
 
 import { S } from '@/copy'
 // Дополнительные настройки выхода, которые не зависят от того, из чего он собран: через какой
@@ -36,6 +36,15 @@ export interface Adv {
      *  выхода, одиночному и частям пула. */
     exclude: string[]
     exclude_name: string[]
+    /** Пул узлов туннеля (spec-v2.md, «Пул узлов туннеля»): сколько узлов работают сразу и как
+     *  делятся соединения — правятся в редакторе состава (там видно, сколько узлов взято), пишутся
+     *  здесь каждому туннелю выхода, кроме hysteria2. Пусто или 1 — один узел. */
+    active?: number
+    by: BalanceBy
+    /** Слежка за узлами — у всех протоколов: период проверки (`interval` туннеля) и порог
+     *  молчания (`silence`, 0 — выключен). Пусто — умолчание ядра. */
+    nodeInterval?: number
+    silence?: number
 }
 
 const TRANSPORTS = ['tcp', 'ws', 'httpupgrade', 'grpc', 'xhttp']
@@ -62,7 +71,21 @@ export function advFrom(spec: Spec, name?: string): Adv {
         idle_timeout: o?.idle_timeout,
         exclude: union('exclude'),
         exclude_name: union('exclude_name'),
+        /* Число узлов сразу редактор пишет каждой части, урезая до числа её узлов, — обратно
+         * берётся наибольшее; раздача и слежка — первые записанные. */
+        active: Math.max(0, ...tuns.map((t) => (t.kind !== 'hysteria2' && t.active) || 0)) || undefined,
+        by: tuns.find((t) => t.kind !== 'hysteria2' && t.by && t.by !== 'connection')?.by || 'connection',
+        nodeInterval: tuns.find((t) => t.interval !== undefined)?.interval,
+        silence: tuns.find((t) => t.silence !== undefined)?.silence,
     }
+}
+
+/** Сколько узлов может работать сразу у туннеля: номеров в `nodes` (ядро отвергает `active`
+ *  больше их числа); «любая рабочая» — без предела: кандидатов меньше — активны все. */
+function nodesCap(o: Output): number {
+    if (o.nodes?.length) return o.nodes.length
+    if (typeof o.node === 'number' && o.node >= 0) return 1
+    return Infinity
 }
 
 /** Наложить настройки на собранный выход. `role`: `top` — сам выход (пул или единственный
@@ -82,6 +105,20 @@ export function advApply(o: Output, adv: Adv, role: 'top' | 'tunnel'): Output {
         else delete out.exclude
         if (adv.exclude_name.length) out.exclude_name = adv.exclude_name
         else delete out.exclude_name
+        /* Пул узлов: у hysteria2 узел один (одно соединение QUIC на все потоки) — только слежка. */
+        const many = o.kind === 'hysteria2' ? 1 : Math.min(adv.active ?? 1, nodesCap(o))
+        if (many > 1) {
+            out.active = many
+            if (adv.by !== 'connection') out.by = adv.by
+            else delete out.by
+        } else {
+            delete out.active
+            delete out.by
+        }
+        if (adv.nodeInterval !== undefined) out.interval = adv.nodeInterval
+        else delete out.interval
+        if (adv.silence !== undefined) out.silence = adv.silence
+        else delete out.silence
     }
     if (role === 'top' && o.kind === 'interface') {
         const pool = (o.devices?.length ?? 0) > 1
@@ -120,6 +157,11 @@ export default function OutputAdvanced({ adv, onChange, spec, self, show, classN
         iface: boolean
         /** Выход — пул из нескольких строк. */
         pool: boolean
+        /** Слежка за узлами туннеля: ядро умеет пул узлов (или слежка уже записана). */
+        watch?: boolean
+        /** …и все туннели выхода — hysteria2: у него порог молчания по умолчанию 30 с, а 0 не
+         *  выключает его. */
+        watchHy2?: boolean
     }
 }) {
     if (!show.tunnel && !show.iface && !show.pool) return null
@@ -169,6 +211,26 @@ export default function OutputAdvanced({ adv, onChange, spec, self, show, classN
                         on={adv.insecure}
                         onToggle={() => set({ insecure: !adv.insecure })}
                     />
+                )}
+                {show.tunnel && show.watch && (
+                    <div className="space-y-2">
+                        <div className="text-sm text-subtle">{S.outputAdvanced.slezhka}</div>
+                        {/* Столбцом: подпись порога длинная, и в две колонки поля вставали вразнобой. */}
+                        <div className="grid gap-3">
+                            <NumField label={S.outputAdvanced.proveryatRazVS} value={adv.nodeInterval} onChange={(v) => set({ nodeInterval: v })} placeholder="60" min={5} max={86400} />
+                            <div className="space-y-1">
+                                <NumField
+                                    label={S.outputAdvanced.molchanieS}
+                                    value={adv.silence}
+                                    onChange={(v) => set({ silence: v })}
+                                    placeholder={show.watchHy2 ? '30' : '20'}
+                                    min={show.watchHy2 ? 5 : 0}
+                                    max={32767}
+                                />
+                                {!show.watchHy2 && <p className="text-xs text-muted-foreground">{S.outputAdvanced.molchanie0}</p>}
+                            </div>
+                        </div>
+                    </div>
                 )}
                 {show.iface && (
                     <div className="space-y-1">

@@ -8,7 +8,7 @@ import { country } from '@/lib/geo'
 import { ccFromName, plainName } from '@/lib/nodename'
 import Flag from '@/components/Flag'
 import { daysText, readQuota, resetText } from '@/lib/quota'
-import { outDown, outDownLine } from '@/lib/outstate'
+import { outDown, outDownLine, poolNow } from '@/lib/outstate'
 import ConfBadges, { useOutNodes } from '@/components/ConfBadges'
 import { outNodes, outputBadges, poolBadges } from '@/lib/badges'
 
@@ -356,8 +356,35 @@ function Location({ name, st, facts, note, phase, out }: OutRef) {
     return (
         <Where
             name={name} st={st} facts={facts} fallback={own || node} note={note} phase={phase} showIp
-            extra={<ConfBadges list={badges} className="mt-1" />}
+            extra={<><PoolNowLine sts={[st]} /><ConfBadges list={badges} className="mt-1" /></>}
         />
+    )
+}
+
+/** Пул узлов туннеля сейчас (spec-v2.md, «Пул узлов туннеля»): какие узлы работают сразу и —
+ *  когда их меньше заданного — почему: кандидатов в подписке меньше либо остальные не отвечают.
+ *  Пула нет (один узел) или живых узлов нет — строки нет: беду выхода говорит Trouble. */
+export function PoolNowLine({ sts, className = 'mt-0.5', none }: {
+    sts: (OutputStatus | undefined)[]
+    className?: string
+    /** Сказать и «живых узлов нет» (редактор выхода: беды выхода там больше никто не говорит). */
+    none?: boolean
+}) {
+    const p = poolNow(sts)
+    if (!p) return null
+    if (!p.have) return none ? <p className={`text-xs text-warning-fg ${className}`}>{S.outState.zhivyhNetT}</p> : null
+    const short = p.have < p.want
+    return (
+        <div className={className}>
+            <p className={`text-xs ${short ? 'text-warning-fg' : 'text-muted-foreground'}`}>
+                {short ? S.outState.rabotayutIzT(p.have, p.want) : S.outState.rabotayutSrazu}: {p.names.join(', ')}
+            </p>
+            {short && (
+                <p className="text-xs text-muted-foreground">
+                    {p.slots < p.want ? S.outState.maloKandidatov(p.slots) : S.outState.ostalnyeNeOtvechayut}
+                </p>
+            )}
+        </div>
     )
 }
 

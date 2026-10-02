@@ -128,6 +128,12 @@ export function decodeSpec(raw: unknown): Spec {
  *  туннель молча менял протокол при первом же сохранении любой правки. */
 const OWN_TUNNEL = new Set<string>(['vless', 'hysteria2', ...PROXY_KINDS])
 
+/** Режимы раздачи пула узлов — те же имена, что у `by` группы balance. */
+const POOL_BY = ['connection', 'site', 'site_client'] as const
+/** Умолчания ядра для пула узлов: их `steer spec convert` не печатает, не пишет и интерфейс. */
+const POOL_INTERVAL = 60
+const poolSilence = (kind: string) => (kind === 'hysteria2' ? 30 : 20)
+
 function decodeOutput(name: string, o: J): Output {
     const kindRaw = str(o.kind) || 'direct'
     /* Ключ, который модель разобрала, — в `used`; всё остальное уходит в `extra` и пишется
@@ -177,6 +183,20 @@ function decodeOutput(name: string, o: J): Output {
         if (ex.length) out.exclude = ex
         const exn = arr(take('exclude_name'))
         if (exn.length) out.exclude_name = exn
+        /* Пул узлов (spec-v2.md, «Пул узлов туннеля»): слежка — у всех протоколов, сколько узлов
+         * сразу и раздача — у всех, кроме hysteria2: у него эти ключи ядро отвергает, и такие
+         * (чужие) уезжают в extra и обратно как есть. Целое — в поле модели, иное — тоже как есть. */
+        const int = (k: string) => Number.isInteger(o[k]) ? (take(k) as number) : undefined
+        const iv = int('interval')
+        if (iv !== undefined) out.interval = iv
+        const si = int('silence')
+        if (si !== undefined) out.silence = si
+        if (kind !== 'hysteria2') {
+            const ac = int('active')
+            if (ac !== undefined) out.active = ac
+            const by = str(o.by)
+            if (by && (POOL_BY as readonly string[]).includes(by)) { used.add('by'); out.by = by as Output['by'] }
+        }
     }
     /* insecure — только у видов с TLS; у остальных ядро ключ отвергает, и такой (чужой) ключ
      * уезжает в extra и обратно как есть, а не исчезает молча. */
@@ -521,6 +541,18 @@ function putExclude(out: J, o: Output) {
     if (nm.length) out.exclude_name = nm
 }
 
+/** Пул узлов туннеля к записи: только отличное от умолчания, как печатает `steer spec convert`.
+ *  `active` и `by` — не у hysteria2, `by` — только при `active` больше 1 (иначе ядро отвергает). */
+function putPool(out: J, o: Output, proto: string) {
+    if (proto !== 'hysteria2') {
+        const many = typeof o.active === 'number' && o.active > 1
+        if (many) out.active = o.active
+        if (many && o.by && o.by !== 'connection') out.by = o.by
+    }
+    if (typeof o.interval === 'number' && o.interval !== POOL_INTERVAL) out.interval = o.interval
+    if (typeof o.silence === 'number' && o.silence !== poolSilence(proto)) out.silence = o.silence
+}
+
 const narrowKey = (n?: Narrow) => (n && (n.proto || n.ports?.length) ? `${n.proto || ''}|${(n.ports || []).join(',')}` : '')
 
 function encodeOutput(o: Output): J {
@@ -557,6 +589,7 @@ function encodeOutput(o: Output): J {
             if (o.kind === 'vless' && o.transport?.length) put('transport', o.transport.length === 1 ? o.transport[0] : o.transport)
             if (o.insecure && insecureApplies(o.kind)) out.insecure = true
             putExclude(out, o)
+            putPool(out, o, o.kind)
             break
         }
         case 'tunnel':
@@ -568,6 +601,7 @@ function encodeOutput(o: Output): J {
             put('nodes', o.nodes)
             put('device', o.device)
             putExclude(out, o)
+            putPool(out, o, o.protocol || '')
             break
         case 'xsteer':
             out.kind = 'xsteer'

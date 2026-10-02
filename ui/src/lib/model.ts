@@ -145,8 +145,19 @@ export interface Output {
     url?: string
     idle_timeout?: number
     weights?: number[]
-    /** pick=balance: режим раздачи; нет — `connection` (умолчание ядра). */
+    /** pick=balance: режим раздачи; нет — `connection` (умолчание ядра). У туннеля по подписке
+     *  (кроме hysteria2) — то же слово для пула узлов: как новые соединения делятся между
+     *  активными узлами (`by` спеки v2 у `kind: tunnel`, только при `active` больше 1). */
     by?: BalanceBy
+    /** Туннель по подписке, пул узлов (spec-v2.md, «Пул узлов туннеля»): сколько узлов из
+     *  кандидатов работают сразу, 1..65536; нет — 1. Больше, чем номеров в `nodes`, ядро
+     *  отвергает; у hysteria2 ключа нет (одно соединение QUIC на все потоки). `interval` выше у
+     *  туннеля — период проверки каждого активного узла, секунды (умолчание ядра 60). */
+    active?: number
+    /** Туннель по подписке: через сколько секунд молчания узла под живым соединением оно
+     *  обрывается и узел проверяется сразу; 0 — порога нет, иначе 5..32767. Нет — умолчание
+     *  ядра: 20, у hysteria2 30 (там 0 оставляет те же 30 с). */
+    silence?: number
     /** kind=tunnel: протокол туннеля спеки v2, которого модель не знает своим видом (trojan,
      *  shadowsocks, socks, http, vmess из steer-proxy, будущие). vless и hysteria2 — свои виды
      *  выхода, а такой туннель интерфейс не правит: читает и пишет обратно как есть. */
@@ -318,7 +329,10 @@ export interface OutputStatus extends Output {
     node_down?: { why: string; since: number }
     /** Выход прокси steer-proxy, пока его клиент жив (`steer status`, src/kinds/proxy.c): узел,
      *  который он держит, протокол и поднято ли соединение. Клиента нет — поля нет. */
-    proxy?: { node: string; protocol: string; up: boolean; pid?: number }
+    proxy?: { node: string; protocol: string; up: boolean; pid?: number } & TunnelPoolState
+    /** Выход VLESS, пока его клиент жив (`steer status`, src/tunnel/pool.c): какие узлы пула
+     *  активны сейчас. Клиента нет (или ядро старше пула узлов) — поля нет. */
+    vless?: { node?: string; up?: boolean; pid?: number } & TunnelPoolState
     /** Выход hysteria2, пока его клиент жив (src/proto/hysteria2/hy2main.c): узел, поднято ли
      *  соединение и измеренное клиентом — рукопожатие и RTT (мс), управление перегрузкой
      *  (`bbr`/`brutal`), несёт ли узел UDP, обфускация, смена портов, число потоков; `error` —
@@ -355,6 +369,17 @@ export interface OutputStatus {
     /** Мост tgws (и всякий помощник, который о путях сообщал): пути, которые он отставил и чей
      *  срок не вышел. Пустой массив — отставленных нет. Только у ядра-демона с помощниками. */
     paths_down?: PathDown[]
+}
+
+/** Пул узлов туннеля глазами его клиента (объект `vless` или `proxy` у выхода в `status`,
+ *  contract-v1.md): `want` — сколько узлов просит спека (`active`), `slots` — сколько клиент
+ *  держит (не больше кандидатов в подписке), `active` — живые активные узлы сейчас: номер среди
+ *  пригодных и имя из подписки. Поля нет — ядро старше пула узлов. */
+export interface TunnelPoolState {
+    want?: number
+    slots?: number
+    by?: BalanceBy
+    active?: { index: number; name: string }[]
 }
 
 /** Путь моста tgws, который помощник отставил: дата-центр Telegram, медиа ли это, домен и

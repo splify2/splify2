@@ -245,7 +245,10 @@ export default function PoolList({
                         const base = o.kind === 'tgws'
                             ? [S.outState.mostTelegram, rules ? S.poolList.pravil(rules) : ''].filter(Boolean).join(' · ')
                             : state
-                        const extra = need ? { words: [], alarm: false } : outExtras(o, st, { insecure: false })
+                        /* Части пула — туннели по подписке, из которых он собран: какие их узлы
+                         * работают сейчас, говорит строка самого пула. */
+                        const parts = devs.filter((d) => spec.outputs[d]?.part_of === name).map((d) => live.status?.outputs?.[d])
+                        const extra = need ? { words: [], alarm: false } : outExtras(o, st, { insecure: false, parts })
                         /* Беда помощника — впереди строки, перезапуски — в конце. */
                         const hw = need ? { words: [], alarm: false, restarts: null } : helperWords(helpers[name] || [])
                         return (

@@ -171,6 +171,13 @@ export function excludeSupported(status: Status | null | undefined): boolean {
     return Array.isArray(status?.features) && status.features.includes('exclude')
 }
 
+/** Умеет ли установленное ядро пул узлов туннеля — несколько узлов подписки сразу и слежку за
+ *  ними (ключи `active`, `by`, `interval`, `silence` у `kind: tunnel` спеки v2, умение
+ *  `active_nodes`). Ядро без умения спеку с этими ключами отвергает целиком. */
+export function activeNodesSupported(status: Status | null | undefined): boolean {
+    return Array.isArray(status?.features) && status.features.includes('active_nodes')
+}
+
 /** Модули ядра 2.0 (пакеты steer-<модуль>) в порядке показа — тот же, что у бэкенда
  *  (m-engine.sh, STEER_MODULES). */
 export const STEER_MODULES = ['vless', 'hysteria2', 'proxy', 'xsteer', 'obfs', 'tgws']

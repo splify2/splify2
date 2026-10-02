@@ -1,4 +1,5 @@
-import { insecureApplies, type Output, type OutputStatus } from '@/lib/model'
+import { insecureApplies, type Output, type OutputStatus, type TunnelPoolState } from '@/lib/model'
+import { plainName } from '@/lib/nodename'
 
 import { S } from '@/copy'
 /** Беда выхода, у которого устройство ЕСТЬ: ядро 2.0 различает её двумя полями status.
@@ -35,6 +36,31 @@ export function outDownLine(st: OutputStatus): string {
           : S.outState.trafikOstanovlen
 }
 
+/** Пул узлов туннеля сейчас (spec-v2.md, «Пул узлов туннеля»): объект `vless` или `proxy` у
+ *  выхода в status. Сводится по нескольким туннелям сразу — у пула выходов это его части.
+ *  null — пула узлов нет (просят один узел), клиент не запущен или ядро старше пула.
+ *
+ *  - `names` — имена живых активных узлов (без флагов, как в остальном интерфейсе);
+ *  - `have` / `want` — сколько работают и сколько просит спека;
+ *  - `slots` — сколько клиент держит: меньше `want`, когда кандидатов в подписке меньше. */
+export interface PoolNow {
+    names: string[]
+    have: number
+    want: number
+    slots: number
+}
+
+export function poolNow(sts: (OutputStatus | null | undefined)[]): PoolNow | null {
+    const ps = sts
+        .map((st) => st?.vless || st?.proxy)
+        .filter((p): p is TunnelPoolState => !!p && Array.isArray(p.active) && (p.want ?? 1) > 1)
+    if (!ps.length) return null
+    const names = ps.flatMap((p) => p.active!.map((a) => plainName(a.name) || S.poolEditor.uzel(a.index + 1)))
+    const want = ps.reduce((n, p) => n + (p.want ?? 1), 0)
+    const slots = ps.reduce((n, p) => n + Math.min(p.slots ?? p.want ?? 1, p.want ?? 1), 0)
+    return { names, have: names.length, want, slots }
+}
+
 /** Что ещё ядро 2.0 говорит о выходе сверх «работает ли» — словами для строки выхода в
  *  «Выходах». `alarm` — среди слов есть беда (строка цветом предупреждения).
  *
@@ -48,11 +74,20 @@ export function outDownLine(st: OutputStatus): string {
 export function outExtras(
     o: Output,
     st?: OutputStatus | null,
-    /** insecure: false — проверку сертификата показывает бейдж (lib/badges.ts), словом не нужно. */
-    opts: { insecure?: boolean } = {},
+    /** insecure: false — проверку сертификата показывает бейдж (lib/badges.ts), словом не нужно.
+     *  parts — состояние частей пула выхода (туннелей по подписке, из которых он собран). */
+    opts: { insecure?: boolean; parts?: (OutputStatus | undefined)[] } = {},
 ): { words: string[]; alarm: boolean } {
     const words: string[] = []
     let alarm = false
+    /* Пул узлов: какие узлы работают сейчас; меньше заданного — беда. */
+    const pool = poolNow([st, ...(opts.parts || [])])
+    if (pool) {
+        if (pool.have < pool.want) {
+            words.push(pool.have ? `${S.outState.rabotayutIz(pool.have, pool.want)}: ${pool.names.join(', ')}` : S.outState.zhivyhNet)
+            alarm = true
+        } else words.push(S.outState.rabotayutUzly(pool.names.join(', ')))
+    }
     if (!st) return { words, alarm }
     if (o.kind === 'tgws' && Array.isArray(st.paths_down) && st.paths_down.length) {
         words.push(S.outState.putiNeOtvechayut(st.paths_down.length))

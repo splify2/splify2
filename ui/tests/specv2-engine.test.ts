@@ -259,7 +259,7 @@ describe.skipIf(!HAVE)('кодек v2 против движка: свой сер
  * steer-vless отвергает `protocol: vless` целиком. Рядом с ядром для стендов лежит build/steer-xk —
  * демон базовой сборки с видами vless, hysteria2 и прокси (steer/Makefile); его и спрашиваем. Ядро
  * без умения `exclude` ключ отвергает — тогда стенд пропускается вслух, а не краснеет на чужом. */
-const XK = path.join(path.dirname(STEER), 'steer-xk')
+const XK = process.env.STEER_XK || path.join(path.dirname(STEER), 'steer-xk')
 function xkConvert(doc: unknown, name: string): string {
     const f = path.join(dir, name)
     writeFileSync(f, JSON.stringify(doc))
@@ -306,6 +306,80 @@ describe.skipIf(!HAVE_XK_EXCL)('кодек v2 против ядра: исклю�
 describe.skipIf(HAVE_XK_EXCL)('кодек v2 против ядра: исключение узлов — ПРОПУЩЕН', () => {
     it('нет steer-xk с умением exclude рядом с ядром (make -C ../steer build/steer-xk)', () => {
         expect(HAVE_XK_EXCL).toBe(false)
+    })
+})
+
+/* Пул узлов туннеля (ключи active, by, interval, silence) — умение active_nodes; ядро без него
+ * ключи отвергает, и стенд пропускается вслух. */
+const HAVE_XK_POOL = (() => {
+    if (!existsSync(XK)) return false
+    try {
+        xkConvert({ version: 2, outputs: { t: { kind: 'tunnel', protocol: 'vless', subscription: '/s.txt', active: 2 } } }, 'xk-pool.json')
+        return true
+    } catch {
+        return false
+    }
+})()
+
+describe.skipIf(!HAVE_XK_POOL)('кодек v2 против ядра: пул узлов туннеля', () => {
+    it('active, by, interval, silence выхода и частей пула ядро принимает и читает как записано', () => {
+        const sub = path.join(dir, 'sub-pool.txt')
+        writeFileSync(sub, '')
+        const ui = decodeSpec({ version: 2, outputs: { wg0: { kind: 'interface', device: 'wg0' } } })
+        const doc = encodeSpec({
+            ...ui,
+            outputs: {
+                ...ui.outputs,
+                nl: { name: 'nl', kind: 'vless', sub_file: sub, active: 3, by: 'site', interval: 30, silence: 0 },
+                /* Умолчания (by connection, interval 60, silence 20) не пишутся. */
+                de: { name: 'de', kind: 'trojan', sub_file: sub, nodes: [1, 2], active: 2, by: 'connection', interval: 60, silence: 20 },
+                'vpn-1': { name: 'vpn-1', kind: 'vmess', sub_file: sub, part_of: 'vpn', active: 4, by: 'site_client', silence: 45 },
+                /* hysteria2 — только слежка; его умолчание silence — 30. */
+                'vpn-2': { name: 'vpn-2', kind: 'hysteria2', sub_file: sub, part_of: 'vpn', interval: 120, silence: 30 },
+                vpn: { name: 'vpn', kind: 'interface', devices: ['vpn-1', 'vpn-2', 'wg0'], device: 'vpn-1' },
+            },
+            channels: [
+                { name: 'a', out: 'nl', match: { domains_files: [dom] } },
+                { name: 'b', out: 'vpn', match: { domains_files: [dom2] } },
+                { name: 'c', out: 'de', match: { prefixes_files: [news] } },
+            ],
+        })
+        const conv = xkConvert(doc, 'pool.json')
+        expect(conv).toMatch(/nl:\s+\{[^}]*active: 3, by: site, interval: 30, silence: 0 \}/)
+        expect(conv).toMatch(/de:\s+\{[^}]*nodes: \[1, 2\], active: 2 \}/)
+        expect(conv).toMatch(/vpn-1:\s+\{[^}]*protocol: vmess[^}]*active: 4, by: site_client, silence: 45 \}/)
+        expect(conv).toMatch(/vpn-2:\s+\{[^}]*protocol: hysteria2[^}]*interval: 120 \}/)
+        /* Круг через кодек ничего не меняет, и то, что напечатал convert, кодек читает тем же. */
+        expect(xkConvert(encodeSpec(decodeSpec(doc)), 'pool-2.json')).toBe(conv)
+        const back = decodeSpec(JSON.parse(JSON.stringify(doc)))
+        expect(back.outputs.nl).toMatchObject({ active: 3, by: 'site', interval: 30, silence: 0 })
+        expect(back.outputs['vpn-2'].silence).toBeUndefined()
+    })
+
+    it('отказы ядра там же, где их не пишет кодек: by при active 1, active у hysteria2', () => {
+        const sub = path.join(dir, 'sub-pool.txt')
+        writeFileSync(sub, '')
+        const bad = (o: Record<string, unknown>) => () =>
+            xkConvert({ version: 2, outputs: { t: { kind: 'tunnel', subscription: sub, ...o } } }, 'pool-bad.json')
+        expect(bad({ protocol: 'vless', by: 'site' })).toThrow()
+        expect(bad({ protocol: 'hysteria2', active: 2 })).toThrow()
+        expect(bad({ protocol: 'vless', nodes: [1], active: 2 })).toThrow()
+        expect(bad({ protocol: 'vless', silence: 3 })).toThrow()
+        /* А то, что пишет кодек при тех же намерениях, ядро принимает. */
+        const ok = encodeSpec({
+            outputs: {
+                a: { name: 'a', kind: 'vless', sub_file: sub, by: 'site' },
+                h: { name: 'h', kind: 'hysteria2', sub_file: sub, active: 2, by: 'site' },
+            },
+            channels: [],
+        })
+        expect(() => xkConvert(ok, 'pool-ok.json')).not.toThrow()
+    })
+})
+
+describe.skipIf(HAVE_XK_POOL)('кодек v2 против ядра: пул узлов туннеля — ПРОПУЩЕН', () => {
+    it('нет steer-xk с умением active_nodes рядом с ядром (make -C ../steer build/steer-xk или STEER_XK)', () => {
+        expect(HAVE_XK_POOL).toBe(false)
     })
 })
 
