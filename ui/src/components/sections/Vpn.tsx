@@ -76,7 +76,14 @@ export default function Vpn({ live }: { live: Live }) {
         0,
     )
     const subCount = new Set(vless.map((o) => o.sub_file || '')).size
-    const xs = devices.filter((d) => d.kind === 'xsteer' || /^xs-/.test(d.name)).map((d) => d.name)
+    /* Устройства xsteer из netifd и выходы спеки kind: xsteer — их клиента держит ядро steer,
+     * и устройство у такого выхода названо по выходу, а не «xs-…». */
+    const xs = [
+        ...new Set([
+            ...devices.filter((d) => d.kind === 'xsteer' || /^xs-/.test(d.name)).map((d) => d.name),
+            ...outputs.filter((o) => o.kind === 'xsteer').map((o) => o.name),
+        ]),
+    ]
 
     /* PoolList стоит на ОДНОМ месте дерева в обоих состояниях: редактор — его внутреннее
      * состояние, и отдельная ветка `if (editing) return <PoolList/>` пересоздавала бы список
