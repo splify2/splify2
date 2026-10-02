@@ -88,74 +88,92 @@ export function decodeSpec(raw: unknown): Spec {
 // ---------------------------------------------------------------------------------------
 // чтение v2
 
+/** Протоколы туннеля, которые модель интерфейса знает как свои виды выхода. Остальные (trojan,
+ *  shadowsocks, socks, http, vmess из steer-proxy и любой будущий) читаются видом `tunnel` с
+ *  протоколом как есть: прежде они читались как vless и уезжали обратно `protocol: vless` —
+ *  туннель молча менял протокол при первом же сохранении любой правки. */
+const OWN_TUNNEL = new Set(['vless', 'hysteria2'])
+
 function decodeOutput(name: string, o: J): Output {
     const kindRaw = str(o.kind) || 'direct'
-    const known = new Set(['kind', 'device', 'on_fail', 'over', 'ipv6', 'prefix', 'obfs', 'protocol', 'subscription',
-        'nodes', 'transport', 'conf', 'stream', 'stream_port', 'domain', 'strategy', 'members', 'pick', 'default',
-        'tolerance', 'interval', 'url', 'idle_timeout', 'weights'])
+    /* Ключ, который модель разобрала, — в `used`; всё остальное уходит в `extra` и пишется
+     * обратно как есть. Так ключ, знакомый одному виду, но стоящий у другого, тоже не теряется. */
+    const used = new Set<string>(['kind'])
+    const take = (k: string) => { used.add(k); return o[k] }
     const out: Output = { name, kind: 'direct' }
     let kind: OutputKind
-    if (kindRaw === 'tunnel') kind = str(o.protocol) === 'hysteria2' ? 'hysteria2' : 'vless'
-    else kind = kindRaw as OutputKind
+    if (kindRaw === 'tunnel') {
+        const proto = str(o.protocol)
+        if (proto && OWN_TUNNEL.has(proto)) { used.add('protocol'); kind = proto as OutputKind }
+        else {
+            kind = 'tunnel'
+            if (proto) { used.add('protocol'); out.protocol = proto }
+        }
+    } else kind = kindRaw as OutputKind
     out.kind = kind
-    const dev = str(o.device)
+    const dev = str(take('device'))
     if (dev) out.device = dev
-    const onFail = str(o.on_fail)
+    const onFail = str(take('on_fail'))
     if (onFail) out.on_fail = onFail as Output['on_fail']
-    const over = str(o.over)
+    const over = str(take('over'))
     if (over) out.over = over
-    const v6 = str(o.ipv6)
+    const v6 = str(take('ipv6'))
     if (v6) out.ipv6 = v6 as Output['ipv6']
-    const prefix = str(o.prefix)
+    const prefix = str(take('prefix'))
     if (prefix) out.prefix = prefix
     if (isObj(o.obfs)) {
+        used.add('obfs')
         out.obfs = {
             mode: (str(o.obfs.mode) as 'wg-over-tcp' | undefined) || 'wg-over-tcp',
             server: String(o.obfs.server ?? ''),
             listen: String(o.obfs.listen ?? ''),
         }
     }
-    if (kind === 'vless' || kind === 'hysteria2') {
-        const sub = str(o.subscription)
+    if (kind === 'vless' || kind === 'hysteria2' || kind === 'tunnel') {
+        const sub = str(take('subscription'))
         if (sub) out.sub_file = sub
-        const nodes = Array.isArray(o.nodes) ? o.nodes.map(Number).filter((n) => Number.isInteger(n)) : []
-        if (nodes.length) out.nodes = nodes
-        const tr = arr(o.transport)
+        if (Array.isArray(o.nodes) && o.nodes.every((n) => Number.isInteger(n))) {
+            used.add('nodes')
+            if (o.nodes.length) out.nodes = o.nodes as number[]
+        }
+    }
+    if (kind === 'vless' || kind === 'hysteria2') {
+        const tr = arr(take('transport'))
         if (tr.length) out.transport = tr
     }
     if (kind === 'xsteer' || kind === 'awg') {
-        const conf = str(o.conf)
+        const conf = str(take('conf'))
         if (conf) out.conf = conf
     }
     if (kind === 'xsteer') {
-        const st = str(o.stream)
+        const st = str(take('stream'))
         if (st) out.stream = st
-        const sp = num(o.stream_port)
+        const sp = num(take('stream_port'))
         if (sp !== undefined) out.stream_port = sp
     }
     if (kind === 'tgws') {
-        const dm = str(o.domain)
+        const dm = str(take('domain'))
         if (dm) out.domain = dm
     }
     if (kind === 'zapret') {
-        const s = str(o.strategy)
+        const s = str(take('strategy'))
         if (s) out.opts_file = s
     }
     if (kind === 'group') {
-        out.members = arr(o.members)
-        out.pick = (str(o.pick) as Output['pick']) || 'order'
-        const d = str(o.default)
+        out.members = arr(take('members'))
+        out.pick = (str(take('pick')) as Output['pick']) || 'order'
+        const d = str(take('default'))
         if (d) out.default = d
         for (const k of ['tolerance', 'interval', 'idle_timeout'] as const) {
-            const n = num(o[k])
+            const n = num(take(k))
             if (n !== undefined) out[k] = n
         }
-        const u = str(o.url)
+        const u = str(take('url'))
         if (u) out.url = u
-        if (Array.isArray(o.weights)) out.weights = o.weights.map(Number)
+        if (Array.isArray(take('weights'))) out.weights = (o.weights as unknown[]).map(Number)
     }
     const extra: Record<string, unknown> = {}
-    for (const [k, v] of Object.entries(o)) if (!known.has(k)) extra[k] = v
+    for (const [k, v] of Object.entries(o)) if (!used.has(k)) extra[k] = v
     if (Object.keys(extra).length) out.extra = extra
     return out
 }
@@ -423,6 +441,15 @@ function encodeOutput(o: Output): J {
             if (o.kind === 'vless' && o.transport?.length) put('transport', o.transport.length === 1 ? o.transport[0] : o.transport)
             break
         }
+        case 'tunnel':
+            /* Протокол, которого модель не знает своим видом: всё, кроме общих ключей туннеля,
+             * лежит в `extra` и пишется ниже как есть. */
+            out.kind = 'tunnel'
+            put('protocol', o.protocol)
+            put('subscription', o.sub_file)
+            put('nodes', o.nodes)
+            put('device', o.device)
+            break
         case 'xsteer':
             out.kind = 'xsteer'
             put('conf', o.conf)

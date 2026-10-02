@@ -183,4 +183,16 @@ describe('чтение v2 и круг', () => {
         const s = decodeSpec({ version: 2, outputs: { w: { kind: 'interface', device: 'wg0', будущее: 7 } } })
         expect((encodeSpec(s).outputs as Record<string, Record<string, unknown>>).w.будущее).toBe(7)
     })
+
+    it('туннель прокси-протокола (trojan, shadowsocks, socks, http, vmess, незнакомый) доезжает обратно как есть', () => {
+        for (const protocol of ['trojan', 'shadowsocks', 'socks', 'http', 'vmess', 'будущий']) {
+            const t = {
+                kind: 'tunnel', protocol, subscription: '/etc/steer/subs/p.txt', nodes: [2, 0], device: 'px0',
+                insecure: true, on_fail: 'direct', over: 'wg0',
+            }
+            const s = decodeSpec({ version: 2, outputs: { wg0: { kind: 'interface', device: 'wg0' }, p: t } })
+            expect(s.outputs.p.kind).not.toBe('vless')
+            expect((encodeSpec(s).outputs as Record<string, Record<string, unknown>>).p).toEqual(t)
+        }
+    })
 })
