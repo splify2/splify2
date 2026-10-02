@@ -1,0 +1,30 @@
+<!-- @dsCard group="Spacing" viewport="700x170" name="Движение" subtitle="Одна кривая, пять длительностей; prefers-reduced-motion гасит всё" -->
+<!DOCTYPE html>
+<html lang="ru"><head><meta charset="utf-8">
+<link rel="stylesheet" href="../styles.css">
+<style>
+  html, body { margin: 0; }
+  body { padding: 18px; }
+  .row { display: flex; flex-wrap: wrap; gap: 12px; align-items: center; }
+  .col { display: flex; flex-direction: column; gap: 10px; }
+  .sw { border-radius: 10px; height: 42px; }
+  .lbl { font: var(--an-text-micro); color: var(--an-text-muted); margin-top: 6px; }
+  .val { font: var(--an-text-micro); font-family: var(--an-font-mono); color: var(--an-text-muted); }
+</style></head>
+<body class="an-root">
+<div class="col" style="gap:12px">
+  <div class="row" style="gap:20px;font:var(--an-text-body-sm);color:var(--an-text-secondary)">
+    <span><b style="color:var(--an-text)">160 мс</b> наведение</span>
+    <span><b style="color:var(--an-text)">220 мс</b> переключение</span>
+    <span><b style="color:var(--an-text)">260 мс</b> появление</span>
+    <span><b style="color:var(--an-text)">280 мс</b> смена темы</span>
+    <span><b style="color:var(--an-text)">320 мс</b> раскрытие</span>
+  </div>
+  <div class="row" style="gap:16px;align-items:center">
+    <span style="display:inline-block;width:16px;height:16px;border-radius:50%;border:2px solid var(--an-control-off-border);border-top-color:var(--an-accent);animation:an-spin 1s linear infinite"></span>
+    <span style="display:inline-block;width:10px;height:10px;border-radius:50%;background:var(--an-success);animation:an-pulse var(--an-dur-pulse) ease-in-out infinite"></span>
+    <span style="flex:1;height:8px;border-radius:4px;background:var(--an-surface-field);overflow:hidden"><span style="display:block;height:8px;width:64%;border-radius:4px;background:var(--an-accent);transform-origin:left;animation:an-bar 900ms var(--an-ease) infinite alternate"></span></span>
+    <span class="val">cubic-bezier(.4,0,.2,1)</span>
+  </div>
+</div>
+</body></html>

@@ -1,0 +1,106 @@
+/* ── Base palette ──────────────────────────────────────────────────────
+   Accent is the ONLY hue that a host theme may replace (Argon --sp-primary).
+   State hues are fixed in both themes: if "works" and "failed" changed with
+   the theme, colour would stop meaning anything. */
+:root {
+  --an-accent: #5e72e4;
+  --an-accent-press: #4453b8;
+  --an-accent-soft: color-mix(in srgb, var(--an-accent) 12%, transparent);
+  --an-accent-line: color-mix(in srgb, var(--an-accent) 45%, transparent);
+  --an-accent-glow: color-mix(in srgb, var(--an-accent) 40%, transparent);
+  --an-accent-on: #ffffff;
+
+  --an-success: #2dce89;
+  --an-warn: #ffc107;
+  --an-danger: #f5365c;
+  --an-success-ink: #1c8f5f;
+  /* #a97a00 на warn-soft — 3,2:1, мелкий текст не проходил AA; #7a5300 — 6,2:1. */
+  --an-warn-ink: #7a5300;
+  --an-danger-ink: #c0304f;
+  --an-success-soft: rgba(45, 206, 137, 0.10);
+  --an-warn-soft: rgba(255, 193, 7, 0.08);
+  --an-danger-soft: rgba(245, 54, 92, 0.07);
+  --an-warn-border: rgba(255, 193, 7, 0.45);
+  --an-danger-border: #f7c6d1;
+
+  /* Neutrals — light */
+  --an-grey-00: #ffffff;
+  --an-grey-05: #fbfbfd;
+  --an-grey-10: #f6f7f9;
+  --an-grey-15: #f2f4f7;
+  --an-grey-20: #eceef3;
+  --an-grey-25: #f4f5f8;
+  --an-grey-60: #8b93a5;
+  --an-grey-75: #5b6478;
+  --an-grey-90: #22252e;
+
+  /* ── Semantic aliases (use these in components) ── */
+  --an-surface-page: var(--an-grey-10);
+  --an-surface-card: var(--an-grey-00);
+  --an-surface-rail: var(--an-grey-05);
+  --an-surface-field: var(--an-grey-15);
+  --an-surface-input: transparent;
+  --an-surface-inverse: #1f2333;
+
+  --an-border: var(--an-grey-20);
+  --an-border-soft: var(--an-grey-25);
+
+  --an-text: var(--an-grey-90);
+  --an-text-secondary: var(--an-grey-75);
+  /* Текст-подпись. grey-60 (#8b93a5) на белом — 3,1:1, для 12–13 px мало (AA = 4,5:1).
+     grey-60 остаётся для иконок, ручек и линий; текст — #6f778a, 4,6:1. */
+  --an-text-muted: #6f778a;
+  --an-text-on-accent: var(--an-accent-on);
+
+  /* Категориальная шкала — только для наборов, где рядов заведомо несколько и все
+     равноправны (семь дней недели). Не для «второго ряда»: он серый off. */
+  --an-cat-1: #5e72e4;
+  --an-cat-2: #11cdef;
+  --an-cat-3: #2dce89;
+  --an-cat-4: #fb6340;
+  --an-cat-5: #f5365c;
+  --an-cat-6: #8965e0;
+  --an-cat-7: #8898aa;
+
+  --an-control-off: var(--an-grey-15);
+  --an-control-off-border: var(--an-grey-20);
+  --an-control-knob-off: #c3c9d6;
+  --an-control-line: #d9dee9;
+
+  --an-skeleton: linear-gradient(90deg, #f2f4f7 8%, #e7eaf1 18%, #f2f4f7 28%);
+  --an-scrim: rgba(15, 18, 28, 0.42);
+  --an-focus-ring: color-mix(in srgb, var(--an-accent) 55%, transparent);
+}
+
+[data-theme="dark"] {
+  --an-accent-soft: color-mix(in srgb, var(--an-accent) 22%, transparent);
+  --an-warn-soft: rgba(255, 193, 7, 0.10);
+  --an-warn-border: rgba(255, 193, 7, 0.35);
+  --an-danger-soft: rgba(245, 54, 92, 0.12);
+  --an-danger-border: rgba(245, 54, 92, 0.45);
+  --an-warn-ink: #e5b23c;
+  --an-success-ink: #2dce89;
+  --an-danger-ink: #ff6b86;
+
+  --an-surface-page: #121317;
+  --an-surface-card: #1b1d22;
+  --an-surface-rail: #17181c;
+  --an-surface-field: #23252b;
+  --an-surface-input: #1e2025;
+  --an-surface-inverse: #0f1117;
+
+  --an-border: #2a2c33;
+  --an-border-soft: #232529;
+
+  --an-text: #e8eaf0;
+  --an-text-secondary: #b6bccb;
+  --an-text-muted: #8b93a7;
+
+  --an-control-off: #2a2d34;
+  --an-control-off-border: #3a3d47;
+  --an-control-knob-off: #6b7180;
+  --an-control-line: #3a3d47;
+
+  --an-skeleton: linear-gradient(90deg, #22242a 8%, #2b2e36 18%, #22242a 28%);
+  --an-scrim: rgba(6, 8, 14, 0.58);
+}

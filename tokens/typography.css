@@ -1,0 +1,20 @@
+/* Andromeda type scale. Two families, six sizes, three weights — nothing else.
+   Sizes are the ones the console actually uses; do not invent intermediates. */
+:root {
+  --an-text-verdict: 600 26px/1.2 var(--an-font-sans);   /* state headline */
+  --an-text-title: 600 22px/1.25 var(--an-font-sans);    /* section heading */
+  --an-text-heading: 600 15px/1.35 var(--an-font-sans);  /* card heading */
+  --an-text-body: 400 14px/1.5 var(--an-font-sans);      /* default */
+  --an-text-body-sm: 400 13px/1.5 var(--an-font-sans);   /* dense rows, prose */
+  --an-text-caption: 400 12px/1.4 var(--an-font-sans);   /* labels, counters */
+  --an-text-micro: 400 11px/1.4 var(--an-font-sans);     /* meta under a value */
+  --an-text-code: 400 12px/1.7 var(--an-font-mono);      /* logs, addresses */
+
+  --an-tracking-verdict: -0.02em;
+  --an-tracking-title: -0.015em;
+  --an-tracking-caps: 0.04em;
+
+  --an-weight-regular: 400;
+  --an-weight-medium: 500;
+  --an-weight-semibold: 600;
+}

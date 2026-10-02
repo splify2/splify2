@@ -1,0 +1,20 @@
+<!-- @dsCard group="Colors" viewport="700x140" name="Состояния: текст и фон" subtitle="Заливка и чернила плашек; в тёмной теме чернила светлеют, заливка нет" -->
+<!DOCTYPE html>
+<html lang="ru"><head><meta charset="utf-8">
+<link rel="stylesheet" href="../styles.css">
+<style>
+  html, body { margin: 0; }
+  body { padding: 18px; }
+  .row { display: flex; flex-wrap: wrap; gap: 12px; align-items: center; }
+  .col { display: flex; flex-direction: column; gap: 10px; }
+  .sw { border-radius: 10px; height: 42px; }
+  .lbl { font: var(--an-text-micro); color: var(--an-text-muted); margin-top: 6px; }
+  .val { font: var(--an-text-micro); font-family: var(--an-font-mono); color: var(--an-text-muted); }
+</style></head>
+<body class="an-root">
+<div class="row" style="gap:12px">
+  <div style="flex:1;padding:12px 14px;border-radius:var(--an-radius-block);background:var(--an-success-soft);color:var(--an-success-ink);font:var(--an-text-body-sm)">работает · --an-success-ink</div>
+  <div style="flex:1;padding:12px 14px;border-radius:var(--an-radius-block);background:var(--an-warn-soft);border:1px solid var(--an-warn-border);color:var(--an-warn-ink);font:var(--an-text-body-sm)">предупреждение · --an-warn-ink</div>
+  <div style="flex:1;padding:12px 14px;border-radius:var(--an-radius-block);background:var(--an-danger-soft);border:1px solid var(--an-danger-border);color:var(--an-danger-ink);font:var(--an-text-body-sm)">отказ · --an-danger-ink</div>
+</div>
+</body></html>

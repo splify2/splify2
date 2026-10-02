@@ -1,0 +1,511 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+<style>
+  body { margin: 0; }
+  @keyframes ak-spin { to { transform: rotate(360deg) } }
+  @keyframes ak-pulse { 0%,100% { opacity: 1 } 50% { opacity: .3 } }
+  @keyframes ak-shimmer { 0% { background-position: -420px 0 } 100% { background-position: 420px 0 } }
+  @keyframes ak-toast-in { from { opacity: 0; transform: translateY(10px) scale(.97) } to { opacity: 1; transform: none } }
+  @keyframes ak-modal-in { from { opacity: 0; transform: translateY(12px) scale(.97) } to { opacity: 1; transform: none } }
+  @keyframes ak-fade-in { from { opacity: 0 } to { opacity: 1 } }
+  @keyframes ak-pop { 0% { transform: scale(.6); opacity: 0 } 60% { transform: scale(1.12) } 100% { transform: scale(1); opacity: 1 } }
+  @keyframes ak-bar { from { transform: scaleX(0) } to { transform: scaleX(1) } }
+</style>
+<script src="https://unpkg.com/lucide@latest/dist/umd/lucide.js"></script>
+</helmet>
+
+<div style="{{ themeVars }}">
+<div style="min-height:100vh;background:var(--bg,#f4f5f7);color:var(--fg,#32325d);font-family:'Google Sans','Helvetica Neue',Helvetica,Arial,sans-serif;font-size:14px;line-height:1.5;transition:background .28s ease,color .28s ease">
+
+  <div style="position:sticky;top:0;z-index:40;backdrop-filter:blur(8px);background:var(--bar,rgba(255,255,255,.86));border-bottom:1px solid var(--line,#e9ecef);padding:14px 32px;display:flex;align-items:center;gap:18px;flex-wrap:wrap;transition:background .28s ease,border-color .28s ease">
+    <img src="uploads/logo-3c.svg" alt="" style="width:32px;height:32px;border-radius:9px">
+    <div style="line-height:1.15">
+      <div style="font-size:15px;font-weight:600">Andromeda 26.9 — интерфейсный набор</div>
+      <div style="font-size:12px;color:var(--muted,#8898aa)">все элементы кликабельны · обе темы · движение как в продукте</div>
+    </div>
+
+    <div style="margin-left:auto;display:flex;align-items:center;gap:10px;flex-wrap:wrap">
+      <div style="display:flex;gap:6px;align-items:center;padding:4px;border-radius:11px;background:var(--field,#f1f3f7);transition:background .28s ease">
+        <button type="button" onClick="{{ setLight }}" style="height:30px;padding:0 12px;border-radius:8px;border:0;font:inherit;font-size:13px;cursor:pointer;display:inline-flex;align-items:center;gap:6px;transition:all .2s ease;background:{{ lightBtnBg }};color:{{ lightBtnFg }}">
+          <i data-lucide="sun" style="width:15px;height:15px"></i> Светлая
+        </button>
+        <button type="button" onClick="{{ setDark }}" style="height:30px;padding:0 12px;border-radius:8px;border:0;font:inherit;font-size:13px;cursor:pointer;display:inline-flex;align-items:center;gap:6px;transition:all .2s ease;background:{{ darkBtnBg }};color:{{ darkBtnFg }}">
+          <i data-lucide="moon" style="width:15px;height:15px"></i> Тёмная
+        </button>
+      </div>
+
+      <div style="display:flex;align-items:center;gap:8px">
+        <span style="font-size:12px;color:var(--muted,#8898aa)">акцент темы</span>
+        <div style="display:flex;gap:6px">
+          <button type="button" onClick="{{ accent1 }}" title="#5e72e4" style="height:26px;width:26px;border-radius:8px;border:2px solid {{ ring1 }};background:#5e72e4;cursor:pointer;padding:0;transition:transform .18s ease" style-hover="transform:scale(1.12)"></button>
+          <button type="button" onClick="{{ accent2 }}" title="#2dce89" style="height:26px;width:26px;border-radius:8px;border:2px solid {{ ring2 }};background:#2dce89;cursor:pointer;padding:0;transition:transform .18s ease" style-hover="transform:scale(1.12)"></button>
+          <button type="button" onClick="{{ accent3 }}" title="#8b7cf6" style="height:26px;width:26px;border-radius:8px;border:2px solid {{ ring3 }};background:#8b7cf6;cursor:pointer;padding:0;transition:transform .18s ease" style-hover="transform:scale(1.12)"></button>
+          <button type="button" onClick="{{ accent4 }}" title="#fb6340" style="height:26px;width:26px;border-radius:8px;border:2px solid {{ ring4 }};background:#fb6340;cursor:pointer;padding:0;transition:transform .18s ease" style-hover="transform:scale(1.12)"></button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <div style="padding:32px;display:flex;flex-direction:column;gap:22px;max-width:1240px;margin:0 auto">
+
+    <div style="display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:22px">
+
+      <section style="border:1px solid var(--line,#e9ecef);background:var(--card,#fff);border-radius:14px;padding:22px;transition:background .28s ease,border-color .28s ease">
+        <div style="font-size:12px;text-transform:uppercase;letter-spacing:.04em;color:var(--muted,#8898aa)">Кнопки</div>
+        <div style="margin-top:14px;display:flex;flex-wrap:wrap;gap:10px;align-items:center">
+          <button type="button" onClick="{{ toastSaved }}" style="height:38px;padding:0 16px;border-radius:10px;border:0;background:var(--accent,#5e72e4);color:#fff;font:inherit;font-size:13px;font-weight:500;cursor:pointer;transition:transform .16s ease,box-shadow .16s ease,filter .16s ease" style-hover="transform:translateY(-1px);box-shadow:0 6px 16px var(--accent-glow,rgba(94,114,228,.35))" style-active="transform:translateY(0)">Основное действие</button>
+          <button type="button" onClick="{{ toastSaved }}" style="height:38px;padding:0 16px;border-radius:10px;border:1px solid var(--line,#e9ecef);background:var(--card,#fff);color:var(--fg,#32325d);font:inherit;font-size:13px;cursor:pointer;transition:background .16s ease,border-color .16s ease" style-hover="background:var(--field,#f4f5f7)">Второстепенное</button>
+          <button type="button" onClick="{{ toastSaved }}" style="height:38px;padding:0 14px;border-radius:10px;border:0;background:transparent;color:var(--fg2,#5b6478);font:inherit;font-size:13px;cursor:pointer;transition:background .16s ease" style-hover="background:var(--field,#f4f5f7)">Призрачная</button>
+          <button type="button" onClick="{{ openModal }}" style="height:38px;padding:0 16px;border-radius:10px;border:1px solid var(--danger-line,#f7c6d1);background:transparent;color:#f5365c;font:inherit;font-size:13px;cursor:pointer;transition:background .16s ease" style-hover="background:rgba(245,54,92,.08)">Опасное</button>
+          <button type="button" disabled style="height:38px;padding:0 16px;border-radius:10px;border:1px solid var(--line,#e9ecef);background:var(--field,#f4f5f7);color:var(--muted,#8898aa);font:inherit;font-size:13px;cursor:default;opacity:.7">Недоступно</button>
+          <button type="button" onClick="{{ toastSaved }}" aria-label="Изменить" style="height:38px;width:38px;border-radius:10px;border:0;background:transparent;color:var(--fg2,#5b6478);cursor:pointer;display:inline-flex;align-items:center;justify-content:center;transition:background .16s ease" style-hover="background:var(--field,#f4f5f7)"><i data-lucide="pencil" style="width:16px;height:16px"></i></button>
+        </div>
+
+        <div style="margin-top:16px;padding-top:16px;border-top:1px solid var(--line-soft,#f1f3f7);display:flex;align-items:center;gap:14px;flex-wrap:wrap">
+          <button type="button" onClick="{{ probe }}" disabled="{{ probing }}" style="height:38px;min-width:200px;padding:0 16px;border-radius:10px;border:1px solid var(--line,#e9ecef);background:var(--card,#fff);color:var(--fg,#32325d);font:inherit;font-size:13px;cursor:pointer;display:inline-flex;align-items:center;justify-content:center;gap:8px;transition:background .16s ease" style-hover="background:var(--field,#f4f5f7)">
+            <span style="display:inline-flex;width:16px;height:16px;align-items:center;justify-content:center;animation:{{ probeSpin }}"><i data-lucide="{{ probeIcon }}" style="width:16px;height:16px"></i></span>
+            {{ probeLabel }}
+          </button>
+          <span style="font-size:13px;color:var(--muted,#8898aa)">кнопка с ответом: нажмите — увидите ожидание и результат</span>
+        </div>
+      </section>
+
+      <section style="border:1px solid var(--line,#e9ecef);background:var(--card,#fff);border-radius:14px;padding:22px;transition:background .28s ease,border-color .28s ease">
+        <div style="font-size:12px;text-transform:uppercase;letter-spacing:.04em;color:var(--muted,#8898aa)">Выбор и переключение</div>
+
+        <div style="margin-top:14px;display:flex;flex-direction:column;gap:14px">
+          <div style="display:flex;align-items:center;gap:12px">
+            <button type="button" role="switch" onClick="{{ toggle1 }}" style="height:24px;width:42px;border-radius:12px;border:1px solid {{ sw1Line }};padding:0;background:{{ sw1Bg }};display:flex;align-items:center;cursor:pointer;transition:background .22s ease,border-color .22s ease">
+              <span style="display:block;height:18px;width:18px;border-radius:50%;background:{{ sw1Knob }};transition:transform .22s cubic-bezier(.4,0,.2,1);transform:translateX({{ sw1X }})"></span>
+            </button>
+            <span style="font-size:14px">Правило включено</span>
+            <span style="margin-left:auto;font-size:12px;color:var(--muted,#8898aa)">{{ sw1Text }}</span>
+          </div>
+
+          <div style="display:flex;gap:4px;padding:4px;border-radius:11px;background:var(--field,#f1f3f7);width:fit-content;transition:background .28s ease">
+            <button type="button" onClick="{{ segAll }}" style="height:30px;padding:0 14px;border-radius:8px;border:0;font:inherit;font-size:13px;cursor:pointer;transition:all .2s ease;background:{{ segAllBg }};color:{{ segAllFg }}">все · 142</button>
+            <button type="button" onClick="{{ segUsed }}" style="height:30px;padding:0 14px;border-radius:8px;border:0;font:inherit;font-size:13px;cursor:pointer;transition:all .2s ease;background:{{ segUsedBg }};color:{{ segUsedFg }}">используются · 6</button>
+          </div>
+
+          <div style="display:flex;flex-direction:column;gap:9px">
+            <label onClick="{{ pickAll }}" style="display:flex;align-items:center;gap:10px;font-size:14px;cursor:pointer">
+              <span style="height:18px;width:18px;border-radius:50%;border:1.5px solid {{ radioAllLine }};background:{{ radioAllBg }};display:flex;align-items:center;justify-content:center;transition:all .2s ease">
+                <span style="height:7px;width:7px;border-radius:50%;background:#fff;transform:scale({{ radioAllDot }});transition:transform .2s cubic-bezier(.4,0,.2,1)"></span>
+              </span>
+              Все устройства в сети
+            </label>
+            <label onClick="{{ pickSome }}" style="display:flex;align-items:center;gap:10px;font-size:14px;cursor:pointer">
+              <span style="height:18px;width:18px;border-radius:50%;border:1.5px solid {{ radioSomeLine }};background:{{ radioSomeBg }};display:flex;align-items:center;justify-content:center;transition:all .2s ease">
+                <span style="height:7px;width:7px;border-radius:50%;background:#fff;transform:scale({{ radioSomeDot }});transition:transform .2s cubic-bezier(.4,0,.2,1)"></span>
+              </span>
+              Только выбранные
+            </label>
+          </div>
+
+          <div style="display:flex;flex-direction:column;gap:9px">
+            <label onClick="{{ check1 }}" style="display:flex;align-items:center;gap:10px;font-size:14px;cursor:pointer">
+              <span style="height:18px;width:18px;border-radius:5px;border:1.5px solid {{ chk1Line }};background:{{ chk1Bg }};display:flex;align-items:center;justify-content:center;transition:all .18s ease">
+                <i data-lucide="check" style="width:12px;height:12px;color:#fff;opacity:{{ chk1Op }};transition:opacity .18s ease"></i>
+              </span>
+              YouTube <span style="color:var(--muted,#8898aa);font-size:12px">домены и адреса · 41 890</span>
+            </label>
+            <label onClick="{{ check2 }}" style="display:flex;align-items:center;gap:10px;font-size:14px;cursor:pointer">
+              <span style="height:18px;width:18px;border-radius:5px;border:1.5px solid {{ chk2Line }};background:{{ chk2Bg }};display:flex;align-items:center;justify-content:center;transition:all .18s ease">
+                <i data-lucide="check" style="width:12px;height:12px;color:#fff;opacity:{{ chk2Op }};transition:opacity .18s ease"></i>
+              </span>
+              Telegram <span style="color:var(--muted,#8898aa);font-size:12px">адреса · 3 118</span>
+            </label>
+          </div>
+
+          <div style="display:flex;align-items:center;gap:10px;border:1px solid var(--line,#e9ecef);border-radius:10px;padding:0 12px;background:var(--field-input,transparent);transition:border-color .18s ease" style-hover="border-color:var(--accent,#5e72e4)">
+            <i data-lucide="search" style="width:16px;height:16px;color:var(--muted,#8898aa)"></i>
+            <input placeholder="поиск по каталогу" style="flex:1;height:40px;border:0;background:transparent;outline:none;font:inherit;font-size:14px;color:var(--fg,#32325d)">
+          </div>
+        </div>
+      </section>
+    </div>
+
+    <section style="border:1px solid var(--line,#e9ecef);background:var(--card,#fff);border-radius:14px;padding:22px;transition:background .28s ease,border-color .28s ease">
+      <div style="display:flex;align-items:baseline;justify-content:space-between;gap:12px;flex-wrap:wrap">
+        <div style="font-size:12px;text-transform:uppercase;letter-spacing:.04em;color:var(--muted,#8898aa)">Строка правила · порядок задаёт приоритет</div>
+        <button type="button" onClick="{{ toggleSkeleton }}" style="height:30px;padding:0 12px;border-radius:8px;border:1px solid var(--line,#e9ecef);background:transparent;color:var(--fg2,#5b6478);font:inherit;font-size:12px;cursor:pointer;transition:background .16s ease" style-hover="background:var(--field,#f4f5f7)">{{ skeletonLabel }}</button>
+      </div>
+
+      <sc-if value="{{ skeleton }}">
+        <div style="margin-top:14px;display:flex;flex-direction:column;gap:8px">
+          <div style="height:66px;border-radius:12px;background:var(--skeleton,linear-gradient(90deg,#f1f3f7 8%,#e7eaf1 18%,#f1f3f7 28%));background-size:420px 100%;animation:ak-shimmer 1.4s linear infinite"></div>
+          <div style="height:66px;border-radius:12px;background:var(--skeleton,linear-gradient(90deg,#f1f3f7 8%,#e7eaf1 18%,#f1f3f7 28%));background-size:420px 100%;animation:ak-shimmer 1.4s linear infinite"></div>
+          <div style="height:66px;border-radius:12px;background:var(--skeleton,linear-gradient(90deg,#f1f3f7 8%,#e7eaf1 18%,#f1f3f7 28%));background-size:420px 100%;animation:ak-shimmer 1.4s linear infinite"></div>
+        </div>
+      </sc-if>
+
+      <sc-if value="{{ notSkeleton }}" hint-placeholder-val="{{ true }}">
+        <div style="margin-top:14px;display:flex;flex-direction:column;gap:8px">
+          <sc-for list="{{ rules }}" as="rule" hint-placeholder-count="3">
+            <div style="border:1px solid var(--line,#e9ecef);border-radius:12px;padding:13px 16px;display:flex;align-items:center;gap:14px;background:var(--card,#fff);opacity:{{ rule.opacity }};transition:opacity .25s ease,border-color .18s ease,transform .25s cubic-bezier(.4,0,.2,1);animation:ak-fade-in .3s ease" style-hover="border-color:var(--accent-line,rgba(94,114,228,.45))">
+              <span style="display:flex;align-items:center;gap:8px;color:var(--muted,#8898aa)">
+                <i data-lucide="grip-vertical" style="width:16px;height:16px"></i>
+                <span style="font-size:12px">{{ rule.pos }}</span>
+              </span>
+              <div style="min-width:0;flex:1">
+                <div style="font-size:14px;font-weight:600">{{ rule.name }}</div>
+                <div style="margin-top:4px;font-size:12px;color:var(--fg2,#5b6478)">{{ rule.detail }}</div>
+              </div>
+              <button type="button" onClick="{{ rule.up }}" aria-label="Поднять" style="height:34px;width:34px;border-radius:9px;border:0;background:transparent;color:var(--muted,#8898aa);cursor:pointer;display:inline-flex;align-items:center;justify-content:center;transition:background .16s ease" style-hover="background:var(--field,#f4f5f7)"><i data-lucide="arrow-up" style="width:16px;height:16px"></i></button>
+              <button type="button" onClick="{{ rule.down }}" aria-label="Опустить" style="height:34px;width:34px;border-radius:9px;border:0;background:transparent;color:var(--muted,#8898aa);cursor:pointer;display:inline-flex;align-items:center;justify-content:center;transition:background .16s ease" style-hover="background:var(--field,#f4f5f7)"><i data-lucide="arrow-down" style="width:16px;height:16px"></i></button>
+              <button type="button" role="switch" onClick="{{ rule.toggle }}" style="height:24px;width:42px;border-radius:12px;border:1px solid {{ rule.swLine }};padding:0;background:{{ rule.swBg }};display:flex;align-items:center;cursor:pointer;transition:background .22s ease,border-color .22s ease">
+                <span style="display:block;height:18px;width:18px;border-radius:50%;background:{{ rule.swKnob }};transition:transform .22s cubic-bezier(.4,0,.2,1);transform:translateX({{ rule.swX }})"></span>
+              </button>
+            </div>
+          </sc-for>
+        </div>
+      </sc-if>
+    </section>
+
+    <div style="display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:22px">
+
+      <section style="border:1px solid var(--line,#e9ecef);background:var(--card,#fff);border-radius:14px;padding:22px;transition:background .28s ease,border-color .28s ease">
+        <div style="font-size:12px;text-transform:uppercase;letter-spacing:.04em;color:var(--muted,#8898aa)">Состояние</div>
+
+        <div style="margin-top:14px;display:flex;align-items:center;gap:10px">
+          <span style="height:11px;width:11px;border-radius:50%;background:#2dce89;animation:ak-pulse 2.4s ease-in-out infinite"></span>
+          <span style="font-size:20px;font-weight:600;letter-spacing:-.01em">Маршрутизация работает</span>
+        </div>
+        <dl style="margin:14px 0 0;display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:12px">
+          <div><dt style="font-size:12px;color:var(--muted,#8898aa)">правил включено</dt><dd style="margin:2px 0 0;font-size:18px;font-weight:600">{{ rulesOn }}</dd></div>
+          <div><dt style="font-size:12px;color:var(--muted,#8898aa)">устройств в сети</dt><dd style="margin:2px 0 0;font-size:18px;font-weight:600">9</dd></div>
+          <div><dt style="font-size:12px;color:var(--muted,#8898aa)">время работы</dt><dd style="margin:2px 0 0;font-size:18px;font-weight:600">4 ч 12 мин</dd></div>
+        </dl>
+
+        <div style="margin-top:16px;border:1px solid var(--warn-line,rgba(255,193,7,.45));background:var(--warn-bg,rgba(255,193,7,.08));border-radius:12px;padding:14px 16px">
+          <div style="display:flex;align-items:center;gap:7px;font-size:12px;color:var(--warn-fg,#a97a00)"><i data-lucide="triangle-alert" style="width:14px;height:14px"></i> проверок с предупреждением: 1</div>
+          <div style="margin-top:8px;font-size:14px">список domains/telegram.lst старше суток</div>
+        </div>
+
+        <div style="margin-top:14px">
+          <button type="button" onClick="{{ toggleChecks }}" style="font-size:13px;color:var(--muted,#8898aa);background:none;border:0;padding:0;cursor:pointer;font-family:inherit;text-decoration:underline">{{ checksLabel }}</button>
+          <div style="overflow:hidden;transition:max-height .32s cubic-bezier(.4,0,.2,1),opacity .28s ease;max-height:{{ checksH }};opacity:{{ checksOp }}">
+            <div style="margin-top:10px;display:flex;flex-direction:column;gap:8px">
+              <div style="display:flex;gap:9px;font-size:13px;color:var(--fg2,#5b6478)"><i data-lucide="check" style="width:15px;height:15px;color:#2dce89;flex-shrink:0"></i> таблица inet steer загружена в ядро</div>
+              <div style="display:flex;gap:9px;font-size:13px;color:var(--fg2,#5b6478)"><i data-lucide="check" style="width:15px;height:15px;color:#2dce89;flex-shrink:0"></i> резолвер отвечает на 127.0.0.1:5353</div>
+              <div style="display:flex;gap:9px;font-size:13px;color:var(--fg2,#5b6478)"><i data-lucide="check" style="width:15px;height:15px;color:#2dce89;flex-shrink:0"></i> NAT найден для устройства steer0</div>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <section style="border:1px solid var(--line,#e9ecef);background:var(--card,#fff);border-radius:14px;padding:22px;transition:background .28s ease,border-color .28s ease">
+        <div style="font-size:12px;text-transform:uppercase;letter-spacing:.04em;color:var(--muted,#8898aa)">Движение и обратная связь</div>
+
+        <div style="margin-top:14px;display:flex;flex-wrap:wrap;gap:10px">
+          <button type="button" onClick="{{ toastSaved }}" style="height:36px;padding:0 14px;border-radius:10px;border:1px solid var(--line,#e9ecef);background:transparent;color:var(--fg,#32325d);font:inherit;font-size:13px;cursor:pointer;transition:background .16s ease" style-hover="background:var(--field,#f4f5f7)">Тост: сохранено</button>
+          <button type="button" onClick="{{ toastWarn }}" style="height:36px;padding:0 14px;border-radius:10px;border:1px solid var(--line,#e9ecef);background:transparent;color:var(--fg,#32325d);font:inherit;font-size:13px;cursor:pointer;transition:background .16s ease" style-hover="background:var(--field,#f4f5f7)">Тост: предупреждение</button>
+          <button type="button" onClick="{{ openModal }}" style="height:36px;padding:0 14px;border-radius:10px;border:1px solid var(--line,#e9ecef);background:transparent;color:var(--fg,#32325d);font:inherit;font-size:13px;cursor:pointer;transition:background .16s ease" style-hover="background:var(--field,#f4f5f7)">Подтверждение</button>
+          <button type="button" onClick="{{ addChange }}" style="height:36px;padding:0 14px;border-radius:10px;border:1px solid var(--line,#e9ecef);background:transparent;color:var(--fg,#32325d);font:inherit;font-size:13px;cursor:pointer;transition:background .16s ease" style-hover="background:var(--field,#f4f5f7)">+ несохранённое изменение</button>
+        </div>
+
+        <div style="margin-top:18px;padding-top:16px;border-top:1px solid var(--line-soft,#f1f3f7)">
+          <div style="font-size:13px;color:var(--muted,#8898aa)">Трафик через туннели — полоса рисуется при появлении</div>
+          <div style="margin-top:12px;display:flex;flex-direction:column;gap:10px">
+            <div style="display:flex;align-items:center;gap:12px">
+              <span style="width:150px;font-size:13px">YouTube → vless-nl</span>
+              <span style="flex:1;height:10px;border-radius:5px;background:var(--field,#f1f3f7);overflow:hidden"><span style="display:block;height:10px;width:74%;border-radius:5px;background:var(--accent,#5e72e4);transform-origin:left;animation:ak-bar .9s cubic-bezier(.4,0,.2,1)"></span></span>
+              <span style="width:70px;text-align:right;font-size:13px;color:var(--fg2,#5b6478)">12,4 ГБ</span>
+            </div>
+            <div style="display:flex;align-items:center;gap:12px">
+              <span style="width:150px;font-size:13px">Telegram → wg0</span>
+              <span style="flex:1;height:10px;border-radius:5px;background:var(--field,#f1f3f7);overflow:hidden"><span style="display:block;height:10px;width:23%;border-radius:5px;background:var(--accent,#5e72e4);transform-origin:left;animation:ak-bar .9s cubic-bezier(.4,0,.2,1) .08s both"></span></span>
+              <span style="width:70px;text-align:right;font-size:13px;color:var(--fg2,#5b6478)">412,7 МБ</span>
+            </div>
+          </div>
+        </div>
+
+        <div style="margin-top:18px;padding-top:16px;border-top:1px solid var(--line-soft,#f1f3f7);display:flex;align-items:center;gap:14px;flex-wrap:wrap">
+          <span style="display:inline-flex;align-items:center;gap:8px;font-size:13px;color:var(--fg2,#5b6478)">
+            <span style="display:inline-flex;width:16px;height:16px;animation:ak-spin 1s linear infinite"><i data-lucide="loader-circle" style="width:16px;height:16px"></i></span> ожидание
+          </span>
+          <span style="display:inline-flex;align-items:center;gap:8px;font-size:13px;color:var(--fg2,#5b6478)">
+            <span style="height:9px;width:9px;border-radius:50%;background:#2dce89;animation:ak-pulse 2.4s ease-in-out infinite"></span> живое состояние
+          </span>
+          <span style="display:inline-flex;align-items:center;gap:8px;font-size:13px;color:var(--fg2,#5b6478)">
+            <span style="height:9px;width:9px;border-radius:50%;background:#f5365c"></span> отказ
+          </span>
+        </div>
+      </section>
+    </div>
+
+    <section style="border:1px solid var(--line,#e9ecef);background:var(--card,#fff);border-radius:14px;padding:22px;transition:background .28s ease,border-color .28s ease">
+      <div style="font-size:12px;text-transform:uppercase;letter-spacing:.04em;color:var(--muted,#8898aa)">Токены темы</div>
+      <div style="margin-top:14px;display:grid;grid-template-columns:repeat(6,minmax(0,1fr));gap:12px">
+        <div><div style="height:44px;border-radius:10px;background:var(--accent,#5e72e4);transition:background .28s ease"></div><div style="margin-top:6px;font-size:12px;color:var(--muted,#8898aa)">акцент темы</div></div>
+        <div><div style="height:44px;border-radius:10px;background:#2dce89"></div><div style="margin-top:6px;font-size:12px;color:var(--muted,#8898aa)">работает</div></div>
+        <div><div style="height:44px;border-radius:10px;background:#ffc107"></div><div style="margin-top:6px;font-size:12px;color:var(--muted,#8898aa)">предупреждение</div></div>
+        <div><div style="height:44px;border-radius:10px;background:#f5365c"></div><div style="margin-top:6px;font-size:12px;color:var(--muted,#8898aa)">отказ</div></div>
+        <div><div style="height:44px;border-radius:10px;background:var(--card,#fff);border:1px solid var(--line,#e9ecef);transition:background .28s ease"></div><div style="margin-top:6px;font-size:12px;color:var(--muted,#8898aa)">карточка</div></div>
+        <div><div style="height:44px;border-radius:10px;background:var(--bg,#f4f5f7);border:1px solid var(--line,#e9ecef);transition:background .28s ease"></div><div style="margin-top:6px;font-size:12px;color:var(--muted,#8898aa)">фон страницы</div></div>
+      </div>
+      <p style="margin:14px 0 0;font-size:13px;line-height:1.55;color:var(--fg2,#5b6478);max-width:80ch">Акцент — единственный цвет, который приходит из темы Argon (<code style="font-family:ui-monospace,Menlo,monospace">--sp-primary</code> и <code style="font-family:ui-monospace,Menlo,monospace">--dark-primary</code>). Остальные четыре — состояния, они не меняются вместе с темой, иначе «работает» и «отказ» перестали бы читаться по цвету. Переключите свотч наверху: он красит кнопки, переключатели, активные пункты и полосы.</p>
+    </section>
+
+    <div style="height:60px"></div>
+  </div>
+
+  <sc-if value="{{ pillVisible }}">
+    <div style="position:fixed;bottom:26px;left:50%;transform:translateX(-50%);z-index:60;animation:ak-toast-in .28s cubic-bezier(.4,0,.2,1)">
+      <button type="button" onClick="{{ apply }}" style="display:flex;height:46px;align-items:center;gap:10px;border-radius:9999px;padding:0 24px;font:inherit;font-size:14px;font-weight:500;color:#fff;border:0;cursor:pointer;box-shadow:0 10px 28px rgba(0,0,0,.22);transition:background .28s ease,transform .18s ease;background:{{ pillBg }}" style-hover="transform:translateY(-2px)">
+        <span style="display:inline-flex;width:17px;height:17px;align-items:center;justify-content:center;animation:{{ pillSpin }}"><i data-lucide="{{ pillIcon }}" style="width:17px;height:17px"></i></span>
+        {{ pillLabel }}
+        <sc-if value="{{ pillCountVisible }}">
+          <span style="display:flex;height:23px;min-width:23px;align-items:center;justify-content:center;border-radius:9999px;background:rgba(255,255,255,.26);padding:0 7px;font-size:12px;font-weight:600;animation:ak-pop .3s cubic-bezier(.4,0,.2,1)">{{ pillCount }}</span>
+        </sc-if>
+      </button>
+    </div>
+  </sc-if>
+
+  <div style="position:fixed;right:24px;bottom:24px;z-index:70;display:flex;flex-direction:column;gap:10px;align-items:flex-end">
+    <sc-for list="{{ toasts }}" as="toast" hint-placeholder-count="0">
+      <div style="display:flex;align-items:center;gap:10px;padding:12px 16px;border-radius:12px;background:var(--toast,#1f2333);color:#fff;font-size:13px;box-shadow:0 10px 30px rgba(0,0,0,.24);animation:ak-toast-in .26s cubic-bezier(.4,0,.2,1);border-left:3px solid {{ toast.color }}">
+        <i data-lucide="{{ toast.icon }}" style="width:16px;height:16px;color:{{ toast.color }}"></i>
+        {{ toast.text }}
+      </div>
+    </sc-for>
+  </div>
+
+  <sc-if value="{{ modalOpen }}">
+    <div style="position:fixed;inset:0;z-index:80;background:rgba(15,18,28,.42);display:flex;align-items:center;justify-content:center;padding:24px;animation:ak-fade-in .2s ease" onClick="{{ closeModal }}">
+      <div style="width:440px;max-width:100%;border-radius:16px;background:var(--card,#fff);color:var(--fg,#32325d);padding:24px;box-shadow:0 30px 70px rgba(10,12,20,.35);animation:ak-modal-in .26s cubic-bezier(.4,0,.2,1)">
+        <div style="display:flex;align-items:center;gap:10px">
+          <span style="height:34px;width:34px;border-radius:10px;background:rgba(245,54,92,.12);color:#f5365c;display:inline-flex;align-items:center;justify-content:center"><i data-lucide="triangle-alert" style="width:17px;height:17px"></i></span>
+          <div style="font-size:17px;font-weight:600">Остановить всё?</div>
+        </div>
+        <p style="margin:12px 0 0;font-size:13px;line-height:1.55;color:var(--fg2,#5b6478)">Маршрутизация снимется целиком: движок остановится, правила из ядра уйдут. Автозапуск тоже снимется, поэтому перезагрузка роутера ничего не вернёт — включать придётся этой же кнопкой.</p>
+        <div style="margin-top:20px;display:flex;justify-content:flex-end;gap:10px">
+          <button type="button" onClick="{{ closeModal }}" style="height:38px;padding:0 16px;border-radius:10px;border:1px solid var(--line,#e9ecef);background:transparent;color:var(--fg,#32325d);font:inherit;font-size:13px;cursor:pointer;transition:background .16s ease" style-hover="background:var(--field,#f4f5f7)">Отмена</button>
+          <button type="button" onClick="{{ confirmStop }}" style="height:38px;padding:0 18px;border-radius:10px;border:0;background:#f5365c;color:#fff;font:inherit;font-size:13px;font-weight:500;cursor:pointer;transition:transform .16s ease" style-hover="transform:translateY(-1px)">Остановить</button>
+        </div>
+      </div>
+    </div>
+  </sc-if>
+
+</div>
+</div>
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props="{&quot;$preview&quot;:{&quot;width&quot;:1280,&quot;height&quot;:900},&quot;accent&quot;:{&quot;editor&quot;:&quot;color&quot;,&quot;default&quot;:&quot;#5e72e4&quot;,&quot;tsType&quot;:&quot;string&quot;,&quot;options&quot;:[&quot;#5e72e4&quot;,&quot;#2dce89&quot;,&quot;#8b7cf6&quot;,&quot;#fb6340&quot;],&quot;section&quot;:&quot;Тема Argon&quot;}}">
+const LIGHT = [
+  '--bg:#f4f5f7', '--card:#ffffff', '--bar:rgba(255,255,255,.86)', '--field:#f1f3f7', '--field-input:transparent',
+  '--line:#e9ecef', '--line-soft:#f1f3f7', '--fg:#32325d', '--fg2:#5b6478', '--muted:#8898aa',
+  '--warn-bg:rgba(255,193,7,.08)', '--warn-line:rgba(255,193,7,.45)', '--warn-fg:#a97a00',
+  '--danger-line:#f7c6d1', '--toast:#1f2333',
+  '--skeleton:linear-gradient(90deg,#f1f3f7 8%,#e7eaf1 18%,#f1f3f7 28%)',
+]
+const DARK = [
+  '--bg:#131417', '--card:#1c1e23', '--bar:rgba(23,24,28,.9)', '--field:#24262c', '--field-input:#1f2126',
+  '--line:#2c2e35', '--line-soft:#24262c', '--fg:#e6e8ee', '--fg2:#b6bccb', '--muted:#8b93a7',
+  '--warn-bg:rgba(255,193,7,.1)', '--warn-line:rgba(255,193,7,.35)', '--warn-fg:#e5b23c',
+  '--danger-line:rgba(245,54,92,.45)', '--toast:#0f1117',
+  '--skeleton:linear-gradient(90deg,#22242a 8%,#2b2e36 18%,#22242a 28%)',
+]
+
+class Component extends DCLogic {
+  state = {
+    dark: false,
+    accent: '#5e72e4',
+    sw1: true,
+    seg: 'all',
+    who: 'all',
+    chk1: true,
+    chk2: false,
+    checksOpen: false,
+    skeleton: false,
+    probe: 'idle',
+    pill: 'idle',
+    count: 3,
+    modalOpen: false,
+    toasts: [],
+    rules: [
+      { id: 1, name: 'Spotify мимо VPN', detail: 'Spotify · записей: 1 204 → напрямую, мимо туннеля', on: true },
+      { id: 2, name: 'YouTube', detail: 'YouTube, Google · записей: 84 312 → vless-nl · Нидерланды', on: true },
+      { id: 3, name: 'Telegram', detail: 'устройств: 2 → wg0 · свой WireGuard', on: true },
+      { id: 4, name: 'Discord', detail: 'Discord · записей: 902 → vless-nl', on: false },
+    ],
+  }
+
+  icons() { try { window.lucide && window.lucide.createIcons() } catch (e) {} }
+  componentDidMount() { this.icons(); setTimeout(() => this.icons(), 400); setTimeout(() => this.icons(), 1200) }
+  componentDidUpdate() { this.icons() }
+  componentWillUnmount() { (this.timers || []).forEach(clearTimeout) }
+  later(fn, ms) { this.timers = this.timers || []; this.timers.push(setTimeout(fn, ms)) }
+
+  toast(text, kind) {
+    const id = Date.now() + Math.random()
+    const color = kind === 'warn' ? '#ffc107' : kind === 'bad' ? '#f5365c' : '#2dce89'
+    const icon = kind === 'warn' ? 'triangle-alert' : kind === 'bad' ? 'circle-x' : 'check'
+    this.setState(s => ({ toasts: [...s.toasts, { id, text, color, icon }] }))
+    this.later(() => this.setState(s => ({ toasts: s.toasts.filter(t => t.id !== id) })), 3200)
+  }
+
+  move(i, d) {
+    const rules = this.state.rules.slice()
+    const j = i + d
+    if (j < 0 || j >= rules.length) return
+    const t = rules[i]; rules[i] = rules[j]; rules[j] = t
+    this.setState({ rules })
+    this.bumpCount()
+  }
+
+  bumpCount() { this.setState(s => ({ count: s.count + 1, pill: 'idle' })) }
+
+  renderVals() {
+    const a = this.state.accent
+    const dark = this.state.dark
+    const vars = (dark ? DARK : LIGHT).concat([
+      `--accent:${a}`,
+      `--accent-soft:color-mix(in srgb, ${a} ${dark ? 22 : 12}%, transparent)`,
+      `--accent-line:color-mix(in srgb, ${a} 45%, transparent)`,
+      `--accent-glow:color-mix(in srgb, ${a} 40%, transparent)`,
+    ]).join(';')
+
+    const off = dark ? '#2a2d34' : '#f1f3f7'
+    const offLine = dark ? '#3a3d47' : '#e9ecef'
+    const knobOff = dark ? '#6b7180' : '#c3c9d6'
+    const segFg = dark ? '#b6bccb' : '#5b6478'
+    const radioLine = dark ? '#3a3d47' : '#d9dee9'
+    const radioBg = dark ? '#1f2126' : '#ffffff'
+
+    const sw = on => ({
+      swBg: on ? a : off,
+      swLine: on ? a : offLine,
+      swKnob: on ? '#ffffff' : knobOff,
+      swX: on ? '21px' : '2px',
+    })
+
+    const rules = this.state.rules.map((r, i) => ({
+      ...r,
+      pos: i + 1,
+      opacity: r.on ? 1 : 0.5,
+      ...sw(r.on),
+      up: () => this.move(i, -1),
+      down: () => this.move(i, 1),
+      toggle: () => {
+        this.setState(s => ({ rules: s.rules.map((x, k) => (k === i ? { ...x, on: !x.on } : x)) }))
+        this.bumpCount()
+      },
+    }))
+
+    const probe = this.state.probe
+    const pill = this.state.pill
+
+    return {
+      themeVars: vars,
+      setLight: () => this.setState({ dark: false }),
+      setDark: () => this.setState({ dark: true }),
+      lightBtnBg: dark ? 'transparent' : a,
+      lightBtnFg: dark ? segFg : '#fff',
+      darkBtnBg: dark ? a : 'transparent',
+      darkBtnFg: dark ? '#fff' : segFg,
+
+      accent1: () => this.setState({ accent: '#5e72e4' }),
+      accent2: () => this.setState({ accent: '#2dce89' }),
+      accent3: () => this.setState({ accent: '#8b7cf6' }),
+      accent4: () => this.setState({ accent: '#fb6340' }),
+      ring1: a === '#5e72e4' ? (dark ? '#fff' : '#32325d') : 'transparent',
+      ring2: a === '#2dce89' ? (dark ? '#fff' : '#32325d') : 'transparent',
+      ring3: a === '#8b7cf6' ? (dark ? '#fff' : '#32325d') : 'transparent',
+      ring4: a === '#fb6340' ? (dark ? '#fff' : '#32325d') : 'transparent',
+
+      ...(() => { const s = sw(this.state.sw1); return { sw1Bg: s.swBg, sw1Line: s.swLine, sw1Knob: s.swKnob, sw1X: s.swX } })(),
+      sw1Text: this.state.sw1 ? 'включено' : 'выключено',
+      toggle1: () => this.setState(s => ({ sw1: !s.sw1 })),
+
+      segAll: () => this.setState({ seg: 'all' }),
+      segUsed: () => this.setState({ seg: 'used' }),
+      segAllBg: this.state.seg === 'all' ? a : 'transparent',
+      segAllFg: this.state.seg === 'all' ? '#fff' : segFg,
+      segUsedBg: this.state.seg === 'used' ? a : 'transparent',
+      segUsedFg: this.state.seg === 'used' ? '#fff' : segFg,
+
+      pickAll: () => this.setState({ who: 'all' }),
+      pickSome: () => this.setState({ who: 'some' }),
+      radioAllLine: this.state.who === 'all' ? a : radioLine,
+      radioAllBg: this.state.who === 'all' ? a : radioBg,
+      radioAllDot: this.state.who === 'all' ? '1' : '0',
+      radioSomeLine: this.state.who === 'some' ? a : radioLine,
+      radioSomeBg: this.state.who === 'some' ? a : radioBg,
+      radioSomeDot: this.state.who === 'some' ? '1' : '0',
+
+      check1: () => this.setState(s => ({ chk1: !s.chk1 })),
+      check2: () => this.setState(s => ({ chk2: !s.chk2 })),
+      chk1Line: this.state.chk1 ? a : radioLine,
+      chk1Bg: this.state.chk1 ? a : radioBg,
+      chk1Op: this.state.chk1 ? '1' : '0',
+      chk2Line: this.state.chk2 ? a : radioLine,
+      chk2Bg: this.state.chk2 ? a : radioBg,
+      chk2Op: this.state.chk2 ? '1' : '0',
+
+      rules,
+      rulesOn: this.state.rules.filter(r => r.on).length,
+
+      skeleton: this.state.skeleton,
+      notSkeleton: !this.state.skeleton,
+      skeletonLabel: this.state.skeleton ? 'показать данные' : 'показать загрузку',
+      toggleSkeleton: () => this.setState(s => ({ skeleton: !s.skeleton })),
+
+      checksOpen: this.state.checksOpen,
+      checksLabel: this.state.checksOpen ? 'скрыть исправное' : 'исправно: 11 — показать',
+      checksH: this.state.checksOpen ? '220px' : '0px',
+      checksOp: this.state.checksOpen ? '1' : '0',
+      toggleChecks: () => this.setState(s => ({ checksOpen: !s.checksOpen })),
+
+      probing: probe === 'busy',
+      probeLabel: probe === 'busy' ? 'Проверяем…' : probe === 'done' ? 'Отклик 42 мс' : 'Проверить соединение',
+      probeIcon: probe === 'busy' ? 'loader-circle' : probe === 'done' ? 'check' : 'activity',
+      probeSpin: probe === 'busy' ? 'ak-spin 1s linear infinite' : 'none',
+      probe: () => {
+        if (this.state.probe === 'busy') return
+        this.setState({ probe: 'busy' })
+        this.later(() => {
+          this.setState({ probe: 'done' })
+          this.later(() => this.setState({ probe: 'idle' }), 2600)
+        }, 1400)
+      },
+
+      pillVisible: this.state.count > 0 || pill !== 'idle',
+      pillBg: pill === 'done' ? '#2dce89' : pill === 'busy' ? (dark ? '#4b5160' : '#8898aa') : a,
+      pillLabel: pill === 'done' ? 'Применено' : pill === 'busy' ? 'Применяем…' : 'Применить',
+      pillIcon: pill === 'busy' ? 'loader-circle' : 'check',
+      pillSpin: pill === 'busy' ? 'ak-spin 1s linear infinite' : 'none',
+      pillCountVisible: pill === 'idle',
+      pillCount: this.state.count,
+      apply: () => {
+        if (pill !== 'idle') return
+        this.setState({ pill: 'busy' })
+        this.later(() => {
+          this.setState({ pill: 'done', count: 0 })
+          this.toast('Настройка применена в ядре', 'ok')
+          this.later(() => this.setState({ pill: 'idle' }), 1600)
+        }, 1500)
+      },
+      addChange: () => { this.bumpCount(); this.toast('Изменение сохранено на диск', 'ok') },
+
+      toasts: this.state.toasts,
+      toastSaved: () => this.toast('Изменение сохранено', 'ok'),
+      toastWarn: () => this.toast('Сначала заведите выход — правилу некуда вести', 'warn'),
+
+      modalOpen: this.state.modalOpen,
+      openModal: () => this.setState({ modalOpen: true }),
+      closeModal: () => this.setState({ modalOpen: false }),
+      confirmStop: () => { this.setState({ modalOpen: false }); this.toast('Движок остановлен, автозапуск снят', 'bad') },
+    }
+  }
+}
+</script>
+</body>
+</html>

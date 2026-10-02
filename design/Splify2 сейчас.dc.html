@@ -1,0 +1,770 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+<meta name="design_doc_mode" content="canvas">
+<style>
+  @keyframes sp-spin { to { transform: rotate(360deg); } }
+  body { margin: 0; }
+</style>
+<script src="https://unpkg.com/lucide@latest/dist/umd/lucide.js"></script>
+</helmet>
+
+<div style="min-height:100vh;background:#f4f5f7;font-family:'Google Sans','Helvetica Neue',Helvetica,Arial,sans-serif;font-size:14px;line-height:1.5;color:#32325d;-webkit-font-smoothing:antialiased">
+
+  <div style="display:flex;flex-wrap:wrap;align-items:center;gap:16px;background:#16121f;color:#d8d3e6;padding:10px 20px;font-size:12px">
+    <span style="font-weight:600;color:#fff">splify2 · рекреация текущего интерфейса</span>
+    <span style="opacity:.6">ui/src/components/Console.tsx · StatusRail · tabs/* · index.css (Argon-токены)</span>
+    <div style="display:flex;gap:6px;margin-left:auto">
+      <button type="button" onClick="{{ goConsole }}" style="border:1px solid rgba(255,255,255,.18);background:transparent;color:#d8d3e6;border-radius:4px;padding:4px 10px;font:inherit;cursor:pointer">Пульт</button>
+      <button type="button" onClick="{{ goFirstRun }}" style="border:1px solid rgba(255,255,255,.18);background:transparent;color:#d8d3e6;border-radius:4px;padding:4px 10px;font:inherit;cursor:pointer">Первый запуск</button>
+    </div>
+  </div>
+
+  <div style="padding:24px;max-width:1240px;margin:0 auto">
+
+    <sc-if value="{{ isConsole }}" hint-placeholder-val="{{ true }}">
+      <div style="display:grid;grid-template-columns:minmax(0,20rem) minmax(0,1fr);gap:16px;align-items:start">
+
+        <aside style="display:flex;flex-direction:column;gap:12px">
+          <div style="border-radius:2px;border:1px solid #e9ecef;background:#fff;padding:16px;box-shadow:0 0 1rem 0 rgba(136,152,170,.15)">
+            <div style="display:flex;align-items:center;gap:8px">
+              <span style="height:10px;width:10px;flex-shrink:0;border-radius:9999px;background:#2dce89"></span>
+              <h2 style="font-size:18px;line-height:28px;font-weight:600;margin:0">Работает</h2>
+            </div>
+            <button type="button" style="margin-top:4px;display:block;width:100%;text-align:left;font-size:12px;line-height:16px;color:#8898aa;text-decoration:underline;text-decoration-style:dotted;background:none;border:0;padding:0;cursor:pointer;font-family:inherit">советов: 2: в списке категории Google есть подсеть публичного резолвера 8.8.8.0/24</button>
+            <p style="margin:4px 0 0;font-size:12px;line-height:16px;color:#8898aa">время работы 4 ч 12 мин · устройств в сети 9</p>
+
+            <div style="margin-top:12px;display:flex;align-items:flex-start;gap:8px;border-radius:2px;border:1px solid #e9ecef;padding:8px">
+              <i data-lucide="cpu" style="margin-top:2px;width:16px;height:16px;flex-shrink:0;color:#5e72e4"></i>
+              <div style="min-width:0;flex:1">
+                <div style="overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-size:14px">
+                  <span style="color:#5e72e4">steer 1.1.2</span> · extended
+                </div>
+                <div style="overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-family:ui-monospace,SFMono-Regular,Menlo,monospace;font-size:12px;line-height:16px;color:#8898aa">aarch64_cortex-a53</div>
+              </div>
+              <button type="button" onClick="{{ goLogs }}" style="flex-shrink:0;font-size:12px;line-height:16px;color:#5e72e4;text-decoration:underline;text-decoration-style:dotted;background:none;border:0;padding:0;cursor:pointer;font-family:inherit">Обновить до 1.1.3</button>
+            </div>
+
+            <dl style="margin:12px 0 0;display:flex;flex-direction:column;gap:6px;font-size:14px">
+              <div style="display:flex;align-items:baseline;justify-content:space-between;gap:8px">
+                <dt style="color:#8898aa"><span style="text-decoration:underline;text-decoration-style:dotted;text-underline-offset:3px;cursor:default">Активные туннели</span></dt>
+                <dd style="margin:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-weight:500">vless-nl, wg0</dd>
+              </div>
+              <div style="display:flex;align-items:baseline;justify-content:space-between;gap:8px">
+                <dt style="color:#8898aa">Отклик · vless-nl</dt>
+                <dd style="margin:0;font-weight:500;color:#2dce89">42 мс</dd>
+              </div>
+              <div style="display:flex;align-items:baseline;justify-content:space-between;gap:8px">
+                <dt style="color:#8898aa">Через туннель</dt>
+                <dd style="margin:0;font-weight:500">↓ 12,4 ГБ · ↑ 1,8 ГБ</dd>
+              </div>
+              <div style="display:flex;align-items:baseline;justify-content:space-between;gap:8px">
+                <dt style="color:#8898aa">Сейчас</dt>
+                <dd style="margin:0;font-weight:500">↓ 4,2 Мбит/с · ↑ 512 кбит/с</dd>
+              </div>
+            </dl>
+
+            <div style="margin-top:12px">
+              <button type="button" style="display:inline-flex;width:100%;align-items:center;justify-content:center;gap:8px;white-space:nowrap;border-radius:4px;height:36px;padding:8px 16px;font-size:14px;font-weight:500;background:#f0f0f0;color:#32325d;border:0;cursor:pointer;font-family:inherit;transition:all .2s">
+                <i data-lucide="activity" style="width:16px;height:16px"></i> Проверить соединение
+              </button>
+            </div>
+            <div style="margin-top:8px">
+              <button type="button" style="display:inline-flex;width:100%;align-items:center;justify-content:center;gap:8px;white-space:nowrap;border-radius:4px;height:36px;padding:8px 16px;font-size:14px;font-weight:500;background:#f5365c;color:#fff;border:0;cursor:pointer;font-family:inherit;transition:all .2s">Остановить всё</button>
+            </div>
+          </div>
+
+          <div style="border-radius:2px;border:1px solid #e9ecef;background:#fff;padding:16px;box-shadow:0 0 1rem 0 rgba(136,152,170,.15)">
+            <h3 style="margin:0;font-size:12px;line-height:16px;font-weight:600;text-transform:uppercase;letter-spacing:.025em;color:#8898aa">Outbounds</h3>
+            <ul style="margin:8px 0 0;padding:0;list-style:none;display:flex;flex-direction:column;gap:6px;font-size:14px">
+              <li style="display:flex;align-items:center;gap:8px">
+                <span style="height:8px;width:8px;flex-shrink:0;border-radius:9999px;background:#2dce89"></span>
+                <span style="min-width:0;flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">vless-nl</span>
+                <span style="flex-shrink:0;font-size:12px;color:#2dce89">42 мс</span>
+              </li>
+              <li style="display:flex;align-items:center;gap:8px">
+                <span style="height:8px;width:8px;flex-shrink:0;border-radius:9999px;background:#2dce89"></span>
+                <span style="min-width:0;flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">wg0</span>
+                <span style="flex-shrink:0;font-size:12px;color:#2dce89">61 мс</span>
+              </li>
+              <li style="display:flex;align-items:center;gap:8px">
+                <span style="height:8px;width:8px;flex-shrink:0;border-radius:9999px;background:#8898aa"></span>
+                <span style="min-width:0;flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">direct</span>
+                <span style="flex-shrink:0;font-size:12px;color:#8898aa">напрямую</span>
+              </li>
+            </ul>
+          </div>
+
+          <div style="border-radius:2px;border:1px solid rgba(255,193,7,.4);background:rgba(255,193,7,.1);padding:16px">
+            <h3 style="margin:0;display:flex;align-items:center;gap:8px;font-size:14px;font-weight:600;color:#ffc107">
+              <i data-lucide="triangle-alert" style="width:16px;height:16px"></i> Предупреждения steer
+            </h3>
+            <ul style="margin:8px 0 0;padding:0;list-style:none;display:flex;flex-direction:column;gap:8px;font-size:12px;line-height:16px">
+              <li><span style="font-weight:500">Telegram: </span>список domains/telegram.lst старше суток — обновление по расписанию не прошло</li>
+            </ul>
+          </div>
+        </aside>
+
+        <main style="min-width:0">
+          <div style="margin-bottom:16px;display:flex;align-items:center;justify-content:space-between;gap:8px;border-bottom:1px solid #e9ecef">
+            <nav style="display:flex;flex-wrap:wrap;gap:4px" role="tablist">
+              <button type="button" role="tab" onClick="{{ goRules }}" style="border-radius:2px 2px 0 0;padding:8px 16px;font-size:14px;background:none;border:0;border-bottom:2px solid transparent;cursor:pointer;font-family:inherit;color:{{ tabRulesColor }};font-weight:{{ tabRulesWeight }};border-bottom-color:{{ tabRulesLine }}">Правила</button>
+              <button type="button" role="tab" onClick="{{ goOutbounds }}" style="border-radius:2px 2px 0 0;padding:8px 16px;font-size:14px;background:none;border:0;border-bottom:2px solid transparent;cursor:pointer;font-family:inherit;color:{{ tabOutColor }};font-weight:{{ tabOutWeight }};border-bottom-color:{{ tabOutLine }}">Outbounds</button>
+              <button type="button" role="tab" onClick="{{ goCatalog }}" style="border-radius:2px 2px 0 0;padding:8px 16px;font-size:14px;background:none;border:0;border-bottom:2px solid transparent;cursor:pointer;font-family:inherit;color:{{ tabCatColor }};font-weight:{{ tabCatWeight }};border-bottom-color:{{ tabCatLine }}">Сервисы и категории</button>
+              <button type="button" role="tab" onClick="{{ goLogs }}" style="border-radius:2px 2px 0 0;padding:8px 16px;font-size:14px;background:none;border:0;border-bottom:2px solid transparent;cursor:pointer;font-family:inherit;color:{{ tabLogColor }};font-weight:{{ tabLogWeight }};border-bottom-color:{{ tabLogLine }}">Логи steer</button>
+            </nav>
+            <span style="display:flex;flex-shrink:0;align-items:center;gap:6px;padding-bottom:6px;font-size:12px;line-height:16px;color:#8898aa">
+              <i data-lucide="check" style="width:14px;height:14px;color:#2dce89"></i> Сохранено
+            </span>
+          </div>
+
+          <sc-if value="{{ isRulesList }}" hint-placeholder-val="{{ true }}">
+            <div style="display:flex;flex-direction:column;gap:12px">
+              <div style="display:flex;flex-wrap:wrap;align-items:center;justify-content:space-between;gap:8px">
+                <p style="margin:0;font-size:12px;line-height:16px;color:#8898aa;max-width:36rem">Сверху вниз — побеждает <span style="text-decoration:underline;text-decoration-style:dotted;text-underline-offset:3px;cursor:default">первое совпадение</span>. Изменения сохраняются сами. Правило «Напрямую» выше туннельных — это исключение: выбранное пойдёт мимо VPN.</p>
+                <div style="display:flex;flex-wrap:wrap;gap:8px">
+                  <button type="button" style="display:inline-flex;align-items:center;justify-content:center;gap:8px;border-radius:4px;height:36px;padding:8px 16px;font-size:14px;font-weight:500;background:transparent;color:#32325d;border:0;cursor:pointer;font-family:inherit">Исключение</button>
+                  <button type="button" style="display:inline-flex;align-items:center;justify-content:center;gap:4px;border-radius:4px;height:36px;padding:8px 16px;font-size:14px;font-weight:500;background:#5e72e4;color:#fff;border:0;cursor:pointer;font-family:inherit">
+                    <i data-lucide="plus" style="width:16px;height:16px"></i> Новое правило
+                  </button>
+                </div>
+              </div>
+
+              <div style="overflow-x:auto;border-radius:2px;border:1px solid #e9ecef;background:#fff;box-shadow:0 0 1rem 0 rgba(136,152,170,.15)">
+                <table style="width:100%;min-width:34rem;font-size:14px;border-collapse:collapse">
+                  <thead>
+                    <tr style="border-bottom:1px solid #e9ecef;text-align:left;font-size:12px;line-height:16px;text-transform:uppercase;letter-spacing:.025em;color:#8898aa">
+                      <th style="padding:8px 12px;font-weight:600">Что перенаправляем</th>
+                      <th style="padding:8px 12px;font-weight:600">Кого касается</th>
+                      <th style="padding:8px 12px;font-weight:600">Куда</th>
+                      <th style="padding:8px 12px"></th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    <tr style="border-bottom:1px solid rgba(233,236,239,.5)">
+                      <td style="padding:8px 12px">
+                        <div style="display:flex;align-items:flex-start;gap:12px">
+                          <button type="button" role="switch" aria-checked="true" style="margin-top:2px;display:flex;height:20px;width:36px;flex-shrink:0;align-items:center;padding:0;border-radius:9999px;border:1px solid #5e72e4;background:#5e72e4;cursor:pointer">
+                            <span style="display:block;height:16px;width:16px;border-radius:9999px;background:#fff;transform:translateX(16px)"></span>
+                          </button>
+                          <div style="min-width:0">
+                            <div style="overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-weight:500">Spotify мимо VPN</div>
+                            <div style="overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-size:12px;line-height:16px;color:#8898aa">Spotify · 1 204 записей</div>
+                          </div>
+                        </div>
+                      </td>
+                      <td style="padding:8px 12px;color:#8898aa">все устройства</td>
+                      <td style="padding:8px 12px">
+                        <span style="display:flex;align-items:center;gap:8px">
+                          <span style="height:8px;width:8px;flex-shrink:0;border-radius:9999px;background:#8898aa"></span>
+                          <span style="overflow:hidden;text-overflow:ellipsis;white-space:nowrap">Напрямую</span>
+                        </span>
+                      </td>
+                      <td style="padding:8px 12px">
+                        <div style="display:flex;justify-content:flex-end;gap:4px">
+                          <button type="button" aria-label="Поднять приоритет" disabled style="display:inline-flex;align-items:center;justify-content:center;height:36px;width:36px;border-radius:4px;border:0;background:transparent;opacity:.5;cursor:default"><i data-lucide="arrow-up" style="width:16px;height:16px"></i></button>
+                          <button type="button" aria-label="Опустить приоритет" style="display:inline-flex;align-items:center;justify-content:center;height:36px;width:36px;border-radius:4px;border:0;background:transparent;cursor:pointer"><i data-lucide="arrow-down" style="width:16px;height:16px"></i></button>
+                          <button type="button" aria-label="Изменить правило" onClick="{{ openEditor }}" style="display:inline-flex;align-items:center;justify-content:center;height:36px;width:36px;border-radius:4px;border:0;background:transparent;cursor:pointer"><i data-lucide="pencil" style="width:16px;height:16px"></i></button>
+                          <button type="button" aria-label="Удалить правило" style="display:inline-flex;align-items:center;justify-content:center;height:36px;width:36px;border-radius:4px;border:0;background:transparent;cursor:pointer"><i data-lucide="trash-2" style="width:16px;height:16px"></i></button>
+                        </div>
+                      </td>
+                    </tr>
+                    <tr style="border-bottom:1px solid rgba(233,236,239,.5)">
+                      <td style="padding:8px 12px">
+                        <div style="display:flex;align-items:flex-start;gap:12px">
+                          <button type="button" role="switch" aria-checked="true" style="margin-top:2px;display:flex;height:20px;width:36px;flex-shrink:0;align-items:center;padding:0;border-radius:9999px;border:1px solid #5e72e4;background:#5e72e4;cursor:pointer">
+                            <span style="display:block;height:16px;width:16px;border-radius:9999px;background:#fff;transform:translateX(16px)"></span>
+                          </button>
+                          <div style="min-width:0">
+                            <div style="overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-weight:500">YouTube</div>
+                            <div style="overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-size:12px;line-height:16px;color:#8898aa">YouTube, Google · 84 312 записей</div>
+                          </div>
+                        </div>
+                      </td>
+                      <td style="padding:8px 12px;color:#8898aa">все устройства</td>
+                      <td style="padding:8px 12px">
+                        <span style="display:flex;align-items:center;gap:8px">
+                          <span style="height:8px;width:8px;flex-shrink:0;border-radius:9999px;background:#2dce89"></span>
+                          <span style="overflow:hidden;text-overflow:ellipsis;white-space:nowrap">vless-nl</span>
+                        </span>
+                      </td>
+                      <td style="padding:8px 12px">
+                        <div style="display:flex;justify-content:flex-end;gap:4px">
+                          <button type="button" aria-label="Поднять приоритет" style="display:inline-flex;align-items:center;justify-content:center;height:36px;width:36px;border-radius:4px;border:0;background:transparent;cursor:pointer"><i data-lucide="arrow-up" style="width:16px;height:16px"></i></button>
+                          <button type="button" aria-label="Опустить приоритет" style="display:inline-flex;align-items:center;justify-content:center;height:36px;width:36px;border-radius:4px;border:0;background:transparent;cursor:pointer"><i data-lucide="arrow-down" style="width:16px;height:16px"></i></button>
+                          <button type="button" aria-label="Изменить правило" onClick="{{ openEditor }}" style="display:inline-flex;align-items:center;justify-content:center;height:36px;width:36px;border-radius:4px;border:0;background:transparent;cursor:pointer"><i data-lucide="pencil" style="width:16px;height:16px"></i></button>
+                          <button type="button" aria-label="Удалить правило" style="display:inline-flex;align-items:center;justify-content:center;height:36px;width:36px;border-radius:4px;border:0;background:transparent;cursor:pointer"><i data-lucide="trash-2" style="width:16px;height:16px"></i></button>
+                        </div>
+                      </td>
+                    </tr>
+                    <tr style="border-bottom:1px solid rgba(233,236,239,.5)">
+                      <td style="padding:8px 12px">
+                        <div style="display:flex;align-items:flex-start;gap:12px">
+                          <button type="button" role="switch" aria-checked="true" style="margin-top:2px;display:flex;height:20px;width:36px;flex-shrink:0;align-items:center;padding:0;border-radius:9999px;border:1px solid #5e72e4;background:#5e72e4;cursor:pointer">
+                            <span style="display:block;height:16px;width:16px;border-radius:9999px;background:#fff;transform:translateX(16px)"></span>
+                          </button>
+                          <div style="min-width:0">
+                            <div style="overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-weight:500">Telegram</div>
+                            <div style="overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-size:12px;line-height:16px;color:#8898aa">Telegram · 3 118 записей</div>
+                          </div>
+                        </div>
+                      </td>
+                      <td style="padding:8px 12px;color:#8898aa">2 адресов и подсетей</td>
+                      <td style="padding:8px 12px">
+                        <span style="display:flex;align-items:center;gap:8px">
+                          <span style="height:8px;width:8px;flex-shrink:0;border-radius:9999px;background:#2dce89"></span>
+                          <span style="overflow:hidden;text-overflow:ellipsis;white-space:nowrap">wg0</span>
+                        </span>
+                      </td>
+                      <td style="padding:8px 12px">
+                        <div style="display:flex;justify-content:flex-end;gap:4px">
+                          <button type="button" aria-label="Поднять приоритет" style="display:inline-flex;align-items:center;justify-content:center;height:36px;width:36px;border-radius:4px;border:0;background:transparent;cursor:pointer"><i data-lucide="arrow-up" style="width:16px;height:16px"></i></button>
+                          <button type="button" aria-label="Опустить приоритет" style="display:inline-flex;align-items:center;justify-content:center;height:36px;width:36px;border-radius:4px;border:0;background:transparent;cursor:pointer"><i data-lucide="arrow-down" style="width:16px;height:16px"></i></button>
+                          <button type="button" aria-label="Изменить правило" onClick="{{ openEditor }}" style="display:inline-flex;align-items:center;justify-content:center;height:36px;width:36px;border-radius:4px;border:0;background:transparent;cursor:pointer"><i data-lucide="pencil" style="width:16px;height:16px"></i></button>
+                          <button type="button" aria-label="Удалить правило" style="display:inline-flex;align-items:center;justify-content:center;height:36px;width:36px;border-radius:4px;border:0;background:transparent;cursor:pointer"><i data-lucide="trash-2" style="width:16px;height:16px"></i></button>
+                        </div>
+                      </td>
+                    </tr>
+                    <tr style="opacity:.5">
+                      <td style="padding:8px 12px">
+                        <div style="display:flex;align-items:flex-start;gap:12px">
+                          <button type="button" role="switch" aria-checked="false" style="margin-top:2px;display:flex;height:20px;width:36px;flex-shrink:0;align-items:center;padding:0;border-radius:9999px;border:1px solid #e9ecef;background:#f4f5f7;cursor:pointer">
+                            <span style="display:block;height:16px;width:16px;border-radius:9999px;background:#8898aa;transform:translateX(2px)"></span>
+                          </button>
+                          <div style="min-width:0">
+                            <div style="overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-weight:500">Discord</div>
+                            <div style="overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-size:12px;line-height:16px;color:#8898aa">Discord · 902 записей · выключено</div>
+                          </div>
+                        </div>
+                      </td>
+                      <td style="padding:8px 12px;color:#8898aa">все устройства</td>
+                      <td style="padding:8px 12px">
+                        <span style="display:flex;align-items:center;gap:8px">
+                          <span style="height:8px;width:8px;flex-shrink:0;border-radius:9999px;background:#2dce89"></span>
+                          <span style="overflow:hidden;text-overflow:ellipsis;white-space:nowrap">vless-nl</span>
+                        </span>
+                      </td>
+                      <td style="padding:8px 12px">
+                        <div style="display:flex;justify-content:flex-end;gap:4px">
+                          <button type="button" aria-label="Поднять приоритет" style="display:inline-flex;align-items:center;justify-content:center;height:36px;width:36px;border-radius:4px;border:0;background:transparent;cursor:pointer"><i data-lucide="arrow-up" style="width:16px;height:16px"></i></button>
+                          <button type="button" aria-label="Опустить приоритет" disabled style="display:inline-flex;align-items:center;justify-content:center;height:36px;width:36px;border-radius:4px;border:0;background:transparent;opacity:.5;cursor:default"><i data-lucide="arrow-down" style="width:16px;height:16px"></i></button>
+                          <button type="button" aria-label="Изменить правило" onClick="{{ openEditor }}" style="display:inline-flex;align-items:center;justify-content:center;height:36px;width:36px;border-radius:4px;border:0;background:transparent;cursor:pointer"><i data-lucide="pencil" style="width:16px;height:16px"></i></button>
+                          <button type="button" aria-label="Удалить правило" style="display:inline-flex;align-items:center;justify-content:center;height:36px;width:36px;border-radius:4px;border:0;background:transparent;cursor:pointer"><i data-lucide="trash-2" style="width:16px;height:16px"></i></button>
+                        </div>
+                      </td>
+                    </tr>
+                  </tbody>
+                </table>
+              </div>
+            </div>
+          </sc-if>
+
+          <sc-if value="{{ isEditor }}">
+            <div style="border-radius:2px;border:1px solid #e9ecef;background:#fff;box-shadow:0 0 1rem 0 rgba(136,152,170,.15)">
+              <div style="display:flex;flex-wrap:wrap;align-items:center;justify-content:space-between;gap:8px;border-bottom:1px solid #e9ecef;padding:12px">
+                <div style="display:flex;align-items:center;gap:8px;font-size:14px">
+                  <button type="button" onClick="{{ closeEditor }}" style="display:flex;align-items:center;gap:4px;color:#8898aa;background:none;border:0;padding:0;cursor:pointer;font:inherit">
+                    <i data-lucide="arrow-left" style="width:16px;height:16px"></i> Все правила
+                  </button>
+                  <span style="color:#8898aa">/</span>
+                  <span style="font-weight:500">Правило 2 из 4</span>
+                </div>
+                <div style="font-family:ui-monospace,SFMono-Regular,Menlo,monospace;font-size:12px;line-height:16px;color:#8898aa">сервисов 2 · 84 312 записей</div>
+              </div>
+
+              <div style="display:flex;flex-direction:column;gap:16px;padding:12px">
+                <section>
+                  <div style="display:flex;flex-wrap:wrap;align-items:center;justify-content:space-between;gap:8px">
+                    <h3 style="margin:0;font-size:12px;line-height:16px;font-weight:600;text-transform:uppercase;letter-spacing:.025em;color:#8898aa">Что перенаправляем</h3>
+                    <span style="font-size:12px;line-height:16px;color:#8898aa">2 записей выбрано</span>
+                  </div>
+
+                  <label style="margin-top:8px;display:flex;flex-direction:column;gap:4px;font-size:12px;line-height:16px">
+                    Название правила
+                    <input value="YouTube" style="border-radius:2px;border:1px solid #e9ecef;background:transparent;padding:6px 8px;font-size:14px;color:#32325d;font-family:inherit">
+                  </label>
+
+                  <div style="margin-top:8px;display:flex;flex-wrap:wrap;gap:6px">
+                    <button type="button" style="display:flex;align-items:center;gap:4px;border-radius:2px;border:1px solid rgba(94,114,228,.5);background:rgba(94,114,228,.1);padding:2px 8px;font-size:12px;line-height:16px;color:#32325d;cursor:pointer;font-family:inherit">YouTube <span aria-hidden="true">×</span></button>
+                    <button type="button" style="display:flex;align-items:center;gap:4px;border-radius:2px;border:1px solid rgba(94,114,228,.5);background:rgba(94,114,228,.1);padding:2px 8px;font-size:12px;line-height:16px;color:#32325d;cursor:pointer;font-family:inherit">Google <span aria-hidden="true">×</span></button>
+                  </div>
+
+                  <div style="margin-top:8px;display:flex;align-items:center;gap:8px;border-radius:2px;border:1px solid #e9ecef;padding:0 8px">
+                    <i data-lucide="search" style="width:16px;height:16px;flex-shrink:0;color:#8898aa"></i>
+                    <input placeholder="поиск по каталогу — сервисы, категории" style="min-width:0;flex:1;background:transparent;border:0;outline:none;padding:6px 0;font-size:14px;color:#32325d;font-family:inherit">
+                    <span style="flex-shrink:0;font-size:12px;line-height:16px;color:#8898aa">142 записей</span>
+                  </div>
+
+                  <div style="margin-top:4px;max-height:16rem;overflow-y:auto;border-radius:2px;border:1px solid #e9ecef">
+                    <label style="display:flex;align-items:center;gap:8px;border-bottom:1px solid rgba(233,236,239,.5);padding:6px 8px;font-size:14px">
+                      <span style="height:16px;width:16px;flex-shrink:0;border-radius:3px;border:1.5px solid #5e72e4;background:#5e72e4;display:flex;align-items:center;justify-content:center"><i data-lucide="check" style="width:11px;height:11px;color:#fff"></i></span>
+                      <span style="min-width:0;flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">YouTube</span>
+                      <span style="flex-shrink:0;white-space:nowrap;font-size:12px;line-height:16px;color:#8898aa">домены и адреса · 41 890</span>
+                    </label>
+                    <label style="display:flex;align-items:center;gap:8px;border-bottom:1px solid rgba(233,236,239,.5);padding:6px 8px;font-size:14px">
+                      <span style="height:16px;width:16px;flex-shrink:0;border-radius:3px;border:1.5px solid #5e72e4;background:#5e72e4;display:flex;align-items:center;justify-content:center"><i data-lucide="check" style="width:11px;height:11px;color:#fff"></i></span>
+                      <span style="min-width:0;flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">Google</span>
+                      <span style="flex-shrink:0;white-space:nowrap;font-size:12px;line-height:16px;color:#8898aa">домены и адреса · 42 422</span>
+                    </label>
+                    <label style="display:flex;align-items:center;gap:8px;border-bottom:1px solid rgba(233,236,239,.5);padding:6px 8px;font-size:14px">
+                      <span style="height:16px;width:16px;flex-shrink:0;border-radius:3px;border:1.5px solid #ccc;background:#fff"></span>
+                      <span style="min-width:0;flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">Telegram <span style="margin-left:8px;font-size:12px;color:#8898aa">скачается</span></span>
+                      <span style="flex-shrink:0;white-space:nowrap;font-size:12px;line-height:16px;color:#8898aa">адреса · 3 118</span>
+                    </label>
+                    <label style="display:flex;align-items:center;gap:8px;padding:6px 8px;font-size:14px">
+                      <span style="height:16px;width:16px;flex-shrink:0;border-radius:3px;border:1.5px solid #ccc;background:#fff"></span>
+                      <span style="min-width:0;flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">Discord</span>
+                      <span style="flex-shrink:0;white-space:nowrap;font-size:12px;line-height:16px;color:#8898aa">домены · 902</span>
+                    </label>
+                  </div>
+
+                  <p style="margin:4px 0 0;font-size:12px;line-height:16px;color:#8898aa">Это тот же каталог, что на вкладке «Сервисы и категории». Там он показывает, где запись используется, — выбирают её здесь. Выбирается СЕРВИС: если у него есть и домены, и адреса, в правило попадут оба. Домены точнее (адрес сервиса меняется, имя нет), адреса работают и когда клиент не спрашивает наш DNS.</p>
+                  <p style="margin:4px 0 0;font-size:12px;line-height:16px;color:#ffc107">Общие записи с: Spotify мимо VPN. Совпавшее заберёт «Spotify мимо VPN» — оно выше.</p>
+                </section>
+
+                <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px">
+                  <section style="border-radius:2px;border:1px solid #e9ecef;padding:12px">
+                    <h3 style="margin:0;font-size:12px;line-height:16px;font-weight:600;text-transform:uppercase;letter-spacing:.025em;color:#8898aa">Кого касается</h3>
+                    <div style="margin-top:8px;display:flex;flex-direction:column;gap:8px">
+                      <label style="display:flex;align-items:center;gap:8px;font-size:14px">
+                        <span style="height:16px;width:16px;flex-shrink:0;border-radius:50%;border:1.5px solid #5e72e4;background:#5e72e4;display:flex;align-items:center;justify-content:center"><span style="height:7px;width:7px;border-radius:50%;background:#fff"></span></span>
+                        Все устройства в сети
+                      </label>
+                      <label style="display:flex;align-items:center;gap:8px;font-size:14px">
+                        <span style="height:16px;width:16px;flex-shrink:0;border-radius:50%;border:1.5px solid #ccc;background:#fff"></span>
+                        Только выбранные
+                      </label>
+                    </div>
+                  </section>
+
+                  <section style="border-radius:2px;border:1px solid #e9ecef;padding:12px">
+                    <h3 style="margin:0;font-size:12px;line-height:16px;font-weight:600;text-transform:uppercase;letter-spacing:.025em;color:#8898aa">Куда направить</h3>
+                    <div style="margin-top:8px;display:flex;flex-direction:column;gap:8px">
+                      <label style="display:flex;align-items:center;gap:8px;font-size:14px">
+                        <span style="height:16px;width:16px;flex-shrink:0;border-radius:50%;border:1.5px solid #5e72e4;background:#5e72e4;display:flex;align-items:center;justify-content:center"><span style="height:7px;width:7px;border-radius:50%;background:#fff"></span></span>
+                        <span style="height:8px;width:8px;flex-shrink:0;border-radius:9999px;background:#2dce89"></span>
+                        <span style="min-width:0;flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">vless-nl</span>
+                        <span style="flex-shrink:0;font-size:12px;line-height:16px;color:#8898aa">steer0</span>
+                      </label>
+                      <label style="display:flex;align-items:center;gap:8px;font-size:14px">
+                        <span style="height:16px;width:16px;flex-shrink:0;border-radius:50%;border:1.5px solid #ccc;background:#fff"></span>
+                        <span style="height:8px;width:8px;flex-shrink:0;border-radius:9999px;background:#2dce89"></span>
+                        <span style="min-width:0;flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">wg0</span>
+                        <span style="flex-shrink:0;font-size:12px;line-height:16px;color:#8898aa">wg0</span>
+                      </label>
+                      <label style="display:flex;align-items:center;gap:8px;font-size:14px">
+                        <span style="height:16px;width:16px;flex-shrink:0;border-radius:50%;border:1.5px solid #ccc;background:#fff"></span>
+                        <span style="height:8px;width:8px;flex-shrink:0;border-radius:9999px;background:#8898aa"></span>
+                        <span style="min-width:0;flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">direct</span>
+                        <span style="flex-shrink:0;font-size:12px;line-height:16px;color:#8898aa">мимо туннеля</span>
+                      </label>
+                    </div>
+                    <label style="margin-top:12px;display:flex;flex-direction:column;gap:4px;font-size:12px;line-height:16px">
+                      Режим доменов
+                      <select style="border-radius:2px;border:1px solid #e9ecef;background:transparent;padding:4px 8px;font-size:14px;color:#32325d;font-family:inherit">
+                        <option>fake-IP — точнее</option>
+                        <option>real-IP — дешевле</option>
+                      </select>
+                      <span style="color:#8898aa">fake-IP выдаёт каждому домену свой адрес: точно, но на домен нужен элемент набора. real-IP кладёт настоящие адреса из ответа — дешевле, но два домена за одним адресом станут одним.</span>
+                    </label>
+                  </section>
+                </div>
+
+                <div style="display:flex;flex-wrap:wrap;align-items:center;justify-content:space-between;gap:8px">
+                  <button type="button" onClick="{{ closeEditor }}" style="display:inline-flex;align-items:center;justify-content:center;border-radius:4px;height:36px;padding:8px 16px;font-size:14px;font-weight:500;background:#5e72e4;color:#fff;border:0;cursor:pointer;font-family:inherit">Готово</button>
+                  <button type="button" style="display:inline-flex;align-items:center;justify-content:center;gap:4px;border-radius:4px;height:36px;padding:8px 16px;font-size:14px;font-weight:500;background:transparent;color:#f5365c;border:0;cursor:pointer;font-family:inherit">
+                    <i data-lucide="trash-2" style="width:16px;height:16px"></i> Удалить правило
+                  </button>
+                </div>
+              </div>
+            </div>
+          </sc-if>
+
+          <sc-if value="{{ isOutbounds }}">
+            <div style="border-radius:4px;background:#fff;box-shadow:0 0 1rem 0 rgba(136,152,170,.15)">
+              <div style="display:flex;flex-direction:column;gap:6px;padding:24px">
+                <div style="font-weight:600;line-height:1;letter-spacing:-.01em">Выходы</div>
+                <div style="font-size:14px;color:#8898aa">Куда правила могут вести. Несколько выходов работают одновременно — у каждого своя <span style="text-decoration:underline;text-decoration-style:dotted;text-underline-offset:3px;cursor:default">метка</span>. Изменения сохраняются сами.</div>
+              </div>
+              <div style="padding:0 24px 24px;display:flex;flex-direction:column;gap:8px">
+                <div style="margin-bottom:8px;display:flex;flex-wrap:wrap;gap:8px">
+                  <button type="button" style="display:inline-flex;align-items:center;gap:4px;border-radius:4px;height:36px;padding:8px 16px;font-size:14px;font-weight:500;background:#f0f0f0;color:#32325d;border:0;cursor:pointer;font-family:inherit"><i data-lucide="plus" style="width:16px;height:16px"></i> Туннель</button>
+                  <button type="button" style="display:inline-flex;align-items:center;gap:4px;border-radius:4px;height:36px;padding:8px 16px;font-size:14px;font-weight:500;background:#f0f0f0;color:#32325d;border:0;cursor:pointer;font-family:inherit"><i data-lucide="plus" style="width:16px;height:16px"></i> VLESS</button>
+                  <button type="button" style="display:inline-flex;align-items:center;gap:4px;border-radius:4px;height:36px;padding:8px 16px;font-size:14px;font-weight:500;background:#f0f0f0;color:#32325d;border:0;cursor:pointer;font-family:inherit"><i data-lucide="plus" style="width:16px;height:16px"></i> Напрямую</button>
+                </div>
+
+                <div style="display:flex;flex-direction:column;gap:8px;border-radius:2px;border:1px solid #e9ecef;background:#fff;padding:12px">
+                  <div style="display:flex;flex-wrap:wrap;align-items:flex-end;gap:12px">
+                    <label style="display:flex;flex-direction:column;gap:4px;font-size:12px;line-height:16px">
+                      <span>Имя <span style="color:#8898aa">· Enter или клик мимо — сохранится</span></span>
+                      <input value="wg0" style="width:9rem;border-radius:2px;border:1px solid #e9ecef;background:transparent;padding:4px 8px;font-size:14px;color:#32325d;font-family:inherit">
+                    </label>
+                    <label style="display:flex;flex-direction:column;gap:4px;font-size:12px;line-height:16px">
+                      <span style="text-decoration:underline;text-decoration-style:dotted;text-underline-offset:3px;cursor:default">Если всё упало</span>
+                      <select style="border-radius:2px;border:1px solid #e9ecef;background:transparent;padding:4px 8px;font-size:14px;color:#32325d;font-family:inherit">
+                        <option>Остановить трафик</option>
+                        <option>Пустить напрямую</option>
+                      </select>
+                    </label>
+                    <div style="margin-left:auto">
+                      <button type="button" aria-label="Удалить выход wg0" style="display:inline-flex;align-items:center;justify-content:center;height:36px;width:36px;border-radius:4px;border:0;background:transparent;cursor:pointer"><i data-lucide="trash-2" style="width:16px;height:16px"></i></button>
+                    </div>
+                  </div>
+
+                  <div style="border-radius:2px;border:1px solid #e9ecef;padding:8px">
+                    <div style="margin-bottom:4px;font-size:12px;line-height:16px;color:#8898aa">Устройства по приоритету — трафик пойдёт через первое работающее, и сам вернётся наверх, когда основное оживёт.</div>
+                    <div style="display:flex;align-items:center;gap:8px;padding:2px 0;font-size:14px">
+                      <span style="width:16px;text-align:center;font-size:12px;color:#8898aa">1</span>
+                      <span style="font-weight:500;color:#5e72e4">wg0</span>
+                      <span style="display:inline-flex;align-items:center;border-radius:4px;border:1px solid transparent;background:#5e72e4;color:#fff;padding:2px 10px;font-size:12px;font-weight:600">активно</span>
+                      <div style="margin-left:auto;display:flex;align-items:center;gap:4px">
+                        <button type="button" aria-label="Выше" disabled style="display:inline-flex;align-items:center;justify-content:center;height:36px;width:36px;border-radius:4px;border:0;background:transparent;opacity:.5;cursor:default"><i data-lucide="arrow-up" style="width:16px;height:16px"></i></button>
+                        <button type="button" aria-label="Ниже" style="display:inline-flex;align-items:center;justify-content:center;height:36px;width:36px;border-radius:4px;border:0;background:transparent;cursor:pointer"><i data-lucide="arrow-down" style="width:16px;height:16px"></i></button>
+                        <button type="button" aria-label="Убрать wg0" style="display:inline-flex;align-items:center;justify-content:center;height:36px;width:36px;border-radius:4px;border:0;background:transparent;cursor:pointer"><i data-lucide="trash-2" style="width:16px;height:16px"></i></button>
+                      </div>
+                    </div>
+                    <div style="display:flex;align-items:center;gap:8px;padding:2px 0;font-size:14px">
+                      <span style="width:16px;text-align:center;font-size:12px;color:#8898aa">2</span>
+                      <span>awg0</span>
+                      <span style="display:inline-flex;align-items:center;border-radius:4px;border:1px solid transparent;background:#f0f0f0;color:#32325d;padding:2px 10px;font-size:12px;font-weight:600">выключено</span>
+                      <div style="margin-left:auto;display:flex;align-items:center;gap:4px">
+                        <button type="button" aria-label="Выше" style="display:inline-flex;align-items:center;justify-content:center;height:36px;width:36px;border-radius:4px;border:0;background:transparent;cursor:pointer"><i data-lucide="arrow-up" style="width:16px;height:16px"></i></button>
+                        <button type="button" aria-label="Ниже" disabled style="display:inline-flex;align-items:center;justify-content:center;height:36px;width:36px;border-radius:4px;border:0;background:transparent;opacity:.5;cursor:default"><i data-lucide="arrow-down" style="width:16px;height:16px"></i></button>
+                        <button type="button" aria-label="Убрать awg0" style="display:inline-flex;align-items:center;justify-content:center;height:36px;width:36px;border-radius:4px;border:0;background:transparent;cursor:pointer"><i data-lucide="trash-2" style="width:16px;height:16px"></i></button>
+                      </div>
+                    </div>
+                    <select style="margin-top:4px;border-radius:2px;border:1px solid #e9ecef;background:transparent;padding:4px 8px;font-size:14px;color:#32325d;font-family:inherit">
+                      <option>+ добавить устройство</option>
+                    </select>
+                  </div>
+
+                  <div style="display:flex;flex-wrap:wrap;align-items:center;gap:8px;font-size:12px;line-height:16px">
+                    <span style="display:inline-flex;align-items:center;border-radius:4px;border:1px solid transparent;background:#5e72e4;color:#fff;padding:2px 10px;font-size:12px;font-weight:600">поднят</span>
+                    <span style="display:inline-flex;align-items:center;border-radius:4px;border:1px solid transparent;background:#f0f0f0;color:#32325d;padding:2px 10px;font-size:12px;font-weight:600;text-decoration:underline;text-decoration-style:dotted">NAT есть</span>
+                    <span style="color:#8898aa">метка 0x100000, таблица 300</span>
+                    <span style="color:#8898aa">каналы: Telegram</span>
+                  </div>
+                </div>
+
+                <div style="display:flex;flex-direction:column;gap:8px;border-radius:2px;border:1px solid #e9ecef;background:#fff;padding:12px">
+                  <div style="display:flex;flex-wrap:wrap;align-items:flex-end;gap:12px">
+                    <label style="display:flex;flex-direction:column;gap:4px;font-size:12px;line-height:16px">
+                      <span>Имя <span style="color:#8898aa">· Enter или клик мимо — сохранится</span></span>
+                      <input value="direct" style="width:9rem;border-radius:2px;border:1px solid #e9ecef;background:transparent;padding:4px 8px;font-size:14px;color:#32325d;font-family:inherit">
+                    </label>
+                    <span style="display:inline-flex;align-items:center;border-radius:4px;border:1px solid transparent;background:#f0f0f0;color:#32325d;padding:2px 10px;font-size:12px;font-weight:600;text-decoration:underline;text-decoration-style:dotted">напрямую, без устройства</span>
+                    <div style="margin-left:auto">
+                      <button type="button" aria-label="Удалить выход direct" style="display:inline-flex;align-items:center;justify-content:center;height:36px;width:36px;border-radius:4px;border:0;background:transparent;cursor:pointer"><i data-lucide="trash-2" style="width:16px;height:16px"></i></button>
+                    </div>
+                  </div>
+                  <div style="display:flex;flex-wrap:wrap;align-items:center;gap:8px;font-size:12px;line-height:16px">
+                    <span style="color:#8898aa">каналы: Spotify мимо VPN</span>
+                  </div>
+                </div>
+              </div>
+            </div>
+          </sc-if>
+
+          <sc-if value="{{ isCatalog }}">
+            <div style="display:flex;flex-direction:column;gap:12px">
+              <div style="display:flex;flex-wrap:wrap;align-items:center;gap:8px">
+                <div style="display:flex;min-width:0;flex:1;align-items:center;gap:8px;border-radius:2px;border:1px solid #e9ecef;background:#fff;padding:0 8px">
+                  <i data-lucide="search" style="width:16px;height:16px;flex-shrink:0;color:#8898aa"></i>
+                  <input placeholder="поиск по каталогу" style="min-width:0;flex:1;background:transparent;border:0;outline:none;padding:8px 0;font-size:14px;color:#32325d;font-family:inherit">
+                </div>
+                <div style="display:flex;gap:4px" role="tablist">
+                  <button type="button" style="border-radius:2px;padding:6px 12px;font-size:14px;background:#5e72e4;color:#fff;border:0;cursor:pointer;font-family:inherit">все · 142</button>
+                  <button type="button" style="border-radius:2px;padding:6px 12px;font-size:14px;background:transparent;color:#8898aa;border:0;cursor:pointer;font-family:inherit">используются · 6</button>
+                </div>
+                <button type="button" style="display:inline-flex;align-items:center;gap:4px;border-radius:4px;height:36px;padding:8px 16px;font-size:14px;font-weight:500;background:#f0f0f0;color:#32325d;border:0;cursor:pointer;font-family:inherit"><i data-lucide="plus" style="width:16px;height:16px"></i> Свой список</button>
+              </div>
+
+              <div style="overflow-x:auto;border-radius:2px;border:1px solid #e9ecef;background:#fff;box-shadow:0 0 1rem 0 rgba(136,152,170,.15)">
+                <table style="width:100%;min-width:38rem;font-size:14px;border-collapse:collapse">
+                  <thead>
+                    <tr style="border-bottom:1px solid #e9ecef;text-align:left;font-size:12px;line-height:16px;text-transform:uppercase;letter-spacing:.025em;color:#8898aa">
+                      <th style="padding:8px 12px;font-weight:600">Запись</th>
+                      <th style="padding:8px 12px;font-weight:600">Записей</th>
+                      <th style="padding:8px 12px;font-weight:600">Где используется</th>
+                      <th style="padding:8px 12px"></th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    <tr style="border-bottom:1px solid rgba(233,236,239,.5)">
+                      <td style="padding:8px 12px">
+                        <div style="overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-weight:500">YouTube</div>
+                        <div style="font-size:12px;line-height:16px;color:#8898aa">домены и адреса · частей 2</div>
+                        <div style="margin-top:2px;font-size:12px;line-height:16px;color:#8898aa"><span style="text-decoration:underline;text-decoration-style:dotted;text-underline-offset:3px;cursor:default">домены — список внешний</span> · <a href="#" style="text-decoration:underline;text-decoration-style:dotted;color:#8898aa">предложить домен</a></div>
+                      </td>
+                      <td style="padding:8px 12px;white-space:nowrap;color:#8898aa">41 890</td>
+                      <td style="padding:8px 12px"><span style="color:#5e72e4">YouTube</span></td>
+                      <td style="padding:8px 12px">
+                        <div style="display:flex;align-items:center;justify-content:flex-end;gap:4px">
+                          <button type="button" aria-label="Обновить YouTube" style="display:inline-flex;align-items:center;justify-content:center;height:36px;width:36px;border-radius:4px;border:0;background:transparent;cursor:pointer"><i data-lucide="refresh-cw" style="width:16px;height:16px"></i></button>
+                          <button type="button" aria-label="Удалить YouTube с роутера" style="display:inline-flex;align-items:center;justify-content:center;height:36px;width:36px;border-radius:4px;border:0;background:transparent;cursor:pointer"><i data-lucide="trash-2" style="width:16px;height:16px"></i></button>
+                        </div>
+                      </td>
+                    </tr>
+                    <tr style="border-bottom:1px solid rgba(233,236,239,.5)">
+                      <td style="padding:8px 12px">
+                        <div style="overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-weight:500">Telegram</div>
+                        <div style="font-size:12px;line-height:16px;color:#8898aa">только адреса</div>
+                        <div style="margin-top:2px;font-size:12px;line-height:16px;color:#8898aa"><span style="text-decoration:underline;text-decoration-style:dotted;text-underline-offset:3px;cursor:default">список наш</span></div>
+                      </td>
+                      <td style="padding:8px 12px;white-space:nowrap;color:#8898aa">3 118</td>
+                      <td style="padding:8px 12px"><span style="color:#5e72e4">Telegram</span></td>
+                      <td style="padding:8px 12px">
+                        <div style="display:flex;align-items:center;justify-content:flex-end;gap:4px">
+                          <button type="button" aria-label="Обновить Telegram" style="display:inline-flex;align-items:center;justify-content:center;height:36px;width:36px;border-radius:4px;border:0;background:transparent;cursor:pointer"><i data-lucide="refresh-cw" style="width:16px;height:16px"></i></button>
+                          <button type="button" aria-label="Удалить Telegram с роутера" style="display:inline-flex;align-items:center;justify-content:center;height:36px;width:36px;border-radius:4px;border:0;background:transparent;cursor:pointer"><i data-lucide="trash-2" style="width:16px;height:16px"></i></button>
+                        </div>
+                      </td>
+                    </tr>
+                    <tr style="border-bottom:1px solid rgba(233,236,239,.5)">
+                      <td style="padding:8px 12px">
+                        <div style="overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-weight:500">Cloudflare</div>
+                        <div style="font-size:12px;line-height:16px;color:#8898aa">только адреса</div>
+                        <div style="margin-top:2px;font-size:12px;line-height:16px;color:#ffc107"><span style="text-decoration:underline;text-decoration-style:dotted;text-underline-offset:3px;cursor:default">тот же список адресов, что у «Discord»</span></div>
+                      </td>
+                      <td style="padding:8px 12px;white-space:nowrap;color:#8898aa">2 640</td>
+                      <td style="padding:8px 12px"><button type="button" style="color:#5e72e4;text-decoration:underline;text-decoration-style:dotted;background:none;border:0;padding:0;cursor:pointer;font:inherit">В правило</button></td>
+                      <td style="padding:8px 12px">
+                        <div style="display:flex;align-items:center;justify-content:flex-end;gap:4px">
+                          <span style="font-size:12px;line-height:16px;color:#8898aa;text-decoration:underline;text-decoration-style:dotted">скачается сам</span>
+                        </div>
+                      </td>
+                    </tr>
+                    <tr>
+                      <td style="padding:8px 12px">
+                        <div style="overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-weight:500">18+</div>
+                        <div style="font-size:12px;line-height:16px;color:#8898aa">только домены</div>
+                        <div style="margin-top:2px;font-size:12px;line-height:16px;color:#ffc107"><span style="text-decoration:underline;text-decoration-style:dotted;text-underline-offset:3px;cursor:default">рядом наш список «18+ дополнение» — включайте оба</span></div>
+                      </td>
+                      <td style="padding:8px 12px;white-space:nowrap;color:#8898aa">12 908</td>
+                      <td style="padding:8px 12px"><button type="button" style="color:#5e72e4;text-decoration:underline;text-decoration-style:dotted;background:none;border:0;padding:0;cursor:pointer;font:inherit">В правило</button></td>
+                      <td style="padding:8px 12px">
+                        <div style="display:flex;align-items:center;justify-content:flex-end;gap:4px">
+                          <span style="font-size:12px;line-height:16px;color:#8898aa;text-decoration:underline;text-decoration-style:dotted">скачается сам</span>
+                        </div>
+                      </td>
+                    </tr>
+                  </tbody>
+                </table>
+              </div>
+
+              <p style="margin:0;font-size:12px;line-height:16px;color:#8898aa">Каталог — справка: запись начинает работать, когда на неё укажет правило. Нужные списки скачиваются и обновляются сами. Манифест версии 7.</p>
+            </div>
+          </sc-if>
+
+          <sc-if value="{{ isLogs }}">
+            <div style="display:flex;flex-direction:column;gap:16px">
+              <div style="border-radius:4px;background:#fff;box-shadow:0 0 1rem 0 rgba(136,152,170,.15)">
+                <div style="display:flex;flex-direction:column;gap:6px;padding:24px">
+                  <div style="font-weight:600;line-height:1;letter-spacing:-.01em">Работает, но есть о чём знать: 1</div>
+                  <div style="font-size:14px;color:#8898aa">Движок спрашивает ядро и живые процессы, а не свою же настройку: совпадение с настройкой ничего не доказывает.</div>
+                </div>
+                <div style="padding:0 24px 24px;display:flex;flex-direction:column;gap:8px">
+                  <div style="display:flex;gap:8px;font-size:14px">
+                    <i data-lucide="triangle-alert" style="margin-top:2px;width:16px;height:16px;flex-shrink:0;color:#ffc107"></i>
+                    <div>
+                      <div>Список domains/telegram.lst старше суток</div>
+                      <div style="font-size:12px;line-height:16px;color:#8898aa">обновление по расписанию не прошло: последняя попытка 21 ч назад</div>
+                    </div>
+                  </div>
+                  <div style="display:flex;flex-direction:column;gap:8px;border-top:1px solid #e9ecef;padding-top:8px">
+                    <div style="display:flex;gap:8px;font-size:14px">
+                      <i data-lucide="info" style="margin-top:2px;width:16px;height:16px;flex-shrink:0;color:#8898aa"></i>
+                      <div>
+                        <div>в списке категории Google есть подсеть публичного резолвера 8.8.8.0/24</div>
+                        <div style="font-size:12px;line-height:16px;color:#8898aa">списки собираются по номеру автономной системы целиком</div>
+                      </div>
+                    </div>
+                  </div>
+                  <div>
+                    <button type="button" style="font-size:12px;line-height:16px;color:#8898aa;text-decoration:underline;background:none;border:0;padding:0;cursor:pointer;font-family:inherit">исправно: 11 — показать</button>
+                  </div>
+                </div>
+              </div>
+
+              <div style="border-radius:4px;background:#fff;box-shadow:0 0 1rem 0 rgba(136,152,170,.15)">
+                <div style="display:flex;flex-direction:column;gap:6px;padding:24px">
+                  <div style="font-weight:600;line-height:1;letter-spacing:-.01em">Куда пойдёт запрос</div>
+                  <div style="font-size:14px;color:#8898aa">Отвечает по живому ядру, а не по настройке. Имя движок сначала спрашивает у своего резолвера и показывает, во что оно превратилось: у доменного правила это fake-IP, и с настоящим адресом сайта он не совпадает вовсе.</div>
+                </div>
+                <div style="padding:0 24px 24px">
+                  <div style="display:flex;flex-wrap:wrap;gap:8px">
+                    <input placeholder="www.youtube.com или 142.250.185.78" style="min-width:0;flex:1;border-radius:2px;border:1px solid #e9ecef;background:transparent;padding:8px 12px;font-family:ui-monospace,SFMono-Regular,Menlo,monospace;font-size:14px;color:#32325d">
+                    <button type="button" style="display:inline-flex;align-items:center;gap:4px;border-radius:4px;height:36px;padding:8px 16px;font-size:14px;font-weight:500;background:#5e72e4;color:#fff;border:0;cursor:pointer;font-family:inherit"><i data-lucide="search" style="width:16px;height:16px"></i> Проверить</button>
+                  </div>
+                  <pre style="margin:12px 0 0;overflow-x:auto;border-radius:2px;border:1px solid #e9ecef;background:#f4f5f7;padding:12px;font-size:12px;line-height:1.625;white-space:pre-wrap;font-family:ui-monospace,SFMono-Regular,Menlo,monospace">www.youtube.com -> 198.18.0.42 (fake-IP)
+channel YouTube -> output vless-nl (mark 0x100000, table 300)</pre>
+                </div>
+              </div>
+
+              <div style="border-radius:4px;background:#fff;box-shadow:0 0 1rem 0 rgba(136,152,170,.15)">
+                <div style="display:flex;flex-direction:column;gap:6px;padding:24px">
+                  <div style="font-weight:600;line-height:1;letter-spacing:-.01em">Счётчики</div>
+                  <div style="font-size:14px;color:#8898aa">Считаются <b>с загрузки роутера</b> и переживают применение настройки. Одна строка — это один набор в ядре, а не одно правило.</div>
+                </div>
+                <div style="padding:0 24px 24px;overflow-x:auto">
+                  <table style="width:100%;min-width:34rem;font-size:14px;border-collapse:collapse">
+                    <thead>
+                      <tr style="text-align:left;font-size:12px;line-height:16px;color:#8898aa">
+                        <th style="padding-bottom:8px;font-weight:400">Набор</th>
+                        <th style="padding-bottom:8px;font-weight:400">Outbound</th>
+                        <th style="padding-bottom:8px;font-weight:400;text-align:right">↑ наружу</th>
+                        <th style="padding-bottom:8px;font-weight:400;text-align:right">↓ внутрь</th>
+                        <th style="padding-bottom:8px;font-weight:400;text-align:right">сейчас</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      <tr style="border-top:1px solid #e9ecef">
+                        <td style="padding:6px 0">YouTube</td>
+                        <td style="padding:6px 0;color:#8898aa">vless-nl</td>
+                        <td style="padding:6px 0;text-align:right">1,8 ГБ</td>
+                        <td style="padding:6px 0;text-align:right">12,4 ГБ</td>
+                        <td style="padding:6px 0;text-align:right;white-space:nowrap;font-size:12px">↓ 4,2 Мбит/с<br>↑ 512 кбит/с</td>
+                      </tr>
+                      <tr style="border-top:1px solid #e9ecef">
+                        <td style="padding:6px 0">Telegram</td>
+                        <td style="padding:6px 0;color:#8898aa">wg0</td>
+                        <td style="padding:6px 0;text-align:right">96,3 МБ</td>
+                        <td style="padding:6px 0;text-align:right">412,7 МБ</td>
+                        <td style="padding:6px 0;text-align:right;white-space:nowrap;font-size:12px;color:#8898aa">—</td>
+                      </tr>
+                      <tr style="border-top:1px solid #e9ecef">
+                        <td style="padding:6px 0">Spotify мимо VPN</td>
+                        <td style="padding:6px 0;color:#8898aa">direct</td>
+                        <td style="padding:6px 0;text-align:right">12,1 МБ</td>
+                        <td style="padding:6px 0;text-align:right">238,4 МБ</td>
+                        <td style="padding:6px 0;text-align:right;white-space:nowrap;font-size:12px;color:#8898aa">—</td>
+                      </tr>
+                    </tbody>
+                  </table>
+                </div>
+              </div>
+
+              <div style="border-radius:4px;background:#fff;box-shadow:0 0 1rem 0 rgba(136,152,170,.15)">
+                <div style="display:flex;flex-direction:column;gap:6px;padding:24px">
+                  <div style="font-weight:600;line-height:1;letter-spacing:-.01em">Логи steer</div>
+                  <div style="font-size:14px;color:#8898aa">Последние строки, дословно. Уровень берётся из пометки движка <code style="font-family:ui-monospace,SFMono-Regular,Menlo,monospace">steer[warn]</code> — это формат, а не проза.</div>
+                </div>
+                <div style="padding:0 24px 24px">
+                  <div style="max-height:18rem;overflow:auto;border-radius:2px;border:1px solid #e9ecef;background:#f4f5f7;padding:12px;font-size:11px;line-height:1.625;font-family:ui-monospace,SFMono-Regular,Menlo,monospace">
+                    <div style="display:flex;gap:8px;white-space:pre-wrap"><span style="flex-shrink:0;color:#8898aa">info</span><span style="min-width:0">Tue Aug 18 03:12:04 2026 daemon.info steer[info] spec compiled: 4 channels, 3 outputs</span></div>
+                    <div style="display:flex;gap:8px;white-space:pre-wrap"><span style="flex-shrink:0;color:#8898aa">info</span><span style="min-width:0">Tue Aug 18 03:12:04 2026 daemon.info steer[info] resolver up on 127.0.0.1:5353, fake-IP pool 198.18.0.0/15</span></div>
+                    <div style="display:flex;gap:8px;white-space:pre-wrap"><span style="flex-shrink:0;color:#ffc107">warn</span><span style="min-width:0">Tue Aug 18 03:12:05 2026 daemon.warn steer[warn] list domains/telegram.lst older than 24h</span></div>
+                    <div style="display:flex;gap:8px;white-space:pre-wrap"><span style="flex-shrink:0;color:#8898aa">info</span><span style="min-width:0">Tue Aug 18 03:12:05 2026 daemon.info steer[info] output vless-nl up: dev steer0, mark 0x100000, table 300</span></div>
+                  </div>
+                </div>
+              </div>
+            </div>
+          </sc-if>
+
+          <div style="margin-top:24px;border-top:1px solid #e9ecef;padding-top:12px;text-align:right;font-size:12px;line-height:16px;color:#8898aa">
+            powered by <a href="https://github.com/xyzmean/steer" target="_blank" rel="noreferrer" style="color:#8898aa;text-decoration:underline;text-decoration-style:dotted">steer</a>
+          </div>
+        </main>
+      </div>
+
+      <div style="position:fixed;bottom:24px;left:50%;transform:translateX(-50%);z-index:50">
+        <button type="button" title="Изменения уже сохранены. Кнопка отправит их в ядро — около двух секунд, соединения не рвутся." style="display:flex;height:44px;align-items:center;gap:10px;border-radius:9999px;padding:0 24px;font-size:14px;font-weight:500;color:#fff;background:#5e72e4;border:0;cursor:pointer;box-shadow:0 6px 20px rgba(0,0,0,.18);font-family:inherit">
+          <i data-lucide="check" style="width:16px;height:16px"></i> Применить
+          <span style="display:flex;height:22px;min-width:22px;align-items:center;justify-content:center;border-radius:9999px;background:rgba(255,255,255,.25);padding:0 6px;font-size:12px;font-weight:600">3</span>
+        </button>
+      </div>
+    </sc-if>
+
+    <sc-if value="{{ isFirstRun }}">
+      <div style="max-width:42rem;margin:0 auto;display:flex;flex-direction:column;gap:16px">
+        <div style="border-radius:2px;border:1px solid #e9ecef;background:#fff;padding:20px;box-shadow:0 0 1rem 0 rgba(136,152,170,.15)">
+          <h1 style="margin:0;font-size:18px;line-height:28px;font-weight:600">Движок не установлен</h1>
+          <p style="margin:8px 0 0;font-size:14px;color:#8898aa">splify2 — это интерфейс, а маршрутизацией занимается <b>steer</b>: он превращает правила в собственную таблицу nftables и раздаёт метки. Без него интерфейсу нечего ни проверить, ни применить, поэтому начинать надо отсюда.</p>
+          <ul style="margin:12px 0 0;padding:0;list-style:none;display:flex;flex-direction:column;gap:6px;font-size:14px">
+            <li><b>extended</b><span style="color:#8898aa"> — поднимает VLESS/Reality сам, достаточно подписки. Нужен, если туннеля на роутере ещё нет.</span></li>
+            <li><b>basic</b><span style="color:#8898aa"> — только маршрутизация по готовым устройствам: wireguard, amneziawg, любой существующий интерфейс.</span></li>
+          </ul>
+        </div>
+
+        <div style="border-radius:4px;background:#fff;box-shadow:0 0 1rem 0 rgba(136,152,170,.15)">
+          <div style="display:flex;flex-direction:column;gap:6px;padding:24px">
+            <div style="font-weight:600;line-height:1;letter-spacing:-.01em">Движок steer</div>
+            <div style="font-size:14px;color:#8898aa">Пакеты для aarch64_cortex-a53. Установка занимает около минуты и не требует перезагрузки роутера.</div>
+          </div>
+          <div style="padding:0 24px 24px;display:flex;flex-wrap:wrap;align-items:flex-end;gap:12px">
+            <label style="display:flex;flex-direction:column;gap:4px;font-size:12px;line-height:16px">
+              Вариант сборки
+              <select style="border-radius:2px;border:1px solid #e9ecef;background:transparent;padding:4px 8px;font-size:14px;color:#32325d;font-family:inherit">
+                <option>steer-extended — с клиентом VLESS</option>
+                <option>steer — только маршрутизация</option>
+              </select>
+            </label>
+            <label style="display:flex;flex-direction:column;gap:4px;font-size:12px;line-height:16px">
+              Версия
+              <select style="border-radius:2px;border:1px solid #e9ecef;background:transparent;padding:4px 8px;font-size:14px;color:#32325d;font-family:inherit">
+                <option>1.1.3</option>
+                <option>1.1.2</option>
+              </select>
+            </label>
+            <button type="button" style="display:inline-flex;align-items:center;gap:4px;border-radius:4px;height:36px;padding:8px 16px;font-size:14px;font-weight:500;background:#5e72e4;color:#fff;border:0;cursor:pointer;font-family:inherit"><i data-lucide="download" style="width:16px;height:16px"></i> Установить</button>
+          </div>
+        </div>
+
+        <p style="margin:0;font-size:12px;line-height:16px;color:#8898aa">Пакет можно поставить и руками: <code style="font-family:ui-monospace,SFMono-Regular,Menlo,monospace">apk add --allow-untrusted ./steer-extended-*.apk</code>. На роутере с 64 МБ перед установкой стоит остановить движок, если он уже работал: apk иногда убивает нехватка памяти, и тогда обновление молча не происходит.</p>
+      </div>
+    </sc-if>
+
+  </div>
+</div>
+</x-dc>
+<script type="text/x-dc" data-dc-script>
+class Component extends DCLogic {
+  state = { screen: 'console', tab: 'rules', editing: false }
+
+  icons() { try { window.lucide && window.lucide.createIcons() } catch (e) {} }
+  componentDidMount() { this.icons(); setTimeout(() => this.icons(), 400); setTimeout(() => this.icons(), 1200) }
+  componentDidUpdate() { this.icons() }
+
+  go(tab) { this.setState({ screen: 'console', tab, editing: false }) }
+
+  renderVals() {
+    const t = this.state.tab
+    const on = (id) => ({
+      color: t === id ? '#5e72e4' : '#8898aa',
+      weight: t === id ? '500' : '400',
+      line: t === id ? '#5e72e4' : 'transparent',
+    })
+    const r = on('rules'), o = on('outbounds'), c = on('catalog'), l = on('logs')
+    return {
+      isConsole: this.state.screen === 'console',
+      isFirstRun: this.state.screen === 'firstrun',
+      isRulesList: t === 'rules' && !this.state.editing,
+      isEditor: t === 'rules' && this.state.editing,
+      isOutbounds: t === 'outbounds',
+      isCatalog: t === 'catalog',
+      isLogs: t === 'logs',
+      tabRulesColor: r.color, tabRulesWeight: r.weight, tabRulesLine: r.line,
+      tabOutColor: o.color, tabOutWeight: o.weight, tabOutLine: o.line,
+      tabCatColor: c.color, tabCatWeight: c.weight, tabCatLine: c.line,
+      tabLogColor: l.color, tabLogWeight: l.weight, tabLogLine: l.line,
+      goRules: () => this.go('rules'),
+      goOutbounds: () => this.go('outbounds'),
+      goCatalog: () => this.go('catalog'),
+      goLogs: () => this.go('logs'),
+      goConsole: () => this.setState({ screen: 'console' }),
+      goFirstRun: () => this.setState({ screen: 'firstrun' }),
+      openEditor: () => this.setState({ editing: true }),
+      closeEditor: () => this.setState({ editing: false }),
+    }
+  }
+}
+</script>
+</body>
+</html>

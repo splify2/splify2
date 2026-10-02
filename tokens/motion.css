@@ -1,0 +1,28 @@
+/* Fast enough to feel answered, slow enough to be seen. One curve. */
+:root {
+  --an-ease: cubic-bezier(0.4, 0, 0.2, 1);
+  --an-dur-hover: 160ms;
+  --an-dur-control: 220ms;
+  --an-dur-enter: 260ms;
+  --an-dur-theme: 280ms;
+  --an-dur-collapse: 320ms;
+  --an-dur-pulse: 2400ms;
+
+  --an-transition-hover: background var(--an-dur-hover) var(--an-ease), border-color var(--an-dur-hover) var(--an-ease), transform var(--an-dur-hover) var(--an-ease);
+  --an-transition-theme: background var(--an-dur-theme) var(--an-ease), color var(--an-dur-theme) var(--an-ease), border-color var(--an-dur-theme) var(--an-ease);
+}
+
+@keyframes an-spin { to { transform: rotate(360deg); } }
+@keyframes an-pulse { 0%, 100% { opacity: 1; } 50% { opacity: 0.3; } }
+@keyframes an-enter { from { opacity: 0; transform: translateY(8px); } to { opacity: 1; transform: none; } }
+@keyframes an-dialog-in { from { opacity: 0; transform: translateY(12px) scale(0.97); } to { opacity: 1; transform: none; } }
+@keyframes an-fade { from { opacity: 0; } to { opacity: 1; } }
+@keyframes an-pop { 0% { transform: scale(0.6); opacity: 0; } 60% { transform: scale(1.12); } 100% { transform: scale(1); opacity: 1; } }
+@keyframes an-bar { from { transform: scaleX(0); } to { transform: scaleX(1); } }
+@keyframes an-bar-up { from { transform: scaleY(0); } to { transform: scaleY(1); } }
+@keyframes an-shimmer { 0% { background-position: -420px 0; } 100% { background-position: 420px 0; } }
+
+@media (prefers-reduced-motion: reduce) {
+  :root { --an-dur-hover: 1ms; --an-dur-control: 1ms; --an-dur-enter: 1ms; --an-dur-theme: 1ms; --an-dur-collapse: 1ms; }
+  .an-root *, .an-root *::before, .an-root *::after { animation-duration: 1ms !important; animation-delay: 0ms !important; }
+}

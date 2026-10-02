@@ -1,0 +1,22 @@
+<!-- @dsCard group="Spacing" viewport="700x213" name="Ритм в деле" subtitle="Между сиблингами только gap: перетаскивание и удаление не ломают шаг" -->
+<!DOCTYPE html>
+<html lang="ru"><head><meta charset="utf-8">
+<link rel="stylesheet" href="../styles.css">
+<style>
+  html, body { margin: 0; }
+  body { padding: 18px; }
+  .row { display: flex; flex-wrap: wrap; gap: 12px; align-items: center; }
+  .col { display: flex; flex-direction: column; gap: 10px; }
+  .sw { border-radius: 10px; height: 42px; }
+  .lbl { font: var(--an-text-micro); color: var(--an-text-muted); margin-top: 6px; }
+  .val { font: var(--an-text-micro); font-family: var(--an-font-mono); color: var(--an-text-muted); }
+</style></head>
+<body class="an-root">
+<div style="display:flex;flex-direction:column;gap:var(--an-gap-block)">
+  <div style="display:flex;flex-direction:column;gap:var(--an-gap-row)">
+    <div style="padding:var(--an-pad-row);border:1px solid var(--an-border);border-radius:var(--an-radius-block);background:var(--an-surface-card);font:var(--an-text-body-sm)">строка списка · padding 12/16 · gap между строками 8</div>
+    <div style="padding:var(--an-pad-row);border:1px solid var(--an-border);border-radius:var(--an-radius-block);background:var(--an-surface-card);font:var(--an-text-body-sm)">строка списка</div>
+  </div>
+  <div style="padding:var(--an-pad-card);border:1px solid var(--an-border);border-radius:var(--an-radius-card);background:var(--an-surface-card);font:var(--an-text-body-sm)">карточка · padding 20/22 · радиус 16</div>
+</div>
+</body></html>

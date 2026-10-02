@@ -1,0 +1,29 @@
+<!-- @dsCard group="Components" viewport="700x1310" name="Analytics — показатели и графики" subtitle="Figure, Delta, PlanMeter, Sparkline, Bars, Lines, Heatmap, Legend, Table" -->
+<!DOCTYPE html>
+<html lang="ru"><head><meta charset="utf-8"><title>Analytics — показатели и графики</title>
+<link rel="stylesheet" href="../../styles.css">
+<style>
+  html, body { margin: 0; }
+  body { padding: 18px; }
+  .row { display: flex; flex-wrap: wrap; gap: 12px; align-items: center; }
+  .col { display: flex; flex-direction: column; gap: 10px; }
+  .cap { font: var(--an-text-micro); color: var(--an-text-muted); }
+</style>
+<script src="../../_vendor/react.js"></script>
+<script src="../../_vendor/react-dom.js"></script>
+<script src="../../_ds_bundle.js"></script>
+<script src="../../_preview/analytics.card.js"></script>
+</head>
+<body class="an-root">
+<div id="root"></div>
+<script>
+  (function () {
+    var el = document.getElementById("root");
+    try {
+      ReactDOM.createRoot(el).render(React.createElement(__AndromedaCard.Demo));
+    } catch (e) {
+      el.innerHTML = '<pre style="padding:24px;font-family:ui-monospace,Menlo,monospace">' + String(e && e.stack || e) + '</pre>';
+    }
+  })();
+</script>
+</body></html>

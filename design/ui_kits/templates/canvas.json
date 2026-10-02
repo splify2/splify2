@@ -1,0 +1,108 @@
+{
+  "pages": [
+    {
+      "id": "screens",
+      "name": "Шаблоны экранов"
+    },
+    {
+      "id": "components",
+      "name": "Компоненты и токены"
+    }
+  ],
+  "artboards": [
+    {
+      "file": "Main.dc.html",
+      "title": "Панель",
+      "x": 0,
+      "y": 0,
+      "w": 1440,
+      "h": 1500,
+      "page": "screens"
+    },
+    {
+      "file": "DataTable.dc.html",
+      "title": "Данные · таблица",
+      "x": 1540,
+      "y": 0,
+      "w": 1440,
+      "h": 1000,
+      "page": "screens"
+    },
+    {
+      "file": "Form.dc.html",
+      "title": "Форма настроек",
+      "x": 0,
+      "y": 1640,
+      "w": 1440,
+      "h": 960,
+      "page": "screens"
+    },
+    {
+      "file": "Mobile.dc.html",
+      "title": "Телефон",
+      "x": 1540,
+      "y": 1640,
+      "w": 390,
+      "h": 1180,
+      "page": "screens"
+    },
+    {
+      "file": "Feedback.dc.html",
+      "title": "Обратная связь",
+      "x": 2030,
+      "y": 1640,
+      "w": 760,
+      "h": 1180,
+      "page": "screens"
+    },
+    {
+      "file": "ComponentsLight.dc.html",
+      "title": "Аналитика · светлая",
+      "x": 0,
+      "y": 0,
+      "w": 760,
+      "h": 1480,
+      "page": "components"
+    },
+    {
+      "file": "ComponentsDark.dc.html",
+      "title": "Аналитика · тёмная",
+      "x": 860,
+      "y": 0,
+      "w": 760,
+      "h": 1480,
+      "page": "components"
+    },
+    {
+      "file": "Tokens.dc.html",
+      "title": "Токены",
+      "x": 1720,
+      "y": 0,
+      "w": 900,
+      "h": 1700,
+      "page": "components"
+    }
+  ],
+  "annotations": [
+    {
+      "id": "how",
+      "x": 0,
+      "y": -240,
+      "w": 640,
+      "page": "screens",
+      "text": "Шаблоны Andromeda. Каждый артборд собран генератором canvas/templates.py из тех же токенов, что и пакет @andromeda/ui: значения не срисованы, а прочитаны из src/tokens. Тема и акцент — два свойства артборда; всё остальное — литералы."
+    },
+    {
+      "id": "rules",
+      "x": 1540,
+      "y": -200,
+      "w": 560,
+      "page": "screens",
+      "text": "Один акцент; серый off — второстепенный ряд; чернила — план. Пунктир — всё прогнозное. Состояние всегда дублируется словом. Только gap, никаких margin. Рельс 236."
+    }
+  ],
+  "launch": {
+    "view": "canvas",
+    "page": "screens"
+  }
+}
