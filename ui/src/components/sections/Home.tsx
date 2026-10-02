@@ -10,6 +10,7 @@ import { usePending } from '@/lib/pending'
 import { specV2Unsupported } from '@/lib/engine'
 import { ON_FAIL_TEXT, type Channel, type ChannelStatus, type OutputStatus, devList, isPart, isTunnelKind } from '@/lib/model'
 import { country } from '@/lib/geo'
+import { outDownWord } from '@/lib/outstate'
 import Flag from '@/components/Flag'
 import { type SectionId } from '@/lib/sections'
 
@@ -587,7 +588,7 @@ function RuleRow({
                                   via,
                                   facts?.ping && facts.ping.ms >= 0 ? S.home.ms(facts.ping.ms) : null,
                                   grp && !grp.selected ? S.home.chlenyNeOtvechayut : null,
-                                  st?.node_down ? S.home.uzelNeOtvechaet : null,
+                                  outDownWord(st),
                               ]
                                   .filter(Boolean)
                                   .join(' · ') || S.home.nePodnyat2}

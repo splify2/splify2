@@ -202,6 +202,17 @@ export const ru = {
         sbrositFiltr: "Сбросить фильтр",
         yadroNichegoNePisalo: "Ядро ничего не писало в журнал.",
     },
+    /** Выход с устройством, которое не отвечает (lib/outstate.ts). */
+    outState: {
+        neOtvechaet: "не отвечает",
+        uzelNeOtvechaet: "узел не отвечает",
+        vyhodNeOtvechaet: "Выход не отвечает",
+        uzelNeOtvechaetT: "Узел не отвечает",
+        trafikOstanovlen: "Трафик этого выхода остановлен, пока выход не ответит.",
+        trafikNapryamuyu: "Трафик этого выхода идёт напрямую, пока выход не ответит.",
+        trafikCherezObhod: "Трафик этого выхода идёт через обход, пока выход не ответит.",
+        vernyotsyaSam: "Выход вернётся сам, когда узел ответит.",
+    },
     dns: {
         rabotaet: "работает",
         zhdetVoprosov: "ждёт вопросов",
@@ -469,7 +480,6 @@ export const ru = {
         napryamuyu: "напрямую",
         ms: (p0: unknown) => `${p0} мс`,
         chlenyNeOtvechayut: "члены не отвечают",
-        uzelNeOtvechaet: "узел не отвечает",
         nePodnyat2: "не поднят",
         obschiySchetchik: (p0: unknown) => `общий счётчик: ${p0}`,
         schetchikObschiy: "счётчик общий",

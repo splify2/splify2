@@ -6,6 +6,7 @@ import { CardHead, Empty, Group, TapRow } from '@/components/ui/layout'
 import PoolEditor from '@/components/PoolEditor'
 import { rpc } from '@/lib/rpc'
 import { missingModule } from '@/lib/engine'
+import { outDownWord } from '@/lib/outstate'
 import { pending } from '@/lib/pending'
 import { country } from '@/lib/geo'
 import { devList, EMPTY_SPEC, isPart, type Spec } from '@/lib/model'
@@ -209,6 +210,10 @@ export default function PoolList({
                                   ]
                                       .filter(Boolean)
                                       .join(' · ')
+                        /* Устройство есть, а выход не отвечает (сторож или клиент туннеля) —
+                         * словом впереди строки: красный значок без слова не говорит, что
+                         * случилось. */
+                        const down = need ? null : outDownWord(st)
                         return (
                             <TapRow
                                 key={name}
@@ -224,7 +229,7 @@ export default function PoolList({
                                               : ShieldCheck
                                 }
                                 title={name}
-                                subtitle={state}
+                                subtitle={down ? [down, state].filter(Boolean).join(' · ') : state}
                                 alarm={!!need || (o.kind !== 'direct' && st?.up === false)}
                                 onClick={() => setEditing(o.kind === 'group' ? `${GROUP_PREFIX}${name}` : name)}
                             />

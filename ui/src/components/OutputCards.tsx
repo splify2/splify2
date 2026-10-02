@@ -8,6 +8,7 @@ import { country } from '@/lib/geo'
 import { ccFromName, plainName } from '@/lib/nodename'
 import Flag from '@/components/Flag'
 import { daysText, readQuota, resetText } from '@/lib/quota'
+import { outDown, outDownLine } from '@/lib/outstate'
 
 import { S } from '@/copy'
 /** Правая колонка главной: по блоку на подписку и по блоку на выходной интерфейс.
@@ -387,7 +388,7 @@ export function TunnelBlock({ name, st, facts, phase }: OutRef) {
 function StateDot({ st, phase }: { st?: OutputStatus; phase?: OutRef['phase'] }) {
     const tone = !st
         ? 'bg-muted-foreground'
-        : st.up === true
+        : st.up === true && !outDown(st)
           ? 'bg-success'
           : st.probe?.state === 'probing' || (phase && st.probe?.state === undefined)
             ? 'bg-warning'
@@ -411,7 +412,9 @@ function Where({
     phase?: OutRef['phase']
 }) {
     const up = st?.up === true
-    if (st && !up) return <Trouble st={st} name={name} phase={phase} />
+    /* Узел потерян при живом устройстве — тоже беда, хотя `up` бывает и истинным (сторож ещё
+     * не переключил): прошлая страна рядом с ним читалась бы как «всё в порядке». */
+    if (st && (!up || outDown(st))) return <Trouble st={st} name={name} phase={phase} />
     /* Страна — измеренная, а если её нет, та, что назвал продавец в имени узла. Измерения не
      * бывает не только на сломанном выходе: бэкенд помнит ответ пятнадцать минут, и пустой
      * ответ он помнит так же — до следующей проверки страны не будет вовсе. Подпись продавца
@@ -538,6 +541,21 @@ function Trouble({ st, name, phase }: { st?: OutputStatus; name: string; phase?:
                         ? S.outputCards.vybranUzelAPrigodnyh(n, total)
                         : S.outputCards.vybrannogoUzlaVPodpiske}
                     {S.outputCards.podpiskaObnovilasIUzlov}</p>
+            </>
+        )
+    }
+    /* Устройство есть, а выход не отвечает: сторож поставил on_fail (`failed`) или клиент
+     * потерял узел (`node_down`). Прежде сюда доходило «устройства нет» — неправда того же
+     * рода, что «нет соединения» во время перебора: человек шёл создавать устройство, которое
+     * стоит на месте. */
+    const down = outDown(st)
+    if (st && down) {
+        return (
+            <>
+                <div className="text-[13px] font-medium text-destructive">
+                    {down === 'node' ? S.outState.uzelNeOtvechaetT : S.outState.vyhodNeOtvechaet}
+                </div>
+                <p className="mt-0.5 text-xs leading-relaxed text-muted-foreground">{outDownLine(st)}</p>
             </>
         )
     }
