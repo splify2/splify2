@@ -1,16 +1,32 @@
 /* ── Стекло ────────────────────────────────────────────────────────────
-   Карточки и хром (рельс, нижняя панель) — полупрозрачные поверхности с размытием
-   над подложкой `.an-backdrop`. Подложка под стеклом темнее страницы и с тремя мягкими
-   пятнами акцента: над почти белым фоном белое стекло не видно, и без пятен размывать
-   нечего.
+   Карточки и хром (рельс, нижняя панель) — полупрозрачные поверхности над подложкой
+   `.an-backdrop`. Подложка под стеклом темнее страницы и с тремя мягкими пятнами акцента:
+   над почти белым фоном белое стекло не видно.
 
    Классы:
      .an-backdrop     подложка экрана: фон стекла и пятна
-     .an-glass        стеклянная поверхность (карточка, блок); вложенная — без второго
-                      размытия: двойной blur дорог и мутит текст
+     .an-glass        стеклянная поверхность (карточка, блок); вложенная — тоном
      .an-glass-chrome хром: рельс, нижняя панель — прозрачнее карточки
+     .an-glass-float  добавка к двум классам выше: поверхность ПЛАВАЕТ над содержимым,
+                      которое под ней движется (нижняя панель, окно поверх страницы), —
+                      только у неё размытие (backdrop-filter)
 
-   Без backdrop-filter — прежние сплошные поверхности (--an-surface-card / --an-surface-rail).
+   РАЗМЫТИЕ — ТОЛЬКО У ПЛАВАЮЩЕГО СТЕКЛА. Под карточкой и рельсом лежит одна подложка с
+   пятнами — плавный градиент, и blur(26px) его не меняет: размытый плавный градиент — тот же
+   градиент. А цена у backdrop-filter настоящая. Каждый такой элемент Chrome выносит в свой
+   слой и свою поверхность и на каждом кадре прокрутки заново читает и размывает то, что под
+   ним; всё, что внутри карточки, рисуется уже в эту поверхность. Список со своей прокруткой
+   внутри стеклянной карточки (журнал имён в «Диагностике») ядро браузера прокручивает
+   отдельно от страницы и дорисовывает полосами по 256 пикселей; пока GPU занят размытием
+   всех карточек на экране, полоса не успевает, и на её месте видно пустое стекло —
+   «тёмная плашка во всю ширину карточки» поверх строк. Без размытия у карточек слои те же,
+   что у сплошных поверхностей до стекла, и плашка не появляется. Заодно backdrop-filter
+   делает элемент рамкой для position: fixed внутри — подсказки и окна подтверждения внутри
+   карточки вставали от её угла, а не от окна.
+
+   Без backdrop-filter в браузере плавающее стекло — сплошное (--an-surface-card /
+   --an-surface-rail): полупрозрачное без размытия поверх движущегося текста читается хуже
+   сплошного. Неподвижному размытие не нужно, и оно стеклянное везде.
    prefers-reduced-transparency стекло НЕ выключает — решение владельца: Windows с выключенными
    «Эффектами прозрачности» шлёт его всем браузерам, и стекло пропадало у большинства людей,
    которые ни о чём таком не просили. Тёмная тема — [data-theme="dark"] или .dark. */
@@ -58,37 +74,47 @@
     var(--an-glass-base);
 }
 
-/* Без размытия — сплошные поверхности: полупрозрачная карточка без blur читается хуже
-   сплошной. */
 .an-glass {
-  background-color: var(--an-surface-card);
-  border-color: var(--an-border);
+  background-color: var(--an-glass-surface);
+  background-image: var(--an-glass-sheen);
+  border-color: var(--an-glass-border);
+  box-shadow: inset 0 1px 0 var(--an-glass-edge), var(--an-glass-shadow);
 }
 .an-glass-chrome {
+  background-color: var(--an-glass-chrome);
+  border-color: var(--an-glass-border);
+}
+.an-glass .an-glass {
+  background-color: var(--an-glass-tint);
+  background-image: none;
+  box-shadow: inset 0 1px 0 var(--an-glass-edge);
+}
+
+/* Плавающее стекло. Стоит после вложенного: окно подтверждения, вставленное в разметку внутри
+   карточки, всё равно плавает над страницей, а не лежит тоном на карточке. */
+.an-glass.an-glass-float {
+  background-color: var(--an-surface-card);
+  background-image: none;
+  border-color: var(--an-border);
+  box-shadow: var(--an-glass-shadow);
+}
+.an-glass-chrome.an-glass-float {
   background-color: var(--an-surface-rail);
   border-color: var(--an-border);
 }
-
 @supports ((backdrop-filter: blur(1px)) or (-webkit-backdrop-filter: blur(1px))) {
-  .an-glass {
+  .an-glass.an-glass-float {
     background-color: var(--an-glass-surface);
     background-image: var(--an-glass-sheen);
     border-color: var(--an-glass-border);
     box-shadow: inset 0 1px 0 var(--an-glass-edge), var(--an-glass-shadow);
-    -webkit-backdrop-filter: var(--an-glass-blur);
-    backdrop-filter: var(--an-glass-blur);
   }
-  .an-glass-chrome {
+  .an-glass-chrome.an-glass-float {
     background-color: var(--an-glass-chrome);
     border-color: var(--an-glass-border);
+  }
+  .an-glass-float {
     -webkit-backdrop-filter: var(--an-glass-blur);
     backdrop-filter: var(--an-glass-blur);
-  }
-  .an-glass .an-glass {
-    background-color: var(--an-glass-tint);
-    background-image: none;
-    box-shadow: inset 0 1px 0 var(--an-glass-edge);
-    -webkit-backdrop-filter: none;
-    backdrop-filter: none;
   }
 }

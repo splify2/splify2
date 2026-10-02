@@ -127,7 +127,7 @@ export default function Rail({ live, section, onSection, counts }: RailProps) {
                 меню у темы спрятано, и панель была целой; отсюда «не всегда». */}
             <nav
                 aria-label={S.rail.razdely}
-                className="an-glass-chrome sp-bottom-bar fixed bottom-0 z-40 flex border-t lg:hidden"
+                className="an-glass-chrome an-glass-float sp-bottom-bar fixed bottom-0 z-40 flex border-t lg:hidden"
             >
                 {ITEMS.map(({ id, label, icon: Icon }) => {
                     const on = section === id

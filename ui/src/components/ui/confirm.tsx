@@ -46,8 +46,8 @@ export function useConfirm(): [(req: ConfirmRequest) => Promise<boolean>, React.
       onClick={(e) => { if (e.target === e.currentTarget) close(false) }}
       onKeyDown={(e) => { if (e.key === 'Escape') close(false) }}
     >
-      <Card className="w-full max-w-md shadow-lg">
-        <CardContent className="p-5">
+      <Card className="an-glass-float w-full max-w-md shadow-lg">
+        <CardContent className="p-5 lg:p-5">
           <h4 className="sp-sub flex items-center gap-2">
             <AlertTriangle className={pending.tone === 'default' ? 'size-4 text-primary' : 'size-4 text-warning-fg'} />
             {pending.title}

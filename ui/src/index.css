@@ -699,15 +699,15 @@
  * Поверхности ВНУТРИ стекла — тоже стекло: токены, от которых красятся поля (bg-background),
  * чипы и строки (bg-muted, bg-secondary) и наведение (bg-accent), переопределяются в стекле, и
  * экраны правки не требуют. --sp-card не трогается: от него берут фон select и option, а
- * нативное окно списка прозрачным быть не должно. */
-@supports ((backdrop-filter: blur(1px)) or (-webkit-backdrop-filter: blur(1px))) {
-  .splify-react-root .an-glass,
-  .splify-react-root .an-glass-chrome {
-    --sp-background: var(--an-glass-field);
-    --sp-muted: var(--an-glass-tint);
-    --sp-secondary: var(--an-glass-tint);
-    --sp-accent: var(--an-glass-hover);
-  }
+ * нативное окно списка прозрачным быть не должно. Без условия @supports: неподвижное стекло
+ * размытия не требует и полупрозрачно в любом браузере, а на сплошной плавающей поверхности
+ * (браузер без backdrop-filter) полупрозрачные тона тоже читаются. */
+.splify-react-root .an-glass,
+.splify-react-root .an-glass-chrome {
+  --sp-background: var(--an-glass-field);
+  --sp-muted: var(--an-glass-tint);
+  --sp-secondary: var(--an-glass-tint);
+  --sp-accent: var(--an-glass-hover);
 }
 
 /* ---- бейджи конфигурации (lib/badges.ts, components/ConfBadges.tsx) -----------------------
