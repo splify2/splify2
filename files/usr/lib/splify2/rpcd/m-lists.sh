@@ -609,7 +609,9 @@ AD_EOF
             *:*)
                 [ -r "$AD_SH" ] || fail "описания источника $AD_SH нет — пакет собран не целиком"
                 . "$AD_SH"
-                [ "${id%%:*}" = "$AD_ID" ] || fail "неизвестный источник списков: ${id%%:*}"
+                # Чужая приставка — запись каталога («itdoginfo:telegram»): её путь знает
+                # манифест, ниже. Тот же разбор, что в list_fetch.
+                if [ "${id%%:*}" = "$AD_ID" ]; then
                 svc="${id#*:}"
                 case "$svc" in
                     ''|*[!A-Za-z0-9_-]*) fail "имя сервиса: латиница, цифры, дефис и подчёркивание" ;;
@@ -650,6 +652,7 @@ AD_EOF
                 ad_stamp_del "$svc" "$kind"
                 json_init; json_add_boolean ok 1; json_dump
                 exit 0
+                fi
                 ;;
         esac
 
