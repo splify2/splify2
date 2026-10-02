@@ -1,0 +1,110 @@
+/* ── Стекло ────────────────────────────────────────────────────────────
+   Карточки и хром (рельс, нижняя панель) — полупрозрачные поверхности с размытием
+   над подложкой `.an-backdrop`. Подложка под стеклом темнее страницы и с тремя мягкими
+   пятнами акцента: над почти белым фоном белое стекло не видно, и без пятен размывать
+   нечего.
+
+   Классы:
+     .an-backdrop     подложка экрана: фон стекла и пятна
+     .an-glass        стеклянная поверхность (карточка, блок); вложенная — без второго
+                      размытия: двойной blur дорог и мутит текст
+     .an-glass-chrome хром: рельс, нижняя панель — прозрачнее карточки
+
+   Без backdrop-filter и при prefers-reduced-transparency — прежние сплошные поверхности
+   (--an-surface-card / --an-surface-rail). Тёмная тема — [data-theme="dark"] или .dark. */
+:root {
+  --an-glass-base: #e6eaf1;
+  --an-glass-surface: rgba(255, 255, 255, 0.4);
+  --an-glass-chrome: rgba(255, 255, 255, 0.3);
+  --an-glass-edge: rgba(255, 255, 255, 0.95);
+  --an-glass-border: rgba(140, 157, 175, 0.22);
+  --an-glass-blur: blur(26px) saturate(150%);
+  /* Блик: свет слева сверху. */
+  --an-glass-sheen: linear-gradient(140deg, rgba(255, 255, 255, 0.55), rgba(255, 255, 255, 0.06) 62%);
+  /* Поверхности ВНУТРИ стекла — поле, чип, строка, сегмент: стекло чуть плотнее карточки. */
+  --an-glass-field: rgba(255, 255, 255, 0.5);
+  --an-glass-tint: rgba(255, 255, 255, 0.42);
+  --an-glass-hover: rgba(255, 255, 255, 0.68);
+  --an-glass-spot-1: rgba(94, 114, 228, 0.42);
+  --an-glass-spot-2: rgba(17, 205, 239, 0.34);
+  --an-glass-spot-3: rgba(214, 120, 228, 0.26);
+  --an-glass-shadow: 0 0 1rem 0 rgba(136, 152, 170, 0.15);
+}
+
+[data-theme="dark"],
+.dark {
+  --an-glass-base: #111317;
+  --an-glass-surface: rgba(255, 255, 255, 0.045);
+  --an-glass-chrome: rgba(255, 255, 255, 0.03);
+  --an-glass-edge: rgba(255, 255, 255, 0.1);
+  --an-glass-border: rgba(208, 228, 239, 0.12);
+  --an-glass-sheen: linear-gradient(140deg, rgba(255, 255, 255, 0.07), rgba(255, 255, 255, 0) 60%);
+  --an-glass-field: rgba(0, 0, 0, 0.2);
+  --an-glass-tint: rgba(255, 255, 255, 0.06);
+  --an-glass-hover: rgba(255, 255, 255, 0.1);
+  --an-glass-spot-1: rgba(94, 114, 228, 0.28);
+  --an-glass-spot-2: rgba(17, 205, 239, 0.14);
+  --an-glass-spot-3: rgba(186, 96, 214, 0.14);
+  --an-glass-shadow: 0 0 0.5rem 0 rgba(0, 0, 0, 0.35);
+}
+
+.an-backdrop {
+  background:
+    radial-gradient(ellipse 70% 55% at 88% 6%, var(--an-glass-spot-1), transparent 72%),
+    radial-gradient(ellipse 60% 55% at 4% 96%, var(--an-glass-spot-2), transparent 72%),
+    radial-gradient(ellipse 55% 45% at 50% 50%, var(--an-glass-spot-3), transparent 72%),
+    var(--an-glass-base);
+}
+
+/* Без размытия — сплошные поверхности: полупрозрачная карточка без blur читается хуже
+   сплошной. */
+.an-glass {
+  background-color: var(--an-surface-card);
+  border-color: var(--an-border);
+}
+.an-glass-chrome {
+  background-color: var(--an-surface-rail);
+  border-color: var(--an-border);
+}
+
+@supports ((backdrop-filter: blur(1px)) or (-webkit-backdrop-filter: blur(1px))) {
+  .an-glass {
+    background-color: var(--an-glass-surface);
+    background-image: var(--an-glass-sheen);
+    border-color: var(--an-glass-border);
+    box-shadow: inset 0 1px 0 var(--an-glass-edge), var(--an-glass-shadow);
+    -webkit-backdrop-filter: var(--an-glass-blur);
+    backdrop-filter: var(--an-glass-blur);
+  }
+  .an-glass-chrome {
+    background-color: var(--an-glass-chrome);
+    border-color: var(--an-glass-border);
+    -webkit-backdrop-filter: var(--an-glass-blur);
+    backdrop-filter: var(--an-glass-blur);
+  }
+  .an-glass .an-glass {
+    background-color: var(--an-glass-tint);
+    background-image: none;
+    box-shadow: inset 0 1px 0 var(--an-glass-edge);
+    -webkit-backdrop-filter: none;
+    backdrop-filter: none;
+  }
+}
+
+@media (prefers-reduced-transparency: reduce) {
+  .an-backdrop { background: var(--an-surface-page); }
+  .an-glass,
+  .an-glass .an-glass {
+    background-color: var(--an-surface-card);
+    background-image: none;
+    border-color: var(--an-border);
+    -webkit-backdrop-filter: none;
+    backdrop-filter: none;
+  }
+  .an-glass-chrome {
+    background-color: var(--an-surface-rail);
+    -webkit-backdrop-filter: none;
+    backdrop-filter: none;
+  }
+  :root { --an-glass-field: var(--an-surface-field); --an-glass-tint: var(--an-surface-field); --an-glass-hover: var(--an-surface-field); }
+}

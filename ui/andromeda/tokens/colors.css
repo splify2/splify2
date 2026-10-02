@@ -72,7 +72,8 @@
   --an-focus-ring: color-mix(in srgb, var(--an-accent) 55%, transparent);
 }
 
-[data-theme="dark"] {
+[data-theme="dark"],
+.dark {
   --an-accent-soft: color-mix(in srgb, var(--an-accent) 22%, transparent);
   --an-warn-soft: rgba(255, 193, 7, 0.10);
   --an-warn-border: rgba(255, 193, 7, 0.35);
