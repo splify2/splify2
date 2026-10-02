@@ -154,7 +154,7 @@ OPENWRT_RELEASE="${OPENWRT_RELEASE:-/etc/openwrt_release}"
 # качаются другие» здесь невозможно по построению.
 #
 # Переопределяется через uci: splify2.main.manifest_url (и кнопкой в настройках).
-MANIFEST_URL_DEFAULT="https://github.com/xyzmean/splify2-lists/releases/latest/download/lists.json"
+MANIFEST_URL_DEFAULT="https://github.com/splify2/splify2-lists/releases/latest/download/lists.json"
 
 fail() { json_init; json_add_boolean ok 0; json_add_string error "$1"; json_dump; exit 0; }
 

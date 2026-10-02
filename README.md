@@ -80,7 +80,7 @@
 splify2 не создаёт, не читает и не меняет.
 
 **Каталог и списки.** Каталог сервисов приходит ссылкой (по умолчанию
-[splify2-lists](https://github.com/xyzmean/splify2-lists)) и обновляется без переустановки; свои
+[splify2-lists](https://github.com/splify2/splify2-lists)) и обновляется без переустановки; свои
 списки добавляются текстом, ссылкой или файлом; списки обновляются раз в сутки, большие адресные
 наборы ужимаются под память роутера.
 
@@ -146,7 +146,7 @@ https-dns-proxy, интерфейсы с протоколом xsteer — ост�
 ## Ссылки
 
 - [Движок steer](https://gitlab.com/xyzmean/steer) — маршрутизация, клиенты туннелей, резолвер
-- [Каталог списков](https://github.com/xyzmean/splify2-lists)
+- [Каталог списков](https://github.com/splify2/splify2-lists)
 - [docs/rpcd-api.md](docs/rpcd-api.md) — методы бэкенда, вход и выход
 - [docs/TELEMETRY.md](docs/TELEMETRY.md) — контракт отчёта о работе
 - [ui/README.md](ui/README.md) — устройство интерфейса

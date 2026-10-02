@@ -72,7 +72,7 @@ describe('установка называет путь, которым прие�
             ok: true,
             installed: 'steer-extended-1.2.1-1_mipsel_24kc.apk',
             restarted: true,
-            via: 'прямой адрес не отдал — взято через api.github.com (xyzmean/steer, ветка dist)',
+            via: 'прямой адрес не отдал — взято через api.github.com (splify2/steer, ветка dist)',
         })
         render(
             <EngineCard
@@ -89,7 +89,7 @@ describe('установка называет путь, которым прие�
         vi.spyOn(rpc, 'splify2Install').mockResolvedValue({
             ok: true,
             installed: 'luci-app-splify2-1.2.1-1_all.ipk',
-            via: 'прямой адрес не отдал — взято архивом через codeload.github.com (xyzmean/splify2, ветка dist)',
+            via: 'прямой адрес не отдал — взято архивом через codeload.github.com (splify2/splify2, ветка dist)',
         })
         render(<SelfUpdateCard info={{ current: '1.2.0', versions: ['1.2.1'] }} onInstalled={noop} />)
         fireEvent.click(screen.getByRole('button', { name: /Обновить до 1\.2\.1/ }))

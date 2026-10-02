@@ -78,7 +78,7 @@ trap 'exit 143' INT TERM
 manifest_url() {
     u="$(uci -q get splify2.main.manifest_url)"
     [ -n "$u" ] && printf '%s' "$u" ||
-        printf '%s' "https://github.com/xyzmean/splify2-lists/releases/latest/download/lists.json"
+        printf '%s' "https://github.com/splify2/splify2-lists/releases/latest/download/lists.json"
 }
 
 # Скачивание — общий файл с rpcd-объектом: обход закрытого издателя (splify2#15) обязан

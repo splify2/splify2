@@ -156,8 +156,18 @@ fetch_gh_parts() {  # URL
 #
 # Поэтому зеркало стоит первым среди обходов, а хосты GitHub — за ним: у contents API 60
 # запросов в час на адрес, а архив ветки это мегабайт ради одного файла.
+# Владелец на GitLab — не всегда тот же, что на GitHub: проекты переехали в организацию splify2
+# на GitHub, а зеркала остались у xyzmean на GitLab. Зеркало берётся путём «GitLab-владелец/
+# репозиторий»; прочие владельцы — как есть.
+fetch_gitlab_repo() {  # ВЛАДЕЛЕЦ/РЕПОЗИТОРИЙ -> путь на GitLab
+    case "$1" in
+        splify2/*) printf 'xyzmean/%s' "${1#splify2/}" ;;
+        *)         printf '%s' "$1" ;;
+    esac
+}
+
 fetch_mirror_file() {  # РЕПОЗИТОРИЙ ПУТЬ ВЕТКА ФАЙЛ
-    fetch_get "$FETCH_GITLAB/$1/-/raw/$3/$2" "$4" || { rm -f "$4"; return 1; }
+    fetch_get "$FETCH_GITLAB/$(fetch_gitlab_repo "$1")/-/raw/$3/$2" "$4" || { rm -f "$4"; return 1; }
     [ -s "$4" ] || { rm -f "$4"; return 1; }
 }
 

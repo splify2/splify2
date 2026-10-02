@@ -178,7 +178,7 @@ printf 'Name:\tnode.example.net\nAddress: 198.51.100.7\n' > "$S/dns/node.example
 printf 'Name:\traw.githubusercontent.com\nAddress: 185.199.108.133\nName:\traw.githubusercontent.com\nAddress: 185.199.109.133\n' > "$S/dns/raw.githubusercontent.com"
 
 RAW=https://raw.githubusercontent.com/xyzmean/ru-bypass-ipsets/refs/heads/main/lists/news.lst
-REL=https://github.com/xyzmean/steer/releases/download/v1.2.1/steer-1.2.1-1_x86_64.apk
+REL=https://github.com/splify2/steer/releases/download/v1.2.1/steer-1.2.1-1_x86_64.apk
 
 # Архив ветки для обхода через codeload: настоящий .tar.gz с настоящей раскладкой
 # «репозиторий-ветка/путь» — иначе проверялась бы не распаковка, а заглушка.
@@ -305,7 +305,7 @@ printf 'api.github.com\t%s\n' "$T/api-pkg" > "$S/serve"
 res="$(run "$REL")"
 check "пакет релиза взят из ветки dist" "PKG-from-api" "$(cat "$T/got" 2>/dev/null)"
 check "имя файла и ветка подставлены верно" \
-      "https://api.github.com/repos/xyzmean/steer/contents/steer-1.2.1-1_x86_64.apk?ref=dist" \
+      "https://api.github.com/repos/splify2/steer/contents/steer-1.2.1-1_x86_64.apk?ref=dist" \
       "$(grep -o 'https://api.github.com[^ ]*' "$S/curl.log" | head -1)"
 
 reset
@@ -504,13 +504,13 @@ check "raw с refs/heads" "xyzmean/r main lists/a.lst" \
       "$(parts https://raw.githubusercontent.com/xyzmean/r/refs/heads/main/lists/a.lst)"
 check "raw без refs/heads" "xyzmean/r main lists/a.lst" \
       "$(parts https://raw.githubusercontent.com/xyzmean/r/main/lists/a.lst)"
-check "ссылка релиза сводится к ветке dist" "xyzmean/steer dist p.apk" \
-      "$(parts https://github.com/xyzmean/steer/releases/download/v1.0.0/p.apk)"
+check "ссылка релиза сводится к ветке dist" "splify2/steer dist p.apk" \
+      "$(parts https://github.com/splify2/steer/releases/download/v1.0.0/p.apk)"
 # Адрес манифеста по умолчанию — `releases/latest/download/`: без этой формы у каталога
 # списков не было ни одного обходного пути, и там, где githubusercontent закрыт, манифест
 # не обновлялся вовсе (а на свежем роутере каталога не было).
-check "ссылка latest-релиза сводится к ветке dist" "xyzmean/splify2-lists dist lists.json" \
-      "$(parts https://github.com/xyzmean/splify2-lists/releases/latest/download/lists.json)"
+check "ссылка latest-релиза сводится к ветке dist" "splify2/splify2-lists dist lists.json" \
+      "$(parts https://github.com/splify2/splify2-lists/releases/latest/download/lists.json)"
 check "raw без пути к файлу не разбирается" "НЕ_РАЗОБРАН" \
       "$(parts https://raw.githubusercontent.com/xyzmean/r/main)"
 check "чужой адрес не разбирается" "НЕ_РАЗОБРАН" "$(parts https://example.org/a.lst)"

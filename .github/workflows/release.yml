@@ -103,7 +103,7 @@ jobs:
           # честно отвечает «нет движка — соберите» кодом 2, а tests/run.sh считает это провалом —
           # так упал предвыпусковой прогон 26.9. Базовая сборка движка — один gcc без mbedtls
           # (цель all), репозиторий публичный: клон без ключей, глубиной в один коммит.
-          git clone -q --depth 1 https://github.com/xyzmean/steer "$GITHUB_WORKSPACE/../steer"
+          git clone -q --depth 1 https://github.com/splify2/steer "$GITHUB_WORKSPACE/../steer"
           make -C "$GITHUB_WORKSPACE/../steer" all
           "$GITHUB_WORKSPACE/../steer/build/steer" --version
 
@@ -195,7 +195,7 @@ jobs:
             out/luci-app-splify2-${{ env.VERSION }}-1_all.ipk
             install.sh
           body: |
-            Интерфейс и управление для [steer](https://github.com/xyzmean/steer).
+            Интерфейс и управление для [steer](https://github.com/splify2/steer).
 
             Установка одной строкой — она же поставит движок, если его нет:
 
@@ -206,13 +206,13 @@ jobs:
             Если `githubusercontent.com` у вас открыт, работает и так:
 
             ```sh
-            sh -c "$(wget -qO- https://raw.githubusercontent.com/xyzmean/splify2/main/install.sh)"
+            sh -c "$(wget -qO- https://raw.githubusercontent.com/splify2/splify2/main/install.sh)"
             ```
 
             Если провайдер закрыл `githubusercontent.com`, файлы ниже не скачаются: прямая
             ссылка релиза ведёт на `release-assets.githubusercontent.com`. Те же пакеты
             лежат в ветке `dist` — на [зеркале](https://gitlab.com/xyzmean/splify2/-/tree/dist)
-            и [здесь](https://github.com/xyzmean/splify2/tree/dist), — и первая команда берёт
+            и [здесь](https://github.com/splify2/splify2/tree/dist), — и первая команда берёт
             их оттуда сама.
 
             Пакет один на все роутеры: архитектуры здесь нет, весь бинарный код в движке.

@@ -374,7 +374,7 @@ case "$2" in
 
     steer_versions)
         # Какие версии движка можно поставить и как они называются.
-        gh_load xyzmean/steer
+        gh_load splify2/steer
         json_init
         json_add_string arch "$(pkg_arch)"
         gh_add_releases
@@ -388,7 +388,7 @@ case "$2" in
         # поэтому `apk upgrade` их не видит и обновить интерфейс можно было только по
         # ssh — при том что движок из интерфейса ставится с первого дня. Асимметрия
         # заметная: обновлять умели то, что реже меняется.
-        gh_load xyzmean/splify2
+        gh_load splify2/splify2
         json_init
         json_add_string current "$(pkg_version luci-app-splify2)"
         gh_add_releases
@@ -408,7 +408,7 @@ case "$2" in
             ''|*[!0-9.]*) json_add_boolean ok 0; json_add_string error "в версии допустимы только цифры и точки"; json_dump; exit 0 ;;
         esac
         name="luci-app-splify2-${ver}-1_$(pkg_noarch)"
-        url="https://github.com/xyzmean/splify2/releases/download/v${ver}/${name}"
+        url="https://github.com/splify2/splify2/releases/download/v${ver}/${name}"
         tmp="/tmp/${name}"
         rm -f "$tmp"
         # Через download(), а не своим wget: у этой ссылки тот же изъян, что у списков —
@@ -474,7 +474,7 @@ case "$2" in
             1|true) name="steer-extended-${ver}-1_${arch}.$(pkg_ext)" ;;
             *)      name="steer-${ver}-1_${arch}.$(pkg_ext)" ;;
         esac
-        url="https://github.com/xyzmean/steer/releases/download/v${ver}/${name}"
+        url="https://github.com/splify2/steer/releases/download/v${ver}/${name}"
         tmp="/tmp/${name}"
         rm -f "$tmp"
         if ! download "$url" "$tmp"; then

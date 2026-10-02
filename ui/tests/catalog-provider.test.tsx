@@ -17,7 +17,7 @@ import { mockCatalog } from './ad-fixture'
 
 const manifest = {
     version: '2026-09-09_01-02',
-    base_url: 'https://raw.githubusercontent.com/xyzmean/splify2-lists/main/lists',
+    base_url: 'https://raw.githubusercontent.com/splify2/splify2-lists/main/lists',
     categories: [
         { id: 'itdoginfo:telegram', name_ru: 'Telegram', file: 'itdoginfo/telegram.srs.lst',
           format: 'srs', tag: '2026-09-07_14-23',

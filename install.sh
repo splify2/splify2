@@ -1,12 +1,12 @@
 #!/bin/sh
 # Установка splify2 на OpenWrt одной строкой.
 #
-#   wget -O /tmp/splify2-install.sh https://gitlab.com/xyzmean/splify2/-/raw/main/install.sh && sh /tmp/splify2-install.sh
+#   wget -O /tmp/splify2-install.sh https://gitlab.com/splify2/splify2/-/raw/main/install.sh && sh /tmp/splify2-install.sh
 #
 # Прежняя строка через raw.githubusercontent.com осталась рабочей там, где этот хост
 # доступен:
 #
-#   wget -O /tmp/splify2-install.sh https://raw.githubusercontent.com/xyzmean/splify2/main/install.sh && sh /tmp/splify2-install.sh
+#   wget -O /tmp/splify2-install.sh https://raw.githubusercontent.com/splify2/splify2/main/install.sh && sh /tmp/splify2-install.sh
 #
 # Почему главной стало зеркало. splify2#15: у части аудитории провайдер закрыл
 # `githubusercontent.com`, и закрыл его целиком — на тех же четырёх адресах Fastly
@@ -39,8 +39,8 @@
 # получить «выход vless не работает» без объяснения.
 set -eu
 
-REPO_STEER=xyzmean/steer
-REPO_UI=xyzmean/splify2
+REPO_STEER=splify2/steer
+REPO_UI=splify2/splify2
 TMP=/tmp/splify2-install
 API=https://api.github.com/repos
 RAW=https://raw.githubusercontent.com
@@ -340,7 +340,9 @@ latest() {  # РЕПОЗИТОРИЙ
 # `--header` понимает uclient-fetch, которым wget на OpenWrt и является. Если в сборке
 # другой wget и флага он не знает, заход просто не удастся — дальше идёт архив.
 gl_file() {  # РЕПОЗИТОРИЙ ВЕТКА ПУТЬ ФАЙЛ
-    wget -qO "$4" "$MIRROR/$1/-/raw/$2/$3" 2>/dev/null || { rm -f "$4"; return 1; }
+    # Зеркала остались у xyzmean на GitLab, а на GitHub проекты — в организации splify2.
+    case "$1" in splify2/*) _glr="xyzmean/${1#splify2/}" ;; *) _glr="$1" ;; esac
+    wget -qO "$4" "$MIRROR/$_glr/-/raw/$2/$3" 2>/dev/null || { rm -f "$4"; return 1; }
     [ -s "$4" ] || { rm -f "$4"; return 1; }
 }
 

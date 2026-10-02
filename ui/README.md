@@ -115,5 +115,5 @@ src/
 ## Контракты, на которые опирается интерфейс
 
 - [docs/rpcd-api.md](../docs/rpcd-api.md) — методы бэкенда, их вход и выход.
-- [Контракт steer](https://github.com/xyzmean/steer/blob/main/docs/contract-v1.md) — формат спеки и
+- [Контракт steer](https://github.com/splify2/steer/blob/main/docs/contract-v1.md) — формат спеки и
   состояния. Интерфейс пишет спеку, поэтому ограничения оттуда — его ограничения.

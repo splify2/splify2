@@ -74,7 +74,7 @@ check "функция latest достана из install.sh" "latest" "$(command
 # ---- обычный путь: API отвечает -----------------------------------------------
 printf '{"tag_name": "v1.2.3", "name": "x"}\n' > "$SB/resp-api"
 printf '9.9.9\n' > "$SB/resp-raw"
-check "версия берётся из релиза" "1.2.3" "$(latest xyzmean/steer 2>/dev/null)"
+check "версия берётся из релиза" "1.2.3" "$(latest splify2/steer 2>/dev/null)"
 
 # ---- api.github.com недоступен ------------------------------------------------
 # Ровно случай splify2#5: API молчит, github.com и raw доступны, релиз существует.
@@ -84,31 +84,31 @@ rm -f "$SB/resp-api"
 # пакетами и тем же числом, что в теге. Версия из main вела к скачиванию файла из релиза,
 # которого нет.
 check "API молчит — версия берётся из VERSION ветки dist" "1.1.2" \
-    "$(printf '1.1.2\n' > "$SB/resp-raw"; latest xyzmean/steer 2>/dev/null)"
+    "$(printf '1.1.2\n' > "$SB/resp-raw"; latest splify2/steer 2>/dev/null)"
 check "переход на второй путь объявлен вслух" "1" \
-    "$(latest xyzmean/steer 2>&1 >/dev/null | grep -c 'api.github.com не ответил')"
+    "$(latest splify2/steer 2>&1 >/dev/null | grep -c 'api.github.com не ответил')"
 # Объяснение обязано идти в stderr: stdout функции — это сама версия, и строка в нём
 # уехала бы в имя файла пакета.
-check "объяснение не попало в stdout" "1.1.2" "$(latest xyzmean/steer 2>/dev/null)"
+check "объяснение не попало в stdout" "1.1.2" "$(latest splify2/steer 2>/dev/null)"
 check "VERSION спрашивается у ветки dist, а не main" "1" \
-    "$(: > "$SB/wget.log"; latest xyzmean/steer >/dev/null 2>&1; grep -c '/xyzmean/steer/dist/VERSION' "$SB/wget.log")"
+    "$(: > "$SB/wget.log"; latest splify2/steer >/dev/null 2>&1; grep -c '/splify2/steer/dist/VERSION' "$SB/wget.log")"
 
 # ---- лимит API: 403 вместо релиза ---------------------------------------------
 # Тело ответа есть, tag_name в нём нет — это не «пусто», а именно ответ про лимит.
 printf '{"message": "API rate limit exceeded for 203.0.113.7."}\n' > "$SB/resp-api"
-check "403 про лимит не читается как версия" "1.1.2" "$(latest xyzmean/steer 2>/dev/null)"
+check "403 про лимит не читается как версия" "1.1.2" "$(latest splify2/steer 2>/dev/null)"
 
 # ---- оба пути молчат ----------------------------------------------------------
 rm -f "$SB/resp-api" "$SB/resp-raw"
-check "оба хоста молчат — версии нет" "" "$(latest xyzmean/steer 2>/dev/null)"
+check "оба хоста молчат — версии нет" "" "$(latest splify2/steer 2>/dev/null)"
 
 # ---- мусор в VERSION ---------------------------------------------------------
 # Пустая версия честнее подставленного мусора: с ним установщик пошёл бы качать файл с
 # именем, которого нет, и сказал бы «не скачалось» вместо «не узнал версию».
 printf 'dev\n' > "$SB/resp-raw"
-check "нечисловой VERSION версией не считается" "" "$(latest xyzmean/steer 2>/dev/null)"
+check "нечисловой VERSION версией не считается" "" "$(latest splify2/steer 2>/dev/null)"
 printf ' 1.0.0-rc1\n' > "$SB/resp-raw"
-check "версия с хвостом обрезается до чисел" "1.0.0" "$(latest xyzmean/steer 2>/dev/null)"
+check "версия с хвостом обрезается до чисел" "1.0.0" "$(latest splify2/steer 2>/dev/null)"
 
 # ---- закрыт githubusercontent: третий путь к версии и к пакету -----------------
 #
@@ -119,16 +119,16 @@ check "версия с хвостом обрезается до чисел" "1.0
 rm -f "$SB/resp-api" "$SB/resp-raw" "$SB/resp-codeload" "$SB/resp-contents"
 printf '2.0.0\n' > "$SB/resp-mirror"
 check "версия взята с зеркала, когда молчат и релизы, и raw" "2.0.0" \
-    "$(latest xyzmean/steer 2>/dev/null)"
+    "$(latest splify2/steer 2>/dev/null)"
 check "к хостам GitHub при живом зеркале не ходили" "" \
-    "$(: > "$SB/wget.log"; latest xyzmean/steer >/dev/null 2>&1; grep -c 'codeload\|contents' "$SB/wget.log" | sed 's/^0$//')"
+    "$(: > "$SB/wget.log"; latest splify2/steer >/dev/null 2>&1; grep -c 'codeload\|contents' "$SB/wget.log" | sed 's/^0$//')"
 rm -f "$SB/resp-mirror"
 
 printf '2.0.1\n' > "$SB/resp-contents"
 check "версия взята через contents API, когда молчат и релизы, и raw" "2.0.1" \
-    "$(latest xyzmean/steer 2>/dev/null)"
+    "$(latest splify2/steer 2>/dev/null)"
 check "третий путь объявлен вслух" "1" \
-    "$(latest xyzmean/steer 2>&1 >/dev/null | grep -c 'contents API')"
+    "$(latest splify2/steer 2>&1 >/dev/null | grep -c 'contents API')"
 
 # contents API тоже молчит (лимит 60 в час за CGNAT) — остаётся архив ветки.
 rm -f "$SB/resp-contents" "$TMP"/*.tgz
@@ -136,7 +136,7 @@ mkdir -p "$SB/tar/steer-dist"
 printf '2.0.2\n' > "$SB/tar/steer-dist/VERSION"
 ( cd "$SB/tar" && tar -czf "$SB/resp-codeload" steer-dist )
 check "версия вынута из архива ветки, когда молчит и contents API" "2.0.2" \
-    "$(latest xyzmean/steer 2>/dev/null)"
+    "$(latest splify2/steer 2>/dev/null)"
 
 # Пакет: прямая ссылка релиза не отдаёт (перенаправление на release-assets), тот же файл
 # лежит в ветке dist.
@@ -145,13 +145,13 @@ mkdir -p "$SB/tar2/steer-dist"
 printf 'PKG\n' > "$SB/tar2/steer-dist/steer-2.0.2-1_x86_64.apk"
 ( cd "$SB/tar2" && tar -czf "$SB/resp-codeload" steer-dist )
 rm -f "$SB/resp-contents"
-url="$(dl_url xyzmean/steer 2.0.2 steer-2.0.2-1_x86_64.apk)"
+url="$(dl_url splify2/steer 2.0.2 steer-2.0.2-1_x86_64.apk)"
 printf 'PKG-MIRROR\n' > "$SB/resp-mirror"
 check "прямая ссылка релиза не отдала — пакет берётся с зеркала" "PKG-MIRROR" \
-    "$(fetch "$url" "$SB/pkg2.apk" xyzmean/steer steer-2.0.2-1_x86_64.apk >/dev/null 2>&1; cat "$SB/pkg2.apk" 2>/dev/null)"
+    "$(fetch "$url" "$SB/pkg2.apk" splify2/steer steer-2.0.2-1_x86_64.apk >/dev/null 2>&1; cat "$SB/pkg2.apk" 2>/dev/null)"
 rm -f "$SB/resp-mirror"
 check "зеркало молчит — тогда ветка dist через хосты GitHub" "PKG" \
-    "$(fetch "$url" "$SB/pkg.apk" xyzmean/steer steer-2.0.2-1_x86_64.apk >/dev/null 2>&1; cat "$SB/pkg.apk" 2>/dev/null)"
+    "$(fetch "$url" "$SB/pkg.apk" splify2/steer steer-2.0.2-1_x86_64.apk >/dev/null 2>&1; cat "$SB/pkg.apk" 2>/dev/null)"
 rm -f "$SB/resp-codeload" "$TMP"/*.tgz
 
 # ---- отказ называет оба хоста -------------------------------------------------

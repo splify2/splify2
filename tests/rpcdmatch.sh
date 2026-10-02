@@ -1049,7 +1049,7 @@ check "минимум — та константа, что объявлена в 
 reset_logs
 out="$(rpcd splify2_versions)"
 check "версии интерфейса берутся из релизов splify2 (R-042)" \
-      "yes" "$(grep -c 'api.github.com/repos/xyzmean/splify2' "$T/wget.log" >/dev/null 2>&1 && grep -q 'xyzmean/splify2' "$T/wget.log" && echo yes || echo no)"
+      "yes" "$(grep -c 'api.github.com/repos/splify2/splify2' "$T/wget.log" >/dev/null 2>&1 && grep -q 'splify2/splify2' "$T/wget.log" && echo yes || echo no)"
 check "тег с суффиксом отсеивается и здесь (R-042)" \
       '["26.9", "0.9.6", "0.9.4"]' "$(printf '%s' "$out" | jget versions)"
 # ---- версии формата «26.9 Andromeda» ------------------------------------------------
@@ -1093,7 +1093,7 @@ rm -f "$T"/var/releases.json.*.cache
 GH_CACHE_TTL_MIN=360 rpcd steer_versions >/dev/null
 out="$(GH_CACHE_TTL_MIN=360 rpcd steer_versions)"
 check "второй вызов версий движка берёт память, а не GitHub" "1" \
-      "$(grep -c 'api.github.com/repos/xyzmean/steer' "$T/wget.log")"
+      "$(grep -c 'api.github.com/repos/splify2/steer' "$T/wget.log")"
 check "и отдаёт то же самое" "26.9 Andromeda" "$(printf '%s' "$out" | jqget names 26.9)"
 rm -f "$T"/var/releases.json.*.cache
 
@@ -1103,10 +1103,10 @@ rm -f "$T"/var/releases.json.*.cache
 # когда объект rpcd (root) откроет страницу версий. Здесь такая строка подложена заранее:
 # команда не должна выполниться, а версии не должны браться из подложенного файла.
 rm -f "$T/pwned"
-printf 'GH_VERS=%s; touch "%s"\nGH_NAMES=x\nGH_NOTE=x\n' "'9.9'" "$T/pwned" > "$T/var/releases.json.xyzmean_steer.cache"
+printf 'GH_VERS=%s; touch "%s"\nGH_NAMES=x\nGH_NOTE=x\n' "'9.9'" "$T/pwned" > "$T/var/releases.json.splify2_steer.cache"
 # Подложивший — не мы: файл отдаётся чужому владельцу (nobody), как оно и было бы на роутере.
 # Без прав на chown (стенд не под root) вторая проверка пропускается — первая от прав не зависит.
-chown 65534 "$T/var/releases.json.xyzmean_steer.cache" 2>/dev/null && chowned=1 || chowned=0
+chown 65534 "$T/var/releases.json.splify2_steer.cache" 2>/dev/null && chowned=1 || chowned=0
 out="$(GH_CACHE_TTL_MIN=360 rpcd steer_versions)"
 check "память версий не исполняется как код" "no" "$([ -e "$T/pwned" ] && echo yes || echo no)"
 [ "$chowned" = 1 ] && check "чужой файл на месте памяти не читается — версии спрошены у GitHub" "26.9 Andromeda" \
@@ -1125,7 +1125,7 @@ out="$(GH_FAIL=1 CURL_BODY='1.2.9' rpcd steer_versions)"
 check "api.github.com молчит — версия берётся из VERSION (splify2#15)" '["1.2.9"]' \
       "$(printf '%s' "$out" | jget versions)"
 check "запасной путь идёт общей download() и спрашивает ветку dist, а не main" \
-      "https://raw.githubusercontent.com/xyzmean/steer/dist/VERSION" \
+      "https://raw.githubusercontent.com/splify2/steer/dist/VERSION" \
       "$(grep 'VERSION' "$T/curl.log" | head -1)"
 check "почему список короткий — сказано словами, а не пустотой" "yes" \
       "$(printf '%s' "$out" | jget note | grep -q 'VERSION' && echo yes || echo no)"
@@ -1164,7 +1164,7 @@ out="$(rpcd splify2_install '{"version":"0.7.7"}')"
 # Журнал теперь curl.log, а не wget.log: пакеты качаются общей download() (splify2#15),
 # у которой есть обход закрытого githubusercontent — своим wget этот метод больше не ходит.
 check "качается noarch-пакет интерфейса (R-042)" \
-      "https://github.com/xyzmean/splify2/releases/download/v0.7.7/luci-app-splify2-0.7.7-1_noarch.apk" \
+      "https://github.com/splify2/splify2/releases/download/v0.7.7/luci-app-splify2-0.7.7-1_noarch.apk" \
       "$(grep 'luci-app-splify2' "$T/curl.log" | head -1)"
 check "установка интерфейса идёт тем же порядком: add первым (R-042)" \
       "add" "$(awk 'NR==1{print $1}' "$T/apk.log")"
