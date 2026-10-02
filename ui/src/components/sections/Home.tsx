@@ -2,7 +2,7 @@ import { useCallback, useEffect, useRef, useState } from 'react'
 import { ArrowRight, LoaderCircle, Plus, Search, TriangleAlert, X } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Block, CardHead, Meter } from '@/components/ui/layout'
-import { SubBlock, TunnelBlock, type Facts } from '@/components/OutputCards'
+import { LooseBlock, SubBlock, TunnelBlock, type Facts } from '@/components/OutputCards'
 import { deadline, rpc, type SubQuota } from '@/lib/rpc'
 import { subsRemember, subsRemembered } from '@/lib/subs'
 import { human, type DiagCheck, type Live } from '@/lib/live'
@@ -681,6 +681,27 @@ function OutputsColumn({
      * столбцами, и сказано с последствием («трафику некуда идти»). */
     if (vless.length === 0 && tunnels.length === 0 && !subs?.length) return null
 
+    /* Подписка выхода — файлом, приведённым к полному пути: в спеке v2 путь бывает и
+     * относительным, от каталога спеки (`subscription: sub-test.txt`), а перечень sub_list
+     * называет файл полностью. Без приведения выход своей же подписки в её блок не попадал. */
+    const subOf = (n: string, o: OutputStatus) => {
+        const p = spec?.outputs?.[n]?.sub_file || o.sub_file || ''
+        return p && !p.startsWith('/') ? `/etc/steer/${p}` : p
+    }
+    const ref = ([name, st]: [string, OutputStatus]) => ({
+        name, st, facts: facts[name], phase: live.phase,
+        out: spec?.outputs?.[name],
+        /* Локация, взятая в пул, так и подписана: иначе строка под
+           подпиской и строка в блоке пула читались как два туннеля.
+           Выключенная проверка сертификата — бейджем-предупреждением
+           среди бейджей конфигурации (OutputCards, lib/badges.ts):
+           это решение человека, и видно его там, где выход работает. */
+        note: spec?.outputs?.[name]?.part_of ? S.home.vPule(spec.outputs[name].part_of) : undefined,
+    })
+    /* Туннели, чьей подписки в перечне нет: файл положен руками или узел записан прямо в
+     * выходе. Своей строкой — иначе выход со всем его состоянием на главной не виден нигде. */
+    const loose = subs === null ? [] : vless.filter(([n, o]) => !subs.some((s) => subOf(n, o) === s.path))
+
     /* ОДНА КАРТОЧКА «ВЫХОДЫ», как на главной приложения: заголовок с действием справа, под
      * ним выходы строками через волосяную линию. Подписка внутри — своим участком (остаток,
      * срок и локации строками), свой туннель — одной строкой с точкой состояния. Прежде
@@ -720,20 +741,10 @@ function OutputsColumn({
                           <SubBlock
                               key={s.name}
                               sub={s}
-                              outs={vless
-                                  .filter(([n, o]) => (spec?.outputs?.[n]?.sub_file || o.sub_file || '') === s.path)
-                                  .map(([name, st]) => ({
-                                      name, st, facts: facts[name], phase: live.phase,
-                                      out: spec?.outputs?.[name],
-                                      /* Локация, взятая в пул, так и подписана: иначе строка под
-                                         подпиской и строка в блоке пула читались как два туннеля.
-                                         Выключенная проверка сертификата — бейджем-предупреждением
-                                         среди бейджей конфигурации (OutputCards, lib/badges.ts):
-                                         это решение человека, и видно его там, где выход работает. */
-                                      note: spec?.outputs?.[name]?.part_of ? S.home.vPule(spec.outputs[name].part_of) : undefined,
-                                  }))}
+                              outs={vless.filter(([n, o]) => subOf(n, o) === s.path).map(ref)}
                           />
                       ))}
+                {loose.map((e) => <LooseBlock key={e[0]} {...ref(e)} />)}
                 {tunnels.map(([name, st]) => {
                     /* Пул, собранный из локаций подписок, своей строки НЕ получает: его локации уже
                        стоят строками в участках своих подписок с приписью «в пуле …», а третья

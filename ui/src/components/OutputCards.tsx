@@ -361,6 +361,22 @@ function Location({ name, st, facts, note, phase, out }: OutRef) {
     )
 }
 
+/** Выход-туннель вне перечня подписок splify2: подписка, заведённая в спеке мимо интерфейса
+ *  (свой файл, которого нет в sub_list), или узел прямо в выходе. Строкой со своим именем и
+ *  состоянием — иначе такой выход на главной не показан нигде: блоки подписок рисуются по
+ *  перечню, и карточка «Выходы» стояла пустой шапкой (снято с QEMU-стенда). */
+export function LooseBlock({ name, st, facts, phase, out, note }: OutRef) {
+    return (
+        <div className="flex items-start gap-3 py-3 first:pt-0 last:pb-0">
+            <StateDot st={st} phase={phase} />
+            <div className="min-w-0 flex-1 space-y-1">
+                <span className="block min-w-0 truncate text-sm font-medium">{name}</span>
+                <Location name={name} st={st} facts={facts} phase={phase} out={out} note={note} />
+            </div>
+        </div>
+    )
+}
+
 /** Блок своего туннеля: WireGuard, AmneziaWG, xsteer.
  *
  *  БЕЗ ТРАФИКА ВОВСЕ. Объём здесь не считает никто: у той стороны панели нет, а счётчик
