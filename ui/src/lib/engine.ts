@@ -157,25 +157,31 @@ export function xsLinkSupported(status: Status | null): boolean {
     return Array.isArray(status?.features) && status.features.includes('xslink')
 }
 
-/** Какого модуля движка не хватает выходу: имя модуля (пакет `steer-<имя>`) либо null.
+/** Какой модуль ядра нужен выходу: имя модуля (пакет `steer-<имя>`) либо null.
  *
- *  Модули движка 2.0 — отдельные пакеты (vless, xsteer, obfs, tgws, hysteria2, proxy — пять
- *  протоколов прокси одним модулем). Список
+ *  Модель держит vless, hysteria2 и пять протоколов прокси своими видами (протоколы прокси — один
+ *  модуль steer-proxy, isProxyKind); вид `tunnel` с `protocol`, которого модель не знает, сводится
+ *  к тому же по протоколу. */
+export function moduleFor(o: { kind: string; obfs?: unknown; protocol?: string } | undefined | null): string | null {
+    if (!o) return null
+    const k = o.kind === 'tunnel' ? o.protocol || '' : o.kind
+    if (k === 'vless' || k === 'hysteria2' || k === 'xsteer' || k === 'tgws') return k
+    if (isProxyKind(k)) return 'proxy'
+    if (o.kind === 'interface' && o.obfs) return 'obfs'
+    return null
+}
+
+/** Какого модуля ядра не хватает выходу: имя модуля либо null.
+ *
+ *  Модули ядра 2.0 — отдельные пакеты (vless, hysteria2, proxy, xsteer, obfs, tgws). Список
  *  установленных приходит от бэкенда (`engine.modules`); поля нет — бэкенд старее, и тогда
  *  утверждать нечего: null, а не «не хватает». */
 export function missingModule(
-    o: { kind: string; obfs?: unknown } | undefined | null,
+    o: { kind: string; obfs?: unknown; protocol?: string } | undefined | null,
     modules: string[] | undefined | null,
 ): string | null {
     if (!o || !Array.isArray(modules)) return null
-    const need =
-        o.kind === 'vless' || o.kind === 'hysteria2' || o.kind === 'xsteer' || o.kind === 'tgws'
-            ? o.kind
-            : isProxyKind(o.kind)
-              ? 'proxy'
-              : o.kind === 'interface' && o.obfs
-                ? 'obfs'
-                : null
+    const need = moduleFor(o)
     return need && !modules.includes(need) ? need : null
 }
 

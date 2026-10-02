@@ -21,6 +21,17 @@ describe('какого модуля не хватает выходу', () => {
     it('выходы без помощника модуля не просят', () => {
         for (const kind of ['direct', 'group', 'awg', 'zapret']) expect(missingModule({ kind }, [])).toBeNull()
     })
+    it('протоколы прокси просят steer-proxy — и видом tunnel, и своим видом', () => {
+        for (const protocol of ['trojan', 'shadowsocks', 'socks', 'http', 'vmess']) {
+            expect(missingModule({ kind: 'tunnel', protocol }, mods)).toBe('proxy')
+            expect(missingModule({ kind: protocol }, mods)).toBe('proxy')
+            expect(missingModule({ kind: 'tunnel', protocol }, ['proxy'])).toBeNull()
+        }
+    })
+    it('туннель vless и hysteria2 видом tunnel — свои модули', () => {
+        expect(missingModule({ kind: 'tunnel', protocol: 'hysteria2' }, mods)).toBe('hysteria2')
+        expect(missingModule({ kind: 'tunnel', protocol: 'vless' }, mods)).toBeNull()
+    })
     it('списка модулей нет — не утверждаем', () => {
         expect(missingModule({ kind: 'hysteria2' }, undefined)).toBeNull()
     })
