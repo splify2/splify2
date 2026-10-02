@@ -478,7 +478,8 @@ check "README ведёт на docs/guide.md" "да" \
 # отсутствующие: вес был назван только у расширенного и только словами «больше на».
 # Риск теперь другой — что три места разойдутся в числах, поэтому они и сверяются.
 has() { grep -qF "$2" "$ROOT/$1" && echo да || echo нет; }
-for f in install.sh ui/src/components/EngineCard.tsx; do
+# Строки интерфейса живут в словаре ui/src/copy/ru.ts (EngineCard берёт их оттуда).
+for f in install.sh ui/src/copy/ru.ts; do
     check "вес расширенного назван в $f" "да" "$(has "$f" 'флеше ~500 КБ')"
     check "вес базового назван в $f" "да" "$(has "$f" 'флеше ~250 КБ')"
 done

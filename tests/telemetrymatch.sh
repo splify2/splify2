@@ -824,9 +824,10 @@ check "в docs/guide.md есть раздел «Отчёт о работе»" "�
 check "docs/guide.md называет кнопку предпросмотра пакета" "да" "$(guide 'Показать пакет')"
 check "docs/guide.md перечисляет, что не уезжает никогда" "да" "$(guide 'Не уезжает никогда')"
 check "docs/guide.md говорит, где выключить" "да" "$(guide 'Настройки → О ПО')"
-# Карточка в интерфейсе и README называют одну и ту же частоту.
+# Карточка в интерфейсе и README называют одну и ту же частоту. Текст карточки — в словаре
+# ui/src/copy/ru.ts (TelemetryCard берёт строки оттуда).
 check "карточка и README сходятся в частоте: раз в час" "да" \
-    "$([ "$(grep -c 'раз в час' "$ROOT/ui/src/components/TelemetryCard.tsx")" -gt 0 ] && grep -qF 'раз в час' "$README" && echo да || echo нет)"
+    "$([ "$(grep -c 'раз в час' "$ROOT/ui/src/copy/ru.ts")" -gt 0 ] && grep -qF 'раз в час' "$README" && echo да || echo нет)"
 
 printf '\n%d проверок пройдено' "$pass"
 if [ "$fail" -gt 0 ]; then printf ', %d ПРОВАЛЕНО\n' "$fail"; exit 1; fi
