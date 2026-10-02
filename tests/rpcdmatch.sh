@@ -503,6 +503,13 @@ case "${1:-}" in
         exit 0
         ;;
     vless-probe|vless-nodes|hysteria2-probe|hysteria2-nodes|proxy-probe|proxy-nodes)
+        # Ядро до --insecure (steer 2.0.0): флага не знает и отвечает так, как ответил бы разбор
+        # аргументов, — кодом 2 и словами «неизвестный флаг».
+        if [ -n "${STEER_NO_INSECURE:-}" ]; then
+            for _a in "$@"; do
+                [ "$_a" = --insecure ] && { echo "steer: неизвестный флаг: --insecure (подсказка: steer $1 --help)" >&2; exit 2; }
+            done
+        fi
         [ -n "${STEER_NOISE:-}" ] && echo "$STEER_NOISE" >&2
         [ -n "${STEER_JSON:-}" ] && printf '%s\n' "$STEER_JSON"
         exit "${STEER_RC:-0}"
@@ -2424,6 +2431,48 @@ out="$(rpcd proxy_probe '{"output":"--spec","node":0}')"
 check "proxy_probe: флаг вместо имени выхода — отказ" "false" "$(printf '%s' "$out" | jget ok)"
 check "proxy_nodes и proxy_probe объявлены в списке ubus" "yes;yes" \
       "$(rpcd_list | grep -q '"proxy_nodes"' && echo yes || echo no);$(rpcd_list | grep -q '"proxy_probe"' && echo yes || echo no)"
+# УЗЛЫ С allowInsecure. Узел TLS с allowInsecure ядро берёт только у выхода с `insecure: true`, а
+# номера считает среди пригодных; перечень и проверка ПО ФАЙЛУ без флага такие узлы не видят, и
+# номера у выхода с insecure расходятся с номерами в редакторе. Редактор, у которого включено «Не
+# проверять сертификат узла», просит `insecure` — бэкенд передаёт ядру `--insecure` (vless и прокси;
+# у hysteria2 флаг ничего не меняет, а ядро до него его отвергло бы). Ядро до флага отвечает
+# «неизвестный флаг» кодом 2 — тогда спрашивается без флага, как прежде.
+: > "$T/steer.log"
+STEER_JSON='{"output":"","nodes":[]}' rpcd vless_nodes "{\"sub\":\"$T/etc/subs/green.txt\",\"insecure\":true}" > /dev/null
+check "insecure: vless_nodes по файлу передаёт ядру --insecure" \
+      "vless-nodes $T/etc/subs/green.txt --insecure --spec $T/etc/spec.json" "$(tail -1 "$T/steer.log")"
+: > "$T/steer.log"
+STEER_JSON='{"output":"","nodes":[]}' rpcd proxy_nodes "{\"sub\":\"$T/etc/subs/green.txt\",\"insecure\":true}" > /dev/null
+check "insecure: proxy_nodes по файлу передаёт ядру --insecure" \
+      "proxy-nodes $T/etc/subs/green.txt --insecure --spec $T/etc/spec.json" "$(tail -1 "$T/steer.log")"
+: > "$T/steer.log"
+rpcd vless_probe "{\"sub\":\"$T/etc/subs/green.txt\",\"node\":2,\"insecure\":true}" > /dev/null
+rpcd proxy_probe "{\"sub\":\"$T/etc/subs/green.txt\",\"node\":0,\"insecure\":true}" > /dev/null
+check "insecure: проверка узла по файлу — с тем же флагом (номера те же)" \
+      "vless-probe $T/etc/subs/green.txt --insecure --node 2 --timeout 6 --spec $T/etc/spec.json;proxy-probe $T/etc/subs/green.txt --insecure --node 0 --timeout 6 --spec $T/etc/spec.json" \
+      "$(sed -n 1p "$T/steer.log");$(sed -n 2p "$T/steer.log")"
+: > "$T/steer.log"
+rpcd vless_nodes "{\"sub\":\"$T/etc/subs/green.txt\",\"insecure\":false}" > /dev/null
+rpcd hysteria2_nodes "{\"sub\":\"$T/etc/subs/green.txt\",\"insecure\":true}" > /dev/null
+rpcd vless_nodes '{"output":"vl","insecure":true}' > /dev/null
+check "без insecure, у hysteria2 и по имени выхода — флага нет" "0" "$(grep -c -- '--insecure' "$T/steer.log")"
+: > "$T/steer.log"
+out="$(STEER_NO_INSECURE=1 STEER_JSON='{"output":"","sub_file":"old","nodes":[]}' \
+       rpcd vless_nodes "{\"sub\":\"$T/etc/subs/green.txt\",\"insecure\":true}")"
+check "ядро без --insecure: спрошено ещё раз без флага, ответ — его" \
+      "2;vless-nodes $T/etc/subs/green.txt --spec $T/etc/spec.json;old" \
+      "$(wc -l < "$T/steer.log" | tr -d ' ');$(tail -1 "$T/steer.log");$(printf '%s' "$out" | jget sub_file)"
+: > "$T/steer.log"
+out="$(STEER_NO_INSECURE=1 STEER_JSON='{"output":"","results":[],"working":-1}' \
+       rpcd proxy_probe "{\"sub\":\"$T/etc/subs/green.txt\",\"node\":0,\"insecure\":true}")"
+check "и у проверки узла" "2;proxy-probe $T/etc/subs/green.txt --node 0 --timeout 6 --spec $T/etc/spec.json;-1" \
+      "$(wc -l < "$T/steer.log" | tr -d ' ');$(tail -1 "$T/steer.log");$(printf '%s' "$out" | jget working)"
+: > "$T/steer.log"
+out="$(STEER_RC=2 STEER_ERR='steer: vless-nodes: подписка пуста' rpcd vless_nodes "{\"sub\":\"$T/etc/subs/green.txt\",\"insecure\":true}")"
+check "другой отказ ядра кодом 2 — без повтора, словами ядра" "1;false" \
+      "$(wc -l < "$T/steer.log" | tr -d ' ');$(printf '%s' "$out" | jget ok)"
+check "insecure объявлен у vless_nodes, vless_probe, proxy_nodes, proxy_probe" "4" \
+      "$(rpcd_list | python3 -c 'import json,sys; d=json.load(sys.stdin); print(sum(1 for m in ("vless_nodes","vless_probe","proxy_nodes","proxy_probe") if "insecure" in d.get(m,{})))')"
 mv "$T/green.keep" "$T/etc/subs/green.txt"
 # Остаток второй подписки спрашивается по ЕЁ файлу: общий файл означал бы, что обзор
 # показывает остаток одной панели под именем другой.

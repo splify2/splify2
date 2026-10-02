@@ -120,7 +120,15 @@ export function useNodeProbe(ask: (sub: string, index: number) => Promise<ProbeR
     /** Сколько ещё не проверено в идущей пачке — для подписи кнопки отмены. */
     const left = Object.values(phase).length
 
-    return { probes, fails, phase, batchSub, left, probeOne, probeAll, stopAll }
+    /** Забыть все замеры: номера узлов поменялись (перечень спрошен иначе), и прежнее «90 мс»
+     *  стояло бы у другого узла. */
+    function forget() {
+        stopAll()
+        setProbes({})
+        setFails({})
+    }
+
+    return { probes, fails, phase, batchSub, left, probeOne, probeAll, stopAll, forget }
 }
 
 /** Цвет отклика: до 150 мс — хорошо, до 400 — обычно, дальше — заметно. */

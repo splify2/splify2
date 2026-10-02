@@ -908,7 +908,7 @@ export const rpc = {
      *  показать локации подписки, на которую ещё не заведён ни один выход; бэкенд принимает
      *  только пути из своего перечня подписок. Бэкенд постарше параметра не знает и отвечает
      *  «не указан выход» — вызывающий тогда спрашивает по любому выходу на этой подписке. */
-    vlessNodesOfSub: declare<VlessNodesReply>('vless_nodes', ['sub']),
+    vlessNodesOfSub: declare<VlessNodesReply>('vless_nodes', ['sub', 'insecure']),
 
     /** Проверить узел и замерить время ответа. По одному за вызов: проверка упирается в
      *  таймаут, и «проверить все» не уложилось бы в срок жизни вызова ubus. node = -1
@@ -922,7 +922,7 @@ export const rpc = {
      *  Бэкенд постарше параметра не знает и отвечает «не указан выход». */
     vlessProbeOfSub: declare<{ output?: string; results?: VlessProbe[]; working?: number; error?: string }>(
         'vless_probe',
-        ['sub', 'node'],
+        ['sub', 'node', 'insecure'],
     ),
 
     /** Узлы и проверка узла для выхода `protocol: hysteria2` (пакет steer-hysteria2). Формат
@@ -942,10 +942,13 @@ export const rpc = {
      *  его протокола, и `nodes` спеки ждёт вторые (см. proxyNodesByProto в PoolEditor). Без
      *  модуля ядро отвечает отказом «нужен пакет steer-proxy». */
     proxyNodes: declare<VlessNodesReply>('proxy_nodes', ['output']),
-    proxyNodesOfSub: declare<VlessNodesReply>('proxy_nodes', ['sub']),
+    /** `insecure` у методов по файлу (vless и прокси): перечень и проверка, как у выхода с «не
+     *  проверять сертификат узла», — узлы TLS с allowInsecure входят, номера совпадают с выходом.
+     *  Ядро без флага бэкенд спрашивает без него. */
+    proxyNodesOfSub: declare<VlessNodesReply>('proxy_nodes', ['sub', 'insecure']),
     proxyProbeOfSub: declare<{ output?: string; results?: VlessProbe[]; working?: number; error?: string }>(
         'proxy_probe',
-        ['sub', 'node'],
+        ['sub', 'node', 'insecure'],
     ),
 
     /** Журнал имён резолвера движка: какое имя в какое правило попало, а также серверы DNS

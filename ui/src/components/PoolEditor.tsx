@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import { ArrowDown, ArrowUp, Check, Gauge, GripVertical, LoaderCircle, Search, Trash2, X } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Block, CardHead, DangerButton, FieldRow, Group, ScreenHeader } from '@/components/ui/layout'
@@ -94,6 +94,10 @@ function pxSplit(nodes: VlessNode[] | undefined): PxNode[] {
     }
     return out
 }
+
+/** Ключ `insecure` вызова по файлу — только включённым: без него бэкенд спрашивает ядро как
+ *  прежде, и бэкенд постарше параметра просто не видит. */
+const ins = (on: boolean): [true] | [] => (on ? [true] : [])
 
 const NAME_RE = /^[A-Za-z0-9_-]{1,24}$/
 /** Имя выхода `kind: vless` становится именем устройства TUN, а у него предел IFNAMSIZ:
@@ -241,7 +245,7 @@ export default function PoolEditor({
                 const list = (pxBySub[px[2]] || []).filter((x) => x.proto === px[1])
                 const it = list.find((x) => x.nd.index === index)
                 if (!it) throw new Error(S.poolEditor.uzlaNetVPodpiske)
-                const r = await rpc.proxyProbeOfSub(px[2], it.at)
+                const r = await rpc.proxyProbeOfSub(px[2], it.at, ...ins(adv.insecure))
                 return {
                     ...r,
                     results: (r.results || []).flatMap((res) => {
@@ -250,7 +254,7 @@ export default function PoolEditor({
                     }),
                 }
             }
-            return await rpc.vlessProbeOfSub(sub, index)
+            return await rpc.vlessProbeOfSub(sub, index, ...ins(adv.insecure))
         } catch (e) {
             if (!asker || sub.startsWith(HY_PROBE) || PX_PROBE.test(sub)) throw e
             return rpc.vlessProbe(asker, index)
@@ -274,8 +278,22 @@ export default function PoolEditor({
      * у самой подписки (её файлом); бэкенд постарше так не умеет, и тогда узлы просим у любого
      * выхода, который уже стоит на этой подписке: движок читает их из того же файла. */
     const subKeys = subs.map((s) => `${s.path}${s.present ? '' : '!'}`).join(',')
+    /* «Не проверять сертификат узла»: перечень и проверка по файлу спрашиваются так, как подписку
+     * разберёт выход с этим ключом (`insecure` у vless_nodes и proxy_nodes): узлы TLS с
+     * allowInsecure видны и выбираются, и номер узла тот же, что у выхода. Без ключа их нет — и у
+     * выхода без insecure их тоже нет. */
+    const insecureAsk = adv.insecure
+    /** Последние перечни — чтобы при смене `insecureAsk` переписать номера уже взятых строк на
+     *  номера нового перечня (номера считаются среди пригодных и сдвигаются). */
+    const lists = useRef({ nodesBySub, pxBySub })
+    lists.current = { nodesBySub, pxBySub }
+    const askedInsecure = useRef(insecureAsk)
     useEffect(() => {
         let stop = false
+        /* Перечень спрошен иначе, чем прежний: замеры стояли бы у других узлов. */
+        const remap = askedInsecure.current !== insecureAsk
+        askedInsecure.current = insecureAsk
+        if (remap) probe.forget()
         for (const s of subs) {
             if (!s.present) { setNodesBySub((m) => ({ ...m, [s.path]: null })); continue }
             /* Запасной ход — vless_nodes по выходу VLESS этой подписки (см. проверку выше). */
@@ -289,6 +307,8 @@ export default function PoolEditor({
                 Math.max(0, foreign - (h ? (h.usable ?? 0) + (h.skipped ?? 0) : 0) - (p ? (p.usable ?? 0) + (p.skipped ?? 0) : 0))
             const take = (r: VlessNodesReply, h: Other = null, p: Other = null) => {
                 if (stop) return
+                if (remap) renumber(s.path, lists.current.nodesBySub[s.path] || [], r.nodes || [],
+                    lists.current.pxBySub[s.path] || [], pxSplit(p?.nodes))
                 setNodesBySub((m) => ({ ...m, [s.path]: r.nodes || [] }))
                 setHyBySub((m) => ({ ...m, [s.path]: h?.nodes || [] }))
                 setPxBySub((m) => ({ ...m, [s.path]: pxSplit(p?.nodes) }))
@@ -298,9 +318,9 @@ export default function PoolEditor({
              * значит «узлов этого протокола не показать», а не «подписка не читается». */
             const others = () => Promise.all([
                 rpc.hysteria2NodesOfSub(s.path).catch((): Other => null),
-                rpc.proxyNodesOfSub(s.path).catch((): Other => null),
+                rpc.proxyNodesOfSub(s.path, ...ins(insecureAsk)).catch((): Other => null),
             ])
-            rpc.vlessNodesOfSub(s.path)
+            rpc.vlessNodesOfSub(s.path, ...ins(insecureAsk))
                 .then((r) => {
                     /* Ссылки, которых VLESS не признал своими, — hysteria2 или прокси: смешанная
                      * подписка показывает узлы ВСЕХ протоколов, а не один из них. Чужих ссылок нет
@@ -326,7 +346,30 @@ export default function PoolEditor({
         }
         return () => { stop = true }
         // eslint-disable-next-line react-hooks/exhaustive-deps
-    }, [subKeys])
+    }, [subKeys, insecureAsk])
+
+    /** Номера взятых строк подписки — из прежнего перечня в новый, по узлу (имя, адрес, порт, вид).
+     *  Узла в новом перечне нет (без «не проверять сертификат» узел с allowInsecure непригоден) —
+     *  строка уходит: под её номером теперь другой узел. hysteria2 не трогается: его перечень от
+     *  ключа не зависит. */
+    function renumber(sub: string, oldV: VlessNode[], newV: VlessNode[], oldP: PxNode[], newP: PxNode[]) {
+        const id = (n: VlessNode) => `${n.type}|${n.name}|${n.host}|${n.port}`
+        const mapOf = (from: VlessNode[], to: VlessNode[]) => {
+            const m = new Map<number, number | null>()
+            for (const n of from) m.set(n.index, to.find((x) => id(x) === id(n))?.index ?? null)
+            return m
+        }
+        const v = mapOf(oldV, newV)
+        const px = Object.fromEntries(PROXY_KINDS.map((k) => [k, mapOf(
+            oldP.filter((x) => x.proto === k).map((x) => x.nd), newP.filter((x) => x.proto === k).map((x) => x.nd))]))
+        setRows((rs) => rs.flatMap((r): Row[] => {
+            if (r.kind !== 'node' || r.sub !== sub || r.proto === 'hysteria2') return [r]
+            const m = r.proto === 'vless' ? v : px[r.proto]
+            if (!m?.has(r.idx)) return [r]
+            const to = m.get(r.idx)
+            return to === null || to === undefined ? [] : [{ ...r, idx: to }]
+        }))
+    }
 
     const subOf = (path: string) => subs.find((s) => s.path === path)
     const subTitle = (path: string) => {

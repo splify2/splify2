@@ -985,6 +985,15 @@ JSON — то есть решение принималось по переска
 (`sub_names`), чужой — отказ `нет такой подписки`: метод читает файл с диска, и произвольный путь
 означал бы чтение произвольного файла. Нескачанная подписка — отказ `подписка ещё не скачана`.
 
+`insecure: true` вместе с `sub` — перечень так, как подписку разберёт выход с «не проверять
+сертификат узла» (ключ `insecure` выхода): ядру уходит `--insecure`, узлы TLS с allowInsecure
+входят в перечень, и номер узла совпадает с номером у такого выхода. Без ключа такие узлы
+непригодны и в перечень не входят — как у выхода без `insecure`. Ядро без флага (steer 2.0.0)
+отвечает «неизвестный флаг: --insecure» кодом 2 — тогда бэкенд спрашивает его без флага. С
+`output` ключ не действует: у выхода пригодность решает его собственный `insecure`. То же у
+`vless_probe`, `proxy_nodes` и `proxy_probe`; у `hysteria2_*` ключа нет (`insecure=1` там —
+параметр ссылки узла, такие узлы пригодны всегда).
+
 ### `telemetry_state` (read) · `telemetry_set` (write) · `telemetry_preview` (read)
 
 Телеметрия. Схема пакета, транспорт и договорённость с панелью — в отдельном файле
@@ -1241,7 +1250,8 @@ hysteria2-probe`, прокси steer-proxy (trojan, shadowsocks, socks, http, vm
 ### `vless_probe` (read)
 
 - **Вход:** `{ "output": "<имя выхода>", "node": <номер, -1 — первый рабочий> }` **или**
-  `{ "sub": "<путь к файлу подписки>", "node": <номер, -1 — все по порядку подписки> }`.
+  `{ "sub": "<путь к файлу подписки>", "node": <номер, -1 — все по порядку подписки> }`; с `sub` —
+  необязательный `insecure` (как у `vless_nodes`: номера как у выхода с `insecure`).
   Путь принимается только из перечня подписок роутера — тот же рубеж, что у `vless_nodes`:
   метод читает файл с диска, и произвольный путь означал бы чтение произвольного файла.
 - **Выход:** JSON `steer vless-probe` дословно.
@@ -1268,7 +1278,8 @@ hysteria2-probe`, прокси steer-proxy (trojan, shadowsocks, socks, http, vm
 `steer proxy-nodes` / `steer proxy-probe` дословно; поле `type` узла называет протокол. Номера
 узлов у двух входов разные, так их считает ядро: у файла подписки (`sub`) — сквозные по всем пяти
 протоколам, у выхода (`output`) — среди узлов его протокола, и именно их ждёт `nodes` выхода.
-`proxy_probe` с `sub` принимает сквозной номер. Задержка у прокси — `handshake_ms` (рукопожатие
+`proxy_probe` с `sub` принимает сквозной номер. С `sub` — необязательный `insecure`, как у
+`vless_nodes` (узлы trojan и https с allowInsecure). Задержка у прокси — `handshake_ms` (рукопожатие
 и запрос через узел), `ttfb_ms` ядро печатает -1. Без пакета ядро отвечает «нужен пакет
 steer-proxy».
 
@@ -1535,12 +1546,12 @@ allowed-ips (сервер для своих); и отдельным поводо
 | `lists_source_set` | write | `{url}` |
 | `fetch_mode` | read | — |
 | `fetch_mode_set` | write | `{mode}` |
-| `vless_nodes` | read | `{output}` или `{sub}` |
-| `vless_probe` | read | `{output, node}` |
+| `vless_nodes` | read | `{output}` или `{sub, insecure?}` |
+| `vless_probe` | read | `{output, node}` или `{sub, node, insecure?}` |
 | `hysteria2_nodes` | read | `{output}` или `{sub}` |
 | `hysteria2_probe` | read | `{output, node}` или `{sub, node}` |
-| `proxy_nodes` | read | `{output}` или `{sub}` |
-| `proxy_probe` | read | `{output, node}` или `{sub, node}` |
+| `proxy_nodes` | read | `{output}` или `{sub, insecure?}` |
+| `proxy_probe` | read | `{output, node}` или `{sub, node, insecure?}` |
 | `dns_log` | read | — |
 | `conns` | read | — |
 | `helper` | read | `{output}` |
