@@ -501,15 +501,15 @@ fw_devices_of() {  # ВИДЫ_ЧЕРЕЗ_ЗАПЯТУЮ
 # скачан и лежит рядом. Списки обновляются и установка повторяется ровно один раз: если
 # зависимости нет и после обновления, дело не в списках. Прежняя редакция знала это только
 # про opkg: у 1.2.5 зависимостей не было, и ветка apk отказа не встречала; у 26.9 их две.
-pkg_add_file() {  # ФАЙЛ
+pkg_add_file() {  # ФАЙЛ... [!ИМЯ...] — одной транзакцией менеджера
     if [ "$PM" = apk ]; then
-        _pa_out="$(apk add --allow-untrusted --force-overwrite "$1" 2>&1)"
+        _pa_out="$(apk add --allow-untrusted --force-overwrite "$@" 2>&1)"
         _pa_rc=$?
         if [ "$_pa_rc" != 0 ]; then
             case "$_pa_out" in
                 *"unable to select packages"*)
                     apk update >/dev/null 2>&1
-                    _pa_out="$(apk add --allow-untrusted --force-overwrite "$1" 2>&1)
+                    _pa_out="$(apk add --allow-untrusted --force-overwrite "$@" 2>&1)
 списки пакетов были пусты — обновил их (apk update) и повторил"
                     _pa_rc=$?
                     ;;
@@ -518,13 +518,13 @@ pkg_add_file() {  # ФАЙЛ
         printf '%s' "$_pa_out"
         return $_pa_rc
     fi
-    _pa_out="$(opkg install --force-overwrite "$1" 2>&1)"
+    _pa_out="$(opkg install --force-overwrite "$@" 2>&1)"
     _pa_rc=$?
     if [ "$_pa_rc" != 0 ]; then
         case "$_pa_out" in
             *"cannot find dependency"*|*"unresolved"*|*"incompatible with the architectures"*)
                 opkg update >/dev/null 2>&1
-                _pa_out="$(opkg install --force-overwrite "$1" 2>&1)
+                _pa_out="$(opkg install --force-overwrite "$@" 2>&1)
 списки пакетов были пусты — обновил их (opkg update) и повторил"
                 _pa_rc=$?
                 ;;
@@ -532,6 +532,14 @@ pkg_add_file() {  # ФАЙЛ
     fi
     printf '%s' "$_pa_out"
     return $_pa_rc
+}
+
+# Снять закрепление имени за файлом в /etc/apk/world, ничего не меняя в пакетах: установленный из
+# файла пакет записан там как «имя><хеш файла», и пакет-замена под тем же именем (steer-core,
+# provides steer) иначе с ним не уживается. У opkg такой записи нет — делать нечего.
+pkg_unpin() {  # ИМЯ
+    [ "$PM" = apk ] && apk add "$1" >/dev/null 2>&1
+    return 0
 }
 
 pkg_del() {  # ИМЯ

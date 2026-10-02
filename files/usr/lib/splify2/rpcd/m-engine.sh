@@ -311,9 +311,13 @@ pkg_version() {  # ИМЯ_ПАКЕТА
     printf '%s' "$_pv_v"
 }
 
-pkg_install() {  # ФАЙЛ [ИМЯ_ДЛЯ_СНЯТИЯ...]
+# ФАЙЛЫ — один или несколько через пробел (пути в /tmp, без пробелов): ядро 2.0 и его модули
+# ставятся одной транзакцией. PKG_EXTRA — добавки к той же транзакции (у apk — `!имя`: снять
+# прежний пакет в ней же), см. steer_install.
+pkg_install() {  # ФАЙЛЫ [ИМЯ_ДЛЯ_СНЯТИЯ...]
     file="$1"; shift
-    PKG_OUT="$(pkg_add_file "$file")"
+    # shellcheck disable=SC2086 — файлы и добавки разбираются словами нарочно
+    PKG_OUT="$(pkg_add_file $file ${PKG_EXTRA:-})"
     rc=$?
     PKG_REMOVED=0
     [ "$rc" = 0 ] && return 0
@@ -342,7 +346,8 @@ pkg_install() {  # ФАЙЛ [ИМЯ_ДЛЯ_СНЯТИЯ...]
     [ -n "$_pi_named" ] || return "$rc"
     for n in $_pi_named; do pkg_del "$n"; done
     PKG_REMOVED=1
-    PKG_OUT="$(pkg_add_file "$file")"
+    # shellcheck disable=SC2086
+    PKG_OUT="$(pkg_add_file $file ${PKG_EXTRA:-})"
     return $?
 }
 
@@ -394,6 +399,79 @@ mods_present() {
         [ -x "${MODULE_DIR:-${STEER%/*}}/steer-$_m" ] && _mp="$_mp $_m"
     done
     printf '%s' "${_mp# }"
+}
+
+# Установленные пакеты одним запуском менеджера: «имя версия» по строке. `apk list -I` стоит на
+# роутере сотни миллисекунд, а установке ядра нужно знать о десятке имён.
+pkg_list() {
+    case "$PM" in
+        apk)  apk list -I 2>/dev/null | sed -n 's/^\([^ ]*\)-\([0-9][^ -]*\)-r[0-9]* .*/\1 \2/p' ;;
+        opkg) opkg list-installed 2>/dev/null | sed -n 's/^\([^ ]*\) - \([^ ]*\).*/\1 \2/p' | sed 's/-[0-9]*$//' ;;
+    esac
+}
+
+# Версия пакета ИМЯ в перечне PKGS (pkg_list) — точное имя, пусто, если не стоит.
+pkg_in() {  # ИМЯ
+    while read -r _pn _pv; do
+        [ "$_pn" = "$1" ] && { printf '%s' "$_pv"; return 0; }
+    done <<EOF
+$PKGS
+EOF
+    return 1
+}
+
+# Какие модули нужны спеке: SPEC_MODS — имена через пробел, SPEC_MOD_OUTS — «модуль=выход,выход»
+# через пробел. По видам выходов (docs/spec-v2.md): туннель vless и hysteria2 — свои модули,
+# протоколы прокси — steer-proxy, xsteer и tgws — свои, интерфейс с obfs — steer-obfs. Спека v1
+# пишет туннели своими видами (vless, hysteria2) — понимаются тоже.
+#
+# ВНИМАНИЕ: json_load — вызывать до json_init своего ответа.
+spec_mods() {
+    SPEC_MODS=""; SPEC_MOD_OUTS=""
+    [ -s "$SPEC" ] || return 0
+    json_load "$(cat "$SPEC" 2>/dev/null)" 2>/dev/null || return 0
+    json_select outputs 2>/dev/null || return 0
+    json_get_keys _sm_keys
+    for _sm_k in $_sm_keys; do
+        json_select "$_sm_k" 2>/dev/null || continue
+        _sm_kind=""; _sm_proto=""; _sm_ot=""
+        json_get_var _sm_kind kind
+        json_get_var _sm_proto protocol
+        json_get_type _sm_ot obfs
+        json_select ..
+        [ "$_sm_kind" = tunnel ] && _sm_kind="$_sm_proto"
+        case "$_sm_kind" in
+            vless|hysteria2|xsteer|tgws) _sm_m="$_sm_kind" ;;
+            trojan|shadowsocks|socks|http|vmess) _sm_m=proxy ;;
+            interface) if [ -n "$_sm_ot" ]; then _sm_m=obfs; else _sm_m=""; fi ;;
+            *) _sm_m="" ;;
+        esac
+        [ -n "$_sm_m" ] || continue
+        case " $SPEC_MODS " in *" $_sm_m "*) ;; *) SPEC_MODS="${SPEC_MODS:+$SPEC_MODS }$_sm_m" ;; esac
+        SPEC_MOD_OUTS="$SPEC_MOD_OUTS $_sm_m=$_sm_k"
+    done
+    return 0
+}
+
+# Выходы спеки, которым нужен МОДУЛЬ, через запятую (по SPEC_MOD_OUTS).
+spec_mod_outs() {  # МОДУЛЬ
+    _so=""
+    for _so_p in $SPEC_MOD_OUTS; do
+        [ "${_so_p%%=*}" = "$1" ] && _so="${_so:+$_so, }${_so_p#*=}"
+    done
+    printf '%s' "$_so"
+}
+
+# Скачать файл выпуска ядра в /tmp: адреса и sha256 из перечня выпусков, затем прежняя лестница.
+steer_fetch() {  # ВЕРСИЯ ИМЯ_ФАЙЛА -> 0, файл /tmp/ИМЯ; via — в FETCH_VIA
+    rm -f "/tmp/$2"
+    rel_asset steer "$1" "$2"
+    if download_rel "/tmp/$2" "$REL_SUM" "https://github.com/splify2/steer/releases/download/v$1/$2" $REL_URLS; then
+        [ -n "$FETCH_NOTE" ] && FETCH_VIA="${FETCH_VIA:+$FETCH_VIA; }$FETCH_NOTE"
+        return 0
+    fi
+    rm -f "/tmp/$2"
+    return 1
 }
 
 case "$2" in
@@ -591,19 +669,125 @@ case "$2" in
         ;;
 
     steer_install)
-        # Скачать и поставить движок выбранной версии и варианта.
+        # Скачать и поставить ядро выбранной версии.
         #
-        # Ставит именно ЭТО, а не «что-нибудь»: вариант (базовый или расширенный) — выбор
-        # человека, зависящий от того, поднимает ли туннель сам движок, и угадывать за него
-        # значит либо положить лишнее, либо не положить нужное и получить «выход vless не
-        # работает» без объяснения.
+        # Ядро 2.0 и новее — пакет steer-core и модули steer-<модуль> (ниже). Прежние выпуски 1.x —
+        # один пакет, steer или steer-extended по полю `extended` (ветка после этой).
         read -r input
         ver="$(jsonfilter -s "$input" -e '@.version' 2>/dev/null)"
         ext="$(jsonfilter -s "$input" -e '@.extended' 2>/dev/null)"
+        want="$(jsonfilter -s "$input" -e '@.modules' 2>/dev/null)"
         arch="$(pkg_arch)"
         # Ядро ведёт steer-box-connector: его пакет зависит от steer-core точной версии, и пакеты
         # ядра здесь — его, а не наши (box_busy).
         box_busy && fail "ядро занято: $BOX_BY"
+        case "$ver" in ''|*[!0-9.]*) fail "в версии допустимы только цифры и точки" ;; esac
+
+        # ---- ядро 2.0: steer-core и модули ОДНОЙ транзакцией ------------------------------
+        #
+        # Модуль зависит от steer-core ТОЧНОЙ версии (формат событий ядра и модуля между
+        # выпусками не обещан), поэтому обновить ядро, оставив хоть один стоящий модуль прежним,
+        # менеджер не даст. Состав транзакции:
+        #   - модули, которые попросили (`modules` — имена через пробел или запятую);
+        #   - модули, которые уже стоят: без них транзакция не пройдёт, а снимать их без спроса
+        #     нельзя;
+        #   - модули, которые нужны спеке (spec_mods): ядро без них её не примет;
+        #   - при переходе с steer-extended 1.x — vless, xsteer, obfs, tgws: в нём это было вшито,
+        #     и переход не должен отнимать ничего из того, что работало.
+        # kmod-tun (зависимость модулей с TUN) менеджер берёт из фидов сам.
+        #
+        # ПЕРЕХОД С 1.x и с промежуточной раскладки. steer-core заменяет пакеты steer, libsteer и
+        # libsteer-wolfssl и конфликтует с ними, а steer-extended 1.x (provides steer, conflicts
+        # steer) с ним просто конфликтует. Снять старое надо в той же транзакции, иначе между
+        # двумя командами роутер остался бы без ядра. apk это умеет: `!имя` в той же транзакции
+        # убирает пакет вместе с установкой нового (проверено на OpenWrt 25.12.5: «Purging
+        # steer-extended … Installing steer-core»), а /etc/steer — спека, списки, подписки —
+        # пакету не принадлежит и остаётся на месте. Пакет `steer` так снять нельзя: steer-core
+        # сам называет себя steer, и `!steer` запретил бы и его. Мешает там только закрепление
+        # имени за файлом 1.x в /etc/apk/world; pkg_unpin снимает закрепление, ничего не меняя в
+        # пакетах, и steer-core в транзакции замещает steer по replaces. После успеха pkg_del этих
+        # имён убирает из world запреты и имя steer — пакетов уже не трогая.
+        # opkg транзакций и запретов не знает: на конфликте прежние пакеты снимает pkg_install
+        # и повторяет установку (removed в ответе, если и повтор не удался).
+        if [ "${ver%%.*}" -ge 2 ] 2>/dev/null; then
+            [ -n "$arch" ] || fail "не определилась архитектура"
+            PKGS="$(pkg_list)"
+            spec_mods
+            for m in $(printf '%s' "$want" | tr ',' ' '); do
+                case " $STEER_MODULES " in *" $m "*) ;; *) fail "неизвестный модуль: $m" ;; esac
+            done
+            ext_old="$(pkg_in steer-extended)"
+            case "$ext_old" in 0.*|1.*) ext_old="vless xsteer obfs tgws" ;; *) ext_old="" ;; esac
+            have=" $want $(mods_present) $SPEC_MODS $ext_old "
+            have="$(printf '%s' "$have" | tr ',' ' ')"
+            mods=""
+            for m in $STEER_MODULES; do
+                case "$have" in *" $m "*) mods="$mods $m" ;; esac
+            done
+            mods="${mods# }"
+
+            FETCH_VIA=""; files=""
+            for p in steer-core $(for m in $mods; do printf 'steer-%s ' "$m"; done); do
+                name="$p-${ver}-1_${arch}.$(pkg_ext)"
+                if ! steer_fetch "$ver" "$name"; then
+                    rm -f $files
+                    fail "не скачалось: $name (нет такой версии для $arch?)${FETCH_NOTE:+ — $FETCH_NOTE}"
+                fi
+                files="$files /tmp/$name"
+            done
+
+            legacy=""
+            for n in steer steer-extended libsteer libsteer-wolfssl; do
+                pkg_in "$n" >/dev/null && legacy="$legacy $n"
+            done
+            PKG_EXTRA=""
+            if [ "$PM" = apk ]; then
+                for n in $legacy; do
+                    case "$n" in
+                        steer) pkg_unpin steer ;;
+                        *) PKG_EXTRA="$PKG_EXTRA !$n" ;;
+                    esac
+                done
+            fi
+            # shellcheck disable=SC2086
+            pkg_install "${files# }" $legacy
+            rc=$?
+            out="$PKG_OUT"; removed="$PKG_REMOVED"
+            # shellcheck disable=SC2086
+            rm -f $files
+            json_init
+            if [ "$rc" != 0 ]; then
+                json_add_boolean ok 0
+                if [ "$removed" = 1 ]; then
+                    json_add_string error "$out
+Прежнее ядро при этом снято: маршрутизации сейчас нет. Поставьте любую версию заново или перезагрузите роутер после установки."
+                else
+                    json_add_string error "$out"
+                fi
+                json_add_boolean removed "$removed"
+                json_dump; exit 0
+            fi
+            if [ "$PM" = apk ]; then
+                for n in $legacy; do pkg_del "$n"; done
+            fi
+            "$INITD" enable >/dev/null 2>&1 || true
+            restarted=0
+            if [ -f "$SPEC" ]; then
+                "$INITD" restart >/dev/null 2>&1 && restarted=1
+            fi
+            json_add_boolean ok 1
+            json_add_string installed "steer-core $ver"
+            json_add_array modules
+            for m in $mods; do json_add_string "" "$m"; done
+            json_close_array
+            json_add_boolean restarted "$restarted"
+            [ -n "$FETCH_VIA" ] && json_add_string via "$FETCH_VIA"
+            [ -n "$out" ] && json_add_string output "$out"
+            json_dump
+            exit 0
+        fi
+
+        # ---- ядро 1.x: один пакет, steer или steer-extended -------------------------------
         json_init
         case "$ver" in
             ''|*[!0-9.]*) json_add_boolean ok 0; json_add_string error "в версии допустимы только цифры и точки"; json_dump; exit 0 ;;

@@ -1442,6 +1442,97 @@ check "версии нет в version.json — прямой адрес выпу�
       "$(grep 'luci-app-splify2' "$T/curl.log" | head -1)"
 relclean; reset_logs
 
+# ---- ядро 2.0: steer-core и модули одной транзакцией, переход с 1.5.9 ------------------
+# В 2.0 пакета steer нет: ядро — steer-core, протоколы — модули steer-<модуль>, каждый зависит от
+# steer-core точной версии. Значит, обновление ставит ядро и ВСЕ стоящие модули одной версией и
+# одной `apk add`, добавляя то, что нужно спеке; переход с steer-extended 1.5.9 не теряет вшитое в
+# него (vless, xsteer, obfs, tgws), а прежний пакет снимается в той же транзакции (`!имя`).
+mkrel2() {  # ФАЙЛ SHA256
+    python3 - "$1" "$2" <<'PY2'
+import json, sys
+out, s = sys.argv[1], sys.argv[2]
+A = "aarch64_cortex-a53"
+mods = ["core", "vless", "hysteria2", "proxy", "xsteer", "obfs", "tgws"]
+def v(ver):
+    tag = f"steer-v{ver}"
+    return {"version": ver, "channel": "stable", "tag": tag,
+            "assets": [{"name": f"steer-{m}-{ver}-1_{A}.apk", "size": 8, "sha256": s,
+                        "urls": [f"https://github.com/splify2/releases/releases/download/{tag}/steer-{m}-{ver}-1_{A}.apk"]}
+                       for m in mods]}
+doc = {"schema": 1, "products": {"steer": {"stable": "2.0.1", "prerelease": None,
+       "versions": [v("2.0.1"), v("2.0.0")]}}}
+json.dump(doc, open(out, "w"))
+PY2
+}
+apk_adds() { grep '^add' "$T/apk.log" | sed 's|/tmp/steer-\([a-z0-9]*\)-[0-9.]*-1_aarch64_cortex-a53.apk|\1|g; s/^add add //; s/^--allow-untrusted --force-overwrite //'; }
+spec_keep="$T/etc/spec.json.keep2"; cp "$T/etc/spec.json" "$spec_keep" 2>/dev/null || rm -f "$spec_keep"
+rm -f "$T/etc/spec.json"
+relclean; reset_logs
+mkrel2 "$T/rel-raw.json" "$(relsum "$T/body-rel")"
+printf 'splify2/releases/releases/download\t%s\n' "$T/body-rel" > "$T/curl.serve"
+out="$(APK_LIST="steer-extended-1.5.9-r1 aarch64_cortex-a53 {steer-extended}" rpcd steer_install '{"version":"2.0.1"}')"
+check "1.5.9 extended → 2.0: ядро и вшитые модули одной apk add, прежний снят в ней же" \
+      "core vless xsteer obfs tgws !steer-extended" "$(apk_adds)"
+check "  запрет !steer-extended убран из world после успеха" "del steer-extended" "$(grep '^del' "$T/apk.log")"
+check "  ответ: ok, ядро, состав модулей" 'true;steer-core 2.0.1;["vless", "xsteer", "obfs", "tgws"]' \
+      "$(printf '%s' "$out" | jget ok);$(printf '%s' "$out" | jget installed);$(printf '%s' "$out" | jget modules)"
+
+reset_logs
+printf '{"version":2,"outputs":{"direct":{"kind":"direct"},"t":{"kind":"tunnel","protocol":"trojan","subscription":"s"},"o":{"kind":"interface","device":"wg0","obfs":{"server":"a:1","listen":"b:2"}}}}\n' > "$T/etc/spec.json"
+out="$(APK_LIST="steer-1.5.9-r1 aarch64_cortex-a53 {steer}" rpcd steer_install '{"version":"2.0.1","modules":"hysteria2"}')"
+check "1.5.9 basic → 2.0: просимый модуль и нужные спеке (proxy, obfs)" "steer|core hysteria2 proxy obfs" \
+      "$(apk_adds | tr '\n' '|' | sed 's/|$//')"
+check "  имя steer снято с закрепления до и убрано из world после" "del steer" "$(grep '^del' "$T/apk.log")"
+check "  после установки служба перезапущена (спека есть)" "true" "$(printf '%s' "$out" | jget restarted)"
+
+reset_logs
+mkdir -p "$T/mods"; for m in vless proxy; do printf '#!/bin/sh\n' > "$T/mods/steer-$m"; chmod +x "$T/mods/steer-$m"; done
+rm -f "$T/etc/spec.json"
+out="$(APK_LIST="$CORE_LIST" rpcd steer_install '{"version":"2.0.1"}')"
+check "2.0.0 → 2.0.1: ядро и все стоящие модули одной версией, без снятий" "core vless proxy;" \
+      "$(apk_adds);$(grep -c '^del' "$T/apk.log" | sed 's/^0$//')"
+check "  без спеки служба не перезапускается" "false" "$(printf '%s' "$out" | jget restarted)"
+
+reset_logs
+printf 'steer-proxy-2.0.1\n' > "$T/curl.fail"
+out="$(APK_LIST="$CORE_LIST" rpcd steer_install '{"version":"2.0.1"}')"
+check "модуль не скачался — не ставится ничего" "false;0" \
+      "$(printf '%s' "$out" | jget ok);$(grep -c '^add' "$T/apk.log")"
+check "  отказ называет файл" "yes" \
+      "$(printf '%s' "$out" | jget error | grep -q 'steer-proxy-2.0.1-1_aarch64_cortex-a53.apk' && echo yes || echo no)"
+check "  скачанное до отказа убрано из /tmp" "0" "$(ls /tmp/steer-core-2.0.1-1_aarch64_cortex-a53.apk 2>/dev/null | grep -c .)"
+rm -f "$T/curl.fail"
+out="$(rpcd steer_install '{"version":"2.0.1","modules":"vless wireguard"}')"
+check "неизвестный модуль отвергается до скачивания" "неизвестный модуль: wireguard" "$(printf '%s' "$out" | jget error)"
+
+# opkg: транзакций и запретов нет — на конфликте прежний пакет снимается и установка повторяется,
+# но файлы те же и все сразу.
+rm -rf "$T/mods"; rm -f "$T/opkg.log"; : > "$T/opkg.lists"
+cp "$T/bin/opkg" "$T/bin/opkg.orig"
+cat > "$T/bin/opkg" <<'EOF2'
+#!/bin/sh
+echo "$*" >> "$SANDBOX/opkg.log"
+case "$1" in
+    install)
+        if grep -q '^remove steer-extended' "$SANDBOX/opkg.log"; then exit 0; fi
+        echo " * check_conflicts_for: The following packages conflict with steer-core:"
+        echo " * check_conflicts_for:   steer-extended *"
+        exit 1 ;;
+    list-installed) echo "steer-extended - 1.5.9-1" ;;
+esac
+exit 0
+EOF2
+chmod +x "$T/bin/opkg"
+out="$(PM_FIXTURE=opkg rpcd steer_install '{"version":"2.0.1"}')"
+check "opkg 1.5.9 extended → 2.0: install всех файлов, remove прежнего, install снова" \
+      "install|remove|install" "$(awk '$1 != "list-installed" {print $1}' "$T/opkg.log" | tr '\n' '|' | sed 's/|$//')"
+check "  в установке — ядро и вшитые модули (ipk)" "5" \
+      "$(grep '^install' "$T/opkg.log" | head -1 | tr ' ' '\n' | grep -c '2.0.1-1_aarch64_cortex-a53.ipk')"
+check "  установка удалась" "true" "$(printf '%s' "$out" | jget ok)"
+mv "$T/bin/opkg.orig" "$T/bin/opkg"; rm -f "$T/opkg.lists" "$T/opkg.log"
+rm -rf "$T/mods"; relclean; reset_logs
+[ -f "$spec_keep" ] && mv "$spec_keep" "$T/etc/spec.json"
+
 # ---- R-037: свои списки доменов и адресов -------------------------------------
 # Вопрос задан снаружи (splicicd#8): маршрутизировать можно только то, что опубликовал
 # издатель. Движок сопоставляет исключительно по файлам, а каталог рисуется из манифеста,
