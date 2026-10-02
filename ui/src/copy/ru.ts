@@ -556,6 +556,9 @@ export const ru = {
         samyyBystryy: "самый быстрый",
         dopuskMs: "Допуск, мс",
         zamerRazVS: "Замер раз в, с",
+        adresProverki: "Адрес проверки",
+        neMeritBezTrafika: "Не мерить без трафика дольше, с",
+        n0MeritVsegda: "0 — мерить всегда",
     },
     outputCards: {
         netOtveta: "нет ответа",

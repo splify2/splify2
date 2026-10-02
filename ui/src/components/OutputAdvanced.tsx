@@ -25,6 +25,10 @@ export interface Adv {
     pick: 'order' | 'latency'
     tolerance?: number
     interval?: number
+    /** «Самый быстрый»: адрес проверки (`url`); пусто — умолчание ядра. */
+    url?: string
+    /** «Самый быстрый»: сколько секунд без трафика не мерить (`idle_timeout`). */
+    idle_timeout?: number
 }
 
 const TRANSPORTS = ['tcp', 'ws', 'httpupgrade', 'grpc', 'xhttp']
@@ -42,6 +46,8 @@ export function advFrom(spec: Spec, name?: string): Adv {
         pick: o?.pick === 'latency' ? 'latency' : 'order',
         tolerance: o?.tolerance,
         interval: o?.interval,
+        url: o?.url,
+        idle_timeout: o?.idle_timeout,
     }
 }
 
@@ -62,6 +68,8 @@ export function advApply(o: Output, adv: Adv, role: 'top' | 'tunnel'): Output {
             if (adv.pick === 'latency') {
                 if (adv.tolerance !== undefined) out.tolerance = adv.tolerance
                 if (adv.interval !== undefined) out.interval = adv.interval
+                if (adv.url?.trim()) out.url = adv.url.trim()
+                if (adv.idle_timeout !== undefined) out.idle_timeout = adv.idle_timeout
             }
         } else if (adv.ipv6) {
             out.ipv6 = adv.ipv6
@@ -168,6 +176,15 @@ export default function OutputAdvanced({ adv, onChange, spec, self, show, classN
                             <div className="grid gap-3 pt-2 sm:grid-cols-2">
                                 <NumField label={S.outputAdvanced.dopuskMs} value={adv.tolerance} onChange={(v) => set({ tolerance: v })} placeholder="50" min={0} max={60000} />
                                 <NumField label={S.outputAdvanced.zamerRazVS} value={adv.interval} onChange={(v) => set({ interval: v })} placeholder="180" min={5} max={86400} />
+                                <NumField label={S.outputAdvanced.neMeritBezTrafika} value={adv.idle_timeout} onChange={(v) => set({ idle_timeout: v })} placeholder={S.outputAdvanced.n0MeritVsegda} min={0} max={86400} />
+                                <Field label={S.outputAdvanced.adresProverki}>
+                                    <input
+                                        value={adv.url || ''}
+                                        onChange={(e) => set({ url: e.currentTarget.value })}
+                                        placeholder="http://cp.cloudflare.com/generate_204"
+                                        className={`${inputCls} w-full`}
+                                    />
+                                </Field>
                             </div>
                         )}
                     </div>
