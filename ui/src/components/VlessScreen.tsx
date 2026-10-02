@@ -5,7 +5,7 @@ import { Block, CardHead, DangerButton, FieldRow, KV } from '@/components/ui/lay
 import { notify } from '@/lib/notify'
 import { rpc } from '@/lib/rpc'
 import { human } from '@/lib/live'
-import { isSubSource } from '@/lib/validate'
+import { isHttpUrl, isProxyLinks, isSubSource } from '@/lib/validate'
 import { agoText } from '@/lib/quota'
 import { subsRemember, subsRemembered } from '@/lib/subs'
 
@@ -85,6 +85,9 @@ export default function VlessScreen() {
     const [hwid, setHwid] = useState('')
     const [name, setName] = useState('')
     const [url, setUrl] = useState('')
+    /** Ссылки прокси http(s):// — своим полем: в поле адреса подписки они скачивались бы как
+     *  подписка (решение владельца). */
+    const [proxy, setProxy] = useState('')
     const [busy, setBusy] = useState('')
 
     const load = useCallback(async () => {
@@ -127,8 +130,17 @@ export default function VlessScreen() {
 
     async function add() {
         const src = url.trim()
-        if (!isSubSource(src)) {
+        const px = proxy.trim()
+        if ((!src && !px) || !isSubSource(src)) {
             notify(S.vlessScreen.nuzhnaSsylkaPodpiskiHttp, 'warning')
+            return
+        }
+        if (!isProxyLinks(px)) {
+            notify(S.vlessScreen.nuzhnaSsylkaProksi, 'warning')
+            return
+        }
+        if (px && src && isHttpUrl(src)) {
+            notify(S.vlessScreen.podpiskaIProksiRaznymi, 'warning')
             return
         }
         /* Имя файла узлов — латиница и цифры, и придумывать его человек не обязан: название
@@ -148,7 +160,7 @@ export default function VlessScreen() {
         }
         setBusy('__adding__')
         try {
-            const r = await rpc.subSet(src, n, name.trim())
+            const r = px ? await rpc.subSet(src, n, name.trim(), px) : await rpc.subSet(src, n, name.trim())
             if (!r.ok) { notify(r.error || S.vlessScreen.podpiskaNeSohranilas, 'error'); return }
             if (r.warn) notify(r.warn, 'warning')
             /* «Пригодных узлов нет» говорится СРАЗУ, а не выясняется потом по туннелю, который
@@ -158,6 +170,7 @@ export default function VlessScreen() {
             else if (r.usable === 0) notify(S.vlessScreen.podpiskaSkachalasNoPrigodnyh, 'warning')
             setName('')
             setUrl('')
+            setProxy('')
             await load()
         } catch (e) {
             notify(String(e instanceof Error ? e.message : e), 'error')
@@ -340,6 +353,14 @@ export default function VlessScreen() {
                         placeholder={S.vlessScreen.ssylkaPodpiskiIliVless}
                         aria-label={S.vlessScreen.ssylkaPodpiski}
                         className="h-10 w-full min-w-0 rounded-lg border border-border bg-background px-3 font-mono text-[13px]"
+                    />
+                    <input
+                        value={proxy}
+                        onChange={(e) => setProxy(e.currentTarget.value)}
+                        onKeyDown={(e) => e.key === 'Enter' && add()}
+                        placeholder={S.vlessScreen.proksiHttpPlaceholder}
+                        aria-label={S.vlessScreen.ssylkaProksi}
+                        className="h-10 w-full min-w-0 rounded-lg border border-border bg-background px-3 font-mono text-[13px] sm:col-start-2"
                     />
                 </div>
                 <Button className="h-10 w-full" onClick={add} disabled={!!busy}>

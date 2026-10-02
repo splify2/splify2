@@ -1957,6 +1957,30 @@ out="$(rpcd sub_set '{"url":"vless://key@host:443#node"}')"
 check "для ссылок vless:// движок не зовётся" "links;no" \
       "$(printf '%s' "$out" | jget kind);$([ -f "$T/subfetch.log" ] && echo yes || echo no)"
 
+# ПРОКСИ steer-proxy: ссылки trojan://, ss://, socks*://, vmess:// принимаются вставкой так же,
+# как vless:// — файл подписки один, протокол узла различает ядро. А прокси http(s):// по виду
+# не отличить от адреса подписки, поэтому он приходит ОТДЕЛЬНЫМ полем `links` (решение владельца
+# 2026-10-02) и не скачивается.
+rm -f "$T/subfetch.log"
+out="$(rpcd sub_set '{"name":"px1","url":"trojan://p@h:443#t ss://YWVzLTEyOC1nY206cA@h:8388#s socks5://h:1080#k vmess://eyJhZGQiOiJoIn0="}')"
+check "trojan, ss, socks, vmess вставкой — ссылки, без скачивания" "true;links;no" \
+      "$(printf '%s' "$out" | jget ok);$(printf '%s' "$out" | jget kind);$([ -f "$T/subfetch.log" ] && echo yes || echo no)"
+check "все четыре ссылки — строками файла подписки" "4" "$(grep -c '://' "$T/etc/subs/px1.txt" 2>/dev/null)"
+rm -f "$T/subfetch.log"
+out="$(rpcd sub_set '{"name":"px2","links":"http://u:p@h:3128#ht https://h:443?sni=x#hs"}')"
+check "прокси http(s):// отдельным полем — ссылки, а не подписка" "true;links;no" \
+      "$(printf '%s' "$out" | jget ok);$(printf '%s' "$out" | jget kind);$([ -f "$T/subfetch.log" ] && echo yes || echo no)"
+check "и обе лежат в файле подписки" "http://u:p@h:3128#ht;https://h:443?sni=x#hs" \
+      "$(tr '\n' ';' < "$T/etc/subs/px2.txt" 2>/dev/null | sed 's/;$//')"
+check "у подписки из ссылок адреса для обновления нет" "" "$(uci_get splify2.sub_px2.url)"
+out="$(rpcd sub_set '{"name":"px3","url":"vless://k@h:443#v","links":"http://h:3128#ht"}')"
+check "ссылки узлов и прокси http — вместе одной подпиской" "2" "$(grep -c '://' "$T/etc/subs/px3.txt" 2>/dev/null)"
+out="$(rpcd sub_set '{"name":"px4","url":"https://panel.invalid/sub","links":"http://h:3128#ht"}')"
+check "адрес подписки вместе со ссылками — отказ, а не потеря одного из двух" "false" "$(printf '%s' "$out" | jget ok)"
+out="$(rpcd sub_set '{"name":"px5","links":"ftp://h/x"}')"
+check "в поле ссылок без единой ссылки узла — отказ" "false" "$(printf '%s' "$out" | jget ok)"
+for _n in px1 px2 px3; do rpcd sub_del "{\"name\":\"$_n\"}" > /dev/null; done
+
 # ---- автообновление подписки -------------------------------------------------
 #
 # Подписка обновлялась только по нажатию, и человек с панелью, у которой узлы меняются за
@@ -2613,6 +2637,13 @@ check "экранированный перевод строки в спеке о
 
 out="$(printf '%s\n' 'splify2-backup 1' '[sub]' 'http://example.org/list' | backup_put)"
 check "подписка не из vless:// и не base64 отвергается" "false" "$(printf '%s' "$out" | jget ok)"
+# Ссылки прокси steer-proxy в архиве — законная подписка (их кладёт sub_set), в том числе прокси
+# http(s):// «адрес:порт»; адрес панели (http://… без порта) — по-прежнему нет. Проверка до
+# спеки: архив с одной подпиской проверяется и отвергается ДО записи, значит проверка формы —
+# по ответу: «подписка: ждём …» есть или нет.
+out="$(printf '%s\n' 'splify2-backup 1' '[sub]' 'trojan://p@h:443#t' 'ss://YWVzLTEyOC1nY206cA@h:8388#s' 'http://u:p@h:3128#ht' 'https://h:443?sni=x#hs' 'vmess://eyJhZGQiOiJoIn0=' | backup_put)"
+check "подписка из ссылок прокси в архиве принимается" "no" \
+      "$(printf '%s' "$out" | jget error | grep -q 'подписка: ждём' && echo yes || echo no)"
 
 out="$(printf '%s\n' 'splify2-backup 1' '[options]' 'sub_url=https://x/$(reboot)' | backup_put)"
 check "ссылка подписки с подстановкой отвергается" "false" "$(printf '%s' "$out" | jget ok)"

@@ -74,9 +74,25 @@ export const isSubSource = (v: string) => {
   if (!s) return true            // пустое = «ещё не ввели»; обязательность проверяет панель
   if (isHttpUrl(s)) return true
   // Ссылок может быть несколько: из однострочного поля многострочная вставка приезжает
-  // склеенной пробелами, и делит их бэкенд — здесь только проверяем, что все они vless://.
-  // Схемы те же, что принимает sub_set: vless://, hysteria2:// и короткая hy2://.
-  return s.split(/\s+/).every((p) => /^(vless|hysteria2|hy2):\/\/[^\s]+$/i.test(p))
+  // склеенной пробелами, и делит их бэкенд — здесь только проверяем, что все они ссылки узлов.
+  return s.split(/\s+/).every((p) => NODE_LINK.test(p))
+}
+
+/** Ссылки узлов, которые принимает `sub_set` вставкой (SUB_LINK_RE в m-sub.sh): VLESS, hysteria2
+ *  (и короткая hy2), прокси steer-proxy — trojan, ss, socks/socks4/socks4a/socks5, vmess. */
+const NODE_LINK = /^(vless|hysteria2|hy2|trojan|ss|socks|socks4|socks4a|socks5|vmess):\/\/\S+$/i
+
+/** Прокси http(s):// — «адрес:порт», без пути (SUB_HTTP_PROXY_RE в m-sub.sh). */
+const HTTP_PROXY = /^https?:\/\/([^/@\s]+@)?(\[[0-9A-Fa-f:]+\]|[^/:@\s]+):[0-9]+\/?([?#]\S*)?$/i
+
+/** Поле ссылок прокси http(s):// — ОТДЕЛЬНОЕ от адреса подписки (решение владельца): по виду
+ *  `https://адрес:порт` прокси от адреса панели не отличить, и в общем поле он скачивался бы
+ *  как подписка. Принимает и остальные ссылки узлов — бэкенд кладёт их тем же файлом. Адрес
+ *  панели (с путём, без порта) здесь отвергается, а не ложится узлом, которого ядро не разберёт. */
+export const isProxyLinks = (v: string) => {
+  const s = v.trim()
+  if (!s) return true
+  return s.split(/\s+/).every((p) => HTTP_PROXY.test(p) || NODE_LINK.test(p))
 }
 
 /** Свой список доменов — в punycode, ПЕРЕД отправкой на роутер.

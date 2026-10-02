@@ -542,8 +542,10 @@ list)
     json_add_object engine; json_close_object
     # `name` — какая из подписок. Поля нет — первая (main), и это же значение приходит от
     # интерфейсов, которые про несколько подписок ещё не знают.
+    # `links` — ссылки узлов отдельным полем: прокси http(s):// по виду не отличить от адреса
+    # подписки, и в `url` такая ссылка скачивалась бы как подписка.
     json_add_object sub_set
-        json_add_string url; json_add_string name; json_add_string title
+        json_add_string url; json_add_string name; json_add_string title; json_add_string links
     json_close_object
     json_add_object sub_info; json_add_string name; json_close_object
     json_add_object sub_list; json_close_object
