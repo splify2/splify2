@@ -902,6 +902,18 @@ export const rpc = {
         ['sub', 'node'],
     ),
 
+    /** Узлы и проверка узла для выходов прокси steer-proxy (trojan, shadowsocks, socks, http,
+     *  vmess). Формат ответа тот же, `type` узла называет протокол. НОМЕРА РАЗНЫЕ: у файла
+     *  подписки (`sub`) они сквозные по всем протоколам прокси, у выхода (`output`) — среди узлов
+     *  его протокола, и `nodes` спеки ждёт вторые (см. proxyNodesByProto в PoolEditor). Без
+     *  модуля ядро отвечает отказом «нужен пакет steer-proxy». */
+    proxyNodes: declare<VlessNodesReply>('proxy_nodes', ['output']),
+    proxyNodesOfSub: declare<VlessNodesReply>('proxy_nodes', ['sub']),
+    proxyProbeOfSub: declare<{ output?: string; results?: VlessProbe[]; working?: number; error?: string }>(
+        'proxy_probe',
+        ['sub', 'node'],
+    ),
+
     /** Журнал имён резолвера движка: какое имя в какое правило попало, а также серверы DNS
      *  (`upstreams`: адрес, транспорт, выход, состояние, счётчики, последняя ошибка) и кэш. */
     dnsLog: declare<DnsLog>('dns_log'),

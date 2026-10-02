@@ -1176,6 +1176,17 @@ sub_work.url=https://example.org/sub2
 `steer-hysteria2`: без него ядро отвечает отказом «нужен пакет steer-hysteria2», и ответ
 доезжает до экрана как есть.
 
+### `proxy_nodes` (read) и `proxy_probe` (read)
+
+То же для выходов прокси пакета `steer-proxy` — `protocol: trojan`, `shadowsocks`, `socks`, `http`,
+`vmess`: те же входы (`output` либо `sub`; для проверки ещё `node`) и те же рубежи, ответ — JSON
+`steer proxy-nodes` / `steer proxy-probe` дословно; поле `type` узла называет протокол. Номера
+узлов у двух входов разные, так их считает ядро: у файла подписки (`sub`) — сквозные по всем пяти
+протоколам, у выхода (`output`) — среди узлов его протокола, и именно их ждёт `nodes` выхода.
+`proxy_probe` с `sub` принимает сквозной номер. Задержка у прокси — `handshake_ms` (рукопожатие
+и запрос через узел), `ttfb_ms` ядро печатает -1. Без пакета ядро отвечает «нужен пакет
+steer-proxy».
+
 ### `dns_log` (read) и `conns` (read)
 
 Ответ `steer dns-log` и `steer conns` дословно. `dns_log`: последние имена, которые спрашивали у
@@ -1387,7 +1398,7 @@ allowed-ips (сервер для своих); и отдельным поводо
 
 ## Перечень методов
 
-Все 62 объявленных метода (из блока `list)` скрипта rpcd). Группа ACL в скобках.
+Все 64 объявленных метода (из блока `list)` скрипта rpcd). Группа ACL в скобках.
 
 | Метод | ACL | Вход на stdin |
 |---|---|---|
@@ -1443,6 +1454,8 @@ allowed-ips (сервер для своих); и отдельным поводо
 | `vless_probe` | read | `{output, node}` |
 | `hysteria2_nodes` | read | `{output}` или `{sub}` |
 | `hysteria2_probe` | read | `{output, node}` или `{sub, node}` |
+| `proxy_nodes` | read | `{output}` или `{sub}` |
+| `proxy_probe` | read | `{output, node}` или `{sub, node}` |
 | `dns_log` | read | — |
 | `conns` | read | — |
 | `helper` | read | `{output}` |

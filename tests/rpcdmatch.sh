@@ -499,7 +499,7 @@ case "${1:-}" in
         [ -n "$_m" ] && : > "$_m"
         exit 0
         ;;
-    vless-probe|vless-nodes|hysteria2-probe|hysteria2-nodes)
+    vless-probe|vless-nodes|hysteria2-probe|hysteria2-nodes|proxy-probe|proxy-nodes)
         [ -n "${STEER_NOISE:-}" ] && echo "$STEER_NOISE" >&2
         [ -n "${STEER_JSON:-}" ] && printf '%s\n' "$STEER_JSON"
         exit "${STEER_RC:-0}"
@@ -2163,6 +2163,26 @@ check "и ответ VLESS-клиента сообщает о чужих ссы�
 rpcd hysteria2_probe "{\"sub\":\"$T/etc/subs/green.txt\",\"node\":3}" > /dev/null
 check "проба узла hysteria2 идёт командой hysteria2-probe" "1" "$(grep -c '^hysteria2-probe ' "$T/steer.log")"
 check "и не командой vless-probe" "0" "$(grep -c '^vless-probe ' "$T/steer.log")"
+# Прокси steer-proxy (trojan, ss, socks, http, vmess) — третий клиент той же подписки: свои
+# методы proxy_nodes/proxy_probe, тот же рубеж «путь — только свой», ответ ядра дословно.
+printf 'trojan://p@t.example.invalid:443?security=tls&sni=t.example.invalid#tr-1\n' >> "$T/etc/subs/green.txt"
+: > "$T/steer.log"
+out="$(STEER_JSON='{"output":"","usable":1,"skipped":0,"foreign":51,"nodes":[{"index":0,"name":"tr-1","type":"trojan"}]}' \
+       rpcd proxy_nodes "{\"sub\":\"$T/etc/subs/green.txt\"}")"
+check "прокси: proxy_nodes зовёт proxy-nodes по файлу подписки" \
+      "proxy-nodes $T/etc/subs/green.txt --spec $T/etc/spec.json" "$(tail -1 "$T/steer.log")"
+check "и ответ прокси-клиента дословно" "trojan" \
+      "$(printf '%s' "$out" | python3 -c 'import json,sys; print(json.load(sys.stdin)["nodes"][0]["type"])')"
+: > "$T/steer.log"
+rpcd proxy_probe "{\"sub\":\"$T/etc/subs/green.txt\",\"node\":0}" > /dev/null
+check "проба узла прокси идёт командой proxy-probe с номером узла" \
+      "proxy-probe $T/etc/subs/green.txt --node 0 --timeout 6 --spec $T/etc/spec.json" "$(tail -1 "$T/steer.log")"
+out="$(rpcd proxy_nodes '{"sub":"/etc/passwd"}')"
+check "proxy_nodes: чужой путь вместо подписки отвергается" "false" "$(printf '%s' "$out" | jget ok)"
+out="$(rpcd proxy_probe '{"output":"--spec","node":0}')"
+check "proxy_probe: флаг вместо имени выхода — отказ" "false" "$(printf '%s' "$out" | jget ok)"
+check "proxy_nodes и proxy_probe объявлены в списке ubus" "yes;yes" \
+      "$(rpcd_list | grep -q '"proxy_nodes"' && echo yes || echo no);$(rpcd_list | grep -q '"proxy_probe"' && echo yes || echo no)"
 mv "$T/green.keep" "$T/etc/subs/green.txt"
 # Остаток второй подписки спрашивается по ЕЁ файлу: общий файл означал бы, что обзор
 # показывает остаток одной панели под именем другой.

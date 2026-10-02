@@ -27,6 +27,8 @@
           "vless_probe",
           "hysteria2_nodes",
           "hysteria2_probe",
+          "proxy_nodes",
+          "proxy_probe",
           "dns_log",
           "conns",
           "helper",
