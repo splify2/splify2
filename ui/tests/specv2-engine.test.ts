@@ -157,6 +157,20 @@ describe.skipIf(!HAVE)('кодек v2 против движка', () => {
     })
 })
 
+describe.skipIf(!HAVE)('кодек v2 против движка: ключи, которых модель не знает', () => {
+    it('override_port списка: тот же набор правил после круга', () => {
+        const v2 = {
+            version: 2,
+            outputs: { wg0: { kind: 'interface', device: 'wg0' } },
+            lists: { yt: { domains_file: [dom], override_port: 8443 }, b: { domains_file: [dom2] } },
+            rules: [{ name: 'yt', to: ['yt'], out: 'wg0' }, { name: 'b', to: ['b'], out: 'wg0' }],
+        }
+        const before = ruleset(v2, 'op-a.json')
+        expect(before).toContain(': 8443')
+        expect(ruleset(encodeSpec(decodeSpec(v2)), 'op-b.json')).toBe(before)
+    })
+})
+
 describe.skipIf(HAVE)('кодек v2 против движка — ПРОПУЩЕН', () => {
     it('нет движка (make -C ../steer all)', () => {
         expect(HAVE).toBe(false)

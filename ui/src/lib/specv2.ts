@@ -29,6 +29,14 @@
 // СУЖЕНИЕ. Правило «подсети с портами» в v2 — отдельное правило со своим списком
 // (`proto`/`ports` — свойство списка). Спутник в модели получает имя «<правило> (порты)»; при
 // чтении правила с таким именем и тем же выходом складываются обратно в родителя.
+//
+// КЛЮЧИ, КОТОРЫХ МОДЕЛЬ НЕ ЗНАЕТ, доезжают обратно во всех разделах: `extra` у выхода, правила,
+// апстрима, `dns`, `lan` и верхнего уровня; ключи списка (`override_port`…) — по его файлам
+// (`file_extra`), и файлы с разными ключами расходятся по спутникам, как с разным сужением;
+// список без файлов и клиент не из адресов и MAC (`uid`, `self` телефона…) — целиком
+// (`raw_lists`, `raw_clients`). Ядро v2 незнакомый ключ отвергает, поэтому «незнакомый» здесь —
+// знакомый ядру, но не модели: потерять его при правке соседнего правила значило бы молча
+// поменять маршрутизацию.
 
 import {
     normalizeSpec,
@@ -58,6 +66,24 @@ function arr(v: unknown): string[] {
 
 const num = (v: unknown): number | undefined => (typeof v === 'number' && Number.isFinite(v) ? v : undefined)
 const str = (v: unknown): string | undefined => (typeof v === 'string' && v !== '' ? v : undefined)
+
+/** Ключи объекта, которых нет в `known`, — то, что модель не разбирает и пишет обратно как
+ *  есть. Пусто — undefined, чтобы в модели не появлялось пустых `extra`. */
+function rest(o: J, known: readonly string[]): J | undefined {
+    const out: J = {}
+    for (const [k, v] of Object.entries(o)) if (!known.includes(k)) out[k] = v
+    return Object.keys(out).length ? out : undefined
+}
+
+/** Ключи разделов спеки v2, которые модель разбирает (src/model/v2.c). */
+const TOP_KEYS = ['version', 'lan', 'clients', 'lists', 'outputs', 'dns', 'rules'] as const
+const LAN_KEYS = ['devices', 'addr'] as const
+const CLIENT_KEYS = ['addr', 'mac'] as const
+const LIST_KEYS = ['srs', 'prefixes_file', 'domains_file', 'proto', 'ports', 'all'] as const
+const RULE_KEYS = ['name', 'for', 'to', 'out', 'resolve', 'dns', 'enabled', 'scope'] as const
+const DNS_KEYS = ['mode', 'cache', 'cache_ttl', 'upstream', 'upstreams', 'bootstrap', 'traceroute_hops'] as const
+const UPSTREAM_KEYS = ['url', 'out', 'ips', 'bootstrap'] as const
+const OBFS_KEYS = ['mode', 'server', 'listen'] as const
 
 const MAC_RE = /^[0-9a-f]{2}(:[0-9a-f]{2}){5}$/i
 const NAME_OK = /^[A-Za-z0-9_.-]{1,31}$/
@@ -128,6 +154,8 @@ function decodeOutput(name: string, o: J): Output {
             server: String(o.obfs.server ?? ''),
             listen: String(o.obfs.listen ?? ''),
         }
+        const ox = rest(o.obfs, OBFS_KEYS)
+        if (ox) out.obfs.extra = ox
     }
     if (kind === 'vless' || kind === 'hysteria2' || kind === 'tunnel') {
         const sub = str(take('subscription'))
@@ -193,6 +221,8 @@ function decodeUpstream(u: unknown): Upstream | string | undefined {
     if (ips.length) out.ips = ips
     const bs = arr(u.bootstrap)
     if (bs.length) out.bootstrap = bs
+    const x = rest(u, UPSTREAM_KEYS)
+    if (x) out.extra = x
     return out
 }
 
@@ -202,14 +232,8 @@ function decodeDns(d: J): DnsSpec | undefined {
     if (mode === 'fakeip' || mode === 'realip') out.mode = mode
     const cache = num(d.cache)
     if (cache !== undefined) out.cache = cache
-    if (isObj(d.cache_ttl)) {
-        const t: NonNullable<DnsSpec['cache_ttl']> = {}
-        for (const k of ['min', 'max', 'negative'] as const) {
-            const n = num((d.cache_ttl as J)[k])
-            if (n !== undefined) t[k] = n
-        }
-        out.cache_ttl = t
-    }
+    /* cache_ttl — как есть: модель его не правит, а незнакомый ключ в нём тоже чей-то. */
+    if (isObj(d.cache_ttl)) out.cache_ttl = { ...d.cache_ttl } as DnsSpec['cache_ttl']
     const up = str(d.upstream)
     if (up) out.upstream = up
     const bs = arr(d.bootstrap)
@@ -222,6 +246,8 @@ function decodeDns(d: J): DnsSpec | undefined {
         }
         if (Object.keys(ups).length) out.upstreams = ups
     }
+    const x = rest(d, DNS_KEYS)
+    if (x) out.extra = x
     return Object.keys(out).length ? out : undefined
 }
 
@@ -248,10 +274,15 @@ function decodeV2(d: J): Spec {
         for (const n of forNames) {
             const c = clients[n]
             if (!isObj(c)) continue
+            /* Клиент с ключом, которого модель не знает (uid, self, app телефона…), — целиком как
+             * есть: разложить его по `from` значило бы потерять ключ, а правило — сузить. */
+            if (rest(c, CLIENT_KEYS)) { (ch.raw_clients ||= {})[n] = c; continue }
             for (const a of arr(c.addr)) from.push(a)
             for (const m of arr(c.mac)) from.push(m)
         }
         if (from.length) ch.from = from
+        const rx = rest(r, RULE_KEYS)
+        if (rx) ch.extra = rx
         const resolve = str(r.resolve)
         if (resolve === 'fakeip' || resolve === 'realip') ch.match.mode = resolve
         const dns = decodeUpstream(r.dns)
@@ -265,6 +296,14 @@ function decodeV2(d: J): Spec {
             if (n === 'all') { ch.match.any = true; continue }
             const l = lists[n]
             if (!isObj(l)) continue
+            const lx = rest(l, LIST_KEYS)
+            const files = [...arr(l.prefixes_file), ...arr(l.domains_file), ...arr(l.srs)]
+            /* Список без файлов (встроенные domains/prefixes…) модель не выражает — целиком. */
+            if (!files.length && l.all !== true) { (ch.raw_lists ||= {})[n] = l; continue }
+            if (lx) {
+                if (l.all === true) ch.all_extra = lx
+                for (const f of files) (ch.file_extra ||= {})[f] = lx
+            }
             const nw: Narrow = {}
             const proto = str(l.proto)
             if (proto === 'tcp' || proto === 'udp' || proto === 'both') nw.proto = proto
@@ -280,7 +319,7 @@ function decodeV2(d: J): Spec {
             }
             for (const f of arr(l.prefixes_file)) { pf.push(f); if (narrowed) narrow[f] = nw }
             for (const f of arr(l.domains_file)) { df.push(f); if (narrowed) narrow[f] = nw }
-            for (const f of arr(l.srs)) srs.push(f)
+            for (const f of arr(l.srs)) { srs.push(f); if (narrowed) narrow[f] = nw }
         }
         if (pf.length) ch.match.prefixes_files = pf
         if (df.length) ch.match.domains_files = df
@@ -301,7 +340,10 @@ function decodeV2(d: J): Spec {
             }
             if (ch.match.domains_files?.length)
                 parent.match.domains_files = [...(parent.match.domains_files || []), ...ch.match.domains_files]
-            parent.narrow = { ...(parent.narrow || {}), ...(ch.narrow || {}) }
+            if (ch.match.srs_files?.length)
+                parent.match.srs_files = [...(parent.match.srs_files || []), ...ch.match.srs_files]
+            if (ch.narrow) parent.narrow = { ...(parent.narrow || {}), ...ch.narrow }
+            if (ch.file_extra) parent.file_extra = { ...(parent.file_extra || {}), ...ch.file_extra }
             continue
         }
         folded.push(ch)
@@ -354,6 +396,10 @@ function decodeV2(d: J): Spec {
     if (dnsRaw.traceroute_hops === true) spec.traceroute_hops = true
     const dns = decodeDns(dnsRaw)
     if (dns) spec.dns = dns
+    const lx = rest(lan, LAN_KEYS)
+    if (lx) spec.lan_extra = lx
+    const tx = rest(d, TOP_KEYS)
+    if (tx) spec.extra = tx
     return spec
 }
 
@@ -426,7 +472,7 @@ function encodeOutput(o: Output): J {
         case 'interface':
             out.kind = 'interface'
             put('device', o.device || o.devices?.[0])
-            put('obfs', o.obfs)
+            put('obfs', o.obfs && encodeObfs(o.obfs))
             put('ipv6', o.ipv6)
             put('prefix', o.ipv6 === 'routed' ? o.prefix : undefined)
             break
@@ -494,12 +540,23 @@ function encodeOutput(o: Output): J {
     return out
 }
 
+/** Незнакомые ключи — к записанному объекту, не перекрывая того, что модель записала сама. */
+function withExtra(out: J, extra: J | undefined): J {
+    if (extra) for (const [k, v] of Object.entries(extra)) if (!(k in out)) out[k] = v
+    return out
+}
+
+function encodeObfs(o: NonNullable<Output['obfs']>): J {
+    const { extra, ...known } = o
+    return withExtra({ ...known }, extra)
+}
+
 function encodeUpstream(u: Upstream): J {
     const out: J = { url: u.url }
     if (u.out) out.out = u.out
     if (u.ips?.length) out.ips = u.ips
     if (u.bootstrap?.length) out.bootstrap = u.bootstrap
-    return out
+    return withExtra(out, u.extra)
 }
 
 function encodeDns(spec: Spec): J | undefined {
@@ -516,6 +573,7 @@ function encodeDns(spec: Spec): J | undefined {
         for (const [k, v] of Object.entries(d.upstreams)) ups[k] = encodeUpstream(v)
         out.upstreams = ups
     }
+    withExtra(out, d.extra)
     return Object.keys(out).length ? out : undefined
 }
 
@@ -526,6 +584,7 @@ export function encodeSpec(spec: Spec): J {
     const lan: J = {}
     if (devs.length) lan.devices = devs
     if (spec.from_default?.length) lan.addr = spec.from_default
+    withExtra(lan, spec.lan_extra)
     if (Object.keys(lan).length) doc.lan = lan
 
     /* ---- выходы ---- */
@@ -573,16 +632,28 @@ export function encodeSpec(spec: Spec): J {
     ;(spec.channels || []).forEach((ch, idx) => {
         const n = idx + 1
         let forRef: string | string[] | undefined
+        const names: string[] = []
         if (ch.from?.length) {
             const macs = ch.from.filter((x) => MAC_RE.test(x))
             const addrs = ch.from.filter((x) => !MAC_RE.test(x))
-            const names: string[] = []
             if (addrs.length) { const cn = clientName(ch.name, n); clients[cn] = { addr: addrs }; names.push(cn) }
             if (macs.length) { const cn = clientName(`${ch.name}_mac`, n); clients[cn] = { mac: macs }; names.push(cn) }
             /* Адреса вместе с MAC в одном правиле движок отвергает («разнесите по правилам»);
              * пишем как есть, чтобы отказ сказал это сам, а не терять часть клиентов молча. */
-            forRef = names.length === 1 ? names[0] : names
         }
+        for (const [rn, c] of Object.entries(ch.raw_clients || {})) {
+            const cn = clientName(rn, n)
+            clients[cn] = c
+            names.push(cn)
+        }
+        if (names.length) forRef = names.length === 1 ? names[0] : names
+        /* Списки, которых модель не выражает файлами, — к первому правилу канала, под своими
+         * именами (занятое получает хвост). */
+        const rawNames = Object.entries(ch.raw_lists || {}).map(([ln, l]) => {
+            const nm = listName(ln, n)
+            lists[nm] = l
+            return nm
+        })
         const base = (over: Partial<J>): J => {
             const r: J = { name: ch.name }
             if (forRef) r.for = forRef
@@ -592,29 +663,33 @@ export function encodeSpec(spec: Spec): J {
             if (ch.dns) r.dns = typeof ch.dns === 'string' ? ch.dns : encodeUpstream(ch.dns)
             if (ch.enabled === false) r.enabled = false
             if (ch.scope === 'device') r.scope = 'device'
-            return r
+            return withExtra(r, ch.extra)
         }
         if (ch.match.any) {
             const nw = { proto: ch.match.proto, ports: ch.match.ports }
-            if (narrowKey(nw)) {
+            if (narrowKey(nw) || ch.all_extra) {
                 const ln = listName(ch.name, n)
-                lists[ln] = { all: true, ...(nw.proto ? { proto: nw.proto } : {}), ...(nw.ports?.length ? { ports: nw.ports } : {}) }
-                rules.push(base({ to: [ln] }))
-            } else rules.push(base({ to: 'all' }))
+                lists[ln] = withExtra({ all: true, ...(nw.proto ? { proto: nw.proto } : {}), ...(nw.ports?.length ? { ports: nw.ports } : {}) }, ch.all_extra)
+                rules.push(base({ to: [ln, ...rawNames] }))
+            } else rules.push(base({ to: rawNames.length ? ['all', ...rawNames] : 'all' }))
             return
         }
-        /* Файлы по ключу сужения: без сужения — само правило, с сужением — спутники. */
-        type G = { n?: Narrow; pf: string[]; df: string[]; srs: string[] }
+        /* Файлы по свойствам списка: сужению и ключам, которых модель не знает. Без них — само
+         * правило, с ними — спутники: ядро не сводит в одно правило списки с разными
+         * proto/ports/override_port. */
+        type G = { n?: Narrow; x?: J; pf: string[]; df: string[]; srs: string[] }
         const groups = new Map<string, G>()
         const grp = (f: string): G => {
-            const k = narrowKey(ch.narrow?.[f])
-            if (!groups.has(k)) groups.set(k, { n: k ? ch.narrow?.[f] : undefined, pf: [], df: [], srs: [] })
+            const x = ch.file_extra?.[f]
+            const k = narrowKey(ch.narrow?.[f]) + (x ? `|${JSON.stringify(x)}` : '')
+            if (!groups.has(k)) groups.set(k, { n: narrowKey(ch.narrow?.[f]) ? ch.narrow?.[f] : undefined, x, pf: [], df: [], srs: [] })
             return groups.get(k)!
         }
         for (const f of ch.match.prefixes_files || []) grp(f).pf.push(f)
         for (const f of ch.match.domains_files || []) grp(f).df.push(f)
         for (const f of ch.match.srs_files || []) grp(f).srs.push(f)
         const order = [...groups.keys()].sort((a, b) => (a === '' ? -1 : b === '' ? 1 : 0))
+        if (!order.length && rawNames.length) rules.push(base({ to: rawNames }))
         order.forEach((k, gi) => {
             const g = groups.get(k)!
             const ln = listName(gi === 0 ? ch.name : `${ch.name}_${gi + 1}`, n)
@@ -624,8 +699,8 @@ export function encodeSpec(spec: Spec): J {
             if (g.srs.length) l.srs = g.srs
             if (g.n?.proto) l.proto = g.n.proto
             if (g.n?.ports?.length) l.ports = g.n.ports
-            lists[ln] = l
-            const r = base({ to: [ln] })
+            lists[ln] = withExtra(l, g.x)
+            const r = base({ to: gi === 0 ? [ln, ...rawNames] : [ln] })
             if (gi > 0) r.name = gi === 1 ? S.specv2.porty(ch.name) : S.specv2.porty2(ch.name, gi)
             rules.push(r)
         })
@@ -635,5 +710,6 @@ export function encodeSpec(spec: Spec): J {
     const dns = encodeDns(spec)
     if (dns) doc.dns = dns
     if (rules.length) doc.rules = rules
+    withExtra(doc, spec.extra)
     return doc
 }

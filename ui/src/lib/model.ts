@@ -158,6 +158,8 @@ export interface Obfs {
      *  /etc/config/network: это единственное место, где две настройки знают друг о
      *  друге, и расхождение молчаливо — WireGuard шлёт в никуда. */
     listen: string
+    /** Ключи `obfs`, которых модель не знает: пишутся обратно как есть. */
+    extra?: Record<string, unknown>
 }
 
 /** Узел подписки, как его видит движок. Индекс — среди ПРИГОДНЫХ узлов, и это же
@@ -356,6 +358,21 @@ export interface Channel {
      *  и `port_range`) и у сложенных спутников. В спеку не пишется: там его место — в
      *  спутнике. */
     narrow?: Record<string, Narrow>
+    /** КЛЮЧИ СПЕКИ v2, КОТОРЫХ МОДЕЛЬ НЕ ЗНАЕТ, — пишутся обратно как есть (specv2.ts), как
+     *  `extra` у выхода: правка правил не должна стирать то, что человек дописал руками или что
+     *  умеет ядро новее интерфейса. `extra` — ключи самого правила. */
+    extra?: Record<string, unknown>
+    /** Ключи списка, которых модель не знает (`override_port`…), по файлу списка: свойство
+     *  списка, как `narrow`, и файлы с разными ключами при записи расходятся по разным спискам. */
+    file_extra?: Record<string, Record<string, unknown>>
+    /** То же у списка «весь трафик» (`all: true`). */
+    all_extra?: Record<string, unknown>
+    /** Списки, которые модель не выражает файлами (встроенные `domains`/`prefixes`…): имя →
+     *  список как есть. */
+    raw_lists?: Record<string, Record<string, unknown>>
+    /** Клиенты, которых модель не выражает адресом или MAC (`uid`, `self`, `app` телефона,
+     *  незнакомые ключи): имя → клиент как есть. В `from` их нет. */
+    raw_clients?: Record<string, Record<string, unknown>>
 }
 
 /** Сужение канала: транспорт и порты назначения — в форме спеки (`50000-65535`, через тире). */
@@ -374,6 +391,8 @@ export interface Upstream {
     out?: string
     ips?: string[]
     bootstrap?: string[]
+    /** Ключи апстрима, которых модель не знает: пишутся обратно как есть. */
+    extra?: Record<string, unknown>
 }
 
 /** Раздел `dns` спеки v2. */
@@ -388,6 +407,8 @@ export interface DnsSpec {
     /** Серверы обычного DNS для разрешения имён серверов DoT/DoH/DoQ. */
     bootstrap?: string[]
     upstreams?: Record<string, Upstream>
+    /** Ключи раздела `dns`, которых модель не знает: пишутся обратно как есть. */
+    extra?: Record<string, unknown>
 }
 
 export interface Spec {
@@ -422,6 +443,10 @@ export interface Spec {
      *  array is a behaviour change, which is why the UI shows it as a ranked list
      *  rather than a set of independent toggles. */
     channels: Channel[]
+    /** Ключи раздела `lan` спеки v2, которых модель не знает: пишутся обратно как есть. */
+    lan_extra?: Record<string, unknown>
+    /** Разделы верхнего уровня спеки v2, которых модель не знает: пишутся обратно как есть. */
+    extra?: Record<string, unknown>
 }
 
 /** Сеть клиентов: устройство роутера, через которое приходят те, кого маршрутизируем, и

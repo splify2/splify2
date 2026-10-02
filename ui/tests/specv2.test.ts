@@ -196,3 +196,62 @@ describe('чтение v2 и круг', () => {
         }
     })
 })
+
+describe('ключи, которых модель не знает, доезжают обратно', () => {
+    /* Документ в той форме, в какой его пишет encodeSpec (имена списков и клиентов — по имени
+     * правила), поэтому круг обязан вернуть его дословно. */
+    const doc = {
+        version: 2,
+        lan: { devices: ['br-lan'], будущее_lan: 1 },
+        outputs: { direct: { kind: 'direct' }, wg0: { kind: 'interface', device: 'wg0' } },
+        clients: { yt: { addr: ['192.168.1.50'] }, phone: { uid: ['10123', '10200-10299'] } },
+        lists: {
+            yt: { domains_file: ['/l/yt.lst'], override_port: 8443 },
+            inl: { domains: ['corp.example'], prefixes: ['10.20.0.0/16'] },
+            all1: { all: true, proto: 'udp', ports: ['443'], будущее_all: 2 },
+        },
+        dns: {
+            mode: 'fakeip', будущее_dns: true, cache_ttl: { min: 5, будущее_ttl: 1 },
+            upstream: 'g', upstreams: { g: { url: 'https://dns.google/dns-query', будущее_up: 2 } },
+        },
+        rules: [
+            { name: 'yt', for: 'yt', to: ['yt'], out: 'wg0', будущее_правила: 'x', dns: { url: 'tls://one.one.one.one', будущее_up: 3 } },
+            { name: 'app', for: 'phone', to: ['inl'], out: 'wg0' },
+            { name: 'all1', to: ['all1'], out: 'wg0' },
+        ],
+        будущее: { a: 1 },
+    }
+
+    it('lists, clients, rules, dns, upstreams, lan и верхний уровень — круг без потерь', () => {
+        expect(encodeSpec(decodeSpec(doc))).toEqual(doc)
+    })
+
+    it('override_port списка не теряется и не растекается на соседние файлы правила', () => {
+        const ui: Spec = base({
+            outputs: { direct: { name: 'direct', kind: 'direct' }, wg0: { name: 'wg0', kind: 'interface', device: 'wg0' } },
+            channels: [decodeSpec(doc).channels[0]],
+        })
+        ui.channels[0].match.domains_files = ['/l/yt.lst', '/l/other.lst']
+        const d = encodeSpec(ui) as { lists: Record<string, Record<string, unknown>>; rules: { name: string; to: string[] }[] }
+        /* Списки с разной подменой порта ядро в одном правиле не сводит — у второго своё правило. */
+        expect(d.rules).toHaveLength(2)
+        const lists = d.rules.map((r) => d.lists[r.to[0]])
+        expect(lists).toContainEqual({ domains_file: ['/l/other.lst'] })
+        expect(lists).toContainEqual({ domains_file: ['/l/yt.lst'], override_port: 8443 })
+        const back = decodeSpec(d)
+        expect(back.channels).toHaveLength(1)
+        expect(encodeSpec(back)).toEqual(d)
+    })
+
+    it('сужение у набора .srs не теряется', () => {
+        const v = {
+            version: 2,
+            outputs: { wg0: { kind: 'interface', device: 'wg0' } },
+            lists: { dc: { srs: ['/l/dc.srs'], proto: 'udp', ports: ['50000-65535'] } },
+            rules: [{ name: 'dc', to: ['dc'], out: 'wg0' }],
+        }
+        const d = encodeSpec(decodeSpec(v)) as { lists: Record<string, unknown> }
+        expect(Object.values(d.lists)).toEqual([{ srs: ['/l/dc.srs'], proto: 'udp', ports: ['50000-65535'] }])
+    })
+})
+
