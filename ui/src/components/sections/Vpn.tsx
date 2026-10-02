@@ -31,7 +31,7 @@ type Screen = 'root' | 'ifaces' | 'vless' | 'xsteer'
 
 const TITLE: Record<Exclude<Screen, 'root'>, string> = {
     ifaces: S.vpn.svoiTunneli,
-    vless: 'VLESS',
+    vless: S.vpn.podpiski,
     xsteer: 'XSTEER',
 }
 
@@ -51,7 +51,7 @@ export default function Vpn({ live }: { live: Live }) {
         return (
             <div className="space-y-4">
                 {/* Шапка вложенного экрана: стрелка назад и заголовок. Прежняя строка «‹ VPN /
-                    VLESS» делала то же, но на другом языке, чем «Настройки»; теперь оба раздела
+                    VLESS» (экран теперь «Подписки») делала то же, но на другом языке, чем «Настройки»; теперь оба раздела
                     открывают подпункт одинаково. Подпись стрелки — «VPN»: это то, куда она ведёт. */}
                 <ScreenHeader title={TITLE[screen]} back={() => setScreen('root')} backLabel="VPN" />
                 {screen === 'ifaces' && <IfacesPanel live={live} />}
@@ -101,7 +101,7 @@ export default function Vpn({ live }: { live: Live }) {
                 />
                 <TapRow
                     icon={Globe}
-                    title="VLESS"
+                    title={S.vpn.podpiski}
                     /* «ВЗЯТЫ», а не «подписок» — и это не придирка к слову. Оба числа
                        считаются по ВЫХОДАМ спеки, то есть говорят, сколько подписок и
                        локаций взято в работу. Подпись «подписок: 1» при двух заведённых

@@ -37,9 +37,9 @@ describe('вкладки не гаснут после первого опрос�
         await screen.findByRole('heading', { name: 'Маршрутизация работает' })
         nav(/VPN/).click()
         // Имя «VLESS» есть и у входа, и у кнопки создания выхода ниже — берём первое.
-        expect((await screen.findAllByRole('button', { name: /VLESS/ }))[0]).toBeInTheDocument()
+        expect((await screen.findAllByRole('button', { name: /Подписки/ }))[0]).toBeInTheDocument()
         await new Promise((r) => setTimeout(r, 300))
-        expect(screen.getAllByRole('button', { name: /VLESS/ })[0]).toBeInTheDocument()
+        expect(screen.getAllByRole('button', { name: /Подписки/ })[0]).toBeInTheDocument()
         expect(screen.getAllByRole('button', { name: /XSTEER/ })[0]).toBeInTheDocument()
     })
 
@@ -56,11 +56,11 @@ describe('вкладки не гаснут после первого опрос�
         render(<Console />)
         await screen.findByRole('heading', { name: 'Маршрутизация работает' })
         nav(/VPN/).click()
-        await screen.findByRole('button', { name: /VLESS/ })
+        await screen.findByRole('button', { name: /Подписки/ })
         nav(/Настройки/).click()
         await screen.findByRole('button', { name: /Каталог/ })
         nav(/VPN/).click()
-        expect(await screen.findByRole('button', { name: /VLESS/ })).toBeInTheDocument()
+        expect(await screen.findByRole('button', { name: /Подписки/ })).toBeInTheDocument()
     })
 
     it('вход в подпункт и обратно', async () => {

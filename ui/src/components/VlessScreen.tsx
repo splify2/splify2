@@ -10,7 +10,7 @@ import { agoText } from '@/lib/quota'
 import { subsRemember, subsRemembered } from '@/lib/subs'
 
 import { S } from '@/copy'
-/** VLESS: откуда берутся узлы.
+/** «Подписки» (прежде «VLESS»): откуда берутся узлы — VLESS, hysteria2 и прокси steer-proxy.
  *
  *  ПОДПИСОК НЕСКОЛЬКО. Их и правда бывает несколько — у человека две панели, — и раньше это
  *  не выражалось ничем: файл узлов был один на роутер жёстко. Теперь у каждой своё имя, свой

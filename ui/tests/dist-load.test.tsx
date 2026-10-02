@@ -98,7 +98,7 @@ describe.skipIf(!existsSync(DIST))('собранный бандл', () => {
         click(/^\s*VPN/)
         await new Promise((r) => setTimeout(r, 900))
         // Раздел обязан остаться открытым: именно здесь он гас и подменялся главной.
-        expect(root.querySelector('main')?.textContent).toMatch(/VLESS/)
+        expect(root.querySelector('main')?.textContent).toMatch(/Подписки/)
         expect(root.querySelector('main')?.textContent).not.toMatch(/Маршрутизация работает/)
 
         click(/^\s*Настройки/)

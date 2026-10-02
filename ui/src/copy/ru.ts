@@ -706,7 +706,7 @@ export const ru = {
         naytiLokatsiyu: "найти локацию",
         ochistitPoisk: "очистить поиск",
         podpiski: "Подписки",
-        podpisokNetDobavteV: "подписок нет — добавьте в подпункте VLESS",
+        podpisokNetDobavteV: "подписок нет — добавьте в подпункте «Подписки»",
         neSkachana: "не скачана",
         lokatsiy: (p0: unknown, p1: unknown) => `локаций: ${p0}${p1}`,
         ostanovitOstalos: (p0: unknown) => `остановить (осталось ${p0})`,
@@ -1066,6 +1066,9 @@ export const ru = {
         wireguardAmneziawgOpenvpnNi: "WireGuard, AmneziaWG, OpenVPN — ни один не взят",
         vzyaty2: (p0: unknown, p1: unknown) => `взяты: ${p0} · ${p1}`,
         niOdnaPodpiskaNe: "ни одна подписка не взята выходом",
+        /** Экран подписок: узлы VLESS, hysteria2 и прокси — всё, что приходит подпиской или
+         *  ссылками. Прежде звался «VLESS» (решение владельца 2026-10-02). */
+        podpiski: "Подписки",
         interfeysovNet: "интерфейсов нет",
     },
     xsteerPanel: {
