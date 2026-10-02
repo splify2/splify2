@@ -16,7 +16,7 @@ import { decodeSpec, encodeSpec, wasV1 } from '@/lib/specv2'
 //   - пул v1 даёт тот же ruleset, что `steer spec convert` этой v1 (имена членов и порядок
 //     выходов — как у движка: метки прежних выходов не сдвигаются).
 // Движок берётся из ../steer/build/steer (make -C ../steer all); нет движка — стенд
-// пропускается вслух, как стенд телеметрии.
+// пропускается вслух, как enginematch.
 
 const STEER = process.env.STEER_BIN || path.resolve(__dirname, '../../../steer/build/steer')
 const HAVE = existsSync(STEER)

@@ -48,7 +48,6 @@
           "xsteer_state",
           "xsteer_link",
           "telemetry_state",
-          "telemetry_preview",
           "support_report",
           "steer_modules"
         ]

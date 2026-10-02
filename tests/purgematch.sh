@@ -252,10 +252,7 @@ network.xs0.proto=xsteer
 splify2.main=splify2
 splify2.main.telemetry=0
 splify2.main.telemetry_id=sp-00112233445566778899aabbccddeeff
-splify2.main.telemetry_at=1757000000
-splify2.main.telemetry_error=панель ответила 503
-splify2.main.telemetry_url=https://panel.example/ingest
-splify2.main.telemetry_key=K3Y
+splify2.main.ping_url=https://panel.example/api/ping
 EOF
 
     # Расписка: обе зоны и обе устройства заведены нами. Постороннее устройство в первой
@@ -285,15 +282,13 @@ EOF
         printf "\toption splify2_state 'saved'\n"
         printf "\tlist splify2_orig 'option resolver_url https://dns.foreign/dns-query'\n"
     } > "$T/etc/config/https-dns-proxy"
-    # ДВЕ НАШИХ СТРОКИ, а не одна. Телеметрия уезжает раз в час и потому живёт своим
-    # заданием: хвостом ночного обновления списков час не сделать. Обе обязаны уйти —
-    # забытая почасовая строка стучится в панель каждый час на роутере, где пакета уже нет.
+    # ДВЕ НАШИХ СТРОКИ, а не одна: отклик для счётчика на сайте живёт своим почасовым
+    # заданием. Обе обязаны уйти — забытая строка зовёт каждый час команду, которой уже нет.
     printf '%s\n%s\n%s\n' '0 3 * * * /usr/bin/чужое-обновление' \
         '17 5 * * * /usr/sbin/splify2-update-lists' \
-        '41 * * * * /usr/sbin/splify2-telemetry --scheduled' > "$T/etc/crontabs/root"
+        '41 * * * * /usr/sbin/splify2-ping' > "$T/etc/crontabs/root"
     : > "$T/var/run/splify2-vless-dirty"
-    printf 'a1b2c3d4\n' > "$T/var/run/splify2-boot-id"
-    printf 'wan_down=7\niface_down=9\n' > "$T/var/run/splify2-events"
+    printf 'at=1757000000\nok=1757000000\nerr=\n' > "$T/var/run/splify2-ping"
     printf '%s\n%s\n%s\n%s\n' splify2_doh splify2_zm steer fw4 > "$T/nft.tables"
     printf '%s\n%s\n' '29000:	from all uidrange 65534-65534 lookup 290' \
         '30000:	from all lookup main' > "$T/ip.rules"
@@ -312,7 +307,7 @@ run_purge() {  # КЛЮЧИ СКРИПТА
     INITD="$T/bin/initd-steer" \
     FW_INITD="$T/bin/initd-firewall" \
     STATE_PATHS="$T/var/lib/splify2 $T/var/lib/steer $T/var/run/xsteer $T/var/run/splify2-vless-dirty \
-$T/var/run/splify2-boot-id $T/var/run/splify2-events" \
+$T/var/run/splify2-ping" \
         sh "$SCRIPT" "$@" > "$T/out" 2>&1
     rc=$?
 }
@@ -344,8 +339,8 @@ check "показ оставляет настройку" "yes" "$(exists "$T/etc
 check "показ оставляет расписку" "yes" "$(exists "$T/etc/splify2/fw-owned")"
 check "показ оставляет конфиг DoH" "yes" "$(exists "$T/etc/config/https-dns-proxy")"
 check "показ оставляет запись в crontab" "1" "$(grep -c splify2-update-lists "$T/etc/crontabs/root")"
-check "показ оставляет и почасовую строку телеметрии" "1" \
-    "$(grep -c splify2-telemetry "$T/etc/crontabs/root")"
+check "показ оставляет и строку отклика" "1" \
+    "$(grep -c splify2-ping "$T/etc/crontabs/root")"
 check "показ оставляет состояние в /var" "yes" "$(exists "$T/var/lib/splify2")"
 # Показ, по которому не видно, что будет удалено, бесполезен: человек не узнает ни про зону,
 # ни про свою спеку — а именно они и есть цена ошибки.
@@ -380,8 +375,8 @@ check "отсутствующую таблицу не удаляли" "0" "$(gre
 check "правило DoH снято" "30000:	from all lookup main" "$(cat "$T/ip.rules")"
 check "таблица маршрутов очищена" "" "$(cat "$T/ip.routes")"
 check "наша запись в crontab убрана" "0" "$(grep -c splify2-update-lists "$T/etc/crontabs/root")"
-check "почасовая строка телеметрии убрана тоже" "0" \
-    "$(grep -c splify2-telemetry "$T/etc/crontabs/root")"
+check "строка отклика убрана тоже" "0" \
+    "$(grep -c splify2-ping "$T/etc/crontabs/root")"
 check "чужая запись в crontab осталась" "1" "$(grep -c 'чужое-обновление' "$T/etc/crontabs/root")"
 check "cron перезапущен" "1" "$(grep -c '^cron restart' "$T/initd.log")"
 check "срок вызова rpcd снят" "no" "$(has 'rpcd.@rpcd[0].timeout=120')"
@@ -444,31 +439,24 @@ check "с --keep-config зоны всё равно удалены" "lan " "$(zon
 check "с --keep-config таблицы всё равно удалены" "fw4" "$(cat "$T/nft.tables")"
 check "с --keep-config запись в crontab всё равно убрана" "0" \
     "$(grep -c splify2-update-lists "$T/etc/crontabs/root")"
-check "с --keep-config почасовая строка телеметрии убрана" "0" \
-    "$(grep -c splify2-telemetry "$T/etc/crontabs/root")"
+check "с --keep-config строка отклика убрана" "0" \
+    "$(grep -c splify2-ping "$T/etc/crontabs/root")"
 
-# ---- телеметрия --------------------------------------------------------------------
+# ---- отклик для счётчика на сайте -----------------------------------------------
 #
 # Здесь ЕДИНСТВЕННОЕ место в настройке, где --keep-config не спасает всё подряд, и проверять
-# надо обе стороны сразу: состояние уходит, ОТВЕТ ЧЕЛОВЕКА остаётся. Стерев ноль в `telemetry`,
-# чистка вернула бы интерфейсу право предложить телеметрию тому, кто уже сказал нет, — а три
-# состояния завели ровно для того, чтобы этого не случилось.
+# надо обе стороны сразу: наше состояние уходит, ОТВЕТ ЧЕЛОВЕКА остаётся. Стерев ноль в
+# `telemetry`, чистка включила бы отклик тому, кто его выключил: пустой ключ значит «включено».
 setup
 run_purge --yes --keep-config
-check "с --keep-config идентификатор телеметрии снят" "no" "$(has 'splify2.main.telemetry_id=sp-00112233445566778899aabbccddeeff')"
-check "с --keep-config время последней отправки снято" "no" "$(has 'splify2.main.telemetry_at=1757000000')"
-check "с --keep-config причина отказа снята" "no" "$(has 'splify2.main.telemetry_error=панель ответила 503')"
-check "с --keep-config адрес панели снят" "no" "$(has 'splify2.main.telemetry_url=https://panel.example/ingest')"
-check "с --keep-config ключ панели снят" "no" "$(has 'splify2.main.telemetry_key=K3Y')"
+check "с --keep-config идентификатор снят" "no" "$(has 'splify2.main.telemetry_id=sp-00112233445566778899aabbccddeeff')"
+check "с --keep-config адрес для стендов снят" "no" "$(has 'splify2.main.ping_url=https://panel.example/api/ping')"
 check "НО ОТКАЗ ЧЕЛОВЕКА ОСТАЛСЯ" "yes" "$(has 'splify2.main.telemetry=0')"
 check "и чужая настройка рядом не пострадала" "yes" "$(has 'zapret.config.run_on_boot=1')"
-check "признак загрузки удалён" "no" "$(exists "$T/var/run/splify2-boot-id")"
-check "счётчики отвалов удалены" "no" "$(exists "$T/var/run/splify2-events")"
-# А ЭТО — ПРО УМОЛЧАНИЕ САМОГО СКРИПТА, и проверка отдельная не от придирчивости. Все
-# проверки выше подменяют STATE_PATHS швом, то есть проверяют список, написанный в стенде;
-# рабочий список после этого не сторожит ничто, и файл, забытый в нём, остался бы на роутере
-# при зелёном стенде. Умолчание берётся из скрипта и вычисляется настоящей оболочкой, а не
-# переписывается сюда второй копией.
+check "отметка отклика удалена" "no" "$(exists "$T/var/run/splify2-ping")"
+# А ЭТО — ПРО УМОЛЧАНИЕ САМОГО СКРИПТА. Проверки выше подменяют STATE_PATHS швом, то есть
+# проверяют список, написанный в стенде; рабочий список после этого не сторожит ничто.
+# Умолчание берётся из скрипта и вычисляется настоящей оболочкой.
 state_paths_default() {
     sed -n '/^STATE_PATHS=/,/"}$/p' "$SCRIPT" > "$T/state-paths.sh"
     printf 'printf "%%s\\n" $STATE_PATHS\n' >> "$T/state-paths.sh"
@@ -476,22 +464,16 @@ state_paths_default() {
 }
 check "умолчание скрипта: список путей вообще разбирается" "yes" \
       "$([ "$(state_paths_default | grep -c .)" -ge 8 ] && echo yes || echo no)"
-# Список нарочно поимённый, и в нём же — следы телеметрии: тальники падений (каталог),
-# последнее падение и отметка ограничителя внеплановых отправок. Забытый файл в /var/run не
-# опасен сам по себе, но «пакет снят, а следы остались» — это ровно то, о чём команда обещает
-# обратное.
-for _p in /var/run/splify2-boot-id /var/run/splify2-events \
-          /var/run/splify2-events.i /var/run/splify2-events.w \
-          /var/run/splify2-events.c /var/run/splify2-crash \
-          /var/run/splify2-telemetry-now; do
-    check "умолчание скрипта знает $_p" "1" "$(state_paths_default | grep -cx "$_p")"
-done
+# Отметка отклика лежит там, где её пишет команда отправки (PING_STATE в ping.sh).
+ping_state="$(sed -n 's/^PING_STATE=\${PING_STATE:-\(.*\)}$/\1/p' "$ROOT/files/usr/lib/splify2/ping.sh")"
+check "умолчание скрипта знает отметку отклика $ping_state" "1" \
+      "$(state_paths_default | grep -cx "${ping_state:-нет}")"
 # Показ обязан назвать это словами: по нему человек решает, звать ли с --yes.
 setup
 run_purge
-check "показ называет состояние телеметрии" "yes" "$(outhas 'телеметри')"
+check "показ называет идентификатор отклика" "yes" "$(outhas 'идентификатор отклика')"
 check "и при показе ничего не удалено" "yes" "$(has 'splify2.main.telemetry_id=sp-00112233445566778899aabbccddeeff')"
-check "и признак загрузки на месте" "yes" "$(exists "$T/var/run/splify2-boot-id")"
+check "и отметка отклика на месте" "yes" "$(exists "$T/var/run/splify2-ping")"
 
 # ---- чужой конфиг https-dns-proxy --------------------------------------------------
 # force_dns '1' пишет сам пакет и пишет Zapret Manager; метку копии (`splify2_state`) ставила

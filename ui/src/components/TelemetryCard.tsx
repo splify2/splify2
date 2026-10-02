@@ -1,102 +1,57 @@
 import { useEffect, useState } from 'react'
 import { Block, CardHead } from '@/components/ui/layout'
 import { Switch } from '@/components/ui/switch'
-import { Button } from '@/components/ui/button'
 import { rpc } from '@/lib/rpc'
 import { notify } from '@/lib/notify'
 import { fmtWhen } from '@/lib/format'
 
 import { S } from '@/copy'
-/** Согласие на телеметрию. Контракт целиком — docs/TELEMETRY.md.
- *
- *  ВКЛЮЧЕНО ПО УМОЛЧАНИЮ, И ЭТО ГЛАВНОЕ В КАРТОЧКЕ. Согласие подразумевается самим фактом
- *  того, что человек пользуется splify2; отдельного «да» никто не спрашивает, а единственное
- *  явное действие здесь — ОТКАЗ. Поэтому отправляем везде, кроме `off`, и поэтому карточка
- *  живёт в «Настройки → О ПО»: это раздел про сам продукт и про то, что он о себе собирает,
- *  и именно это место названо человеку в документации как то, где телеметрия выключается.
- *  Если названное место и настоящее разойдутся, отказ станет квестом — а отказ обязан быть
- *  дешевле, чем поиск, где его нажать.
- *
- *  СОСТОЯНИЙ ПО-ПРЕЖНЕМУ ТРИ, но нужны они уже не для решения. `unset` и `on` отправляют
- *  одинаково; различать их стоит только тому, кто ЧИТАЕТ состояние — «работает по умолчанию»
- *  и «человек сам включил обратно» это разные вещи, и слить их значило бы потерять след
- *  того, трогали переключатель или нет. Для вопроса «отправлять ли» правило одно и записано
- *  оно в карточке РОВНО ОДИН РАЗ (`on` ниже): разъехавшиеся отрисовка и обработчик дают
- *  включённый переключатель, нажатие на который включает ещё раз.
- *
- *  ПОЧЕМУ ЗДЕСЬ ЕСТЬ КНОПКА «ПОКАЗАТЬ ПАКЕТ». Согласие, у которого нельзя проверить, на что
- *  оно даётся, согласием не является. Перечень полей в прозе для этого не годится: он врёт
- *  ровно тогда, когда важен, — когда в чью-то настройку затесалось лишнее. Поэтому кнопка
- *  зовёт `telemetry_preview`, который зовёт ТОТ ЖЕ сборщик, что и отправка, и показывает
- *  приехавшее ДОСЛОВНО: карточка не знает схемы пакета и не пересобирает его по своим
- *  представлениям — иначе она показывала бы не то, что уедет, а то, что мы думаем об этом.
- *
- *  ПРЕДПРОСМОТР РАБОТАЕТ И ПРИ ВЫКЛЮЧЕННОЙ ТЕЛЕМЕТРИИ — иначе посмотреть, что уедет, можно
- *  было бы только после согласия, то есть после того, как оно уже уехало. */
 
-type Consent = 'unset' | 'off' | 'on'
+/** Учёт роутера в счётчике на splify2.github.io. Описание — docs/TELEMETRY.md.
+ *
+ *  Включено по умолчанию: ключа настройки нет — роутер учитывается, единственное явное
+ *  действие здесь — выключить. Решение «уходит ли отклик» считает роутер (`on`), а
+ *  карточка его только показывает. Не ответил бэкенд — переключатель включён: молчание
+ *  rpcd отклик не выключает. */
 
 interface St {
-    consent: Consent
-    /** Пусто, пока идентификатор не посчитан: его счёт стоит секунд, и ради опроса
-     *  страницы роутер его не считает. */
-    id: string
+    on: boolean
     lastAt: number
     lastError: string
 }
 
-/** Что уезжает и чего в пакете нет — по docs/TELEMETRY.md, а не по памяти.
- *
- *  Перечень «чего нет» закрытый и важнее схемы, поэтому он на экране, а не в документе,
- *  который никто не откроет. */
-const SENDS = S.telemetryCard.modelRouteraIVersiya +
-    S.telemetryCard.nomerAvtonomnoySistemyVidy +
-    S.telemetryCard.domenPaneliPodpiskiTolko +
-    S.telemetryCard.nomeraSrabotavshihProverokI +
-    S.telemetryCard.iliTunnelyaChtoImenno +
-    S.telemetryCard.iSkolkoRazEto
-
-const NEVER = S.telemetryCard.niOdnogoIpAdresa +
-    S.telemetryCard.imenUzlovIIh +
-    S.telemetryCard.schetchikovTrafikaIChisla +
-    S.telemetryCard.oshibkiVTomChisle
+/** Слово причины с роутера → текст. Незнакомое слово — общий текст. */
+function errorText(code: string): string {
+    const c = S.telemetryCard
+    switch (code) {
+        case 'rejected': return c.errRejected
+        case 'toomany': return c.errTooMany
+        case 'unavailable': return c.errUnavailable
+        case 'network': return c.errNetwork
+        case 'noid': return c.errNoId
+        case 'nosender': return c.errNoSender
+        default: return c.errOther
+    }
+}
 
 export default function TelemetryCard() {
     const [st, setSt] = useState<St | null>(null)
     const [busy, setBusy] = useState(false)
-    /** Текст пакета как он приехал (с отступами для читаемости — значения те же). */
-    const [pkt, setPkt] = useState('')
-    const [pktError, setPktError] = useState('')
-    const [asking, setAsking] = useState(false)
 
     async function load() {
         const r = await rpc.telemetryState()
-        const c: Consent =
-            r.consent === 'on' || r.consent === 'off' || r.consent === 'unset'
-                ? r.consent
-                : r.on
-                  ? 'on'
-                  : 'unset'
         setSt({
-            consent: c,
-            id: r.id || '',
+            on: r.on !== undefined ? Boolean(r.on) : r.consent !== 'off',
             lastAt: Number(r.last_at) || 0,
             lastError: r.last_error || '',
         })
     }
 
     useEffect(() => {
-        // Не ответил бэкенд — показываем то же, что верно на роутере по умолчанию, то есть
-        // «не спрашивали». Рисовать здесь `off` нельзя: такого состояния на роутере нет, пока
-        // человек его не выбрал, и экран успокаивал бы «ничего не отправляется» ровно тогда,
-        // когда отчёт продолжает уезжать. Молчание rpcd телеметрию не выключает.
-        void load().catch(() => setSt({ consent: 'unset', id: '', lastAt: 0, lastError: '' }))
+        void load().catch(() => setSt({ on: true, lastAt: 0, lastError: '' }))
     }, [])
 
-    /** Правило «отправляем ли» — единственное на всю карточку: отправляем везде, кроме явного
-     *  отказа. Его читают и отрисовка, и обработчик нажатия; второй его записи быть не должно,
-     *  иначе переключатель и то, что он делает, разъедутся. */
-    const on = st?.consent !== 'off'
+    const on = st ? st.on : true
 
     async function toggle() {
         if (!st || busy) return
@@ -105,134 +60,47 @@ export default function TelemetryCard() {
         try {
             const r = await rpc.telemetrySet(next)
             if (!r.ok) throw new Error(r.error || S.telemetryCard.neSohranilos)
-            notify(next ? S.telemetryCard.otchetSnovaBudetUezzhat : S.telemetryCard.otpravkaVyklyuchena)
+            notify(next ? S.telemetryCard.vklyucheno : S.telemetryCard.vyklyucheno)
         } catch (e) {
             notify(String(e instanceof Error ? e.message : e), 'error')
         } finally {
             setBusy(false)
-            // Состояние перечитывается ВСЕГДА, а не подставляется от себя: на роутере запись
-            // могла не пройти, и тогда экран показывал бы согласие, которого там нет. К тому
-            // же отказ убирает идентификатор и время отправки — их тоже надо перечитать.
+            // Перечитать, а не подставить: запись на роутере могла не пройти.
             await load().catch(() => undefined)
         }
     }
 
-    async function preview() {
-        if (asking) return
-        setAsking(true)
-        setPktError('')
-        try {
-            const r = await rpc.telemetryPreview()
-            // Отказ приезжает общей формой объекта; в самом пакете поля `ok` нет.
-            if (r && (r as { ok?: unknown }).ok === false) {
-                throw new Error(
-                    String((r as { error?: unknown }).error || S.telemetryCard.paketNeSobralsya),
-                )
-            }
-            setPkt(JSON.stringify(r, null, 2))
-        } catch (e) {
-            // Пустое окно человек прочтёт как «ничего не уезжает» — то есть молчание здесь
-            // врёт в самую опасную сторону. Поэтому причина словами.
-            setPkt('')
-            setPktError(String(e instanceof Error ? e.message : e))
-        } finally {
-            setAsking(false)
-        }
-    }
+    let status = ''
+    let warn = false
+    if (st && !on) status = S.telemetryCard.vyklyuchenoStatus
+    else if (st && st.lastError) {
+        status = errorText(st.lastError)
+        warn = true
+    } else if (st && st.lastAt) status = `${S.telemetryCard.posledniyOtklik}: ${fmtWhen(st.lastAt)}`
+    else if (st) status = S.telemetryCard.otklikaEschNeBylo
 
     return (
         <Block>
-                <CardHead title={S.telemetryCard.otchetORabote} />
-                <div className="flex flex-row-reverse items-start justify-between gap-3">
-                    <Switch
-                        on={on}
-                        label={S.telemetryCard.otpravlyatOtchetORabote}
-                        disabled={busy || st === null}
-                        onClick={() => void toggle()}
-                    />
-                    <div className="min-w-0">
-                        <div className="text-[13px]">{S.telemetryCard.otpravlyatOtchetORabote}</div>
-
-                        {/* Показывается при ЛЮБОМ включённом состоянии, а не только при «не
-                            спрашивали»: человек, который переключатель не трогал, и человек,
-                            включивший его сам, находятся в одном положении, и знать они должны
-                            одно и то же. Ничего не просим — просто говорим, что происходит и
-                            где это остановить. */}
-                        {on && (
-                            <div className="text-xs text-muted-foreground">
-                                {/* «Этими данными живёт разработка» — это наша причина, а не то,
-                                  * после чего человек делает следующий шаг. Остаётся состояние
-                                  * (уезжает, включено по умолчанию) и действие (выключить). */}
-                                {S.telemetryCard.otchetORaboteUezzhaet}
-                            </div>
-                        )}
-
-                        {st?.consent === 'off' && (
-                            <div className="text-xs text-muted-foreground">
-                                {S.telemetryCard.nichegoNeOtpravlyaetsya}
-                            </div>
-                        )}
-
-                        {/* `st &&` здесь не украшение: пока состояние не приехало, отчёт уже
-                            считается включённым (так оно и есть на роутере), но времени
-                            отправки и идентификатора ещё неоткуда взять. */}
-                        {st && on && (
-                            <>
-                                <div className="text-xs text-muted-foreground">
-                                    {st.lastAt
-                                        ? `${S.telemetryCard.poslednyayaOtpravka}: ${fmtWhen(st.lastAt)}`
-                                        : `${S.telemetryCard.poslednyayaOtpravka}: ${S.telemetryCard.eeEscheNeBylo}`}
-                                </div>
-                                {st.id && (
-                                    <div className="text-xs text-muted-foreground">
-                                        {S.telemetryCard.identifikator}: <span className="font-mono">{st.id}</span>
-                                    </div>
-                                )}
-                                {st.lastError && (
-                                    <div className="text-xs text-warning-fg">
-                                        {S.telemetryCard.proshlayaOtpravkaNeUdalas}: {st.lastError}
-                                    </div>
-                                )}
-                            </>
-                        )}
-                    </div>
-                </div>
-
-                <div className="space-y-1 text-xs leading-relaxed text-muted-foreground">
-                    <div>
-                        <span className="font-medium text-foreground">{S.telemetryCard.uezzhaet}</span>: {SENDS}
-                    </div>
-                    <div>
-                        <span className="font-medium text-foreground">{S.telemetryCard.neUezzhaet}</span>: {NEVER}
-                    </div>
-                    {/* Честная оговорка: обещать «мы не знаем ваш адрес» нельзя — его видит
-                        любой получатель любого запроса. Обещать можно только то, что в пакете
-                        адреса нет и в базу он не пишется. */}
-                    <div>
-                        {S.telemetryCard.vPaketeAdresaNet}
-                    </div>
-                </div>
-
-                <div className="space-y-2">
-                    <Button
-                        variant="outline"
-                        size="sm"
-                        disabled={asking}
-                        onClick={() => void preview()}
-                    >
-                        {asking ? S.telemetryCard.sobiraem : S.telemetryCard.pokazatPaket}
-                    </Button>
-                    {/* Показывается ровно то, что вернул роутер: отступы для читаемости,
-                        значения — без единой правки. */}
-                    {pkt && (
-                        <pre className="overflow-x-auto whitespace-pre-wrap break-all rounded-lg bg-muted p-2 font-mono text-[11px] leading-relaxed">
-                            {pkt}
-                        </pre>
-                    )}
-                    {pktError && (
-                        <div className="text-xs text-warning-fg">{pktError}</div>
+            <CardHead title={S.telemetryCard.schetchikNaSayte} />
+            <div className="flex flex-row-reverse items-start justify-between gap-3">
+                <Switch
+                    on={on}
+                    label={S.telemetryCard.uchityvatRouter}
+                    disabled={busy || st === null}
+                    onClick={() => void toggle()}
+                />
+                <div className="min-w-0">
+                    <div className="text-[13px]">{S.telemetryCard.uchityvatRouter}</div>
+                    {status && (
+                        <div className={warn ? 'text-xs text-warning-fg' : 'text-xs text-muted-foreground'}>
+                            {status}
+                        </div>
                     )}
                 </div>
+            </div>
+            <div className="text-xs leading-relaxed text-muted-foreground">
+                {S.telemetryCard.chtoUhodit}
+            </div>
         </Block>
     )
 }

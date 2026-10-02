@@ -1,0 +1,99 @@
+#!/bin/sh
+# Отклик для счётчика роутеров на splify2.github.io. Описание — docs/TELEMETRY.md.
+#
+# Тело запроса — ровно `{"v":1,"id":"sp-…"}`, больше ничего. Город сервер берёт сам по
+# соединению; адрес роутера он не хранит.
+#
+# РАСПИСАНИЕ. Крон зовёт команду раз в час в свою минуту (выбрана при установке, чтобы роутеры
+# не стучались в одну секунду). Отклик уходит, только если с прошлой отметки прошло 23 часа:
+# сайт считает роутеры, отозвавшиеся за последние сутки, и час запаса не даёт роутеру выпасть
+# из счёта. Отметка в /tmp — после перезагрузки отклик уходит на ближайшем такте.
+#
+# ОТВЕТЫ. 2xx — принято, отметка. 400 (тело не по контракту) и 429 (слишком часто) — тоже
+# отметка: повтор через час ничего не изменит; причина запоминается для экрана. 5xx, прочие
+# ответы и отказ сети — без отметки: повтор на следующем такте.
+set -u
+
+PING_SH=${PING_SH:-/usr/lib/splify2/ping.sh}
+[ -r "$PING_SH" ] || { echo "нет $PING_SH" >&2; exit 2; }
+. "$PING_SH"
+
+# Адрес зашит в команду; `splify2.main.ping_url` его переопределяет (для стендов).
+PING_URL_DEF=${PING_URL_DEF:-https://splify2-telemetry-panel.vercel.app/api/ping}
+# 23 часа — и запас на то, что такт крона плывёт на секунды: без запаса отметка, записанная
+# через несколько секунд после такта, переносила бы отклик на 24-й час.
+PING_EVERY=${PING_EVERY:-82800}
+PING_SLACK=${PING_SLACK:-600}
+PING_TIMEOUT=${PING_TIMEOUT:-20}
+# Чем отправлять: curl, если стоит, иначе uclient-fetch из базовой системы — в зависимостях
+# пакета curl нет.
+PING_CURL=${PING_CURL:-curl}
+PING_FETCH=${PING_FETCH:-uclient-fetch}
+
+log() { logger -t splify2-ping "$*" 2>/dev/null; echo "$*"; return 0; }
+
+case "${1:-}" in
+    -h|--help)
+        echo "использование: splify2-ping — отклик для счётчика на splify2.github.io"
+        echo "уходит раз в 23 часа, если не выключен в «Настройки → О ПО»"
+        exit 0 ;;
+esac
+
+ping_allowed || exit 0
+
+now="$(date +%s)"
+at="$(ping_int "$(ping_get at)")"
+ok="$(ping_int "$(ping_get ok)")"
+# Отметка из будущего (часы перевели назад) отклик не задерживает.
+if [ "$at" -gt 0 ] && [ "$at" -le "$now" ] &&
+   [ $((now - at)) -lt $((PING_EVERY - PING_SLACK)) ]; then
+    exit 0
+fi
+
+fail() {  # ПРИЧИНА СООБЩЕНИЕ — без отметки: повтор на следующем такте
+    ping_put "$at" "$ok" "$1"
+    log "$2"
+    exit 1
+}
+
+id="$(ping_id)" || fail noid "нет идентификатора: ядро steer не ответило"
+
+url="$(uci -q get splify2.main.ping_url 2>/dev/null || true)"
+[ -n "$url" ] || url="$PING_URL_DEF"
+body="{\"v\":1,\"id\":\"$id\"}"
+
+if command -v "$PING_CURL" >/dev/null 2>&1; then
+    # `000` — curl так печатает «ответа не было вовсе».
+    code="$("$PING_CURL" -4 -sS -o /dev/null -w '%{http_code}' \
+        --connect-timeout 8 --max-time "$PING_TIMEOUT" \
+        -H 'Content-Type: application/json' --data-binary "$body" "$url" 2>/dev/null)"
+elif command -v "$PING_FETCH" >/dev/null 2>&1; then
+    # uclient-fetch кода ответа не печатает: 200 и 204 для него успех, остальное — строка
+    # «HTTP error N» в stderr и ненулевой выход. Без ответа строки нет — это сбой сети.
+    if out="$("$PING_FETCH" -4 -O /dev/null -T "$PING_TIMEOUT" \
+            --header='Content-Type: application/json' --post-data="$body" "$url" 2>&1 >/dev/null)"; then
+        code=204
+    else
+        code="$(printf '%s\n' "$out" | sed -n 's/.*HTTP error \([0-9][0-9]*\).*/\1/p' | tail -n1)"
+    fi
+else
+    fail nosender "нечем отправить: нет ни curl, ни uclient-fetch"
+fi
+
+case "${code:-}" in
+    2??)
+        ping_put "$now" "$now" ""
+        exit 0 ;;
+    400)
+        ping_put "$now" "$ok" rejected
+        log "сайт не принял отклик (400)"
+        exit 1 ;;
+    429)
+        ping_put "$now" "$ok" toomany
+        log "сайт просит реже (429)"
+        exit 1 ;;
+    ''|000)
+        fail network "сайт не ответил — повтор через час" ;;
+    *)
+        fail unavailable "сайт ответил $code — повтор через час" ;;
+esac

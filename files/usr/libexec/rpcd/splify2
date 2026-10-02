@@ -182,10 +182,9 @@ UPDATE_LISTS=${UPDATE_LISTS:-/usr/sbin/splify2-update-lists}
 # Чужие установленные zapret / Zapret Manager и https-dns-proxy мы не снимаем и не читаем:
 # это настройка человека.
 #
-# Сборщик пакета телеметрии. Подключается ЛЕНИВО и только своей группой: он тянет за собой
-# чтение спеки, каталога устройств и вызов движка, а платить за это должен тот вызов,
-# которому это нужно, — раз в сутки, а не на каждом круге опроса страницы.
-need_telemetry() { [ "${_tm_loaded:-}" = 1 ] || { . "${TELEMETRY_SH:-/usr/lib/splify2/telemetry.sh}"; _tm_loaded=1; }; }
+# Отклик для счётчика на сайте: согласие и отметка последнего отклика. Общий файл с командой
+# отправки (splify2-ping) — экран показывает ровно то, что делает расписание.
+need_ping() { [ "${_ping_loaded:-}" = 1 ] || { . "${PING_SH:-/usr/lib/splify2/ping.sh}"; _ping_loaded=1; }; }
 
 # ---- идентификатор устройства для панели подписки (HWID) ----------------------------
 #
@@ -592,14 +591,9 @@ list)
     json_add_object xsteer_link_put
         json_add_string iface; json_add_string link
     json_close_object
-    # Телеметрия. Согласие тремя состояниями: ключа нет — «не спрашивали» (можно предложить
-    # один раз), 0 — отказ (предлагать больше нельзя), 1 — согласие. Умолчание — выключено.
+    # Учёт роутера в счётчике на сайте: ключа нет или 1 — включено, 0 — выключено.
     json_add_object telemetry_state; json_close_object
     json_add_object telemetry_set; json_add_boolean on; json_close_object
-    # «Вот что уедет» — ТЕ ЖЕ БАЙТЫ, которые уедут: метод зовёт того же сборщика, что и
-    # отправка. Работает и при выключенной телеметрии — иначе посмотреть можно было бы
-    # только после согласия.
-    json_add_object telemetry_preview; json_close_object
     json_add_object lists_source; json_close_object
     json_add_object lists_source_set; json_add_string url; json_close_object
     json_add_object fetch_mode; json_close_object
@@ -657,7 +651,7 @@ call)
         sub_set|sub_info|sub_quota|sub_list|sub_del|sub_auto|sub_refresh) _grp=sub ;;
         backup_get|backup_put) _grp=backup ;;
         xsteer_link|xsteer_link_put) _grp=xsteer ;;
-        telemetry_state|telemetry_set|telemetry_preview) _grp=telemetry ;;
+        telemetry_state|telemetry_set) _grp=telemetry ;;
         *) fail "неизвестный метод" ;;
     esac
     . "$RPCD_LIB/common.sh"

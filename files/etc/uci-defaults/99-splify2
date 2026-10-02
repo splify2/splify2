@@ -69,6 +69,13 @@ fi
 if [ -z "$(uci -q get splify2.main.manifest_url 2>/dev/null)" ]; then
     rm -f /etc/splify2/manifest.json
 fi
+# Ключи прежнего отчёта о работе. Остались согласие (`telemetry`) и идентификатор
+# (`telemetry_id`) — их читает отклик для счётчика на сайте (splify2-ping).
+_old=""
+for _k in telemetry_url telemetry_key telemetry_at telemetry_error; do
+    uci -q get "splify2.main.$_k" >/dev/null 2>&1 && { uci -q delete "splify2.main.$_k"; _old=1; }
+done
+[ -n "$_old" ] && uci -q commit splify2
 # ПУСТАЯ СПЕКА ПРИ УСТАНОВКЕ — иначе чистый роутер выглядит сломанным.
 #
 # Движок читает настройку из одного файла и без него не отвечает никому: `steer status`

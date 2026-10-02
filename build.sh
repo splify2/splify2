@@ -174,10 +174,8 @@ cp files/usr/sbin/splify2-update-subs "$PKG/usr/sbin/splify2-update-subs"
 # удаление плюс установка, поэтому чистка в postrm сносила бы настройки человека при каждом
 # обновлении. Поэтому — отдельная команда, которую зовут осознанно (см. шапку скрипта).
 cp files/usr/sbin/splify2-purge "$PKG/usr/sbin/splify2-purge"
-# Команда отправки телеметрии. Её зовёт ночное обновление списков (TELEMETRY=... в
-# splify2-update-lists), а не своё задание крона, — то есть её отсутствие не видно ничем:
-# обновление списков отработает как обычно, а телеметрия просто не уедет никогда.
-cp files/usr/sbin/splify2-telemetry "$PKG/usr/sbin/splify2-telemetry"
+# Отклик для счётчика роутеров на сайте: своё задание крона раз в час (post-install ниже).
+cp files/usr/sbin/splify2-ping "$PKG/usr/sbin/splify2-ping"
 mkdir -p "$PKG/usr/share/splify2"
 # Описание второго издателя списков (itdoginfo/allow-domains): где он живёт, каким ТЕГОМ
 # РЕЛИЗА зафиксирован, что публикует и как его двоичные наборы становятся нашими списками.
@@ -198,14 +196,6 @@ cp files/usr/lib/splify2/*.sh "$PKG/usr/lib/splify2/"
 # всё, кроме круга опроса; барьер ниже сверяет группы диспетчера с файлами.
 mkdir -p "$PKG/usr/lib/splify2/rpcd"
 cp files/usr/lib/splify2/rpcd/*.sh "$PKG/usr/lib/splify2/rpcd/"
-# Обработчик событий netifd: он и есть тот, кто считает отвалы интерфейсов, — поля
-# ev.wan_down и ev.iface_down пакета телеметрии. Сборщик их читает давно, а писать было
-# некому, и панель получала честный ноль на роутере, где WAN отваливается каждый вечер.
-# Бит исполнения обязателен: hotplug.d запускает файлы каталога и молча пропускает
-# неисполняемые — то есть счётчики остались бы нулями, а в журнале не было бы ни строки.
-mkdir -p "$PKG/etc/hotplug.d/iface"
-cp files/etc/hotplug.d/iface/96-splify2 "$PKG/etc/hotplug.d/iface/96-splify2"
-chmod 0755 "$PKG/etc/hotplug.d/iface/96-splify2"
 # Настройка uci объявляется системе пакетом: почему именно так — в шапке самого файла.
 mkdir -p "$PKG/etc/uci-defaults"
 cp files/etc/uci-defaults/99-splify2 "$PKG/etc/uci-defaults/99-splify2"
@@ -229,7 +219,7 @@ cp files/lib/upgrade/keep.d/splify2 "$PKG/lib/upgrade/keep.d/splify2"
 chmod 0644 "$PKG/lib/upgrade/keep.d/splify2"
 chmod 0755 "$PKG/usr/libexec/rpcd/splify2" "$PKG/usr/sbin/splify2-update-lists" \
            "$PKG/usr/sbin/splify2-update-subs" \
-           "$PKG/usr/sbin/splify2-purge" "$PKG/usr/sbin/splify2-telemetry"
+           "$PKG/usr/sbin/splify2-purge" "$PKG/usr/sbin/splify2-ping"
 chmod 0644 "$PKG/usr/share/splify2/allow-domains.sh"
 chmod 0644 "$PKG"/usr/lib/splify2/*.sh "$PKG"/usr/lib/splify2/rpcd/*.sh
 
@@ -297,20 +287,6 @@ if ! grep -q splify2-update-lists /etc/crontabs/root 2>/dev/null; then
     /etc/init.d/cron enable 2>/dev/null
     /etc/init.d/cron restart 2>/dev/null
 fi
-# Отправка телеметрии — СВОИМ заданием и РАЗ В ЧАС. Раньше она ехала хвостом ночного
-# обновления списков ровно затем, чтобы задание было одно; час хвостом суточного задания не
-# сделать, поэтому довод отменён решением владельца, а вместе с ним отменена и экономия на
-# строке. Цена названа честно: двадцать четыре обращения к панели в сутки вместо одного и
-# столько же сборок пакета.
-#
-# МИНУТА СЛУЧАЙНАЯ И СВОЯ. Общая минута означала бы, что тысяча роутеров стучится в панель в
-# одну и ту же секунду каждого часа, — то есть мы сами себе устраиваем всплеск, который потом
-# ищем в графиках как «событие у пользователей».
-#
-# В СЕМЯ ИДЁТ НЕ ТОЛЬКО ВРЕМЯ. `srand()` в busybox awk сеет временем, а оба задания ставятся
-# в одну и ту же секунду — то есть минута вышла бы у них одна на двоих, и всплеск получился
-# бы уже внутри одного роутера: обновление списков и отправка пакета в одну минуту на слабой
-# коробке заметны. Поэтому к времени подмешан номер процесса.
 # Автообновление подписок: задание смотрит по часам, кому пора, и только у тех, у кого
 # интервал задан. Раз в десять минут, потому что наименьший интервал — полчаса: реже значило
 # бы промахиваться мимо получаса на треть, чаще — будить роутер без дела.
@@ -318,7 +294,7 @@ fi
 # МИНУТА ЗДЕСЬ НЕ СЛУЧАЙНАЯ, и это не забывчивость: обращение наружу делает не само задание, а
 # только те подписки, чей срок подошёл, — то есть всплеска в одну секунду у тысячи роутеров не
 # получится при любой минуте. Случайность живёт там, где она нужна: у суточного обновления
-# списков и у часовой отправки телеметрии.
+# списков и у отклика для счётчика на сайте.
 if ! grep -q splify2-update-subs /etc/crontabs/root 2>/dev/null; then
     mkdir -p /etc/crontabs
     printf '*/10 * * * * /usr/sbin/splify2-update-subs
@@ -326,9 +302,21 @@ if ! grep -q splify2-update-subs /etc/crontabs/root 2>/dev/null; then
     /etc/init.d/cron enable 2>/dev/null
     /etc/init.d/cron restart 2>/dev/null
 fi
-if ! grep -q splify2-telemetry /etc/crontabs/root 2>/dev/null; then
+# Отклик для счётчика роутеров на сайте. Крон зовёт команду раз в час, а отправляет она сама,
+# когда с прошлого отклика прошло 23 часа (после перезагрузки — на ближайшем такте).
+#
+# МИНУТА СЛУЧАЙНАЯ И СВОЯ, чтобы роутеры не стучались в сайт в одну секунду. `srand()` в
+# busybox awk сеет временем, а задания ставятся в одну секунду — поэтому к времени подмешан
+# номер процесса, иначе минута совпала бы с минутой обновления списков.
+#
+# Прежняя почасовая отправка отчёта (splify2-telemetry) убрана вместе со своей строкой.
+if grep -q splify2-telemetry /etc/crontabs/root 2>/dev/null; then
+    sed -i '/splify2-telemetry/d' /etc/crontabs/root
+    /etc/init.d/cron restart 2>/dev/null
+fi
+if ! grep -q splify2-ping /etc/crontabs/root 2>/dev/null; then
     mkdir -p /etc/crontabs
-    printf '%s * * * * /usr/sbin/splify2-telemetry --scheduled\n' \
+    printf '%s * * * * /usr/sbin/splify2-ping\n' \
         "$(awk -v s=$$ "BEGIN{srand();srand(s+int(rand()*100000));print int(rand()*60)}")" \
         >> /etc/crontabs/root
     /etc/init.d/cron enable 2>/dev/null
@@ -409,7 +397,7 @@ chmod +x build/scripts/post-install
 # опроса). Теперь добавить подключение и забыть укладку нельзя.
 for _need in $(grep -ho '/usr/lib/splify2/[a-z0-9_-]*\.sh' \
                     files/usr/libexec/rpcd/splify2 files/usr/sbin/splify2-update-lists \
-                    files/usr/sbin/splify2-telemetry |
+                    files/usr/sbin/splify2-ping |
                sort -u); do
     test -s "$PKG$_need" || {
         echo "в пакете нет ${_need#/} — подключающая его половина не запустится"; exit 1; }
@@ -427,19 +415,10 @@ test -s "$PKG/usr/lib/splify2/rpcd/common.sh" || {
 # автоматически чистить их в postrm нельзя (обновление opkg это удаление плюс установка).
 test -x "$PKG/usr/sbin/splify2-purge" || {
     echo "в пакете нет usr/sbin/splify2-purge — следы пакета убрать будет нечем"; exit 1; }
-# Без этой команды телеметрия не работает НИКОГДА и не говорит об этом ни звука: ночное
-# обновление списков зовёт её по имени файла, отсутствие файла для него не ошибка, а человек
-# в интерфейсе видит включённый переключатель согласия — то есть обещание, которого пакет не
-# исполняет. Проверяется и бит исполнения: файл без него так же не запустится.
-test -x "$PKG/usr/sbin/splify2-telemetry" || {
-    echo "в пакете нет usr/sbin/splify2-telemetry — согласившийся на телеметрию не отправит ничего"
-    exit 1; }
-# Тот же класс тихого сбоя со стороны писателя: без обработчика hotplug счётчики отвалов
-# интерфейсов писать некому, и в панель уезжают нули — неотличимые от «у человека ничего не
-# отваливалось». Бит исполнения тут не придирка: hotplug.d молча пропускает неисполняемые
-# файлы каталога, и отличить это от «файла нет» на роутере нечем.
-test -x "$PKG/etc/hotplug.d/iface/96-splify2" || {
-    echo "в пакете нет исполняемого etc/hotplug.d/iface/96-splify2 — счётчики отвалов останутся нулями"
+# Без этой команды крон зовёт пустоту, а переключатель в интерфейсе включён — обещание,
+# которого пакет не исполняет. Проверяется и бит исполнения.
+test -x "$PKG/usr/sbin/splify2-ping" || {
+    echo "в пакете нет usr/sbin/splify2-ping — отклик для счётчика на сайте не уйдёт"
     exit 1; }
 # Без описания источника второй издатель не работает вовсе, и молча: объект rpcd ответит
 # «пакет собран не целиком», а ночное обновление объявит каждый его список «нет в манифесте,
