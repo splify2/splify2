@@ -44,6 +44,7 @@ import {
     type Upstream,
 } from '@/lib/model'
 
+import { S } from '@/copy'
 type J = Record<string, unknown>
 
 const isObj = (v: unknown): v is J => !!v && typeof v === 'object' && !Array.isArray(v)
@@ -598,7 +599,7 @@ export function encodeSpec(spec: Spec): J {
             if (g.n?.ports?.length) l.ports = g.n.ports
             lists[ln] = l
             const r = base({ to: [ln] })
-            if (gi > 0) r.name = gi === 1 ? `${ch.name} (порты)` : `${ch.name} (порты ${gi})`
+            if (gi > 0) r.name = gi === 1 ? S.specv2.porty(ch.name) : S.specv2.porty2(ch.name, gi)
             rules.push(r)
         })
     })

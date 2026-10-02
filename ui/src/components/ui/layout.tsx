@@ -3,6 +3,7 @@ import { ArrowLeft, ChevronRight } from 'lucide-react'
 import { Card } from '@/components/ui/card'
 import { Switch } from '@/components/ui/switch'
 
+import { S } from '@/copy'
 /** Bode 26.10: компоновка настроек по образцу приложения Splify2 для телефона.
  *
  *  Разделы и рельс остаются где были; меняется то, КАК расположены настройки внутри раздела.
@@ -23,7 +24,7 @@ import { Switch } from '@/components/ui/switch'
 
 /** Шапка экрана. `back` — стрелка назад (вложенный экран), `right` — действие у края. */
 export function ScreenHeader({
-    title, back, backLabel = 'Назад', right,
+    title, back, backLabel = S.layout.nazad, right,
 }: {
     title: ReactNode
     back?: () => void

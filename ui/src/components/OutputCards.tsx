@@ -9,6 +9,7 @@ import { ccFromName, plainName } from '@/lib/nodename'
 import Flag from '@/components/Flag'
 import { daysText, readQuota, resetText } from '@/lib/quota'
 
+import { S } from '@/copy'
 /** Правая колонка главной: по блоку на подписку и по блоку на выходной интерфейс.
  *
  *  РАЗНЫЕ БЛОКИ, ПОТОМУ ЧТО РАЗНЫЕ ВОПРОСЫ. У подписки спрашивают «сколько осталось и откуда
@@ -51,7 +52,7 @@ function Ping({ p }: { p?: { ms: number; state: string } }) {
     if (!p) return null
     return (
         <span className={`shrink-0 text-[12px] ${p.ms < 0 ? 'text-destructive' : 'text-muted-foreground'}`}>
-            {p.ms < 0 ? p.state || 'нет ответа' : `${p.ms} мс`}
+            {p.ms < 0 ? p.state || S.outputCards.netOtveta : S.outputCards.ms(p.ms)}
         </span>
     )
 }
@@ -120,10 +121,10 @@ export function SubBlock({ outs = [], sub }: {
     const refresh = useCallback(async () => {
         setBusy(true)
         try {
-            const r = await deadline(rpc.subQuota(sub?.name), 30000, 'панель не ответила')
+            const r = await deadline(rpc.subQuota(sub?.name), 30000, S.outputCards.panelNeOtvetila)
             if (!alive.current) return
             setQuota(r.quota)
-            setWhy(r.quota ? null : r.why || 'панель не сообщила остаток')
+            setWhy(r.quota ? null : r.why || S.outputCards.panelNeSoobschilaOstatok)
             if (r.kind) setKind(r.kind)
             remember({ quota: r.quota, kind: r.kind })
         } catch (e) {
@@ -197,11 +198,11 @@ export function SubBlock({ outs = [], sub }: {
                             {sub.title || sub.name}
                         </a>
                     ) : (
-                        sub?.title || (sub && sub.name !== 'main' ? sub.name : 'Подписка')
+                        sub?.title || (sub && sub.name !== 'main' ? sub.name : S.outputCards.podpiska)
                     )}
                 </div>
                 <div className="flex items-baseline gap-2 text-xs text-muted-foreground">
-                    {v?.age && <span>обновлено {v.age}</span>}
+                    {v?.age && <span>{S.outputCards.obnovleno}{v.age}</span>}
                     {/* Кнопка есть и когда числа свежие: «обновлено 3 мин назад» — это повод
                         не ходить наружу самим, а не запрет человеку спросить. У вставленных
                         ссылок vless:// кнопки нет — обновлять там нечего. */}
@@ -217,7 +218,7 @@ export function SubBlock({ outs = [], sub }: {
                             ) : (
                                 <RefreshCw className="h-3 w-3" aria-hidden="true" />
                             )}
-                            {busy ? 'спрашиваем…' : 'обновить'}
+                            {busy ? S.outputCards.sprashivaem : S.outputCards.obnovit}
                         </button>
                     )}
                 </div>
@@ -230,8 +231,7 @@ export function SubBlock({ outs = [], sub }: {
                                 {human(v.left)}
                             </span>
                             <span className="text-[13px] text-muted-foreground">
-                                из {human(v.total)} осталось
-                            </span>
+                                {S.outputCards.iz}{human(v.total)} {S.outputCards.ostalos}</span>
                         </div>
                         {/* Полоса — доля ИЗРАСХОДОВАННОГО, и цвет у неё один. Красить её в
                             «мало осталось» значило бы завести четвёртое состояние поверх трёх:
@@ -244,13 +244,13 @@ export function SubBlock({ outs = [], sub }: {
                             />
                         </div>
                         <div className="mt-2 flex flex-wrap justify-between gap-x-4 text-xs text-muted-foreground">
-                            <span>израсходовано {human(v.used)}</span>
-                            {v.expire !== null && <span>сброс {resetText(v.expire)}</span>}
+                            <span>{S.outputCards.izrashodovano}{human(v.used)}</span>
+                            {v.expire !== null && <span>{S.outputCards.sbros}{resetText(v.expire)}</span>}
                         </div>
                         <dl className="mt-3 space-y-1 text-[13px]">
                             {v.daysLeft !== null && (
                                 <div className="flex items-baseline justify-between gap-2">
-                                    <dt className="text-subtle">до конца периода</dt>
+                                    <dt className="text-subtle">{S.outputCards.doKontsaPerioda}</dt>
                                     <dd className="font-medium">{daysText(v.daysLeft)}</dd>
                                 </div>
                             )}
@@ -259,7 +259,7 @@ export function SubBlock({ outs = [], sub }: {
                                 панель не сообщает. Пока измерять нечего — строки нет. */}
                             {v.perDay !== null && (
                                 <div className="flex items-baseline justify-between gap-2">
-                                    <dt className="text-subtle">в среднем в сутки</dt>
+                                    <dt className="text-subtle">{S.outputCards.vSrednemVSutki}</dt>
                                     <dd className="font-medium">{human(v.perDay)}</dd>
                                 </div>
                             )}
@@ -268,12 +268,12 @@ export function SubBlock({ outs = [], sub }: {
                                 кончится», и число такой длины человек всё равно не читает. */}
                             {v.forecastDays !== null && (
                                 <div className="flex items-baseline justify-between gap-2">
-                                    <dt className="text-subtle">хватит при таком темпе</dt>
+                                    <dt className="text-subtle">{S.outputCards.hvatitPriTakomTempe}</dt>
                                     <dd className={`font-medium ${v.tight ? 'text-warning-fg' : ''}`}>
                                         {v.outlasts ? (
-                                            <span aria-label="до конца периода с запасом">∞</span>
+                                            <span aria-label={S.outputCards.doKontsaPeriodaS}>∞</span>
                                         ) : (
-                                            `на ${daysText(v.forecastDays)}`
+                                            S.outputCards.na(daysText(v.forecastDays))
                                         )}
                                     </dd>
                                 </div>
@@ -281,12 +281,8 @@ export function SubBlock({ outs = [], sub }: {
                         </dl>
                         {v.tight && (
                             <p className="mt-3 rounded-xl border border-warning/40 bg-warning/10 p-2 text-xs">
-                                При нынешнем темпе трафик кончится раньше сброса. Когда он
-                                кончится, узел перестанет подниматься: выход упадёт, а правила
-                                останутся на месте — трафик пойдёт туда, куда велит{' '}
-                                <span className="font-medium">если всё упало</span> у этого
-                                выхода.
-                            </p>
+                                {S.outputCards.priNyneshnemTempeTrafik}{' '}
+                                <span className="font-medium">{S.outputCards.esliVseUpalo}</span> {S.outputCards.uEtogoVyhoda}</p>
                         )}
                     </>
                 ) : v && (v.expire !== null || v.used > 0) ? (
@@ -296,14 +292,14 @@ export function SubBlock({ outs = [], sub }: {
                     <Unlimited
                         used={v.used}
                         note={[
-                            'объём не ограничен',
-                            v.used > 0 ? 'по счёту панели' : '',
-                            v.expire !== null ? `сброс ${resetText(v.expire)}` : '',
+                            S.outputCards.obemNeOgranichen,
+                            v.used > 0 ? S.outputCards.poSchetuPaneli : '',
+                            v.expire !== null ? S.outputCards.sbros2(resetText(v.expire)) : '',
                         ].filter(Boolean).join(' · ')}
                     />
                 ) : kind === 'url' ? (
                     <>
-                        <div className="text-[15px]">Панель не сообщает остаток</div>
+                        <div className="text-[15px]">{S.outputCards.panelNeSoobschaetOstatok}</div>
                         {/* Причина показывается только когда она НЕ «панель промолчала»:
                             пустая строка означает ровно это, и повторять её словами незачем. */}
                         {why && <p className="mt-1 text-xs text-muted-foreground">{why}</p>}
@@ -372,11 +368,11 @@ export function TunnelBlock({ name, st, facts, phase }: OutRef) {
                     <span className="min-w-0 truncate text-sm font-medium">{name}</span>
                     <span
                         className="flex items-center gap-1 text-xs text-muted-foreground"
-                        title="объём не ограничен"
+                        title={S.outputCards.obemNeOgranichen}
                     >
                         <InfinityIcon className="h-4 w-4" aria-hidden="true" />
-                        <span aria-hidden="true">без лимита</span>
-                        <span className="sr-only">объём не ограничен</span>
+                        <span aria-hidden="true">{S.outputCards.bezLimita}</span>
+                        <span className="sr-only">{S.outputCards.obemNeOgranichen}</span>
                     </span>
                 </div>
                 <Where name={name} st={st} facts={facts} fallback={st?.device || null} phase={phase} />
@@ -448,10 +444,10 @@ function Unlimited({ used, note }: { used?: number; note: string }) {
                 {used ? (
                     <>
                         <span className="text-[30px] font-semibold leading-none">{human(used)}</span>
-                        <span className="text-[13px] text-muted-foreground">из ∞ израсходовано</span>
+                        <span className="text-[13px] text-muted-foreground">{S.outputCards.izIzrashodovano}</span>
                     </>
                 ) : (
-                    <span className="text-[30px] font-semibold leading-none" aria-label="без ограничения">
+                    <span className="text-[30px] font-semibold leading-none" aria-label={S.outputCards.bezOgranicheniya}>
                         ∞
                     </span>
                 )}
@@ -476,7 +472,7 @@ function Address({ ip }: { ip?: string }) {
     if (!ip) return null
     return (
         <div className="mt-1 flex items-baseline justify-between gap-2">
-            <span className="text-[12px] text-subtle">внешний адрес</span>
+            <span className="text-[12px] text-subtle">{S.outputCards.vneshniyAdres}</span>
             <span className="flex min-w-0 items-center justify-end gap-1.5 text-right">
                 <span
                     className="min-w-0 truncate font-mono text-[12px] font-medium"
@@ -491,7 +487,7 @@ function Address({ ip }: { ip?: string }) {
                 <button
                     type="button"
                     onClick={() => setShown((s) => !s)}
-                    aria-label={shown ? 'скрыть внешний адрес' : 'показать внешний адрес'}
+                    aria-label={shown ? S.outputCards.skrytVneshniyAdres : S.outputCards.pokazatVneshniyAdres}
                     className="shrink-0 text-muted-foreground transition-colors hover:text-foreground"
                 >
                     {shown ? (
@@ -518,9 +514,9 @@ function Trouble({ st, name, phase }: { st?: OutputStatus; name: string; phase?:
         const total = st?.probe?.total
         return (
             <>
-                <div className="text-[13px] font-medium text-warning-fg">Подключается…</div>
+                <div className="text-[13px] font-medium text-warning-fg">{S.outputCards.podklyuchaetsya}</div>
                 <p className="mt-0.5 text-xs text-muted-foreground">
-                    {n && total ? `проверяем узлы подписки: ${n} из ${total}` : `поднимаем выход ${name}`}
+                    {n && total ? S.outputCards.proveryaemUzlyPodpiskiIz(n, total) : S.outputCards.podnimaemVyhod(name)}
                 </p>
             </>
         )
@@ -536,29 +532,26 @@ function Trouble({ st, name, phase }: { st?: OutputStatus; name: string; phase?:
         const total = st.probe.total
         return (
             <>
-                <div className="text-[13px] font-medium text-destructive">Узла нет в подписке</div>
+                <div className="text-[13px] font-medium text-destructive">{S.outputCards.uzlaNetVPodpiske}</div>
                 <p className="mt-0.5 text-xs leading-relaxed text-muted-foreground">
                     {n !== undefined && total !== undefined
-                        ? `выбран узел ${n}, а пригодных в подписке ${total}`
-                        : 'выбранного узла в подписке нет'}
-                    . Подписка обновилась и узлов стало меньше — выберите локацию заново или
-                    поставьте «первый рабочий».
-                </p>
+                        ? S.outputCards.vybranUzelAPrigodnyh(n, total)
+                        : S.outputCards.vybrannogoUzlaVPodpiske}
+                    {S.outputCards.podpiskaObnovilasIUzlov}</p>
             </>
         )
     }
     const failed = st?.probe?.state === 'failed'
     return (
         <>
-            <div className="text-[13px] font-medium text-destructive">Нет соединения</div>
+            <div className="text-[13px] font-medium text-destructive">{S.outputCards.netSoedineniya}</div>
             <p className="mt-0.5 text-xs leading-relaxed text-muted-foreground">
                 {failed
                     ? st?.probe?.total === 0
-                        ? 'в подписке нет пригодных узлов'
-                        : 'ни один узел подписки не ответил'
-                    : `выход ${name} не поднят: устройства нет`}
-                . Пока его нет, трафик этого выхода никуда не идёт.
-            </p>
+                        ? S.outputCards.vPodpiskeNetPrigodnyh
+                        : S.outputCards.niOdinUzelPodpiski
+                    : S.outputCards.vyhodNePodnyatUstroystva(name)}
+                {S.outputCards.pokaEgoNetTrafik}</p>
         </>
     )
 }

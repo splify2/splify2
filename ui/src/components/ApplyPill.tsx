@@ -1,6 +1,7 @@
 import { Check, Loader2 } from 'lucide-react'
 import { usePending } from '@/lib/pending'
 
+import { S } from '@/copy'
 /** Плавающая пилюля «Применить · N» — единственная кнопка применения на весь экран.
  *
  *  Появляется только когда сохранённое отличается от применённого, и исчезает сама,
@@ -19,7 +20,7 @@ export default function ApplyPill() {
                 type="button"
                 onClick={apply}
                 disabled={applying}
-                title="Изменения уже сохранены. Кнопка отправит их в ядро — около двух секунд, соединения не рвутся."
+                title={S.applyPill.izmeneniyaUzheSohranenyKnopka}
                 className={[
                     'flex h-11 items-center gap-2.5 rounded-full px-6 text-sm font-medium text-white',
                     'shadow-[0_6px_20px_rgba(0,0,0,0.18)] transition-all duration-300',
@@ -29,16 +30,13 @@ export default function ApplyPill() {
             >
                 {justApplied ? (
                     <>
-                        <Check className="h-4 w-4" aria-hidden="true" /> Применено
-                    </>
+                        <Check className="h-4 w-4" aria-hidden="true" /> {S.applyPill.primeneno}</>
                 ) : applying ? (
                     <>
-                        <Loader2 className="h-4 w-4 animate-spin" aria-hidden="true" /> Применяем…
-                    </>
+                        <Loader2 className="h-4 w-4 animate-spin" aria-hidden="true" /> {S.applyPill.primenyaem}</>
                 ) : (
                     <>
-                        <Check className="h-4 w-4" aria-hidden="true" /> Применить
-                        <span className="flex h-[22px] min-w-[22px] items-center justify-center rounded-full bg-white/25 px-1.5 text-xs font-semibold">
+                        <Check className="h-4 w-4" aria-hidden="true" /> {S.applyPill.primenit}<span className="flex h-[22px] min-w-[22px] items-center justify-center rounded-full bg-white/25 px-1.5 text-xs font-semibold">
                             {count}
                         </span>
                     </>

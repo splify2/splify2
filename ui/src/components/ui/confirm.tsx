@@ -1,7 +1,7 @@
 import { useCallback, useState } from 'react'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent } from '@/components/ui/card'
-import { t } from '@/lib/i18n'
+import { S } from '@/copy'
 import { AlertTriangle } from 'lucide-react'
 
 // In-page confirmation instead of window.confirm().
@@ -54,14 +54,14 @@ export function useConfirm(): [(req: ConfirmRequest) => Promise<boolean>, React.
           </h4>
           {pending.body && <p className="mt-2 text-sm text-muted-foreground">{pending.body}</p>}
           <div className="mt-4 flex justify-end gap-2">
-            <Button size="sm" variant="outline" onClick={() => close(false)}>{t('Cancel')}</Button>
+            <Button size="sm" variant="outline" onClick={() => close(false)}>{S.confirm.cancel}</Button>
             <Button
               size="sm"
               variant={pending.tone === 'default' ? 'default' : 'destructive'}
               autoFocus
               onClick={() => close(true)}
             >
-              {pending.confirmLabel || t('Confirm')}
+              {pending.confirmLabel || S.confirm.confirm}
             </Button>
           </div>
         </CardContent>

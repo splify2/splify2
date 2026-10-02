@@ -17,6 +17,7 @@ import {
 import OutputAdvanced, { advFrom, advApply, type Adv } from '@/components/OutputAdvanced'
 import { type Live } from '@/lib/live'
 
+import { S } from '@/copy'
 /** Состав выхода: из чего он собран и в каком порядке.
  *
  *  ЧТО ТАКОЕ ВЫХОД. Это то, во что ведёт правило, — не устройство и не узел. Внутри у него
@@ -299,7 +300,7 @@ export default function PoolEditor({
         const subsN = g.filter((x) => x.kind === 'sub').length
         const devsN = g.length - subsN
         if (subsN > 1 || (subsN && devsN)) {
-            notify('Ядро этой версии не умеет смешанный пул: либо одна подписка, либо свои туннели. Обновите ядро в разделе «Настройки → О ПО».', 'warning')
+            notify(S.poolEditor.yadroEtoyVersiiNe, 'warning')
             return true
         }
         return false
@@ -370,16 +371,16 @@ export default function PoolEditor({
     function save() {
         const n = title.trim()
         if (!NAME_RE.test(n)) {
-            notify('Имя: латиница, цифры, дефис или подчёркивание', 'warning')
+            notify(S.poolEditor.imyaLatinitsaTsifryDefis, 'warning')
             return
         }
         const mine = new Set([name, ...partsOf(spec, name).map(([k]) => k)].filter(Boolean))
         if (!mine.has(n) && spec.outputs[n]) {
-            notify(`Выход «${n}» уже есть`, 'warning')
+            notify(S.poolEditor.vyhodUzheEst(n), 'warning')
             return
         }
         if (rows.length === 0) {
-            notify('Выберите, через что выходить', 'warning')
+            notify(S.poolEditor.vyberiteCherezChtoVyhodit, 'warning')
             return
         }
         if (refuseOnOldEngine(rows)) return
@@ -393,7 +394,7 @@ export default function PoolEditor({
             /* Одна подписка — обычный выход kind=vless, как и раньше: служебные части здесь
              * ни к чему, а имя выхода станет именем устройства. */
             if (n.length > DEV_NAME_MAX) {
-                notify(`Имя выхода подписки — не длиннее ${DEV_NAME_MAX} символов: оно становится именем устройства`, 'warning')
+                notify(S.poolEditor.imyaVyhodaPodpiskiNe(DEV_NAME_MAX), 'warning')
                 return
             }
             outputs[n] = carry(vlessOut(n, subGroups[0], onFail))
@@ -429,7 +430,7 @@ export default function PoolEditor({
                 devices.push(pn)
             }
             if (devices.length > 16) {
-                notify('В пуле не больше шестнадцати частей — таков предел ядра; соседние локации одной подписки считаются одной частью', 'warning')
+                notify(S.poolEditor.vPuleNeBolshe, 'warning')
                 return
             }
             outputs[n] = carry(advApply(
@@ -449,7 +450,7 @@ export default function PoolEditor({
         const mine = new Set([name, ...partsOf(spec, name).map(([k]) => k)])
         const used = spec.channels.filter((c) => mine.has(c.out)).map((c) => c.name)
         if (used.length) {
-            notify(`Выход «${name}» занят правилами: ${used.join(', ')}`, 'warning')
+            notify(S.poolEditor.vyhodZanyatPravilami(name, used.join(', ')), 'warning')
             return
         }
         const outputs: Record<string, Output> = {}
@@ -472,7 +473,7 @@ export default function PoolEditor({
                 <ScreenHeader
                     title={name}
                     back={onCancel}
-                    backLabel="Закрыть"
+                    backLabel={S.poolEditor.zakryt}
                     right={
                         <Button
                             onClick={() => {
@@ -480,18 +481,15 @@ export default function PoolEditor({
                                 onSave({ ...spec, outputs })
                             }}
                         >
-                            <Check className="h-4 w-4" aria-hidden="true" /> Сохранить выход
-                        </Button>
+                            <Check className="h-4 w-4" aria-hidden="true" /> {S.poolEditor.sohranitVyhod}</Button>
                     }
                 />
                 <Block>
-                    <CardHead title="Обход DPI" />
+                    <CardHead title={S.poolEditor.obhodDpi} />
                     <p className="text-sm text-subtle">
-                        Устройства у этого выхода нет: трафик идёт обычным маршрутом через обход DPI.
-                        Стратегия настраивается вне splify2.
-                    </p>
+                        {S.poolEditor.ustroystvaUEtogoVyhoda}</p>
                     <div className="border-t border-border pt-1">
-                        <FieldRow label="Если обход не работает">
+                        <FieldRow label={S.poolEditor.esliObhodNeRabotaet}>
                             <select
                                 value={onFail}
                                 onChange={(e) => setOnFail(e.currentTarget.value as OnFail)}
@@ -505,8 +503,7 @@ export default function PoolEditor({
                     </div>
                 </Block>
                 <DangerButton full onClick={remove}>
-                    <Trash2 aria-hidden="true" /> Удалить
-                </DangerButton>
+                    <Trash2 aria-hidden="true" /> {S.poolEditor.udalit}</DangerButton>
             </div>
         )
     }
@@ -529,13 +526,12 @@ export default function PoolEditor({
     return (
         <div className="space-y-4">
             <ScreenHeader
-                title={name || 'Добавить выход'}
+                title={name || S.poolEditor.dobavitVyhod}
                 back={onCancel}
-                backLabel="Отмена"
+                backLabel={S.poolEditor.otmena}
                 right={
                     <Button onClick={save}>
-                        <Check className="h-4 w-4" aria-hidden="true" /> Сохранить выход
-                    </Button>
+                        <Check className="h-4 w-4" aria-hidden="true" /> {S.poolEditor.sohranitVyhod}</Button>
                 }
             />
 
@@ -543,28 +539,27 @@ export default function PoolEditor({
                 {/* ---- слева: что можно взять ------------------------------------------ */}
                 <div className="min-w-0 space-y-4">
                     <Block>
-                        <CardHead title="Что можно взять" />
+                        <CardHead title={S.poolEditor.chtoMozhnoVzyat} />
                         <label className="flex h-10 items-center gap-2 rounded-lg border border-border bg-background px-3">
                             <Search className="h-4 w-4 shrink-0 text-muted-foreground" aria-hidden="true" />
                             <input
                                 value={query}
                                 onChange={(e) => setQuery(e.currentTarget.value)}
-                                placeholder="найти локацию: страна или слово из названия"
-                                aria-label="найти локацию"
+                                placeholder={S.poolEditor.naytiLokatsiyuStranaIli}
+                                aria-label={S.poolEditor.naytiLokatsiyu}
                                 className="min-w-0 flex-1 bg-transparent text-sm focus:outline-none"
                             />
                             {query && (
-                                <button type="button" onClick={() => setQuery('')} aria-label="очистить поиск" className="sp-row bg-transparent p-0 text-muted-foreground hover:text-foreground">
+                                <button type="button" onClick={() => setQuery('')} aria-label={S.poolEditor.ochistitPoisk} className="sp-row bg-transparent p-0 text-muted-foreground hover:text-foreground">
                                     <X className="h-4 w-4" />
                                 </button>
                             )}
                         </label>
                     </Block>
                         {subs.length === 0 && (
-                            <Group head={<CardHead title="Подписки" />}>
+                            <Group head={<CardHead title={S.poolEditor.podpiski} />}>
                                 <p className="py-3 text-xs text-muted-foreground">
-                                    подписок нет — добавьте в подпункте VLESS
-                                </p>
+                                    {S.poolEditor.podpisokNetDobavteV}</p>
                             </Group>
                         )}
                         {subs.map((s) => {
@@ -624,9 +619,9 @@ export default function PoolEditor({
                                                 title={subTitle(s.path)}
                                                 meta={
                                                     !s.present
-                                                        ? <span className="text-warning-fg">не скачана</span>
+                                                        ? <span className="text-warning-fg">{S.poolEditor.neSkachana}</span>
                                                         : nodes
-                                                          ? `локаций: ${all.length}${picked.size ? ` · взято: ${picked.size}` : any ? ' · взята любая' : ''}`
+                                                          ? S.poolEditor.lokatsiy(all.length, picked.size ? S.poolEditor.pickedCount(picked.size) : any ? S.poolEditor.pickedAny : '')
                                                           : undefined
                                                 }
                                             />
@@ -654,7 +649,7 @@ export default function PoolEditor({
                                                                 {probe.batchSub === id
                                                                     ? <LoaderCircle className="h-3.5 w-3.5 animate-spin" aria-hidden="true" />
                                                                     : <Gauge className="h-3.5 w-3.5" aria-hidden="true" />}
-                                                                {probe.batchSub === id ? `остановить (осталось ${probe.left})` : `проверить все${what}`}
+                                                                {probe.batchSub === id ? S.poolEditor.ostanovitOstalos(probe.left) : S.poolEditor.proveritVse(what)}
                                                             </button>
                                                         )
                                                     })}
@@ -670,12 +665,12 @@ export default function PoolEditor({
                                                 round
                                                 onClick={() => anyOf(s.path, anyProto)}
                                                 disabled={!s.present}
-                                                title="любая рабочая"
+                                                title={S.poolEditor.lyubayaRabochaya}
                                                 /* Узел не закреплён: движок проверяет их при
                                                  * подъёме и берёт первый ответивший. Для человека
                                                  * важно следствие — такой выход переживает смену
                                                  * состава подписки, а закреплённый нет. */
-                                                hint="не сломается при обновлении подписки"
+                                                hint={S.poolEditor.neSlomaetsyaPriObnovlenii}
                                             />
                                         </li>
                                         {s.present && nodes && hy.length === 0 && (foreignBySub[s.path] || 0) > 0 && (
@@ -687,11 +682,11 @@ export default function PoolEditor({
                                             <li className="px-2.5 py-2.5 text-xs text-muted-foreground">
                                                 {live?.build?.modules && !live.build.modules.includes('hysteria2')
                                                     ? (nodes.length === 0
-                                                        ? 'Узлов нет: для ссылок hysteria2 не установлен пакет steer-hysteria2.'
-                                                        : `В подписке ещё ${foreignBySub[s.path]} узлов hysteria2: нужен пакет steer-hysteria2.`)
+                                                        ? S.poolEditor.uzlovNetDlyaSsylok
+                                                        : S.poolEditor.vPodpiskeEscheUzlov(foreignBySub[s.path]))
                                                     : (nodes.length === 0
-                                                        ? 'Узлов нет: ядро не приняло ссылки этой подписки.'
-                                                        : `Ядро не приняло ещё ${foreignBySub[s.path]} ссылок этой подписки.`)}
+                                                        ? S.poolEditor.uzlovNetYadroNe
+                                                        : S.poolEditor.yadroNePrinyaloEsche(foreignBySub[s.path]))}
                                             </li>
                                         )}
                                         {s.present && mixed && nodes && nodes.length > 0 && (
@@ -702,20 +697,19 @@ export default function PoolEditor({
                                                     on={has({ kind: 'any', sub: s.path, proto: 'hysteria2' })}
                                                     round
                                                     onClick={() => anyOf(s.path, 'hysteria2')}
-                                                    title="любая рабочая (hysteria2)"
+                                                    title={S.poolEditor.lyubayaRabochayaHysteria2}
                                                 />
                                             </li>
                                         )}
                                         {nodes === undefined && s.present && (
-                                            <li className="px-2.5 py-2.5 text-xs text-muted-foreground">узлы читаются…</li>
+                                            <li className="px-2.5 py-2.5 text-xs text-muted-foreground">{S.poolEditor.uzlyChitayutsya}</li>
                                         )}
                                         {nodes === null && s.present && (
                                             <li className="px-2.5 py-2.5 text-xs text-muted-foreground">
-                                                локации появятся после «Применить»
-                                            </li>
+                                                {S.poolEditor.lokatsiiPoyavyatsyaPoslePrimenit}</li>
                                         )}
                                         {q && nodes && !shown.length && (
-                                            <li className="px-2.5 py-2.5 text-xs text-muted-foreground">ничего не нашлось</li>
+                                            <li className="px-2.5 py-2.5 text-xs text-muted-foreground">{S.poolEditor.nichegoNeNashlos}</li>
                                         )}
                                         {shown.map(({ nd, proto }) => {
                                             const cc = ccFromName(nd.name);
@@ -732,7 +726,7 @@ export default function PoolEditor({
                                             const ph = probe.phase[key]
                                             const err = probe.fails[key]
                                             const pr = probe.probes[key]
-                                            const label = plainName(nd.name) || `узел ${nd.index + 1}`
+                                            const label = plainName(nd.name) || S.poolEditor.uzel(nd.index + 1)
                                             return (
                                                 <li key={`${proto}:${nd.index}`} className="flex items-center gap-1 py-1">
                                                     <Choice
@@ -754,18 +748,17 @@ export default function PoolEditor({
                                                            старое «90 мс» рядом с идущей проверкой
                                                            читается как её результат. */
                                                         trail={
-                                                            ph === 'queued' ? <span className="text-muted-foreground">в очереди</span>
-                                                            : ph === 'running' ? <span className="flex items-center gap-1 text-muted-foreground"><LoaderCircle className="h-3 w-3 animate-spin" aria-hidden="true" />проверяю…</span>
-                                                            : err ? <span className="text-destructive" title={err}>не проверился</span>
+                                                            ph === 'queued' ? <span className="text-muted-foreground">{S.poolEditor.vOcheredi}</span>
+                                                            : ph === 'running' ? <span className="flex items-center gap-1 text-muted-foreground"><LoaderCircle className="h-3 w-3 animate-spin" aria-hidden="true" />{S.poolEditor.proveryayu}</span>
+                                                            : err ? <span className="text-destructive" title={err}>{S.poolEditor.neProverilsya}</span>
                                                             : pr ? (pr.ok
                                                                 ? <span className={latencyTone(pr.ttfb_ms) === 'good' ? 'text-success' : latencyTone(pr.ttfb_ms) === 'ok' ? 'text-muted-foreground' : 'text-warning-fg'}>
-                                                                    {pr.ttfb_ms} мс
-                                                                  </span>
+                                                                    {pr.ttfb_ms} {S.poolEditor.ms}</span>
                                                                 /* Причину показываем целиком: «не работает» без
                                                                    причины заставляет угадывать между ключом,
                                                                    транспортом и мёртвым сервером — а движок это
                                                                    различает. */
-                                                                : <span className="text-destructive" title={pr.why}>{pr.why || 'не отвечает'}</span>)
+                                                                : <span className="text-destructive" title={pr.why}>{pr.why || S.poolEditor.neOtvechaet}</span>)
                                                             : undefined
                                                         }
                                                     />
@@ -777,8 +770,8 @@ export default function PoolEditor({
                                                         /* Имя узла в подписи не повторяется: строка рядом уже
                                                            названа им, а второй элемент с тем же именем путал
                                                            бы и читалку, и стенды. */
-                                                        aria-label="проверить отклик"
-                                                        title={`проверить отклик: ${label}`}
+                                                        aria-label={S.poolEditor.proveritOtklik}
+                                                        title={S.poolEditor.proveritOtklik2(label)}
                                                         onClick={() => void probe.probeOne(probeSub(s.path, proto), nd.index)}
                                                     >
                                                         <Gauge className="h-3.5 w-3.5" aria-hidden="true" />
@@ -793,7 +786,7 @@ export default function PoolEditor({
                                                     onClick={() => setOpenSubs((m) => ({ ...m, [s.path]: !m[s.path] }))}
                                                     className="w-full rounded-lg bg-transparent px-2.5 py-1.5 text-left text-xs text-primary hover:bg-accent focus:outline-none focus-visible:ring-2 focus-visible:ring-primary"
                                                 >
-                                                    {folded ? `показать все ${all.length} локаций` : 'свернуть'}
+                                                    {folded ? S.poolEditor.pokazatVseLokatsiy(all.length) : S.poolEditor.svernut}
                                                 </button>
                                             </li>
                                         )}
@@ -802,12 +795,11 @@ export default function PoolEditor({
                             )
                         })}
 
-                        <Group head={<CardHead title="Свои туннели" />}>
+                        <Group head={<CardHead title={S.poolEditor.svoiTunneli} />}>
                             <ul className="divide-y divide-border">
                                 {offered.length === 0 && (
                                     <li className="py-3 text-xs text-muted-foreground">
-                                        туннельных устройств нет
-                                    </li>
+                                        {S.poolEditor.tunnelnyhUstroystvNet}</li>
                                 )}
                                 {offered.map((t) => {
                                     const on = has({ kind: 'dev', dev: t.name })
@@ -828,7 +820,7 @@ export default function PoolEditor({
                                                 onClick={() => toggleDev(t.name)}
                                                 dot={t.up}
                                                 title={t.name}
-                                                hint={busy && !on ? 'занято другим выходом' : owner ? `выход ${owner}` : t.kind}
+                                                hint={busy && !on ? S.poolEditor.zanyatoDrugimVyhodom : owner ? S.poolEditor.vyhod(owner) : t.kind}
                                             />
                                         </li>
                                     )
@@ -851,17 +843,17 @@ export default function PoolEditor({
                         эти два варианта не встали: на 390 пикселях «остановить трафик»
                         обрезалось до «остановить тра…». */}
                     <Block className="order-first xl:order-none">
-                        <Field label="имя выхода">
+                        <Field label={S.poolEditor.imyaVyhoda}>
                             <input
                                 value={title}
                                 onChange={(e) => setTitle(e.currentTarget.value)}
-                                placeholder="имя выхода"
-                                aria-label="имя выхода"
+                                placeholder={S.poolEditor.imyaVyhoda}
+                                aria-label={S.poolEditor.imyaVyhoda}
                                 className={`${inputCls} w-full`}
                             />
                         </Field>
                         <div className="border-t border-border pt-1">
-                            <FieldRow label="Если всё упало">
+                            <FieldRow label={S.poolEditor.esliVseUpalo}>
                                 <select
                                     value={onFail}
                                     onChange={(e) => setOnFail(e.currentTarget.value as OnFail)}
@@ -876,13 +868,12 @@ export default function PoolEditor({
                     </Block>
 
                     <Block className="order-first xl:order-none">
-                        <CardHead title="Порядок предпочтения" meta={rows.length || undefined} />
+                        <CardHead title={S.poolEditor.poryadokPredpochteniya} meta={rows.length || undefined} />
                             {rows.length === 0 ? (
                                 <p className="text-xs text-muted-foreground">
-                                    ничего не выбрано — отметьте локации или туннели в списке «Что можно взять»
-                                </p>
+                                    {S.poolEditor.nichegoNeVybranoOtmette}</p>
                             ) : (
-                                <ol aria-label="порядок предпочтения">
+                                <ol aria-label={S.poolEditor.poryadokPredpochteniya2}>
                                     {rows.map((r, i) => {
                                         const nd = r.kind === 'node' ? nodeOf(r.sub, r.idx, r.proto) : undefined
                                         const cc = r.kind === 'node' ? ccFromName(nd?.name) : undefined
@@ -890,8 +881,8 @@ export default function PoolEditor({
                                             r.kind === 'dev'
                                                 ? r.dev
                                                 : r.kind === 'any'
-                                                  ? 'любая рабочая'
-                                                  : plainName(nd?.name) || `узел ${r.idx + 1}`
+                                                  ? S.poolEditor.lyubayaRabochaya
+                                                  : plainName(nd?.name) || S.poolEditor.uzel(r.idx + 1)
                                         /* Протокол назван у строки hysteria2 и у любой строки смешанной
                                            подписки: иначе «узел 3» двух клиентов не отличить. */
                                         const hint = r.kind === 'dev'
@@ -969,15 +960,15 @@ export default function PoolEditor({
                                                 )}
                                                 {pools && (
                                                     <>
-                                                        <IconBtn label={`строка ${i + 1} выше`} onClick={() => move(i, i - 1)} disabled={i === 0}>
+                                                        <IconBtn label={S.poolEditor.strokaVyshe(i + 1)} onClick={() => move(i, i - 1)} disabled={i === 0}>
                                                             <ArrowUp className="h-4 w-4" />
                                                         </IconBtn>
-                                                        <IconBtn label={`строка ${i + 1} ниже`} onClick={() => move(i, i + 1)} disabled={i === rows.length - 1}>
+                                                        <IconBtn label={S.poolEditor.strokaNizhe(i + 1)} onClick={() => move(i, i + 1)} disabled={i === rows.length - 1}>
                                                             <ArrowDown className="h-4 w-4" />
                                                         </IconBtn>
                                                     </>
                                                 )}
-                                                <IconBtn label={`убрать строку ${i + 1}`} onClick={() => setRows(rows.filter((_, k) => k !== i))} danger>
+                                                <IconBtn label={S.poolEditor.ubratStroku(i + 1)} onClick={() => setRows(rows.filter((_, k) => k !== i))} danger>
                                                     <X className="h-4 w-4" />
                                                 </IconBtn>
                                             </li>
@@ -986,13 +977,9 @@ export default function PoolEditor({
                                 </ol>
                             )}
                             <p className="text-xs text-muted-foreground">
-                                Первая живая строка забирает трафик; когда верхняя оживает, трафик
-                                возвращается к ней сам.
-                                {pools && (
+                                {S.poolEditor.pervayaZhivayaStrokaZabiraet}{pools && (
                                     <>
-                                        {' '}Строки можно тащить мышью или переставлять стрелками, локации
-                                        разных подписок — в любом порядке.
-                                    </>
+                                        {' '}{S.poolEditor.strokiMozhnoTaschitMyshyu}</>
                                 )}
                                 {subsInRows.size > 0 && rows.length > 1 && pools && (
                                     <>
@@ -1002,9 +989,7 @@ export default function PoolEditor({
                                           * сторож движка — он ходит раз в минуту. Человеку нужно
                                           * только само время: от него зависит, как он расставит
                                           * строки. */}
-                                        {' '}Между соседними локациями одной подписки трафик
-                                        переходит за секунды, между остальными строками — до минуты.
-                                    </>
+                                        {' '}{S.poolEditor.mezhduSosednimiLokatsiyamiOdnoy}</>
                                 )}
                             </p>
                     </Block>
@@ -1026,8 +1011,7 @@ export default function PoolEditor({
                     {name && (
                         <div className="order-last xl:order-none">
                             <DangerButton full onClick={remove}>
-                                <Trash2 aria-hidden="true" /> Удалить
-                            </DangerButton>
+                                <Trash2 aria-hidden="true" /> {S.poolEditor.udalit}</DangerButton>
                         </div>
                     )}
                 </div>

@@ -8,6 +8,7 @@ import { rpc } from '@/lib/rpc'
 import { ON_FAIL_TEXT, isPart, type GroupPick, type OnFail, type Output, type Spec } from '@/lib/model'
 import { type Live } from '@/lib/live'
 
+import { S } from '@/copy'
 /** Группа выходов: несколько выходов под одним именем, из которых движок выбирает один.
  *
  *  Правило ведёт в группу так же, как в любой выход; какой член несёт трафик, решает способ
@@ -28,10 +29,10 @@ import { type Live } from '@/lib/live'
 const NAME_RE = /^[A-Za-z0-9_-]{1,24}$/
 
 const PICK_TEXT: Record<GroupPick, { title: string; hint: string }> = {
-    order: { title: 'Первый живой', hint: 'по порядку; вернётся на верхний, когда он оживёт' },
-    latency: { title: 'Самый быстрый', hint: 'по замеру задержки' },
-    manual: { title: 'Выбор вручную', hint: 'член выбираете вы, без применения' },
-    balance: { title: 'Поровну по весам', hint: 'новые соединения раздаются по живым членам' },
+    order: { title: S.groupEditor.pervyyZhivoy, hint: S.groupEditor.poPoryadkuVernetsyaNa },
+    latency: { title: S.groupEditor.samyyBystryy, hint: S.groupEditor.poZameruZaderzhki },
+    manual: { title: S.groupEditor.vyborVruchnuyu, hint: S.groupEditor.chlenVybiraeteVyBez },
+    balance: { title: S.groupEditor.porovnuPoVesam, hint: S.groupEditor.novyeSoedineniyaRazdayutsyaPo },
 }
 
 /** Группы, в которых `name` лежит членом (прямо или через вложенные): такую группу в члены
@@ -98,9 +99,9 @@ export default function GroupEditor({ spec, name, live, onSave, onCancel }: {
 
     function save() {
         const n = title.trim()
-        if (!NAME_RE.test(n)) { notify('Имя: латиница, цифры, дефис или подчёркивание', 'warning'); return }
-        if (n !== name && spec.outputs[n]) { notify(`Выход «${n}» уже есть`, 'warning'); return }
-        if (!members.length) { notify('Выберите хотя бы один выход', 'warning'); return }
+        if (!NAME_RE.test(n)) { notify(S.groupEditor.imyaLatinitsaTsifryDefis, 'warning'); return }
+        if (n !== name && spec.outputs[n]) { notify(S.groupEditor.vyhodUzheEst(n), 'warning'); return }
+        if (!members.length) { notify(S.groupEditor.vyberiteHotyaByOdin, 'warning'); return }
         const g: Output = { name: n, kind: 'group', pick, members, on_fail: onFail }
         if (pick === 'manual' && def && members.includes(def)) g.default = def
         if (pick === 'latency') {
@@ -126,9 +127,9 @@ export default function GroupEditor({ spec, name, live, onSave, onCancel }: {
     function remove() {
         if (!name) return
         const used = spec.channels.filter((c) => c.out === name).map((c) => c.name)
-        if (used.length) { notify(`Выход «${name}» занят правилами: ${used.join(', ')}`, 'warning'); return }
+        if (used.length) { notify(S.groupEditor.vyhodZanyatPravilami(name, used.join(', ')), 'warning'); return }
         const holders = Object.entries(spec.outputs).filter(([, o]) => o.kind === 'group' && o.members?.includes(name)).map(([k]) => k)
-        if (holders.length) { notify(`Выход «${name}» входит в группы: ${holders.join(', ')}`, 'warning'); return }
+        if (holders.length) { notify(S.groupEditor.vyhodVhoditVGruppy(name, holders.join(', ')), 'warning'); return }
         const outputs = { ...spec.outputs }
         delete outputs[name]
         onSave({ ...spec, outputs })
@@ -138,8 +139,8 @@ export default function GroupEditor({ spec, name, live, onSave, onCancel }: {
         if (!name) return
         try {
             const r = await rpc.groupSelect(name, member)
-            if (!r.ok) throw new Error(r.error || 'не получилось')
-            notify(`Выбран ${member}`)
+            if (!r.ok) throw new Error(r.error || S.groupEditor.nePoluchilos)
+            notify(S.groupEditor.vybran(member))
             live?.refresh()
         } catch (e) {
             notify(String(e instanceof Error ? e.message : e), 'error')
@@ -151,30 +152,29 @@ export default function GroupEditor({ spec, name, live, onSave, onCancel }: {
     return (
         <div className="space-y-4">
             <ScreenHeader
-                title={name || 'Добавить группу'}
+                title={name || S.groupEditor.dobavitGruppu}
                 back={onCancel}
-                backLabel="Отмена"
+                backLabel={S.groupEditor.otmena}
                 right={
                     <Button onClick={save}>
-                        <Check className="h-4 w-4" aria-hidden="true" /> Сохранить группу
-                    </Button>
+                        <Check className="h-4 w-4" aria-hidden="true" /> {S.groupEditor.sohranitGruppu}</Button>
                 }
             />
 
             <div className="grid gap-4 xl:grid-cols-2">
                 <div className="min-w-0 space-y-4">
                 <Block>
-                    <Field label="имя группы">
+                    <Field label={S.groupEditor.imyaGruppy}>
                         <input
                             value={title}
                             onChange={(e) => setTitle(e.currentTarget.value)}
-                            placeholder="имя группы"
-                            aria-label="имя группы"
+                            placeholder={S.groupEditor.imyaGruppy}
+                            aria-label={S.groupEditor.imyaGruppy}
                             className={`${inputCls} w-full`}
                         />
                     </Field>
                     <div className="border-t border-border pt-1">
-                        <FieldRow label="Если все члены упали">
+                        <FieldRow label={S.groupEditor.esliVseChlenyUpali}>
                             <select
                                 value={onFail}
                                 onChange={(e) => setOnFail(e.currentTarget.value as OnFail)}
@@ -188,7 +188,7 @@ export default function GroupEditor({ spec, name, live, onSave, onCancel }: {
                     </div>
                 </Block>
                 <Block>
-                    <CardHead title="Как выбирать" />
+                    <CardHead title={S.groupEditor.kakVybirat} />
                     <div className="divide-y divide-border">
                         {(Object.keys(PICK_TEXT) as GroupPick[]).map((p) => (
                             <div key={p} className="py-1">
@@ -201,10 +201,10 @@ export default function GroupEditor({ spec, name, live, onSave, onCancel }: {
                     </div>
                 {pick === 'latency' && (
                             <div className="grid gap-3 border-t border-border pt-3 sm:grid-cols-2">
-                                <NumField label="Допуск, мс" value={tolerance} onChange={setTolerance} placeholder="50" min={0} max={60000} />
-                                <NumField label="Замер раз в, с" value={interval} onChange={setInterval} placeholder="180" min={5} max={86400} />
+                                <NumField label={S.groupEditor.dopuskMs} value={tolerance} onChange={setTolerance} placeholder="50" min={0} max={60000} />
+                                <NumField label={S.groupEditor.zamerRazVS} value={interval} onChange={setInterval} placeholder="180" min={5} max={86400} />
                                 <div className="sm:col-span-2">
-                                    <Field label="Адрес проверки">
+                                    <Field label={S.groupEditor.adresProverki}>
                                         <input
                                             value={url}
                                             onChange={(e) => setUrl(e.currentTarget.value)}
@@ -220,9 +220,9 @@ export default function GroupEditor({ spec, name, live, onSave, onCancel }: {
 
                 <div className="min-w-0 space-y-4">
                 <Block>
-                    <CardHead title="Члены" meta={members.length || undefined} />
+                    <CardHead title={S.groupEditor.chleny} meta={members.length || undefined} />
                         {candidates.length === 0 && (
-                            <p className="text-sm text-muted-foreground">Других выходов пока нет — сначала заведите их.</p>
+                            <p className="text-sm text-muted-foreground">{S.groupEditor.drugihVyhodovPokaNet}</p>
                         )}
                         <div className="flex flex-wrap gap-2">
                             {candidates.map((n) => (
@@ -239,8 +239,8 @@ export default function GroupEditor({ spec, name, live, onSave, onCancel }: {
                                         <span className="min-w-0 flex-1 truncate font-medium">{m}</span>
                                         {g && (
                                             <span className="shrink-0 text-xs text-muted-foreground">
-                                                {g.selected === m ? 'несёт трафик' : g.alive.includes(m) ? 'жив' : 'не отвечает'}
-                                                {g.latency?.[m] !== undefined ? ` · ${g.latency[m]} мс` : ''}
+                                                {g.selected === m ? S.groupEditor.nesetTrafik : g.alive.includes(m) ? S.groupEditor.zhiv : S.groupEditor.neOtvechaet}
+                                                {g.latency?.[m] !== undefined ? S.groupEditor.ms(g.latency[m]) : ''}
                                             </span>
                                         )}
                                         {pick === 'balance' && (
@@ -249,7 +249,7 @@ export default function GroupEditor({ spec, name, live, onSave, onCancel }: {
                                                 min={1}
                                                 max={100}
                                                 value={weights[i] ?? 1}
-                                                aria-label={`вес ${m}`}
+                                                aria-label={S.groupEditor.ves(m)}
                                                 onChange={(e) => {
                                                     const v = Math.max(1, Math.min(100, Number(e.currentTarget.value) || 1))
                                                     setWeights((w) => members.map((_, k) => (k === i ? v : (w[k] ?? 1))))
@@ -259,17 +259,17 @@ export default function GroupEditor({ spec, name, live, onSave, onCancel }: {
                                         )}
                                         {pick === 'manual' && (
                                             <span className="flex shrink-0 gap-1">
-                                                <Chip on={def === m || (!def && i === 0)} onClick={() => setDef(m)}>по умолчанию</Chip>
+                                                <Chip on={def === m || (!def && i === 0)} onClick={() => setDef(m)}>{S.groupEditor.poUmolchaniyu}</Chip>
                                                 {name && g && (
-                                                    <Button size="sm" variant="secondary" onClick={() => void choose(m)}>Выбрать</Button>
+                                                    <Button size="sm" variant="secondary" onClick={() => void choose(m)}>{S.groupEditor.vybrat}</Button>
                                                 )}
                                             </span>
                                         )}
-                                        <button type="button" aria-label="выше" onClick={() => move(i, i - 1)} disabled={i === 0}
+                                        <button type="button" aria-label={S.groupEditor.vyshe} onClick={() => move(i, i - 1)} disabled={i === 0}
                                             className="sp-row bg-transparent p-0 text-muted-foreground disabled:opacity-30">
                                             <ArrowUp className="h-4 w-4" />
                                         </button>
-                                        <button type="button" aria-label="ниже" onClick={() => move(i, i + 1)} disabled={i === members.length - 1}
+                                        <button type="button" aria-label={S.groupEditor.nizhe} onClick={() => move(i, i + 1)} disabled={i === members.length - 1}
                                             className="sp-row bg-transparent p-0 text-muted-foreground disabled:opacity-30">
                                             <ArrowDown className="h-4 w-4" />
                                         </button>
@@ -278,13 +278,12 @@ export default function GroupEditor({ spec, name, live, onSave, onCancel }: {
                             </ol>
                         )}
                         {pick === 'manual' && g?.select && (
-                            <p className="text-xs text-muted-foreground">Выбран: {g.select}</p>
+                            <p className="text-xs text-muted-foreground">{S.groupEditor.vybran2}{g.select}</p>
                         )}
                 </Block>
                 {name && (
                     <DangerButton full onClick={remove}>
-                        <Trash2 aria-hidden="true" /> Удалить
-                    </DangerButton>
+                        <Trash2 aria-hidden="true" /> {S.groupEditor.udalit}</DangerButton>
                 )}
                 </div>
             </div>

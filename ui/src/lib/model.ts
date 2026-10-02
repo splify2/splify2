@@ -1,3 +1,4 @@
+import { S } from '@/copy'
 // The shapes this UI edits and displays. They mirror steer's spec and status
 // one-to-one on purpose: the dashboard is an editor for the engine's config, and
 // every extra layer of its own vocabulary would be one more place for the two to
@@ -268,9 +269,9 @@ export interface OutputStatus extends Output {
 }
 
 export const ON_FAIL_TEXT: Record<OnFail, string> = {
-    drop: 'остановить трафик',
-    direct: 'пустить напрямую',
-    zapret: 'напрямую через zapret',
+    drop: S.model.ostanovitTrafik,
+    direct: S.model.pustitNapryamuyu,
+    zapret: S.model.napryamuyuCherezZapret,
 }
 
 /** fake-IP is precise per domain; real-IP keeps traceroute hops legible and loses
@@ -1096,7 +1097,7 @@ export function expandNarrow(spec: Spec): Spec {
             const { match: _m, ...head } = plain
             channels.push({
                 ...head,
-                name: i ? `${plain.name} (порты ${i + 1})` : `${plain.name} (порты)`,
+                name: i ? S.model.porty(plain.name, i + 1) : S.model.porty2(plain.name),
                 part_of: plain.name,
                 match: {
                     prefixes_files: g.files,
@@ -1171,7 +1172,7 @@ export function customServices(
         out.push({
             id: `custom:${domains ? 'domains' : 'prefixes'}:${name}`,
             name,
-            description: domains ? 'свой список доменов' : 'свой список подсетей',
+            description: domains ? S.model.svoySpisokDomenov : S.model.svoySpisokPodsetey,
             prefixes: domains ? [] : [file],
             domains: domains ? [file] : [],
             count: info.count,

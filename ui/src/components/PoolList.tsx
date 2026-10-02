@@ -12,6 +12,7 @@ import { devList, EMPTY_SPEC, isPart, type Spec } from '@/lib/model'
 import { subsRemember, subsRemembered, type SubRow } from '@/lib/subs'
 import { type Live } from '@/lib/live'
 
+import { S } from '@/copy'
 /** Выходы: во что правила ведут трафик.
  *
  *  Строка выхода читается как в дизайн-паке — «имя · через что идёт сейчас», а под ней состав
@@ -29,10 +30,10 @@ import { type Live } from '@/lib/live'
 const GROUP_PREFIX = 'group:'
 
 const GROUP_PICK: Record<string, string> = {
-    order: 'первый живой',
-    latency: 'самый быстрый',
-    manual: 'выбор вручную',
-    balance: 'по весам',
+    order: S.poolList.pervyyZhivoy,
+    latency: S.poolList.samyyBystryy,
+    manual: S.poolList.vyborVruchnuyu,
+    balance: S.poolList.poVesam,
 }
 
 export default function PoolList({
@@ -62,7 +63,7 @@ export default function PoolList({
     }, [])
     const subTitle = (path?: string) => {
         const s = subs.find((x) => x.path === path)
-        return s?.title || s?.name || 'подписка'
+        return s?.title || s?.name || S.poolList.podpiska
     }
 
     useEffect(() => {
@@ -91,7 +92,7 @@ export default function PoolList({
         pending.edit(next)
     }
 
-    if (!spec) return <div className="p-5 text-sm text-muted-foreground">Загрузка…</div>
+    if (!spec) return <div className="p-5 text-sm text-muted-foreground">{S.poolList.zagruzka}</div>
 
     if (editing !== null && editing.startsWith(GROUP_PREFIX)) {
         return (
@@ -135,32 +136,29 @@ export default function PoolList({
     const adds = (
         <div className="grid gap-2 sm:grid-cols-2">
             <Button variant="secondary" className="h-10 w-full" onClick={() => setEditing(GROUP_PREFIX)}>
-                <Layers className="h-4 w-4" aria-hidden="true" /> Добавить группу
-            </Button>
+                <Layers className="h-4 w-4" aria-hidden="true" /> {S.poolList.dobavitGruppu}</Button>
             <Button className="h-10 w-full" onClick={() => setEditing('')}>
-                <Plus className="h-4 w-4" aria-hidden="true" /> Добавить выход
-            </Button>
+                <Plus className="h-4 w-4" aria-hidden="true" /> {S.poolList.dobavitVyhod}</Button>
         </div>
     )
 
     return (
         <div className="space-y-3">
             {rows.length === 0 ? (
-                <Group head={<CardHead title="Выходы" />}>
+                <Group head={<CardHead title={S.poolList.vyhody} />}>
                     <Empty
                         icon={Globe}
                         text={
                             <>
-                                <span className="block font-medium text-foreground">Выходов нет</span>
+                                <span className="block font-medium text-foreground">{S.poolList.vyhodovNet}</span>
                                 <span className="mt-1 block text-xs">
-                                    Добавьте выход (свой туннель или подписку), чтобы правила могли направлять через него трафик.
-                                </span>
+                                    {S.poolList.dobavteVyhodSvoyTunnel}</span>
                             </>
                         }
                     />
                 </Group>
             ) : (
-                <Group head={<CardHead title="Выходы" meta={rows.length} />}>
+                <Group head={<CardHead title={S.poolList.vyhody} meta={rows.length} />}>
                     {rows.map(([name, o]) => {
                         const st = live.status?.outputs?.[name]
                         const g = geo[name]
@@ -171,15 +169,15 @@ export default function PoolList({
                         const need = missingModule(o, live.build?.modules)
                         const state =
                             need
-                                ? `нужен пакет steer-${need}`
+                                ? S.poolList.nuzhenPaketSteer(need)
                                 : o.kind === 'direct'
-                                ? 'напрямую, мимо туннеля'
+                                ? S.poolList.napryamuyuMimoTunnelya
                                 : o.kind === 'zapret'
                                   /* У этого выхода нет ни устройства, ни страны: трафик
                                      уходит обычным маршрутом, меняется только то, что с ним
                                      по дороге сделает обход. Показывать ему «устройство не
                                      выбрано» значило бы обещать устройство. */
-                                  ? ['обход DPI', rules ? `правил: ${rules}` : '']
+                                  ? [S.poolList.obhodDpi, rules ? S.poolList.pravil(rules) : '']
                                         .filter(Boolean)
                                         .join(' · ')
                                   : o.kind === 'group'
@@ -187,16 +185,16 @@ export default function PoolList({
                                        кого она собрана. */
                                     ? [
                                         GROUP_PICK[o.pick || 'order'],
-                                        st?.group?.selected ? `сейчас: ${st.group.selected}` : st?.group ? 'члены не отвечают' : '',
-                                        `членов: ${o.members?.length ?? 0}`,
-                                        rules ? `правил: ${rules}` : '',
+                                        st?.group?.selected ? S.poolList.seychas(st.group.selected) : st?.group ? S.poolList.chlenyNeOtvechayut : '',
+                                        S.poolList.chlenov(o.members?.length ?? 0),
+                                        rules ? S.poolList.pravil(rules) : '',
                                       ]
                                           .filter(Boolean)
                                           .join(' · ')
                                   : [
                                       country(g?.cc),
                                       o.kind === 'vless' || o.kind === 'hysteria2'
-                                          ? 'подписка'
+                                          ? S.poolList.podpiska
                                           : devs
                                                 /* Устройство служебной части называется
                                                    подпиской, которой оно принадлежит: имя
@@ -205,9 +203,9 @@ export default function PoolList({
                                                     const p = spec.outputs[d]
                                                     return p && isPart(p) ? subTitle(p.sub_file) : d
                                                 })
-                                                .join(' → ') || 'устройство не выбрано',
-                                      g?.ms ? `${g.ms} мс` : '',
-                                      rules ? `правил: ${rules}` : '',
+                                                .join(' → ') || S.poolList.ustroystvoNeVybrano,
+                                      g?.ms ? S.poolList.ms(g.ms) : '',
+                                      rules ? S.poolList.pravil(rules) : '',
                                   ]
                                       .filter(Boolean)
                                       .join(' · ')

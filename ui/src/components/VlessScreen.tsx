@@ -9,6 +9,7 @@ import { isSubSource } from '@/lib/validate'
 import { agoText } from '@/lib/quota'
 import { subsRemember, subsRemembered } from '@/lib/subs'
 
+import { S } from '@/copy'
 /** VLESS: откуда берутся узлы.
  *
  *  ПОДПИСОК НЕСКОЛЬКО. Их и правда бывает несколько — у человека две панели, — и раньше это
@@ -51,16 +52,16 @@ interface Sub {
  *  свободное число здесь означало бы ещё и разбор ошибок ввода ради значения, которых
  *  осмысленных десяток. */
 const AUTO_CHOICES: { min: number; label: string }[] = [
-    { min: 0, label: 'вручную' },
-    { min: 30, label: 'каждые 30 минут' },
-    { min: 60, label: 'каждый час' },
-    { min: 120, label: 'каждые 2 часа' },
-    { min: 180, label: 'каждые 3 часа' },
-    { min: 360, label: 'каждые 6 часов' },
-    { min: 720, label: 'каждые 12 часов' },
-    { min: 1440, label: 'раз в сутки' },
-    { min: 2880, label: 'раз в двое суток' },
-    { min: 4320, label: 'раз в трое суток' },
+    { min: 0, label: S.vlessScreen.vruchnuyu },
+    { min: 30, label: S.vlessScreen.kazhdye30Minut },
+    { min: 60, label: S.vlessScreen.kazhdyyChas },
+    { min: 120, label: S.vlessScreen.kazhdye2Chasa },
+    { min: 180, label: S.vlessScreen.kazhdye3Chasa },
+    { min: 360, label: S.vlessScreen.kazhdye6Chasov },
+    { min: 720, label: S.vlessScreen.kazhdye12Chasov },
+    { min: 1440, label: S.vlessScreen.razVSutki },
+    { min: 2880, label: S.vlessScreen.razVDvoeSutok },
+    { min: 4320, label: S.vlessScreen.razVTroeSutok },
 ]
 
 /** Сколько осталось до следующего обновления. Роутер смотрит расписание раз в десять минут,
@@ -68,11 +69,11 @@ const AUTO_CHOICES: { min: number; label: string }[] = [
 function nextText(auto: number, at: number | undefined): string | null {
     if (!auto || !at) return null
     const left = Math.round((at * 1000 + auto * 60000 - Date.now()) / 60000)
-    if (left <= 0) return 'обновится при ближайшей проверке'
-    if (left < 60) return `следующее через ${left} мин`
+    if (left <= 0) return S.vlessScreen.obnovitsyaPriBlizhaysheyProverke
+    if (left < 60) return S.vlessScreen.sleduyuscheeCherezMin(left)
     const h = Math.round(left / 60)
-    if (h < 48) return `следующее через ${h} ч`
-    return `следующее через ${Math.round(h / 24)} д`
+    if (h < 48) return S.vlessScreen.sleduyuscheeCherezCh(h)
+    return S.vlessScreen.sleduyuscheeCherezD(Math.round(h / 24))
 }
 
 export default function VlessScreen() {
@@ -127,7 +128,7 @@ export default function VlessScreen() {
     async function add() {
         const src = url.trim()
         if (!isSubSource(src)) {
-            notify('Нужна ссылка подписки (http:// или https://) либо ссылка vless:// или hysteria2://', 'warning')
+            notify(S.vlessScreen.nuzhnaSsylkaPodpiskiHttp, 'warning')
             return
         }
         /* Имя файла узлов — латиница и цифры, и придумывать его человек не обязан: название
@@ -142,19 +143,19 @@ export default function VlessScreen() {
             n = `sub${i}`
         }
         if (!/^[A-Za-z0-9_-]{1,24}$/.test(n)) {
-            notify('Имя: латиница, цифры, дефис или подчёркивание', 'warning')
+            notify(S.vlessScreen.imyaLatinitsaTsifryDefis, 'warning')
             return
         }
         setBusy('__adding__')
         try {
             const r = await rpc.subSet(src, n, name.trim())
-            if (!r.ok) { notify(r.error || 'подписка не сохранилась', 'error'); return }
+            if (!r.ok) { notify(r.error || S.vlessScreen.podpiskaNeSohranilas, 'error'); return }
             if (r.warn) notify(r.warn, 'warning')
             /* «Пригодных узлов нет» говорится СРАЗУ, а не выясняется потом по туннелю, который
              * «настроен и не работает»: подписка скачалась, файл на месте, а поднимется он
              * никогда. Число считает движок тем же кодом, которым читает подписку при подъёме,
              * поэтому это обещание, а не оценка. */
-            else if (r.usable === 0) notify('Подписка скачалась, но пригодных узлов в ней нет', 'warning')
+            else if (r.usable === 0) notify(S.vlessScreen.podpiskaSkachalasNoPrigodnyh, 'warning')
             setName('')
             setUrl('')
             await load()
@@ -170,9 +171,9 @@ export default function VlessScreen() {
         setBusy(s.name)
         try {
             const r = await rpc.subSet(s.url, s.name, s.title || '')
-            if (!r.ok) notify(r.error || 'подписка не скачалась', 'error')
+            if (!r.ok) notify(r.error || S.vlessScreen.podpiskaNeSkachalas, 'error')
             else if (r.warn) notify(r.warn, 'warning')
-            else if (r.usable === 0) notify('Подписка обновилась, но пригодных узлов в ней нет', 'warning')
+            else if (r.usable === 0) notify(S.vlessScreen.podpiskaObnovilasNoPrigodnyh, 'warning')
             await load()
         } catch (e) {
             notify(String(e instanceof Error ? e.message : e), 'error')
@@ -185,7 +186,7 @@ export default function VlessScreen() {
         setBusy(s.name)
         try {
             const r = await rpc.subAuto(s.name, minutes)
-            if (!r.ok) { notify(r.error || 'не вышло задать обновление', 'error'); return }
+            if (!r.ok) { notify(r.error || S.vlessScreen.neVyshloZadatObnovlenie, 'error'); return }
             await load()
         } catch (e) {
             notify(String(e instanceof Error ? e.message : e), 'error')
@@ -198,7 +199,7 @@ export default function VlessScreen() {
         setBusy(s.name)
         try {
             const r = await rpc.subDel(s.name)
-            if (!r.ok) { notify(r.error || 'подписка не удалилась', 'warning'); return }
+            if (!r.ok) { notify(r.error || S.vlessScreen.podpiskaNeUdalilas, 'warning'); return }
             await load()
         } catch (e) {
             notify(String(e instanceof Error ? e.message : e), 'error')
@@ -207,7 +208,7 @@ export default function VlessScreen() {
         }
     }
 
-    if (subs === null) return <div className="p-5 text-sm text-muted-foreground">Загрузка…</div>
+    if (subs === null) return <div className="p-5 text-sm text-muted-foreground">{S.vlessScreen.zagruzka}</div>
 
     return (
         <div className="space-y-4">
@@ -243,17 +244,17 @@ export default function VlessScreen() {
                             }
                         />
                         <div className="truncate font-mono text-xs text-subtle">
-                            {s.kind === 'links' ? 'ссылки vless://' : s.url || '—'}
+                            {s.kind === 'links' ? S.vlessScreen.ssylkiVless : s.url || '—'}
                         </div>
                     </div>
                     <div className="flex flex-wrap gap-x-3 gap-y-0.5 text-xs text-muted-foreground">
                         {s.present ? (
                             <>
                                 <span>{human(s.bytes || 0)}</span>
-                                {s.mtime ? <span>обновлена {agoText(Date.now() - s.mtime * 1000)}</span> : null}
+                                {s.mtime ? <span>{S.vlessScreen.obnovlena}{agoText(Date.now() - s.mtime * 1000)}</span> : null}
                             </>
                         ) : (
-                            <span className="text-warning-fg">не скачана</span>
+                            <span className="text-warning-fg">{S.vlessScreen.neSkachana}</span>
                         )}
                         {/* Число говорит, ЧЕМ ЗАНЯТА подписка, а не сколько в ней
                             узлов, и подпись обязана это называть. «выходов: 0» читалось
@@ -264,15 +265,15 @@ export default function VlessScreen() {
                             только что выбрал две. */}
                         <span>
                             {s.used
-                                ? `взята выходами: ${s.used}${s.used_nodes ? ` · локаций: ${s.used_nodes}` : ''}`
-                                : 'не используется'}
+                                ? S.vlessScreen.vzyataVyhodami(s.used, s.used_nodes ? S.vlessScreen.nodesUsed(s.used_nodes) : '')
+                                : S.vlessScreen.neIspolzuetsya}
                         </span>
                     </div>
                     {/* Обновление по часам есть только у подписки: вставленные руками
                         ссылки обновлять неоткуда. */}
                     {s.kind === 'url' && (
                         <div className="border-t border-border pt-1">
-                            <FieldRow label="Обновлять" caption={nextText(s.auto || 0, s.auto_at) || undefined}>
+                            <FieldRow label={S.vlessScreen.obnovlyat} caption={nextText(s.auto || 0, s.auto_at) || undefined}>
                                 <select
                                     id={`auto-${s.name}`}
                                     value={String(s.auto || 0)}
@@ -302,42 +303,42 @@ export default function VlessScreen() {
                                 ) : (
                                     <RefreshCw className="h-4 w-4" aria-hidden="true" />
                                 )}
-                                {busy === s.name ? 'Обновляем…' : 'Обновить'}
+                                {busy === s.name ? S.vlessScreen.obnovlyaem : S.vlessScreen.obnovit}
                             </Button>
                         )}
                         <DangerButton
                             full
                             onClick={() => void remove(s)}
                             disabled={busy === s.name}
-                            label={`удалить ${s.title || s.name}`}
+                            label={S.vlessScreen.udalit(s.title || s.name)}
                         >
                             {busy === s.name ? (
                                 <LoaderCircle className="animate-spin" aria-hidden="true" />
                             ) : (
                                 <Trash2 aria-hidden="true" />
                             )}
-                            {busy === s.name ? 'Удаляем…' : 'Удалить'}
+                            {busy === s.name ? S.vlessScreen.udalyaem : S.vlessScreen.udalit2}
                         </DangerButton>
                     </div>
                 </Block>
             ))}
 
             <Block>
-                <CardHead title="Добавить подписку" />
+                <CardHead title={S.vlessScreen.dobavitPodpisku} />
                 <div className="grid gap-2 sm:grid-cols-[10.5rem_minmax(0,1fr)]">
                     <input
                         value={name}
                         onChange={(e) => setName(e.currentTarget.value)}
-                        placeholder="имя (необязательно)"
-                        aria-label="имя подписки"
+                        placeholder={S.vlessScreen.imyaNeobyazatelno}
+                        aria-label={S.vlessScreen.imyaPodpiski}
                         className="h-10 w-full min-w-0 rounded-lg border border-border bg-background px-3 text-sm"
                     />
                     <input
                         value={url}
                         onChange={(e) => setUrl(e.currentTarget.value)}
                         onKeyDown={(e) => e.key === 'Enter' && add()}
-                        placeholder="ссылка подписки или vless://"
-                        aria-label="ссылка подписки"
+                        placeholder={S.vlessScreen.ssylkaPodpiskiIliVless}
+                        aria-label={S.vlessScreen.ssylkaPodpiski}
                         className="h-10 w-full min-w-0 rounded-lg border border-border bg-background px-3 font-mono text-[13px]"
                     />
                 </div>
@@ -347,7 +348,7 @@ export default function VlessScreen() {
                     ) : (
                         <Plus className="h-4 w-4" aria-hidden="true" />
                     )}
-                    {busy === '__adding__' ? 'Добавляем…' : 'Добавить'}
+                    {busy === '__adding__' ? S.vlessScreen.dobavlyaem : S.vlessScreen.dobavit}
                 </Button>
             </Block>
 

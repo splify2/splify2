@@ -10,6 +10,7 @@ import ApplyPill from '@/components/ApplyPill'
 import Home from '@/components/sections/Home'
 import EngineToggle from '@/components/EngineToggle'
 
+import { S } from '@/copy'
 /** Пульт: рельс разделов слева, работа справа.
  *
  *  Прежде здесь была строка вкладок, и одна из четырёх («Логи steer») собрала всё, что не
@@ -32,7 +33,7 @@ const Vpn = lazy(() => import('@/components/sections/Vpn'))
 const Dns = lazy(() => import('@/components/sections/Dns'))
 const Settings = lazy(() => import('@/components/sections/Settings'))
 
-const FALLBACK = <div className="p-5 text-sm text-muted-foreground">Загрузка…</div>
+const FALLBACK = <div className="p-5 text-sm text-muted-foreground">{S.console.zagruzka}</div>
 
 export default function Console() {
     const [section, setSection] = useState<SectionId>('home')
@@ -117,8 +118,7 @@ export default function Console() {
                                 savedFlash ? 'opacity-100' : 'opacity-0',
                             ].join(' ')}
                         >
-                            <Check className="h-3.5 w-3.5 text-success" aria-hidden="true" /> Сохранено
-                        </span>
+                            <Check className="h-3.5 w-3.5 text-success" aria-hidden="true" /> {S.console.sohraneno}</span>
                     </div>
 
                     {/* Имя раздела печатает ОБОЛОЧКА, а не сам раздел: оно обязано совпадать

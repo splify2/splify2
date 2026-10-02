@@ -7,6 +7,7 @@ import { rpc } from '@/lib/rpc'
 import { customServices } from '@/lib/model'
 import { toPunycodeList } from '@/lib/validate'
 
+import { S } from '@/copy'
 // Свои списки доменов и адресов.
 //
 // Вопрос задан снаружи: маршрутизировать можно было только то, что опубликовал издатель.
@@ -60,9 +61,9 @@ interface CustomMeta {
 /** Чем список завели — словами человека, а не именем поля. */
 function sourceText(m: CustomMeta | undefined) {
     if (!m || !m.source) return null
-    if (m.source === 'url') return m.url ? `ссылка ${m.url}` : 'ссылка'
-    if (m.source === 'file') return m.filename ? `файл ${m.filename}` : 'файл'
-    return 'записи вручную'
+    if (m.source === 'url') return m.url ? S.customLists.ssylka(m.url) : S.customLists.ssylka2
+    if (m.source === 'file') return m.filename ? S.customLists.fayl(m.filename) : S.customLists.fayl2
+    return S.customLists.zapisiVruchnuyu
 }
 
 export default function CustomLists({
@@ -113,8 +114,8 @@ export default function CustomLists({
         await loadMeta()
         notify(
             dropped
-                ? `Список «${listName}»: строк ${count}, отброшено ${dropped} — формат не подошёл`
-                : `Список «${listName}»: строк ${count}`,
+                ? S.customLists.spisokStrokOtbroshenoFormat(listName, count, dropped)
+                : S.customLists.spisokStrok(listName, count),
             dropped ? 'warning' : 'info',
         )
         setText('')
@@ -140,7 +141,7 @@ export default function CustomLists({
                 ? { ...payload, text: toPunycodeList(payload.text) }
                 : payload
             const r = await rpc.listPut({ ...target, ...body, source })
-            if (!r.ok) throw new Error(r.error || (payload.url ? 'не скачалось' : 'не сохранилось'))
+            if (!r.ok) throw new Error(r.error || (payload.url ? S.customLists.neSkachalos : S.customLists.neSohranilos))
             await done(target.name, r.count ?? 0, r.dropped ?? 0)
             setEditing(null)
         } catch (e) {
@@ -151,14 +152,14 @@ export default function CustomLists({
     }
 
     async function putText() {
-        if (!nameOk) { notify('Имя списка: латиница, цифры, дефис и подчёркивание', 'warning'); return }
-        if (!text.trim()) { notify('Список пуст', 'warning'); return }
+        if (!nameOk) { notify(S.customLists.imyaSpiskaLatinitsaTsifry, 'warning'); return }
+        if (!text.trim()) { notify(S.customLists.spisokPust, 'warning'); return }
         await put({ name, kind }, { text }, 'text')
     }
 
     async function putUrl() {
-        if (!nameOk) { notify('Имя списка: латиница, цифры, дефис и подчёркивание', 'warning'); return }
-        if (!/^https?:\/\//.test(url.trim())) { notify('Ссылка должна начинаться с http:// или https://', 'warning'); return }
+        if (!nameOk) { notify(S.customLists.imyaSpiskaLatinitsaTsifry, 'warning'); return }
+        if (!/^https?:\/\//.test(url.trim())) { notify(S.customLists.ssylkaDolzhnaNachinatsyaS, 'warning'); return }
         await put({ name, kind }, { url: url.trim() }, 'url')
     }
 
@@ -186,7 +187,7 @@ export default function CustomLists({
                     source: 'file',
                     filename: i === 0 ? file.name : undefined,
                 })
-                if (!r.ok) throw new Error(r.error || 'не сохранилось')
+                if (!r.ok) throw new Error(r.error || S.customLists.neSohranilos)
                 count = r.count ?? count
                 dropped += r.dropped ?? 0
             }
@@ -203,11 +204,11 @@ export default function CustomLists({
         setBusy(true)
         try {
             const r = await rpc.listRemoveCustom(listName, listKind)
-            if (!r.ok) throw new Error(r.error || 'не удалось удалить')
+            if (!r.ok) throw new Error(r.error || S.customLists.neUdalosUdalit)
             await onChanged()
             await loadMeta()
             if (editing?.name === listName && editing?.kind === listKind) setEditing(null)
-            notify(`Список «${listName}» удалён`)
+            notify(S.customLists.spisokUdalen(listName))
         } catch (e) {
             notify(String(e instanceof Error ? e.message : e), 'error')
         } finally {
@@ -219,11 +220,9 @@ export default function CustomLists({
         /* Bode: карточкой приложения — заголовок со счётчиком, списки строками через линию
            (имя, под ним вид и число записей), действия у правого края. */
         <Block>
-            <CardHead title="Свои списки" meta={mine.length ? `списков: ${mine.length}` : undefined} />
+            <CardHead title={S.customLists.svoiSpiski} meta={mine.length ? S.customLists.spiskov(mine.length) : undefined} />
             <p className="text-xs text-muted-foreground">
-                Домены и подсети, которых нет у издателя. После добавления список появится в
-                редакторе правил рядом с остальными — сам по себе он ничего не меняет.
-            </p>
+                {S.customLists.domenyIPodsetiKotoryh}</p>
 
             {mine.length > 0 && (
                 <ul className="divide-y divide-border text-sm">
@@ -238,7 +237,7 @@ export default function CustomLists({
                                     <span className="min-w-0 flex-1">
                                         <span className="block truncate font-medium">{sv.name}</span>
                                         <span className="mt-0.5 block truncate text-xs text-subtle">
-                                            {svKind === 'domains' ? 'домены' : 'подсети'} · записей {sv.count}
+                                            {svKind === 'domains' ? S.customLists.domeny : S.customLists.podseti} {S.customLists.zapisey}{sv.count}
                                             {from ? ` · ${from}` : ''}
                                         </span>
                                     </span>
@@ -246,7 +245,7 @@ export default function CustomLists({
                                         size="sm"
                                         variant="ghost"
                                         disabled={busy}
-                                        aria-label={`Изменить список ${sv.name}`}
+                                        aria-label={S.customLists.izmenitSpisok(sv.name)}
                                         onClick={() =>
                                             setEditing(
                                                 open
@@ -270,7 +269,7 @@ export default function CustomLists({
                                         size="sm"
                                         variant="ghost"
                                         disabled={busy}
-                                        aria-label={`Удалить список ${sv.name}`}
+                                        aria-label={S.customLists.udalitSpisok(sv.name)}
                                         onClick={() => remove(sv.name, svKind)}
                                     >
                                         <Trash2 className="h-4 w-4" aria-hidden="true" />
@@ -298,25 +297,24 @@ export default function CustomLists({
                     <input
                         value={name}
                         onChange={(e) => setName(e.currentTarget.value)}
-                        placeholder="имя списка"
-                        aria-label="Имя списка"
+                        placeholder={S.customLists.imyaSpiska}
+                        aria-label={S.customLists.imyaSpiska2}
                         className="min-w-0 flex-1 rounded-md border border-input bg-transparent px-3 py-2 text-sm outline-none focus-visible:ring-1 focus-visible:ring-ring"
                     />
                     <select
                         value={kind}
                         onChange={(e) => setKind(e.currentTarget.value as 'domains' | 'prefixes')}
-                        aria-label="Вид списка"
+                        aria-label={S.customLists.vidSpiska}
                         className="rounded-md border border-input bg-transparent px-3 py-2 text-sm outline-none focus-visible:ring-1 focus-visible:ring-ring"
                     >
-                        <option value="domains">домены</option>
-                        <option value="prefixes">подсети</option>
+                        <option value="domains">{S.customLists.domeny}</option>
+                        <option value="prefixes">{S.customLists.podseti}</option>
                     </select>
                 </div>
                 {name && !nameOk && (
                     <p className="text-xs text-destructive">
                         {/* Ограничение отсюда: имя списка становится именем файла на роутере. */}
-                        только латиница, цифры, дефис и подчёркивание
-                    </p>
+                        {S.customLists.tolkoLatinitsaTsifryDefis}</p>
                 )}
 
                 <div>
@@ -324,24 +322,23 @@ export default function CustomLists({
                         value={text}
                         onChange={(e) => setText(e.currentTarget.value)}
                         rows={4}
-                        aria-label="Записи списка"
+                        aria-label={S.customLists.zapisiSpiska}
                         placeholder={
                             kind === 'domains'
-                                ? 'по одному имени на строку:\nexample.org\nsub.example.net'
-                                : 'по одной подсети на строку:\n10.0.0.0/8\n192.0.2.1'
+                                ? S.customLists.poOdnomuImeniNa
+                                : S.customLists.poOdnoyPodsetiNa
                         }
                         className="w-full rounded-md border border-input bg-transparent px-3 py-2 font-mono text-xs outline-none focus-visible:ring-1 focus-visible:ring-ring"
                     />
                     <div className="mt-2 flex flex-wrap items-center gap-2">
                         <Button onClick={putText} disabled={busy || !nameOk || !text.trim()}>
                             {busy ? <Loader2 className="h-4 w-4 animate-spin" /> : <Plus className="h-4 w-4" />}
-                            Сохранить
-                        </Button>
+                            {S.customLists.sohranit}</Button>
                         <input
                             ref={fileRef}
                             type="file"
                             accept=".lst,.txt,text/plain"
-                            aria-label="Файл со списком"
+                            aria-label={S.customLists.faylSoSpiskom}
                             disabled={busy || !nameOk}
                             onChange={(e) => {
                                 const f = e.currentTarget.files?.[0]
@@ -356,20 +353,17 @@ export default function CustomLists({
                     <input
                         value={url}
                         onChange={(e) => setUrl(e.currentTarget.value)}
-                        placeholder="https://… — скачает роутер"
-                        aria-label="Ссылка на список"
+                        placeholder={S.customLists.httpsSkachaetRouter}
+                        aria-label={S.customLists.ssylkaNaSpisok}
                         className="min-w-0 flex-1 rounded-md border border-input bg-transparent px-3 py-2 text-sm outline-none focus-visible:ring-1 focus-visible:ring-ring"
                     />
                     <Button variant="secondary" onClick={putUrl} disabled={busy || !nameOk || !url.trim()}>
-                        Скачать
-                    </Button>
+                        {S.customLists.skachat}</Button>
                 </div>
                 {/* Сказать сразу: обновления по расписанию у своего списка нет. Ждать его
                     молча — то же самое, что показывать устаревшие данные как свежие. */}
                 <p className="text-xs text-muted-foreground">
-                    Скачивается один раз. Обновлять придётся этой же кнопкой: расписание есть только
-                    у списков издателя.
-                </p>
+                    {S.customLists.skachivaetsyaOdinRazObnovlyat}</p>
             </div>
         </Block>
     )
@@ -421,7 +415,7 @@ function ListEditor({
                 for (let guard = 0; guard < 128; guard++) {
                     const r = await rpc.listGet(list.name, list.kind, offset)
                     if (stop) return
-                    if (!r.ok) throw new Error(r.error || 'не прочиталось')
+                    if (!r.ok) throw new Error(r.error || S.customLists.neProchitalos)
                     acc += r.text ?? ''
                     if (r.eof || typeof r.next !== 'number' || r.next <= offset) break
                     offset = r.next
@@ -440,15 +434,15 @@ function ListEditor({
                 <div>
                     <label className="text-xs text-muted-foreground" htmlFor="sp-edit-file">
                         {list.filename
-                            ? `Сейчас из файла ${list.filename}. Выберите другой файл — он заменит список целиком.`
-                            : 'Выберите файл — он заменит список целиком.'}
+                            ? S.customLists.seychasIzFaylaVyberite(list.filename)
+                            : S.customLists.vyberiteFaylOnZamenit}
                     </label>
                     <input
                         id="sp-edit-file"
                         ref={fileRef}
                         type="file"
                         accept=".lst,.txt,text/plain"
-                        aria-label={`Другой файл для списка ${list.name}`}
+                        aria-label={S.customLists.drugoyFaylDlyaSpiska(list.name)}
                         disabled={busy}
                         onChange={(e) => {
                             const f = e.currentTarget.files?.[0]
@@ -462,16 +456,14 @@ function ListEditor({
             {(list.source === 'url' || list.source === '') && (
                 <div>
                     <label className="text-xs text-muted-foreground" htmlFor="sp-edit-url">
-                        Ссылка, откуда роутер берёт этот список. Скачивается по нажатию: расписания
-                        у своего списка нет.
-                    </label>
+                        {S.customLists.ssylkaOtkudaRouterBeret}</label>
                     <div className="mt-1 flex flex-wrap items-center gap-2">
                         <input
                             id="sp-edit-url"
                             value={url}
                             onChange={(e) => setUrl(e.currentTarget.value)}
                             placeholder="https://…"
-                            aria-label={`Ссылка списка ${list.name}`}
+                            aria-label={S.customLists.ssylkaSpiska(list.name)}
                             className="min-w-0 flex-1 rounded-md border border-input bg-transparent px-3 py-2 text-sm outline-none focus-visible:ring-1 focus-visible:ring-ring"
                         />
                         <Button
@@ -480,8 +472,7 @@ function ListEditor({
                             onClick={() => void onUrl(url.trim())}
                         >
                             {busy ? <Loader2 className="h-4 w-4 animate-spin" /> : null}
-                            Скачать заново
-                        </Button>
+                            {S.customLists.skachatZanovo}</Button>
                     </div>
                 </div>
             )}
@@ -492,9 +483,7 @@ function ListEditor({
                         /* Сказать причину, а не спрятать поле молча: «редактора нет» человек
                          * читает как поломку, а «список слишком велик» — как то, что и есть. */
                         <p className="text-xs text-muted-foreground">
-                            Список слишком велик, чтобы править его текстом
-                            ({Math.round(list.bytes / 1024)} КБ). Замените его файлом или ссылкой.
-                        </p>
+                            {S.customLists.spisokSlishkomVelikChtoby}{Math.round(list.bytes / 1024)} {S.customLists.kbZameniteEgoFaylom}</p>
                     ) : loadErr ? (
                         <p className="text-xs text-destructive">
                             {/* Поле правки прячется НАМЕРЕННО: сохранение заменяет список целиком,
@@ -502,22 +491,19 @@ function ListEditor({
                               * бы то, чего мы не увидели. Человеку эта арифметика не нужна — ему
                               * нужно знать, что правка текстом сейчас недоступна, и чем её
                               * заменить. */}
-                            Записи не прочитались: {loadErr}. Править текстом сейчас нельзя —
-                            замените список файлом или ссылкой.
-                        </p>
+                            {S.customLists.zapisiNeProchitalis}{loadErr}{S.customLists.pravitTekstomSeychasNelzya}</p>
                     ) : text === null ? (
-                        <p className="text-xs text-muted-foreground">Читаем записи…</p>
+                        <p className="text-xs text-muted-foreground">{S.customLists.chitaemZapisi}</p>
                     ) : (
                         <>
                             <label className="text-xs text-muted-foreground" htmlFor="sp-edit-text">
-                                Записи списка. Сохранение заменяет его целиком.
-                            </label>
+                                {S.customLists.zapisiSpiskaSohranenieZamenyaet}</label>
                             <textarea
                                 id="sp-edit-text"
                                 value={text}
                                 onChange={(e) => setText(e.currentTarget.value)}
                                 rows={8}
-                                aria-label={`Записи списка ${list.name}`}
+                                aria-label={S.customLists.zapisiSpiska2(list.name)}
                                 className="mt-1 w-full rounded-md border border-input bg-transparent px-3 py-2 font-mono text-xs outline-none focus-visible:ring-1 focus-visible:ring-ring"
                             />
                             <div className="mt-2">
@@ -526,8 +512,7 @@ function ListEditor({
                                     onClick={() => void onText(text)}
                                 >
                                     {busy ? <Loader2 className="h-4 w-4 animate-spin" /> : null}
-                                    Сохранить записи
-                                </Button>
+                                    {S.customLists.sohranitZapisi}</Button>
                             </div>
                         </>
                     )}

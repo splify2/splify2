@@ -17,6 +17,7 @@ import { pending, usePending } from '@/lib/pending'
 import { type ServiceEntry, type Spec } from '@/lib/model'
 import { type Live } from '@/lib/live'
 
+import { S } from '@/copy'
 /** Настройки: всё, что не про маршрутизацию, шестью входами.
  *
  *  Раздел-склад («Логи steer») в проекте уже был: в него въезжало всё, что не влезло в
@@ -26,12 +27,12 @@ import { type Live } from '@/lib/live'
 type Screen = 'root' | 'diag' | 'general' | 'catalog' | 'xsteer' | 'extra' | 'about'
 
 const TITLE: Record<Exclude<Screen, 'root'>, string> = {
-    diag: 'Диагностика',
-    general: 'Общее',
-    catalog: 'Каталог',
+    diag: S.settings.diagnostika,
+    general: S.settings.obschee,
+    catalog: S.settings.katalog,
     xsteer: 'XSTEER',
-    extra: 'Дополнительно',
-    about: 'О ПО',
+    extra: S.settings.dopolnitelno,
+    about: S.settings.oPo,
 }
 
 export default function Settings({
@@ -67,7 +68,7 @@ export default function Settings({
         return (
             <div className="space-y-4">
                 {/* Bode: шапка вложенного экрана — стрелка назад и заголовок, как в приложении. */}
-                <ScreenHeader title={TITLE[screen]} back={() => setScreen('root')} backLabel="Настройки" />
+                <ScreenHeader title={TITLE[screen]} back={() => setScreen('root')} backLabel={S.settings.nastroyki} />
                 <>
                     {screen === 'diag' && <Diagnostics live={live} />}
                     {screen === 'general' && (
@@ -128,39 +129,39 @@ export default function Settings({
         <Group>
             <TapRow
                 icon={Stethoscope}
-                title="Диагностика"
+                title={S.settings.diagnostika}
                 subtitle={
                     live.diag?.fail
-                        ? `проверок с отказом: ${live.diag.fail}`
+                        ? S.settings.proverokSOtkazom(live.diag.fail)
                         : live.diag?.warn
-                          ? `проверок с предупреждением: ${live.diag.warn}`
-                          : 'находок нет'
+                          ? S.settings.proverokSPreduprezhdeniem(live.diag.warn)
+                          : S.settings.nahodokNet
                 }
                 alarm={warnings > 0}
                 onClick={() => setScreen('diag')}
             />
             <TapRow
                 icon={Sliders}
-                title="Общее"
+                title={S.settings.obschee}
                 subtitle={(live.status?.lan_devices || spec?.lan_devices || []).join(', ') || undefined}
                 onClick={() => setScreen('general')}
             />
             <TapRow
                 icon={Library}
-                title="Каталог"
-                subtitle={`списков используется: ${used}`}
+                title={S.settings.katalog}
+                subtitle={S.settings.spiskovIspolzuetsya(used)}
                 onClick={() => setScreen('catalog')}
             />
             <TapRow icon={Network} title="XSTEER" onClick={() => setScreen('xsteer')} />
             <TapRow
                 icon={Layers}
-                title="Дополнительно"
-                subtitle={own ? `своих списков: ${own}` : undefined}
+                title={S.settings.dopolnitelno}
+                subtitle={own ? S.settings.svoihSpiskov(own) : undefined}
                 onClick={() => setScreen('extra')}
             />
             <TapRow
                 icon={Info}
-                title="О ПО"
+                title={S.settings.oPo}
                 subtitle={[
                     live.selfUpdate?.current ? `splify2 ${live.selfUpdate.current}` : '',
                     live.build?.version ? `steer ${live.build.version}` : '',

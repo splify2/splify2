@@ -3,8 +3,8 @@ import { Block, CardHead } from '@/components/ui/layout'
 import { Button } from '@/components/ui/button'
 import { rpc } from '@/lib/rpc'
 import { notify } from '@/lib/notify'
-import { t } from '@/lib/i18n'
 
+import { S } from '@/copy'
 /** Откуда роутер берёт КАТАЛОГ списков.
  *
  *  ЗАЧЕМ ЭТО НА ЭКРАНЕ. Ссылка на каталог жила в uci и раньше, но задать её можно было
@@ -39,8 +39,8 @@ export default function ListsSourceCard() {
         setBusy(true)
         try {
             const r = await rpc.listsSourceSet(next)
-            if (!r.ok) throw new Error(r.error || t('не сохранилось'))
-            notify(next ? t('Источник списков изменён') : t('Вернулся свой каталог списков'))
+            if (!r.ok) throw new Error(r.error || S.listsSourceCard.neSohranilos)
+            notify(next ? S.listsSourceCard.istochnikSpiskovIzmenen : S.listsSourceCard.vernulsyaSvoyKatalogSpiskov)
             await load()
         } catch (e) {
             notify(String(e instanceof Error ? e.message : e), 'error')
@@ -53,32 +53,32 @@ export default function ListsSourceCard() {
 
     return (
         <Block>
-            <CardHead title={t('Источник списков')} />
+            <CardHead title={S.listsSourceCard.istochnikSpiskov} />
                 <div className="flex flex-wrap items-center gap-2">
                     <input
                         value={url}
                         onChange={(e) => setUrl(e.currentTarget.value)}
                         placeholder={def}
-                        aria-label={t('ссылка каталога списков')}
+                        aria-label={S.listsSourceCard.ssylkaKatalogaSpiskov}
                         className="h-9 min-w-[16rem] flex-1 rounded-lg border border-border bg-background px-3 font-mono text-xs"
                     />
                     <Button size="sm" disabled={busy} onClick={() => void save(url.trim())}>
-                        {busy ? t('минуту…') : t('Сохранить')}
+                        {busy ? S.listsSourceCard.minutu : S.listsSourceCard.sohranit}
                     </Button>
                     {/* «Вернуть свой» показывается только когда есть что возвращать: кнопка,
                         которая ничего не меняет, учит не читать кнопки. */}
                     {!isDefault && (
                         <Button size="sm" variant="outline" disabled={busy} onClick={() => void save('')}>
-                            {t('Вернуть свой')}
+                            {S.listsSourceCard.vernutSvoy}
                         </Button>
                     )}
                 </div>
                 <div className="text-xs text-muted-foreground">
-                    {t('Каталог — это перечень списков: какие бывают, как называются и где лежит каждый. Уже скачанные списки и правила смена источника не трогает.')}
+                    {S.listsSourceCard.katalogEtoPerechenSpiskov}
                 </div>
                 {isDefault && (
                     <div className="text-xs text-muted-foreground">
-                        {t('Сейчас — каталог splify2.')}
+                        {S.listsSourceCard.seychasKatalogSplify2}
                     </div>
                 )}
         </Block>

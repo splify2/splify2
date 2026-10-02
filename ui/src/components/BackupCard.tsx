@@ -7,6 +7,7 @@ import { notify } from '@/lib/notify'
 import { rpc } from '@/lib/rpc'
 import { pending } from '@/lib/pending'
 
+import { S } from '@/copy'
 // Бекап и перенос настроек (R-005, splify2#4, пункт 4).
 //
 // Вопрос пришёл снаружи: перенести настройку на второй роутер или вернуть её после
@@ -35,16 +36,16 @@ export async function readBackup(): Promise<string> {
     let offset = 0
     for (let i = 0; i < MAX_CHUNKS; i++) {
         const r = await rpc.backupGet(offset)
-        if (!r.ok) throw new Error(r.error || 'не удалось собрать архив')
+        if (!r.ok) throw new Error(r.error || S.backupCard.neUdalosSobratArhiv)
         text += r.text ?? ''
         if (r.eof) return text
         const next = r.next ?? 0
         // Роутер не двинулся — дальше читать нечего и незачем. Отказ, а не тихий возврат
         // половины: обрезанный архив выглядит как целый и не восстановится.
-        if (next <= offset) throw new Error('архив прислан не полностью')
+        if (next <= offset) throw new Error(S.backupCard.arhivPrislanNePolnostyu)
         offset = next
     }
-    throw new Error('архив слишком велик для чтения по кускам')
+    throw new Error(S.backupCard.arhivSlishkomVelikDlya)
 }
 
 /** Нарезать архив на куски для отправки.
@@ -107,7 +108,7 @@ export default function BackupCard({
         try {
             const text = await readBackup()
             saveAsFile(`splify2-backup-${stamp()}.txt`, text)
-            notify(`Архив настроек сохранён: ${Math.round(text.length / 1024)} КБ`)
+            notify(S.backupCard.arhivNastroekSohranenKb(Math.round(text.length / 1024)))
         } catch (e) {
             notify(String(e instanceof Error ? e.message : e), 'error')
         } finally {
@@ -117,11 +118,11 @@ export default function BackupCard({
 
     async function importAll(file: File) {
         const ok = await ask({
-            title: 'Восстановить настройки из файла?',
+            title: S.backupCard.vosstanovitNastroykiIzFayla,
             body:
-                'Правила, выходы, подписка и свои списки будут заменены на те, что в файле. ' +
-                'Применение останется за вами: восстановленное появится как неприменённое.',
-            confirmLabel: 'Восстановить',
+                S.backupCard.pravilaVyhodyPodpiskaI +
+                S.backupCard.primenenieOstanetsyaZaVami,
+            confirmLabel: S.backupCard.vosstanovit,
         })
         if (!ok) {
             if (fileRef.current) fileRef.current.value = ''
@@ -134,7 +135,7 @@ export default function BackupCard({
             // и прежняя спека ляжет поверх восстановленной.
             await pending.flush()
             const chunks = cutChunks(await file.text())
-            if (chunks.length === 0) throw new Error('файл пуст')
+            if (chunks.length === 0) throw new Error(S.backupCard.faylPust)
             let last: Awaited<ReturnType<typeof rpc.backupPut>> = { ok: false }
             for (let i = 0; i < chunks.length; i++) {
                 last = await rpc.backupPut({
@@ -142,18 +143,18 @@ export default function BackupCard({
                     append: i > 0,
                     final: i === chunks.length - 1,
                 })
-                if (!last.ok) throw new Error(last.error || 'файл не принят')
+                if (!last.ok) throw new Error(last.error || S.backupCard.faylNePrinyat)
             }
             const lists = last.lists ?? []
             const dropped = lists.reduce((n, l) => n + (l.dropped || 0), 0)
             notify(
                 [
-                    'Настройки восстановлены:',
-                    last.spec ? 'правила и выходы,' : '',
-                    last.sub ? 'подписка,' : '',
-                    lists.length ? `свои списки (${lists.length}),` : '',
-                    dropped ? `отброшено строк: ${dropped},` : '',
-                    'применить — кнопкой «Применить».',
+                    S.backupCard.nastroykiVosstanovleny,
+                    last.spec ? S.backupCard.pravilaIVyhody : '',
+                    last.sub ? S.backupCard.podpiska : '',
+                    lists.length ? S.backupCard.svoiSpiski(lists.length) : '',
+                    dropped ? S.backupCard.otbroshenoStrok(dropped) : '',
+                    S.backupCard.primenitKnopkoyPrimenit,
                 ]
                     .filter(Boolean)
                     .join(' '),
@@ -171,16 +172,13 @@ export default function BackupCard({
     return (
         <Block>
             {dialog}
-            <CardHead title="Бекап настроек" />
+            <CardHead title={S.backupCard.bekapNastroek} />
                 <p className="text-sm text-muted-foreground">
-                    Один файл: правила, выходы, подписка и свои списки. Списки каталога не входят — роутер скачает
-                    их сам.
-                </p>
+                    {S.backupCard.odinFaylPravilaVyhody}</p>
                 {/* Сказать это до нажатия, а не после: в файле лежат ссылки vless:// с
                     ключами, то есть он секретен ровно как пароль от VPN. */}
                 <p className="text-xs text-warning-fg">
-                    В файле есть ссылки vless:// с ключами. Храните его как пароль.
-                </p>
+                    {S.backupCard.vFayleEstSsylki}</p>
 
                 <div className="flex flex-wrap items-center gap-2">
                     <Button onClick={exportAll} disabled={busy !== ''}>
@@ -189,15 +187,14 @@ export default function BackupCard({
                         ) : (
                             <Download className="h-4 w-4" />
                         )}
-                        Скачать архив
-                    </Button>
+                        {S.backupCard.skachatArhiv}</Button>
                     <label className="inline-flex items-center gap-2 text-xs text-muted-foreground">
                         <Upload className="h-4 w-4" aria-hidden="true" />
                         <input
                             ref={fileRef}
                             type="file"
                             accept=".txt,text/plain"
-                            aria-label="Файл с настройками"
+                            aria-label={S.backupCard.faylSNastroykami}
                             disabled={busy !== ''}
                             onChange={(e) => {
                                 const f = e.currentTarget.files?.[0]
@@ -209,9 +206,7 @@ export default function BackupCard({
                 </div>
 
                 <p className="text-xs text-muted-foreground">
-                    Восстановление ничего не применяет: файл проверяется, настройки сохраняются, маршрутизация
-                    меняется только после «Применить».
-                </p>
+                    {S.backupCard.vosstanovlenieNichegoNePrimenyaet}</p>
         </Block>
     )
 }

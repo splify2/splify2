@@ -1,5 +1,6 @@
 import { type SubQuota } from '@/lib/rpc'
 
+import { S } from '@/copy'
 /** Остаток трафика подписки: что из него можно посчитать, а что нельзя.
  *
  *  Панель называет четыре числа — отдано, принято, объём периода и его конец. Всё остальное
@@ -87,13 +88,13 @@ export function resetText(expireMs: number): string {
 /** «12 мин назад», «3 ч назад», «2 д назад». Секунды не показываем: числа обновляются
  *  запросом к панели, и «14 с назад» обещает точность, которой у них нет. */
 export function agoText(ms: number): string {
-    if (!(ms > 0)) return 'только что'
+    if (!(ms > 0)) return S.quota.tolkoChto
     const min = Math.floor(ms / 60000)
-    if (min < 1) return 'только что'
-    if (min < 60) return `${min} мин назад`
+    if (min < 1) return S.quota.tolkoChto
+    if (min < 60) return S.quota.minNazad(min)
     const h = Math.floor(min / 60)
-    if (h < 24) return `${h} ч назад`
-    return `${Math.floor(h / 24)} д назад`
+    if (h < 24) return S.quota.chNazad(h)
+    return S.quota.dNazad(Math.floor(h / 24))
 }
 
 /** Сутки словами, с русским счётом. Числительное здесь неизбежно: строка «до конца периода»
@@ -103,10 +104,10 @@ export function agoText(ms: number): string {
 export function daysText(n: number): string {
     const t = Math.abs(n) % 100
     const o = t % 10
-    if (t > 10 && t < 20) return `${n} дней`
-    if (o === 1) return `${n} день`
-    if (o >= 2 && o <= 4) return `${n} дня`
-    return `${n} дней`
+    if (t > 10 && t < 20) return S.quota.dney(n)
+    if (o === 1) return S.quota.den(n)
+    if (o >= 2 && o <= 4) return S.quota.dnya(n)
+    return S.quota.dney(n)
 }
 
 export function readQuota(q: SubQuota, now: number = Date.now()): QuotaView {

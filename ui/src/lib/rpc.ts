@@ -19,6 +19,7 @@ import {
     type VlessSkip,
 } from './model'
 
+import { S } from '@/copy'
 export { toCatalog }
 
 /** Состояние одного туннеля xsteer, как его пишет процесс пира (steer, src/ext/xsclient.c;
@@ -145,7 +146,7 @@ const backupPutRaw = declare<unknown>('backup_put', ['text', 'append', 'final'])
  *
  *  Отказ по сроку — это ответ «не дождались», а не ошибка вызова: сам вызов на роутере может
  *  доработать, и его результат приедет в следующий раз. */
-export function deadline<T>(p: Promise<T>, ms: number, why = 'нет ответа'): Promise<T> {
+export function deadline<T>(p: Promise<T>, ms: number, why = S.rpc.netOtveta): Promise<T> {
     return new Promise<T>((resolve, reject) => {
         const t = setTimeout(() => reject(new Error(why)), ms)
         p.then(

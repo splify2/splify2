@@ -8,6 +8,7 @@ import { engineAction } from '@/lib/engine'
 import { type Live } from '@/lib/live'
 import { type SectionId } from '@/lib/sections'
 
+import { S } from '@/copy'
 /** «Остановить всё» — и то, что стоит рядом с ней: какой движок установлен и есть ли что
  *  обновлять.
  *
@@ -51,12 +52,12 @@ export default function EngineToggle({
         const stopping = !off
         if (stopping) {
             const ok = await ask({
-                title: 'Остановить всё?',
+                title: S.engineToggle.ostanovitVse,
                 body:
-                    'Маршрутизация снимется целиком: ядро steer остановится, правила из ядра Linux уйдут. ' +
-                    'Автозапуск тоже снимется, поэтому перезагрузка роутера ничего не вернёт — ' +
-                    'включать придётся этой же кнопкой.',
-                confirmLabel: 'Остановить',
+                    S.engineToggle.marshrutizatsiyaSnimetsyaTselikomYadro +
+                    S.engineToggle.avtozapuskTozheSnimetsyaPoetomu +
+                    S.engineToggle.vklyuchatPridetsyaEtoyZhe,
+                confirmLabel: S.engineToggle.ostanovit,
             })
             if (!ok) return
         }
@@ -64,7 +65,7 @@ export default function EngineToggle({
         try {
             const r = stopping ? await rpc.engineStop() : await rpc.engineStart()
             notify(
-                stopping ? 'Ядро остановлено' : r.running ? 'Ядро запущено' : 'Ядро включено, но не поднялось',
+                stopping ? S.engineToggle.yadroOstanovleno : r.running ? S.engineToggle.yadroZapuscheno : S.engineToggle.yadroVklyuchenoNoNe,
                 stopping || r.running ? 'info' : 'warning',
             )
             live.refresh()
@@ -86,17 +87,15 @@ export default function EngineToggle({
                 <div className="rounded-xl border border-border p-2.5">
                     {eng.present ? (
                         <>
-                            <div className="text-[11px] text-muted-foreground">ядро</div>
+                            <div className="text-[11px] text-muted-foreground">{S.engineToggle.yadro}</div>
                             <div className="truncate text-[13px]">
                                 steer {eng.version || '—'} · {eng.vless ? 'extended' : 'basic'}
                             </div>
                         </>
                     ) : (
                         <div className="text-[13px]">
-                            Ядра нет
-                            <div className="text-[11px] text-muted-foreground">
-                                применить настройку нечем
-                            </div>
+                            {S.engineToggle.yadraNet}<div className="text-[11px] text-muted-foreground">
+                                {S.engineToggle.primenitNastroykuNechem}</div>
                         </div>
                     )}
                     {onSection && (
@@ -124,20 +123,18 @@ export default function EngineToggle({
                         disabled={toggling}
                     >
                         <Power className="h-4 w-4" aria-hidden="true" />
-                        {toggling ? 'Секунду…' : off ? 'Запустить' : 'Остановить всё'}
+                        {toggling ? S.engineToggle.sekundu : off ? S.engineToggle.zapustit : S.engineToggle.ostanovitVse2}
                     </Button>
                     {off && (
                         <p className="mt-1 text-[11px] text-muted-foreground">
-                            автозапуск снят: перезагрузка ядро не вернёт
-                        </p>
+                            {S.engineToggle.avtozapuskSnyatPerezagruzkaYadro}</p>
                     )}
                     {/* Работает, хотя выключали. Сказать об этом обязаны: молча показывать
                         «Остановить всё» на движке, который человек считает выключенным, —
                         значит оставить его в уверенности, что маршрутизации нет. */}
                     {eng.enabled === false && eng.running === true && (
                         <p className="mt-1 text-[11px] text-warning-fg">
-                            ядро работает, хотя автозапуск снят — остановите ещё раз, если оно не нужно
-                        </p>
+                            {S.engineToggle.yadroRabotaetHotyaAvtozapusk}</p>
                     )}
                 </div>
             )}

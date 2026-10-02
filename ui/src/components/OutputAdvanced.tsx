@@ -2,6 +2,7 @@ import { Block, CardHead, FieldRow, Segmented } from '@/components/ui/layout'
 import { Chip, Field, NumField, Radio, inputCls } from '@/components/formbits'
 import { isPart, isTunnelKind, type Ipv6Mode, type Output, type Spec } from '@/lib/model'
 
+import { S } from '@/copy'
 // Дополнительные настройки выхода, которые не зависят от того, из чего он собран: через какой
 // выход идёт сам туннель, фильтр транспорта узлов, IPv6 от хоста и способ выбора в пуле.
 // Живёт отдельно от редактора состава, чтобы тот не рос дальше: состав отвечает на «через что
@@ -97,25 +98,25 @@ export default function OutputAdvanced({ adv, onChange, spec, self, show, classN
 
     return (
         <Block className={className}>
-            <CardHead title="Дополнительно" />
+            <CardHead title={S.outputAdvanced.dopolnitelno} />
             <div className="divide-y divide-border [&>*]:py-3 [&>*:first-child]:pt-0 [&>*:last-child]:pb-0">
                 {show.tunnel && (
-                    <FieldRow label="Туннель идёт через выход">
+                    <FieldRow label={S.outputAdvanced.tunnelIdetCherezVyhod}>
                         <select
                             value={adv.over}
                             onChange={(e) => set({ over: e.currentTarget.value })}
                             className={`${inputCls} w-full`}
                         >
-                            <option value="">напрямую</option>
+                            <option value="">{S.outputAdvanced.napryamuyu}</option>
                             {unders.map((n) => <option key={n} value={n}>{n}</option>)}
                         </select>
                     </FieldRow>
                 )}
                 {show.tunnel && show.vless && (
                     <div className="space-y-2">
-                        <div className="text-sm text-subtle">Транспорт узлов</div>
+                        <div className="text-sm text-subtle">{S.outputAdvanced.transportUzlov}</div>
                         <div className="flex flex-wrap gap-2">
-                            <Chip on={adv.transport.length === 0} onClick={() => set({ transport: [] })}>любой</Chip>
+                            <Chip on={adv.transport.length === 0} onClick={() => set({ transport: [] })}>{S.outputAdvanced.lyuboy}</Chip>
                             {TRANSPORTS.map((t) => (
                                 <Chip
                                     key={t}
@@ -132,18 +133,18 @@ export default function OutputAdvanced({ adv, onChange, spec, self, show, classN
                 )}
                 {show.iface && (
                     <div className="space-y-1">
-                        <div className="pb-1 text-sm text-subtle">IPv6 от хоста</div>
-                        <Radio on={adv.ipv6 === ''} onClick={() => set({ ipv6: '' })}>по умолчанию</Radio>
-                        <Radio on={adv.ipv6 === 'routed'} onClick={() => set({ ipv6: 'routed' })}>префикс хоста</Radio>
-                        <Radio on={adv.ipv6 === 'nat'} onClick={() => set({ ipv6: 'nat' })}>один адрес хоста</Radio>
-                        <Radio on={adv.ipv6 === 'off'} onClick={() => set({ ipv6: 'off' })}>не пропускать IPv6</Radio>
+                        <div className="pb-1 text-sm text-subtle">{S.outputAdvanced.ipv6OtHosta}</div>
+                        <Radio on={adv.ipv6 === ''} onClick={() => set({ ipv6: '' })}>{S.outputAdvanced.poUmolchaniyu}</Radio>
+                        <Radio on={adv.ipv6 === 'routed'} onClick={() => set({ ipv6: 'routed' })}>{S.outputAdvanced.prefiksHosta}</Radio>
+                        <Radio on={adv.ipv6 === 'nat'} onClick={() => set({ ipv6: 'nat' })}>{S.outputAdvanced.odinAdresHosta}</Radio>
+                        <Radio on={adv.ipv6 === 'off'} onClick={() => set({ ipv6: 'off' })}>{S.outputAdvanced.nePropuskatIpv6}</Radio>
                         {adv.ipv6 === 'routed' && (
                             <div className="pt-2">
-                                <Field label="Префикс">
+                                <Field label={S.outputAdvanced.prefiks}>
                                     <input
                                         value={adv.prefix}
                                         onChange={(e) => set({ prefix: e.currentTarget.value })}
-                                        placeholder="2001:db8:1::/56 — пусто: определить по сети"
+                                        placeholder={S.outputAdvanced.n2001Db8156}
                                         className={`${inputCls} w-full font-mono`}
                                     />
                                 </Field>
@@ -153,20 +154,20 @@ export default function OutputAdvanced({ adv, onChange, spec, self, show, classN
                 )}
                 {show.pool && (
                     <div className="space-y-2">
-                        <div className="text-sm text-subtle">Как выбирать из списка</div>
+                        <div className="text-sm text-subtle">{S.outputAdvanced.kakVybiratIzSpiska}</div>
                         <Segmented<Adv['pick']>
-                            label="Как выбирать из списка"
+                            label={S.outputAdvanced.kakVybiratIzSpiska}
                             items={[
-                                { value: 'order', label: 'первый живой' },
-                                { value: 'latency', label: 'самый быстрый' },
+                                { value: 'order', label: S.outputAdvanced.pervyyZhivoy },
+                                { value: 'latency', label: S.outputAdvanced.samyyBystryy },
                             ]}
                             value={adv.pick}
                             onChange={(v) => set({ pick: v })}
                         />
                         {adv.pick === 'latency' && (
                             <div className="grid gap-3 pt-2 sm:grid-cols-2">
-                                <NumField label="Допуск, мс" value={adv.tolerance} onChange={(v) => set({ tolerance: v })} placeholder="50" min={0} max={60000} />
-                                <NumField label="Замер раз в, с" value={adv.interval} onChange={(v) => set({ interval: v })} placeholder="180" min={5} max={86400} />
+                                <NumField label={S.outputAdvanced.dopuskMs} value={adv.tolerance} onChange={(v) => set({ tolerance: v })} placeholder="50" min={0} max={60000} />
+                                <NumField label={S.outputAdvanced.zamerRazVS} value={adv.interval} onChange={(v) => set({ interval: v })} placeholder="180" min={5} max={86400} />
                             </div>
                         )}
                     </div>

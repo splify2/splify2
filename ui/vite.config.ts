@@ -1,12 +1,81 @@
+import fs from "node:fs"
 import path from "path"
-import { defineConfig } from "vite"
+import ts from "typescript"
+import { defineConfig, type Plugin } from "vite"
 import react from "@vitejs/plugin-react"
+
+/** Текстовый слой без цены на роутере.
+ *
+ *  В исходниках строки интерфейса живут в src/copy/ru.ts, а компоненты ссылаются на них
+ *  (`S.home.dobavitPravilo`). В сборке так оставлять дорого: uhttpd не сжимает ответы, а
+ *  имена свойств минификатор не сокращает — словарь с ключами и ссылки на него прибавляли
+ *  к бандлу около 40 КБ при том же тексте.
+ *
+ *  Поэтому на сборке ссылки на ПРОСТЫЕ строки подставляются литералами прямо в код, а из
+ *  словаря остаются только строки-функции (с числами и именами). Итог в dist — как до выноса
+ *  текста: те же строки на тех же местах. Источник правды остаётся один — ru.ts. */
+
+type Dict = Record<string, Record<string, unknown>>
+
+function loadCopy(file: string): Dict {
+    const src = fs.readFileSync(file, 'utf8')
+    const js = ts.transpileModule(src, { compilerOptions: { module: ts.ModuleKind.CommonJS, target: ts.ScriptTarget.ES2020 } }).outputText
+    const mod = { exports: {} as Record<string, unknown> }
+    new Function('module', 'exports', js)(mod, mod.exports)
+    return mod.exports.ru as Dict
+}
+
+function inlineCopy(root: string): Plugin {
+    const file = path.join(root, 'src/copy/ru.ts')
+    let dict: Dict = {}
+    return {
+        name: 'splify-inline-copy',
+        apply: 'build',
+        enforce: 'pre',
+        buildStart() {
+            dict = loadCopy(file)
+            this.addWatchFile(file)
+        },
+        transform(code, id) {
+            if (id.includes('node_modules') || !/\.[jt]sx?$/.test(id)) return null
+            if (path.resolve(id) === file) {
+                // В словаре сборки — только функции: простые строки уже стоят в коде. Режется
+                // по дереву разбора, а не пересобирается: функции ссылаются на помощников
+                // модуля (plural), и они должны остаться на месте.
+                const sf = ts.createSourceFile(id, code, ts.ScriptTarget.Latest, true)
+                const cut: [number, number][] = []
+                const visit = (n: ts.Node) => {
+                    if (ts.isPropertyAssignment(n) && (ts.isStringLiteral(n.initializer) || ts.isNoSubstitutionTemplateLiteral(n.initializer))) {
+                        let end = n.getEnd()
+                        if (code[end] === ',') end++
+                        cut.push([n.getFullStart(), end])
+                        return
+                    }
+                    ts.forEachChild(n, visit)
+                }
+                visit(sf)
+                let out = code
+                for (const [a, b] of cut.reverse()) out = out.slice(0, a) + out.slice(b)
+                return { code: out, map: null }
+            }
+            if (!code.includes('S.')) return null
+            let changed = false
+            const out = code.replace(/\bS\.([A-Za-z_$][\w$]*)\.([A-Za-z_$][\w$]*)\b(?!\s*\()/g, (m, ns, key) => {
+                const v = dict[ns]?.[key]
+                if (typeof v !== 'string') return m
+                changed = true
+                return JSON.stringify(v)
+            })
+            return changed ? { code: out, map: null } : null
+        },
+    }
+}
 
 export default defineConfig({
   // Адреса файлов сборки — ОТНОСИТЕЛЬНЫЕ. Под LuCI всё лежит в /luci-static/resources/splify2/,
   // а не в корне сайта, и шрифты из index.css (url(...)) должны искаться рядом со стилем.
   base: "./",
-  plugins: [react()],
+  plugins: [inlineCopy(__dirname), react()],
   define: {
     // Приписка к имени выпуска, которую печатает рельс: «26.9 Andromeda beta 1». Версия
     // пакета остаётся числом (VERSION: только цифры и точки — из неё собираются имя файла и

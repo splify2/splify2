@@ -6,6 +6,7 @@ import { type Live } from '@/lib/live'
 import { parseLog } from '@/lib/log'
 import { rpc } from '@/lib/rpc'
 
+import { S } from '@/copy'
 /** Диагностика: то, за чем приходят, когда «применилось, но не работает».
  *
  *  Проверки идут по ЖИВОМУ ядру и живым процессам, а не по настройке: совпадение с настройкой
@@ -81,18 +82,18 @@ export default function Diagnostics({ live }: { live: Live }) {
             <Block>
                 <CardHead
                     title={live.diagOld
-                            ? 'Проверка состояния недоступна'
+                            ? S.diagnostics.proverkaSostoyaniyaNedostupna
                             : live.diag?.fail
-                              ? `проверок с отказом: ${live.diag.fail}`
+                              ? S.diagnostics.proverokSOtkazom(live.diag.fail)
                               : live.diag?.warn
-                                ? `проверок с предупреждением: ${live.diag.warn}`
-                                : 'Всё в порядке'}
+                                ? S.diagnostics.proverokSPreduprezhdeniem(live.diag.warn)
+                                : S.diagnostics.vseVPoryadke}
                 />
                     {/* Объяснять, ЧТО такое проверки, на экране незачем: об этом не
                         спрашивают. Остаётся то, после чего человек делает следующий шаг —
                         движок старый и проверок не умеет. */}
                     {live.diagOld && (
-                        <p className="text-xs text-muted-foreground">Обновите steer в разделе «Настройки → О ПО».</p>
+                        <p className="text-xs text-muted-foreground">{S.diagnostics.obnoviteSteerVRazdele}</p>
                     )}
                 {!live.diagOld && (
                     <div className="space-y-2">
@@ -148,7 +149,7 @@ export default function Diagnostics({ live }: { live: Live }) {
 
             <Block>
                 <CardHead
-                    title="Логи steer"
+                    title={S.diagnostics.logiSteer}
                     action={
                     <Button
                         variant="ghost"
@@ -158,7 +159,7 @@ export default function Diagnostics({ live }: { live: Live }) {
                         onClick={() => void pull()}
                     >
                         <RefreshCw className={`h-3.5 w-3.5 ${refreshingLog ? 'animate-spin' : ''}`} />
-                        <span>Обновить</span>
+                        <span>{S.diagnostics.obnovit}</span>
                     </Button>
                     }
                 />
@@ -170,7 +171,7 @@ export default function Diagnostics({ live }: { live: Live }) {
                                 type="text"
                                 value={logFilter}
                                 onChange={(e) => setLogFilter(e.target.value)}
-                                placeholder="Поиск по журналу…"
+                                placeholder={S.diagnostics.poiskPoZhurnalu}
                                 className="w-full h-8 pl-8 pr-8 text-xs rounded-lg border border-border bg-background focus:outline-none focus:ring-1 focus:ring-primary"
                             />
                             {logFilter && (
@@ -178,7 +179,7 @@ export default function Diagnostics({ live }: { live: Live }) {
                                     type="button"
                                     onClick={() => setLogFilter('')}
                                     className="absolute right-2.5 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground"
-                                    aria-label="Очистить поиск"
+                                    aria-label={S.diagnostics.ochistitPoisk}
                                 >
                                     <X className="h-3.5 w-3.5" />
                                 </button>
@@ -187,8 +188,7 @@ export default function Diagnostics({ live }: { live: Live }) {
                     )}
                     {log === null ? (
                         <p className="py-4 text-center text-sm text-muted-foreground">
-                            Загрузка журнала…
-                        </p>
+                            {S.diagnostics.zagruzkaZhurnala}</p>
                     ) : filteredLog.length > 0 ? (
                         <div className="max-h-72 overflow-auto rounded-xl border border-border bg-muted p-3 text-[11px] leading-relaxed font-mono">
                             {filteredLog.map((line, i) => {
@@ -218,15 +218,13 @@ export default function Diagnostics({ live }: { live: Live }) {
                         </div>
                     ) : log.length > 0 ? (
                         <div className="py-6 text-center space-y-1 text-xs text-muted-foreground">
-                            <p>Строк по запросу «{logFilter}» не найдено.</p>
+                            <p>{S.diagnostics.strokPoZaprosu}{logFilter}{S.diagnostics.neNaydeno}</p>
                             <Button variant="ghost" size="sm" className="h-7 text-xs" onClick={() => setLogFilter('')}>
-                                Сбросить фильтр
-                            </Button>
+                                {S.diagnostics.sbrositFiltr}</Button>
                         </div>
                     ) : (
                         <p className="py-4 text-center text-sm text-muted-foreground">
-                            Ядро ничего не писало в журнал.
-                        </p>
+                            {S.diagnostics.yadroNichegoNePisalo}</p>
                     )}
                 </div>
             </Block>

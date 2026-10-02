@@ -8,6 +8,7 @@ import { rpc, type XsteerTunnel } from '@/lib/rpc'
 import { human, type Live } from '@/lib/live'
 import { xsLinkSupported } from '@/lib/engine'
 
+import { S } from '@/copy'
 /** XSTEER: устройства звезды, их живое состояние и ссылка xs:// в обе стороны.
  *
  *  ПОЛЯ ПИРЫ (ключ, адрес в туннеле, хаб, SNI, MTU, разгрузка) живут в настройке сети роутера —
@@ -33,10 +34,10 @@ import { xsLinkSupported } from '@/lib/engine'
 /** Секунды человеческим сроком. Отдельная функция, а не `${n} с`: «3600 с назад» человек
  *  считает глазами, а «час назад» читает. */
 function ago(sec: number): string {
-    if (sec < 0) return 'не было'
-    if (sec < 60) return `${sec} с назад`
-    if (sec < 3600) return `${Math.round(sec / 60)} мин назад`
-    return `${Math.round(sec / 360) / 10} ч назад`.replace('.', ',')
+    if (sec < 0) return S.xsteerPanel.neBylo
+    if (sec < 60) return S.xsteerPanel.sNazad(sec)
+    if (sec < 3600) return S.xsteerPanel.minNazad(Math.round(sec / 60))
+    return S.xsteerPanel.chNazad(Math.round(sec / 360) / 10).replace('.', ',')
 }
 
 /** Что удалось договориться с ядром про разгрузку — одним словом и с подсказкой.
@@ -46,30 +47,30 @@ function ago(sec: number): string {
  *  не дали») скрывать нельзя — он означает, что половина прибавки потеряна, и причина у него
  *  своя (ядро без TUNSETOFFLOAD). Поэтому слов три, а не два. */
 function offloadLabel(o?: { gso: boolean; gro: boolean; rx: boolean }) {
-    if (!o) return { text: 'неизвестно', variant: 'outline' as const, tip: 'Ядро не сообщает — сборка старее 1.5.0.' }
+    if (!o) return { text: S.xsteerPanel.neizvestno, variant: 'outline' as const, tip: S.xsteerPanel.yadroNeSoobschaetSborka }
     if (!o.gso)
         return {
-            text: 'выключена',
+            text: S.xsteerPanel.vyklyuchena,
             variant: 'destructive' as const,
-            tip: 'Разгрузка не включилась: устройство или ядро Linux её не поддерживают, либо она выключена в настройке интерфейса. Туннель работает, но заметно медленнее.',
+            tip: S.xsteerPanel.razgruzkaNeVklyuchilasUstroystvo,
         }
     if (o.gso && o.gro && o.rx)
         return {
-            text: 'полная',
+            text: S.xsteerPanel.polnaya,
             variant: 'default' as const,
             /* На экране — только состояние. Что за ним стоит: договорились с ядром по всем трём
              * ioctl сразу — отдаём склеенные кадры (GSO), собираем их обратно (GRO) и принимаем
              * склеенное от ядра (TUNSETOFFLOAD). Это самая крупная прибавка к скорости из всего,
              * что есть в туннеле, и ровно поэтому три слова, а не два. */
-            tip: 'Разгрузка встала целиком — туннель идёт на полной скорости.',
+            tip: S.xsteerPanel.razgruzkaVstalaTselikomTunnel,
         }
     return {
-        text: 'частичная',
+        text: S.xsteerPanel.chastichnaya,
         variant: 'secondary' as const,
         /* Приём склеенного просит у ядра TUNSETOFFLOAD, и старое ядро его не даёт — тогда
          * половина прибавки к скорости теряется. Имя ioctl человеку ничего не даёт: сделать
          * он с этим ничего не может, а знать про потерянную скорость — должен. */
-        tip: `Встала не целиком: отдача ${o.gro ? 'есть' : 'нет'}, приём склеенного ${o.rx ? 'есть' : 'нет'}. Половина прибавки к скорости потеряна.`,
+        tip: S.xsteerPanel.vstalaNeTselikomOtdacha(o.gro ? S.xsteerPanel.yes : S.xsteerPanel.no, o.rx ? S.xsteerPanel.yes : S.xsteerPanel.no),
     }
 }
 
@@ -123,9 +124,9 @@ export default function XsteerPanel({ live }: { live: Live }) {
         try {
             const r = await rpc.xsteerLink({ iface })
             if (r.ok && r.link) setLink((p) => ({ ...p, [iface]: r.link as string }))
-            else setNote((p) => ({ ...p, [iface]: { text: r.error || 'роутер не отдал ссылку', bad: true } }))
+            else setNote((p) => ({ ...p, [iface]: { text: r.error || S.xsteerPanel.routerNeOtdalSsylku, bad: true } }))
         } catch {
-            setNote((p) => ({ ...p, [iface]: { text: 'роутер не ответил', bad: true } }))
+            setNote((p) => ({ ...p, [iface]: { text: S.xsteerPanel.routerNeOtvetil, bad: true } }))
         } finally {
             setBusy(null)
         }
@@ -141,14 +142,14 @@ export default function XsteerPanel({ live }: { live: Live }) {
                 setPaste((p) => ({ ...p, [iface]: '' }))
                 setNote((p) => ({
                     ...p,
-                    [iface]: { text: `принята: хаб ${r.hub}. Интерфейс поднимается заново.`, bad: false },
+                    [iface]: { text: S.xsteerPanel.prinyataHabInterfeysPodnimaetsya(r.hub), bad: false },
                 }))
                 live.refresh()
             } else {
-                setNote((p) => ({ ...p, [iface]: { text: r.error || 'ссылка не принята', bad: true } }))
+                setNote((p) => ({ ...p, [iface]: { text: r.error || S.xsteerPanel.ssylkaNePrinyata, bad: true } }))
             }
         } catch {
-            setNote((p) => ({ ...p, [iface]: { text: 'роутер не ответил', bad: true } }))
+            setNote((p) => ({ ...p, [iface]: { text: S.xsteerPanel.routerNeOtvetil, bad: true } }))
         } finally {
             setBusy(null)
         }
@@ -160,38 +161,33 @@ export default function XsteerPanel({ live }: { live: Live }) {
                 setCopied(iface)
                 setTimeout(() => setCopied(null), 1500)
             },
-            () => setNote((p) => ({ ...p, [iface]: { text: 'браузер не дал доступ к буферу — выделите строку руками', bad: true } })),
+            () => setNote((p) => ({ ...p, [iface]: { text: S.xsteerPanel.brauzerNeDalDostup, bad: true } })),
         )
     }
 
-    if (tunnels === null) return <p className="text-sm text-muted-foreground">Загрузка…</p>
+    if (tunnels === null) return <p className="text-sm text-muted-foreground">{S.xsteerPanel.zagruzka}</p>
 
     if (dead)
         return (
             <Block>
-                <CardHead title="Роутер не рассказывает про xsteer" />
+                <CardHead title={S.xsteerPanel.routerNeRasskazyvaetPro} />
                 <p className="text-sm text-subtle">
-                    Установленный splify2 состояние туннелей не отдаёт — обновите splify2. Сами туннели работают.
-                </p>
+                    {S.xsteerPanel.ustanovlennyySplify2SostoyanieTunneley}</p>
             </Block>
         )
 
     if (names.length === 0)
         return (
             <Block>
-                <CardHead title="Интерфейсов xsteer нет" />
+                <CardHead title={S.xsteerPanel.interfeysovXsteerNet} />
                 <div className="space-y-2">
                     <p className="text-sm text-subtle">
-                        Туннель создаётся как обычный интерфейс: зона фаервола, адрес и MTU ему
-                        нужны так же, как остальным. Ссылку <code>xs://</code> можно вставить прямо
-                        на странице создания — поля заполнятся сами.
-                    </p>
+                        {S.xsteerPanel.tunnelSozdaetsyaKakObychnyy}<code>xs://</code> {S.xsteerPanel.mozhnoVstavitPryamoNa}</p>
                     <a
                         href="/cgi-bin/luci/admin/network/network"
                         className="inline-flex items-center gap-1.5 text-sm text-primary underline decoration-dotted"
                     >
-                        Создать в настройках сети
-                        <ExternalLink className="h-3.5 w-3.5" aria-hidden="true" />
+                        {S.xsteerPanel.sozdatVNastroykahSeti}<ExternalLink className="h-3.5 w-3.5" aria-hidden="true" />
                     </a>
                 </div>
             </Block>
@@ -235,37 +231,30 @@ export default function XsteerPanel({ live }: { live: Live }) {
                                 href="/cgi-bin/luci/admin/network/network"
                                 className="inline-flex items-center gap-1.5 text-xs text-primary underline decoration-dotted"
                             >
-                                Настроить
-                                <ExternalLink className="h-3.5 w-3.5" aria-hidden="true" />
+                                {S.xsteerPanel.nastroit}<ExternalLink className="h-3.5 w-3.5" aria-hidden="true" />
                             </a>
                             }
                         />
                         <div className="space-y-1.5 text-[13px]">
                             {st === null ? (
                                 <p className="text-subtle">
-                                    Туннель не поднимался в эту загрузку: интерфейс выключен или
-                                    ядро его ещё не запускало. Настройка при этом есть — состояния
-                                    нет.
-                                </p>
+                                    {S.xsteerPanel.tunnelNePodnimalsyaV}</p>
                             ) : (
                                 <>
                                     {stale && (
                                         <p className="text-destructive">
-                                            Процесс не отвечает {t.age} с — числа ниже последние, а
-                                            не текущие.
-                                        </p>
+                                            {S.xsteerPanel.protsessNeOtvechaet}{t.age} {S.xsteerPanel.sChislaNizhePoslednie}</p>
                                     )}
-                                    <Row label="хаб">
+                                    <Row label={S.xsteerPanel.hab}>
                                         {st.hub}{' '}
                                         <span className="font-normal text-subtle">({st.hub_key})</span>
                                     </Row>
-                                    <Row label="рукопожатие">{ago(st.handshake_age)}</Row>
+                                    <Row label={S.xsteerPanel.rukopozhatie}>{ago(st.handshake_age)}</Row>
                                     <Row
                                         label={
                                             <Hint tip={off.tip}>
                                                 <span className="border-b border-dotted border-current">
-                                                    разгрузка
-                                                </span>
+                                                    {S.xsteerPanel.razgruzka}</span>
                                             </Hint>
                                         }
                                     >
@@ -280,24 +269,23 @@ export default function XsteerPanel({ live }: { live: Live }) {
                                                   * пути; пока он расходится с mtu, туннель идёт
                                                   * на безопасном низу. Человеку важно само число,
                                                   * а не то, что проба в этот момент делает. */}
-                                                — подтверждено {st.mtu_confirmed}
+                                                {S.xsteerPanel.podtverzhdeno}{st.mtu_confirmed}
                                             </span>
                                         )}
                                     </Row>
-                                    <Row label="соединений">
+                                    <Row label={S.xsteerPanel.soedineniy}>
                                         {st.conns}
                                         <span className="font-normal text-subtle">
                                             {' '}
-                                            · {st.stream ? 'поток TCP' : 'поддельный TCP'}
+                                            · {st.stream ? S.xsteerPanel.potokTcp : S.xsteerPanel.poddelnyyTcp}
                                         </span>
                                     </Row>
                                     {!!st.resets && (
                                         <Row
                                             label={
-                                                <Hint tip="Сколько раз поднятое соединение падало за жизнь процесса. Восстановление происходит само и за секунды: туннель выглядит работающим и тогда, когда его чинят каждую минуту.">
+                                                <Hint tip={S.xsteerPanel.skolkoRazPodnyatoeSoedinenie}>
                                                     <span className="border-b border-dotted border-current">
-                                                        переподнятий
-                                                    </span>
+                                                        {S.xsteerPanel.perepodnyatiy}</span>
                                                 </Hint>
                                             }
                                         >
@@ -310,27 +298,25 @@ export default function XsteerPanel({ live }: { live: Live }) {
                                             )}
                                         </Row>
                                     )}
-                                    <Row label="прошло">
+                                    <Row label={S.xsteerPanel.proshlo}>
                                         {human(st.rx_bytes)} ← / → {human(st.tx_bytes)}
                                         {!!st.dropped && (
                                             <span className="text-destructive">
                                                 {' '}
-                                                · отброшено {st.dropped}
+                                                {S.xsteerPanel.otbrosheno}{st.dropped}
                                             </span>
                                         )}
                                     </Row>
                                 </>
                             )}
-                            <Row label="в выходе">{out ? out[0] : '—'}</Row>
+                            <Row label={S.xsteerPanel.vVyhode}>{out ? out[0] : '—'}</Row>
                             {dev && !dev.up && st !== null && (
                                 <p className="text-subtle">
                                     {/* Опущено — значит netifd не поднял интерфейс, и адреса с
                                       * зоной фаервола у устройства сейчас нет. Имя демона на
                                       * экране лишнее: человек видит последствие и идёт в
                                       * настройки сети. */}
-                                    Устройство {t.device} опущено: адреса и зоны фаервола у него
-                                    сейчас нет.
-                                </p>
+                                    {S.xsteerPanel.ustroystvo}{t.device} {S.xsteerPanel.opuschenoAdresaIZony}</p>
                             )}
 
                             {/* ---- ссылка ----
@@ -345,9 +331,7 @@ export default function XsteerPanel({ live }: { live: Live }) {
                                     {link[iface] ? (
                                         <div className="space-y-1">
                                             <p className="text-subtle">
-                                                Здесь приватный ключ этого пира — ссылка и есть
-                                                доступ целиком. Не пересылайте её открытым каналом.
-                                            </p>
+                                                {S.xsteerPanel.zdesPrivatnyyKlyuchEtogo}</p>
                                             <div className="flex items-start gap-2">
                                                 <code className="min-w-0 flex-1 break-all rounded-sm bg-muted px-2 py-1 text-[11px]">
                                                     {link[iface]}
@@ -363,7 +347,7 @@ export default function XsteerPanel({ live }: { live: Live }) {
                                                         <Copy className="h-3.5 w-3.5" aria-hidden="true" />
                                                     )}
                                                     <span className="ml-1.5">
-                                                        {copied === iface ? 'Скопировано' : 'Копировать'}
+                                                        {copied === iface ? S.xsteerPanel.skopirovano : S.xsteerPanel.kopirovat}
                                                     </span>
                                                 </Button>
                                             </div>
@@ -376,23 +360,20 @@ export default function XsteerPanel({ live }: { live: Live }) {
                                             onClick={() => showLink(iface)}
                                         >
                                             <Link2 className="h-3.5 w-3.5" aria-hidden="true" />
-                                            <span className="ml-1.5">Показать ссылку xs://</span>
+                                            <span className="ml-1.5">{S.xsteerPanel.pokazatSsylkuXs}</span>
                                         </Button>
                                     )}
 
                                     <details>
                                         <summary className="cursor-pointer text-subtle">
-                                            Вставить другую ссылку
-                                        </summary>
+                                            {S.xsteerPanel.vstavitDruguyuSsylku}</summary>
                                         <div className="mt-2 space-y-2">
                                             <p className="text-subtle">
-                                                Заменит настройку этого интерфейса целиком — ключ, адрес и хаб — и поднимет его заново. Зона
-                                                фаервола и имя устройства останутся.
-                                            </p>
+                                                {S.xsteerPanel.zamenitNastroykuEtogoInterfeysa}</p>
                                             <textarea
                                                 className="w-full rounded-sm border bg-background px-2 py-1 font-mono text-[11px]"
                                                 rows={3}
-                                                placeholder="xs://<ключ>@203.0.113.7:443?pk=<ключ хаба>&ip=10.77.0.2/24"
+                                                placeholder={S.xsteerPanel.xsKlyuch2030}
                                                 value={paste[iface] || ''}
                                                 onChange={(e) =>
                                                     setPaste((p) => ({ ...p, [iface]: e.target.value }))
@@ -404,7 +385,7 @@ export default function XsteerPanel({ live }: { live: Live }) {
                                                 onClick={() => applyLink(iface)}
                                             >
                                                 <RefreshCw className="h-3.5 w-3.5" aria-hidden="true" />
-                                                <span className="ml-1.5">Принять и поднять заново</span>
+                                                <span className="ml-1.5">{S.xsteerPanel.prinyatIPodnyatZanovo}</span>
                                             </Button>
                                         </div>
                                     </details>
@@ -412,9 +393,7 @@ export default function XsteerPanel({ live }: { live: Live }) {
                             )}
                             {!links && (
                                 <p className="border-t border-border pt-3 text-subtle">
-                                    Ссылки <code>xs://</code> понимает steer 1.5.0 и новее — на
-                                    установленном ядре этого умения нет.
-                                </p>
+                                    {S.xsteerPanel.ssylki}<code>xs://</code> {S.xsteerPanel.ponimaetSteer15}</p>
                             )}
                             {n && (
                                 <p className={n.bad ? 'text-destructive' : 'text-success'}>{n.text}</p>

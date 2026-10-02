@@ -1,3 +1,4 @@
+import { S } from '@/copy'
 /** Страна по коду ISO 3166-1 alpha-2, как её называет внешняя сторона (`loc=` в ответе
  *  cdn-cgi/trace).
  *
@@ -10,15 +11,15 @@
  *  и он знает все страны — этот список только про названия, и полным быть не обязан. */
 
 const NAMES: Record<string, string> = {
-    AM: 'Армения', AT: 'Австрия', AZ: 'Азербайджан', BE: 'Бельгия', BG: 'Болгария',
-    BR: 'Бразилия', CA: 'Канада', CH: 'Швейцария', CY: 'Кипр', CZ: 'Чехия',
-    DE: 'Германия', DK: 'Дания', EE: 'Эстония', ES: 'Испания', FI: 'Финляндия',
-    FR: 'Франция', GB: 'Великобритания', GE: 'Грузия', HK: 'Гонконг', HU: 'Венгрия',
-    IE: 'Ирландия', IL: 'Израиль', IN: 'Индия', IT: 'Италия', JP: 'Япония',
-    KZ: 'Казахстан', LT: 'Литва', LU: 'Люксембург', LV: 'Латвия', MD: 'Молдавия',
-    NL: 'Нидерланды', NO: 'Норвегия', PL: 'Польша', PT: 'Португалия', RO: 'Румыния',
-    RS: 'Сербия', RU: 'Россия', SE: 'Швеция', SG: 'Сингапур', SK: 'Словакия',
-    TR: 'Турция', UA: 'Украина', US: 'США', AE: 'ОАЭ', AU: 'Австралия',
+    AM: S.geo.armeniya, AT: S.geo.avstriya, AZ: S.geo.azerbaydzhan, BE: S.geo.belgiya, BG: S.geo.bolgariya,
+    BR: S.geo.braziliya, CA: S.geo.kanada, CH: S.geo.shveytsariya, CY: S.geo.kipr, CZ: S.geo.chehiya,
+    DE: S.geo.germaniya, DK: S.geo.daniya, EE: S.geo.estoniya, ES: S.geo.ispaniya, FI: S.geo.finlyandiya,
+    FR: S.geo.frantsiya, GB: S.geo.velikobritaniya, GE: S.geo.gruziya, HK: S.geo.gonkong, HU: S.geo.vengriya,
+    IE: S.geo.irlandiya, IL: S.geo.izrail, IN: S.geo.indiya, IT: S.geo.italiya, JP: S.geo.yaponiya,
+    KZ: S.geo.kazahstan, LT: S.geo.litva, LU: S.geo.lyuksemburg, LV: S.geo.latviya, MD: S.geo.moldaviya,
+    NL: S.geo.niderlandy, NO: S.geo.norvegiya, PL: S.geo.polsha, PT: S.geo.portugaliya, RO: S.geo.rumyniya,
+    RS: S.geo.serbiya, RU: S.geo.rossiya, SE: S.geo.shvetsiya, SG: S.geo.singapur, SK: S.geo.slovakiya,
+    TR: S.geo.turtsiya, UA: S.geo.ukraina, US: S.geo.ssha, AE: S.geo.oae, AU: S.geo.avstraliya,
 }
 
 /** Название страны для человека. Неизвестный код возвращается как есть: «NL» лучше пустоты и

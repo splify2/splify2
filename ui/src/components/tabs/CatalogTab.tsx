@@ -15,6 +15,7 @@ import {
     type Spec,
 } from '@/lib/model'
 
+import { S } from '@/copy'
 /** Каталог: что доступно, сколько записей, где используется. ТОЛЬКО справка.
  *
  *  Кнопки «Загрузить» больше нет: списки, на которые указывает правило, скачивает бэкенд
@@ -47,17 +48,17 @@ interface Props {
  *  Выросло из splify2#7: категория «18+» включена, нужного сайта в ней нет, и узнать
  *  почему было негде. */
 function SourceNote({ origin, ours, mixed }: { origin: ListOrigin; ours: boolean; mixed: boolean }) {
-    const label = ours ? 'список наш' : 'список внешний'
+    const label = ours ? S.catalogTab.spisokNash : S.catalogTab.spisokVneshniy
     return (
         <div className="mt-0.5 text-xs text-muted-foreground">
             <Hint
                 tip={
                     ours
-                        ? `Не хватает домена — предложите его в наш список${origin.repo ? ` (${origin.repo})` : ''}. Правки прямо на роутере исчезнут при обновлении.`
-                        : `Добавить домен можно у апстрима${origin.repo ? ` (${origin.repo})` : ''} или своим списком. Правки прямо на роутере исчезнут при обновлении.`
+                        ? S.catalogTab.neHvataetDomenaPredlozhite(origin.repo ? ` (${origin.repo})` : '')
+                        : S.catalogTab.dobavitDomenMozhnoU(origin.repo ? ` (${origin.repo})` : '')
                 }
             >
-                {mixed ? `домены — ${label}` : label}
+                {mixed ? S.catalogTab.domeny(label) : label}
             </Hint>
             {origin.suggest_url && (
                 <>
@@ -68,8 +69,7 @@ function SourceNote({ origin, ours, mixed }: { origin: ListOrigin; ours: boolean
                         rel="noreferrer"
                         className="underline decoration-dotted hover:text-foreground"
                     >
-                        предложить домен
-                    </a>
+                        {S.catalogTab.predlozhitDomen}</a>
                 </>
             )}
         </div>
@@ -124,7 +124,7 @@ export default function CatalogTab({ onUseInRule }: Props) {
                     setFailed(false)
                     return
                 }
-                throw new Error('пустой каталог')
+                throw new Error(S.catalogTab.pustoyKatalog)
             })
             .catch(() =>
                 rpc.allowDomains()
@@ -166,8 +166,8 @@ export default function CatalogTab({ onUseInRule }: Props) {
                 if (r.via) via = r.via
             }
             setLocal((await rpc.localLists()).files || {})
-            if (bad) notify(`${sv.name}: не обновилось частей — ${bad} из ${sv.parts.length}`, 'warning')
-            else notify(`${sv.name}: обновлено${via ? ` (${via})` : ''}`)
+            if (bad) notify(S.catalogTab.neObnovilosChasteyIz(sv.name, bad, sv.parts.length), 'warning')
+            else notify(S.catalogTab.obnovleno(sv.name, via ? ` (${via})` : ''))
         } finally {
             unmark(sv.id)
         }
@@ -180,11 +180,11 @@ export default function CatalogTab({ onUseInRule }: Props) {
         try {
             const r = await rpc.listsUpdate()
             setLocal((await rpc.localLists()).files || {})
-            if (!r.ok) notify(r.error || `Не обновилось списков: ${r.failed || 1}`, 'warning')
-            else if (r.updated) notify(`Обновлено списков: ${r.updated}`)
-            else notify('Списки уже свежие')
+            if (!r.ok) notify(r.error || S.catalogTab.neObnovilosSpiskov(r.failed || 1), 'warning')
+            else if (r.updated) notify(S.catalogTab.obnovlenoSpiskov(r.updated))
+            else notify(S.catalogTab.spiskiUzheSvezhie)
         } catch {
-            notify('Обновить списки не удалось', 'warning')
+            notify(S.catalogTab.obnovitSpiskiNeUdalos, 'warning')
         } finally {
             setUpdating(false)
         }
@@ -207,10 +207,10 @@ export default function CatalogTab({ onUseInRule }: Props) {
             setLocal((await rpc.localLists()).files || {})
             if (bad)
                 notify(
-                    last || `${sv.name}: не удалось удалить (частей ${bad} из ${sv.parts.length})`,
+                    last || S.catalogTab.neUdalosUdalitChastey(sv.name, bad, sv.parts.length),
                     'warning',
                 )
-            else notify(`${sv.name}: удалён с роутера`)
+            else notify(S.catalogTab.udalenSRoutera(sv.name))
         } finally {
             unmark(sv.id)
         }
@@ -219,9 +219,7 @@ export default function CatalogTab({ onUseInRule }: Props) {
     if (adFailed)
         return (
             <div className="rounded-md border border-border bg-card p-5 text-sm text-muted-foreground">
-                Каталог не загрузился. Проверьте адрес источника («Настройки → Источник списков») и доступ
-                роутера в интернет.
-            </div>
+                {S.catalogTab.katalogNeZagruzilsyaProverte}</div>
         )
 
     const rulesFor = (sv: ServiceEntry) => {
@@ -257,15 +255,15 @@ export default function CatalogTab({ onUseInRule }: Props) {
                     <input
                         value={q}
                         onChange={(e) => setQ(e.currentTarget.value)}
-                        placeholder="поиск по каталогу"
+                        placeholder={S.catalogTab.poiskPoKatalogu}
                         className="min-w-0 flex-1 bg-transparent py-2 text-sm outline-none"
                     />
                 </div>
                 {/* Bode: переключатель «все / используются» — сегментами, как в приложении. */}
-                <div className="flex gap-0.5 rounded-xl bg-muted p-0.5" role="tablist" aria-label="Что показывать">
+                <div className="flex gap-0.5 rounded-xl bg-muted p-0.5" role="tablist" aria-label={S.catalogTab.chtoPokazyvat}>
                     {([
-                        ['all', `все · ${services.length}`],
-                        ['used', `используются · ${usedCount}`],
+                        ['all', S.catalogTab.vse(services.length)],
+                        ['used', S.catalogTab.ispolzuyutsya(usedCount)],
                     ] as const).map(([id, label]) => (
                         <button
                             key={id}
@@ -289,11 +287,9 @@ export default function CatalogTab({ onUseInRule }: Props) {
                         className={`mr-1 h-4 w-4${updating ? ' animate-spin' : ''}`}
                         aria-hidden="true"
                     />{' '}
-                    Обновить списки
-                </Button>
+                    {S.catalogTab.obnovitSpiski}</Button>
                 <Button variant="secondary" onClick={() => setCustomOpen((v) => !v)} aria-expanded={customOpen}>
-                    <Plus className="mr-1 h-4 w-4" aria-hidden="true" /> Свой список
-                </Button>
+                    <Plus className="mr-1 h-4 w-4" aria-hidden="true" /> {S.catalogTab.svoySpisok}</Button>
             </div>
 
             {customOpen && (
@@ -310,9 +306,9 @@ export default function CatalogTab({ onUseInRule }: Props) {
                 <table className="sp-stack w-full text-sm md:min-w-[38rem]">
                     <thead>
                         <tr className="border-b border-border text-left text-xs uppercase tracking-wide text-muted-foreground">
-                            <th className="px-3 py-2">Запись</th>
-                            <th className="px-3 py-2">Записей</th>
-                            <th className="px-3 py-2">Где используется</th>
+                            <th className="px-3 py-2">{S.catalogTab.zapis}</th>
+                            <th className="px-3 py-2">{S.catalogTab.zapisey}</th>
+                            <th className="px-3 py-2">{S.catalogTab.gdeIspolzuetsya}</th>
                             <th className="px-3 py-2" />
                         </tr>
                     </thead>
@@ -333,11 +329,11 @@ export default function CatalogTab({ onUseInRule }: Props) {
                                         <div className="truncate font-medium">{sv.name}</div>
                                         <div className="truncate text-xs text-muted-foreground">
                                             {kinds.length === 2
-                                                ? 'домены и адреса'
+                                                ? S.catalogTab.domenyIAdresa
                                                 : kinds[0] === 'domains'
-                                                  ? 'только домены'
-                                                  : 'только адреса'}
-                                            {sv.parts.length > 1 && ` · частей ${sv.parts.length}`}
+                                                  ? S.catalogTab.tolkoDomeny
+                                                  : S.catalogTab.tolkoAdresa}
+                                            {sv.parts.length > 1 && S.catalogTab.chastey(sv.parts.length)}
                                         </div>
                                         {sv.same_prefixes && (
                                             /* Прочитать это надо ДО включения: адресный список у пары
@@ -348,15 +344,15 @@ export default function CatalogTab({ onUseInRule }: Props) {
                                                     /* Причина — строка издателя, и она вставляется
                                                        как есть: своей формулировки у интерфейса
                                                        здесь быть не должно. */
-                                                    tip={`${sv.same_prefixes.reason ? `Причина: ${sv.same_prefixes.reason}. ` : ''}${
+                                                    tip={`${sv.same_prefixes.reason ? S.catalogTab.prichina(sv.same_prefixes.reason) : ''}${
                                                         sv.same_prefixes.within
-                                                            ? 'Это одна и та же группа адресов, вошедшая в запись двумя файлами: второй не добавляет ни одного адреса.'
-                                                            : 'Включать обе записи одновременно бессмысленно: вторая не добавляет ни одного адреса, а расход памяти удваивается.'
+                                                            ? S.catalogTab.etoOdnaITa
+                                                            : S.catalogTab.vklyuchatObeZapisiOdnovremenno
                                                     }`}
                                                 >
                                                     {sv.same_prefixes.within
-                                                        ? `один список адресов: «${sv.same_prefixes.names.join('» = «')}»`
-                                                        : `тот же список адресов, что у «${sv.same_prefixes.names.join('», «')}»`}
+                                                        ? S.catalogTab.odinSpisokAdresov(sv.same_prefixes.names.join('» = «'))
+                                                        : S.catalogTab.totZheSpisokAdresov(sv.same_prefixes.names.join('», «'))}
                                                 </Hint>
                                             </div>
                                         )}
@@ -375,20 +371,20 @@ export default function CatalogTab({ onUseInRule }: Props) {
                                                 <Hint
                                                     tip={
                                                         sv.complement.ours
-                                                            ? `Эта запись дополняет «${sv.complement.names.join('», «')}», а не заменяет её: в ней только домены, которых там нет. Включать имеет смысл обе — по отдельности каждая неполна.`
-                                                            : `Рядом есть наш список «${sv.complement.names.join('», «')}»: он дополняет эту запись, а не заменяет её — в нём домены, которых здесь нет. Включать имеет смысл обе, иначе добавленный домен в туннель не попадёт.`
+                                                            ? S.catalogTab.etaZapisDopolnyaetA(sv.complement.names.join('», «'))
+                                                            : S.catalogTab.ryadomEstNashSpisok(sv.complement.names.join('», «'))
                                                     }
                                                 >
                                                     {sv.complement.ours
-                                                        ? `дополняет «${sv.complement.names.join('», «')}» — включайте оба`
-                                                        : `рядом наш список «${sv.complement.names.join('», «')}» — включайте оба`}
+                                                        ? S.catalogTab.dopolnyaetVklyuchayteOba(sv.complement.names.join('», «'))
+                                                        : S.catalogTab.ryadomNashSpisokVklyuchayte(sv.complement.names.join('», «'))}
                                                 </Hint>
                                             </div>
                                         )}
                                     </td>
                                     <td
                                         className="px-3 py-2 whitespace-nowrap text-muted-foreground"
-                                        data-label="записей"
+                                        data-label={S.catalogTab.zapisey2}
                                     >
                                         {/* НЕЗАГРУЖЕННЫЙ СПИСОК И ПУСТОЙ СПИСОК — РАЗНЫЕ ВЕЩИ.
                                             Здесь стояло `localCount || sv.count || 0`: пока
@@ -399,7 +395,7 @@ export default function CatalogTab({ onUseInRule }: Props) {
                                             отвечали им неправдой: первая — «всё на месте»,
                                             вторая — «список пуст». */}
                                         {have.length === 0
-                                            ? set ? 'загружен' : 'не загружен'
+                                            ? set ? S.catalogTab.zagruzhen : S.catalogTab.neZagruzhen
                                             : localCount.toLocaleString('ru-RU')}
                                     </td>
                                     <td className="px-3 py-2">
@@ -411,8 +407,7 @@ export default function CatalogTab({ onUseInRule }: Props) {
                                                 onClick={() => onUseInRule(sv)}
                                                 className="text-primary underline decoration-dotted"
                                             >
-                                                В правило
-                                            </button>
+                                                {S.catalogTab.vPravilo}</button>
                                         )}
                                     </td>
                                     <td className="px-3 py-2">
@@ -420,18 +415,17 @@ export default function CatalogTab({ onUseInRule }: Props) {
                                             {have.length === 0 && !set ? (
                                                 /* Не кнопка, а обещание: файл скачает бэкенд в момент
                                                    применения — человеку здесь делать нечего. */
-                                                <Hint tip="Списка ещё нет на роутере. Как только правило на него укажет и вы нажмёте «Применить», роутер скачает его сам.">
+                                                <Hint tip={S.catalogTab.spiskaEscheNetNa}>
                                                     <span className="text-xs text-muted-foreground">
-                                                        скачается сам
-                                                    </span>
+                                                        {S.catalogTab.skachaetsyaSam}</span>
                                                 </Hint>
                                             ) : (
                                                 <>
-                                                    <Hint tip="Списки обновляются сами раз в сутки по расписанию. Кнопка — если свежая версия нужна прямо сейчас.">
+                                                    <Hint tip={S.catalogTab.spiskiObnovlyayutsyaSamiRaz}>
                                                         <Button
                                                             variant="ghost"
                                                             size="icon"
-                                                            aria-label={`Обновить ${sv.name}`}
+                                                            aria-label={S.catalogTab.obnovit(sv.name)}
                                                             disabled={busy.has(sv.id)}
                                                             onClick={() => fetchService(sv)}
                                                         >
@@ -441,7 +435,7 @@ export default function CatalogTab({ onUseInRule }: Props) {
                                                     <Button
                                                         variant="ghost"
                                                         size="icon"
-                                                        aria-label={`Удалить ${sv.name} с роутера`}
+                                                        aria-label={S.catalogTab.udalitSRoutera(sv.name)}
                                                         className="hover:bg-destructive/10 hover:text-destructive"
                                                         disabled={busy.has(sv.id)}
                                                         onClick={() => removeService(sv)}
@@ -458,8 +452,7 @@ export default function CatalogTab({ onUseInRule }: Props) {
                         {shown.length === 0 && (
                             <tr>
                                 <td colSpan={4} className="px-3 py-8 text-center text-sm text-muted-foreground">
-                                    Ничего не нашлось.
-                                </td>
+                                    {S.catalogTab.nichegoNeNashlos}</td>
                             </tr>
                         )}
                     </tbody>
@@ -472,13 +465,9 @@ export default function CatalogTab({ onUseInRule }: Props) {
                    из-под живого правила, а это отказ применения при следующей перезагрузке. */
                 <div className="rounded-md border border-border bg-card p-3 text-xs text-muted-foreground">
                     <div className="mb-1 font-medium text-warning-fg">
-                        Используются правилами, но каталог их больше не предлагает
-                    </div>
+                        {S.catalogTab.ispolzuyutsyaPravilamiNoKatalog}</div>
                     <p className="mb-2">
-                        Эти списки остались от прежнего каталога — источник сменился или издатель убрал запись. Правила
-                        с ними работают, но обновляться они больше не будут, и выбрать такой список заново отсюда
-                        нельзя. Снять — на вкладке правил.
-                    </p>
+                        {S.catalogTab.etiSpiskiOstalisOt}</p>
                     <ul className="space-y-0.5">
                         {orphans.map((f) => (
                             <li key={f} className="truncate">
@@ -494,16 +483,14 @@ export default function CatalogTab({ onUseInRule }: Props) {
                 пакета — и молчать об этом нельзя: человек считал бы, что видит свой источник. */}
             {ad ? (
                 <p className="text-xs text-warning-fg">
-                    Каталог источника скачать не вышло — показана таблица из пакета:{' '}
-                    {ad.repo || 'itdoginfo/allow-domains'}, версия зафиксирована тегом{' '}
+                    {S.catalogTab.katalogIstochnikaSkachatNe}{' '}
+                    {ad.repo || 'itdoginfo/allow-domains'}{S.catalogTab.versiyaZafiksirovanaTegom}{' '}
                     <code>{ad.tag || '—'}</code>
-                    {ad.tag_default && ad.tag !== ad.tag_default && ' (переопределён настройкой)'}.
+                    {ad.tag_default && ad.tag !== ad.tag_default && S.catalogTab.pereopredelenNastroykoy}.
                 </p>
             ) : (
                 <p className="text-xs text-muted-foreground">
-                    Каталог — справка: запись начинает работать, когда на неё укажет правило.
-                    Нужные списки скачиваются и обновляются сами. Источник каталога — в
-                    «Настройки → Источник списков»{version ? `, версия ${version}` : ''}.
+                    {S.catalogTab.katalogSpravkaZapisNachinaet}{version ? S.catalogTab.versiya(version) : ''}.
                 </p>
             )}
             {ad?.tag_warn && (

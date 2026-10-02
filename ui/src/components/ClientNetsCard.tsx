@@ -4,6 +4,7 @@ import { Button } from '@/components/ui/button'
 import { devList, isTunnelKind, type ClientNet, type Spec, type Status } from '@/lib/model'
 import { rpc } from '@/lib/rpc'
 
+import { S } from '@/copy'
 /** Кого маршрутизируем: устройства, с которых движок забирает трафик клиентов (splify2#16).
  *
  *  ЗАЧЕМ. Роутер бывает выходной точкой не только для домашнего моста. У автора обращения
@@ -94,11 +95,11 @@ export default function ClientNetsCard({ spec, status, onChange }: Props) {
     const whyNotSource = (n: { name: string; wan?: boolean; usable?: boolean; why?: string }) => {
         if (n.usable === true) return ''
         if (n.usable === false)
-            return n.why || 'через этот интерфейс роутер уходит наружу, а не принимает клиентов'
+            return n.why || S.clientNetsCard.cherezEtotInterfeysRouter
         if (tunnelDevs.has(n.name))
-            return 'это устройство вашего выхода: через него трафик уходит наружу, а не приходит от клиентов'
+            return S.clientNetsCard.etoUstroystvoVashegoVyhoda
         if (n.wan)
-            return 'интерфейс ведёт наружу: оттуда приходит не ваша сеть, а весь мир по ту сторону роутера'
+            return S.clientNetsCard.interfeysVedetNaruzhuOttuda
         return ''
     }
 
@@ -117,11 +118,11 @@ export default function ClientNetsCard({ spec, status, onChange }: Props) {
         if (!spec) return
         const on = chosen.includes(name)
         if (on && chosen.length === 1) {
-            setWhy('Должно остаться хотя бы одно устройство — иначе ядру некому адресовать правила.')
+            setWhy(S.clientNetsCard.dolzhnoOstatsyaHotyaBy)
             return
         }
         if (!on && byNets) {
-            setWhy('Сейчас клиентов задают подсети. Второе устройство рядом с ними ядро отвергнет.')
+            setWhy(S.clientNetsCard.seychasKlientovZadayutPodseti)
             return
         }
         /** Второй барьер. Флажок негодного и так заперт (disabled), но запись в спеку не
@@ -167,11 +168,9 @@ export default function ClientNetsCard({ spec, status, onChange }: Props) {
 
     return (
         <Block>
-                <CardHead title="Кого маршрутизируем" />
+                <CardHead title={S.clientNetsCard.kogoMarshrutiziruem} />
                 <p className="text-[13px] text-muted-foreground">
-                    Правила касаются устройств, которые приходят через эти интерфейсы — например, из Tailscale или
-                    ZeroTier, если роутер им шлюз.
-                </p>
+                    {S.clientNetsCard.pravilaKasayutsyaUstroystvKotorye}</p>
 
                 {byNets && (
                     <div className="rounded-md border border-warning/40 bg-warning/10 p-3 text-xs">
@@ -180,12 +179,9 @@ export default function ClientNetsCard({ spec, status, onChange }: Props) {
                               * появился перечень интерфейсов. История человеку не нужна: ему
                               * нужно знать, что выбор ниже сейчас не работает, и чем это
                               * снимается. */}
-                            Сейчас клиентов задают подсети ({(spec?.from_default || []).join(', ')}), и
-                            выбор устройств не действует.
-                        </p>
+                            {S.clientNetsCard.seychasKlientovZadayutPodseti2}{(spec?.from_default || []).join(', ')}{S.clientNetsCard.iVyborUstroystvNe}</p>
                         <Button variant="ghost" className="mt-2" onClick={dropSubnets}>
-                            Задавать клиентов устройствами
-                        </Button>
+                            {S.clientNetsCard.zadavatKlientovUstroystvami}</Button>
                     </div>
                 )}
 
@@ -219,13 +215,13 @@ export default function ClientNetsCard({ spec, status, onChange }: Props) {
                                         </span>
                                         <span className="shrink-0 text-xs text-muted-foreground">
                                             {n.absent
-                                                ? 'сейчас на роутере нет'
+                                                ? S.clientNetsCard.seychasNaRoutereNet
                                                 : (n.subnets || []).length
                                                   ? (n.subnets || []).join(', ')
-                                                  : 'адреса пока нет'}
+                                                  : S.clientNetsCard.adresaPokaNet}
                                         </span>
                                         {n.wan && (
-                                            <span className="shrink-0 text-xs text-warning-fg">наружу</span>
+                                            <span className="shrink-0 text-xs text-warning-fg">{S.clientNetsCard.naruzhu}</span>
                                         )}
                                     </span>
                                     {/* Причина стоит РЯДОМ с флажком, а не в сводке снизу:
@@ -241,8 +237,7 @@ export default function ClientNetsCard({ spec, status, onChange }: Props) {
                     })}
                     {nets !== null && rows.length === 0 && (
                         <p className="px-2 py-1.5 text-xs text-muted-foreground">
-                            Устройств не нашлось. Если splify2 только что обновился — откройте страницу заново.
-                        </p>
+                            {S.clientNetsCard.ustroystvNeNashlosEsli}</p>
                     )}
                 </div>
 
@@ -250,9 +245,7 @@ export default function ClientNetsCard({ spec, status, onChange }: Props) {
 
                 {engineOld && (
                     <p className="text-xs text-warning-fg">
-                        Ядро этой версии перечня устройств не понимает и заберёт трафик только с br-lan. Обновите
-                        ядро в разделе «Настройки» — иначе выбор здесь ничего не изменит.
-                    </p>
+                        {S.clientNetsCard.yadroEtoyVersiiPerechnya}</p>
                 )}
 
                 {anyAbsent && (
@@ -261,9 +254,7 @@ export default function ClientNetsCard({ spec, status, onChange }: Props) {
                           * а не при применении, — поэтому отсутствующее устройство выбрать можно
                           * и ничего чинить потом не придётся. На экране остаётся только это
                           * последствие. */}
-                        Устройство, которого сейчас нет, выбрать можно: правило заработает само,
-                        когда оно поднимется.
-                    </p>
+                        {S.clientNetsCard.ustroystvoKotorogoSeychasNet}</p>
                 )}
 
                 {anyBlank && (
@@ -271,9 +262,7 @@ export default function ClientNetsCard({ spec, status, onChange }: Props) {
                         {/* Правила ссылаются на имя интерфейса, а не на адрес, поэтому пустой
                           * адрес правилу не мешает. Адрес показан только как примета: по нему
                           * человек узнаёт своё устройство среди одинаковых имён. */}
-                        Адрес показан, чтобы вы узнали, какое устройство какое. Правилам он не
-                        нужен.
-                    </p>
+                        {S.clientNetsCard.adresPokazanChtobyVy}</p>
                 )}
 
                 {chosenBad.length > 0 && (
@@ -283,9 +272,7 @@ export default function ClientNetsCard({ spec, status, onChange }: Props) {
                           * приходит из интернета, а не трафик домашних устройств. Причина у
                           * каждой строки уже написана рядом с ней — повторять её абзацем ниже
                           * незачем, а последствие сказать надо. */}
-                        Выбрано то, что источником трафика быть не может: {chosenBad.join(', ')}.
-                        Трафик ваших устройств оттуда не придёт, и правила на них не встанут.
-                    </p>
+                        {S.clientNetsCard.vybranoToChtoIstochnikom}{chosenBad.join(', ')}{S.clientNetsCard.trafikVashihUstroystvOttuda}</p>
                 )}
         </Block>
     )

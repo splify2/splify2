@@ -5,8 +5,8 @@ import { Button } from '@/components/ui/button'
 import { rpc } from '@/lib/rpc'
 import { notify } from '@/lib/notify'
 import { fmtWhen } from '@/lib/format'
-import { t } from '@/lib/i18n'
 
+import { S } from '@/copy'
 /** Согласие на телеметрию. Контракт целиком — docs/TELEMETRY.md.
  *
  *  ВКЛЮЧЕНО ПО УМОЛЧАНИЮ, И ЭТО ГЛАВНОЕ В КАРТОЧКЕ. Согласие подразумевается самим фактом
@@ -49,17 +49,17 @@ interface St {
  *
  *  Перечень «чего нет» закрытый и важнее схемы, поэтому он на экране, а не в документе,
  *  который никто не откроет. */
-const SENDS = 'модель роутера и версия OpenWrt, версии splify2 и ядра, страна, город и ' +
-    'номер автономной системы, виды выходов и то, подняты ли они, номера списков каталога, ' +
-    'домен панели подписки — только две последние метки, ' +
-    'номера сработавших проверок и счётчики событий с загрузки; при падении ядра ' +
-    'или туннеля — что именно упало, причина из закрытого набора, код возврата и сигнал ' +
-    'и сколько раз это было с загрузки.'
+const SENDS = S.telemetryCard.modelRouteraIVersiya +
+    S.telemetryCard.nomerAvtonomnoySistemyVidy +
+    S.telemetryCard.domenPaneliPodpiskiTolko +
+    S.telemetryCard.nomeraSrabotavshihProverokI +
+    S.telemetryCard.iliTunnelyaChtoImenno +
+    S.telemetryCard.iSkolkoRazEto
 
-const NEVER = 'ни одного IP-адреса, ссылок подписок и токенов в них, названий подписок, ' +
-    'имён узлов и их адресов, имён выходов и правил, имён своих списков, ключей туннелей, ' +
-    'счётчиков трафика и числа устройств в сети; ни одной строки журнала и ни одного текста ' +
-    'ошибки — в том числе в отчёте о падении, где от журнала уезжает только сам факт.'
+const NEVER = S.telemetryCard.niOdnogoIpAdresa +
+    S.telemetryCard.imenUzlovIIh +
+    S.telemetryCard.schetchikovTrafikaIChisla +
+    S.telemetryCard.oshibkiVTomChisle
 
 export default function TelemetryCard() {
     const [st, setSt] = useState<St | null>(null)
@@ -104,8 +104,8 @@ export default function TelemetryCard() {
         setBusy(true)
         try {
             const r = await rpc.telemetrySet(next)
-            if (!r.ok) throw new Error(r.error || t('не сохранилось'))
-            notify(next ? t('Отчёт снова будет уезжать раз в час') : t('Отправка выключена'))
+            if (!r.ok) throw new Error(r.error || S.telemetryCard.neSohranilos)
+            notify(next ? S.telemetryCard.otchetSnovaBudetUezzhat : S.telemetryCard.otpravkaVyklyuchena)
         } catch (e) {
             notify(String(e instanceof Error ? e.message : e), 'error')
         } finally {
@@ -126,7 +126,7 @@ export default function TelemetryCard() {
             // Отказ приезжает общей формой объекта; в самом пакете поля `ok` нет.
             if (r && (r as { ok?: unknown }).ok === false) {
                 throw new Error(
-                    String((r as { error?: unknown }).error || t('пакет не собрался')),
+                    String((r as { error?: unknown }).error || S.telemetryCard.paketNeSobralsya),
                 )
             }
             setPkt(JSON.stringify(r, null, 2))
@@ -142,16 +142,16 @@ export default function TelemetryCard() {
 
     return (
         <Block>
-                <CardHead title={t('Отчёт о работе')} />
+                <CardHead title={S.telemetryCard.otchetORabote} />
                 <div className="flex flex-row-reverse items-start justify-between gap-3">
                     <Switch
                         on={on}
-                        label={t('Отправлять отчёт о работе раз в час')}
+                        label={S.telemetryCard.otpravlyatOtchetORabote}
                         disabled={busy || st === null}
                         onClick={() => void toggle()}
                     />
                     <div className="min-w-0">
-                        <div className="text-[13px]">{t('Отправлять отчёт о работе раз в час')}</div>
+                        <div className="text-[13px]">{S.telemetryCard.otpravlyatOtchetORabote}</div>
 
                         {/* Показывается при ЛЮБОМ включённом состоянии, а не только при «не
                             спрашивали»: человек, который переключатель не трогал, и человек,
@@ -163,13 +163,13 @@ export default function TelemetryCard() {
                                 {/* «Этими данными живёт разработка» — это наша причина, а не то,
                                   * после чего человек делает следующий шаг. Остаётся состояние
                                   * (уезжает, включено по умолчанию) и действие (выключить). */}
-                                {t('Отчёт о работе уезжает раз в час, а при падении ядра, обхода DPI или туннеля — сразу. Он включён по умолчанию; выключить можно здесь.')}
+                                {S.telemetryCard.otchetORaboteUezzhaet}
                             </div>
                         )}
 
                         {st?.consent === 'off' && (
                             <div className="text-xs text-muted-foreground">
-                                {t('Ничего не отправляется.')}
+                                {S.telemetryCard.nichegoNeOtpravlyaetsya}
                             </div>
                         )}
 
@@ -180,17 +180,17 @@ export default function TelemetryCard() {
                             <>
                                 <div className="text-xs text-muted-foreground">
                                     {st.lastAt
-                                        ? `${t('Последняя отправка')}: ${fmtWhen(st.lastAt)}`
-                                        : `${t('Последняя отправка')}: ${t('её ещё не было')}`}
+                                        ? `${S.telemetryCard.poslednyayaOtpravka}: ${fmtWhen(st.lastAt)}`
+                                        : `${S.telemetryCard.poslednyayaOtpravka}: ${S.telemetryCard.eeEscheNeBylo}`}
                                 </div>
                                 {st.id && (
                                     <div className="text-xs text-muted-foreground">
-                                        {t('Идентификатор')}: <span className="font-mono">{st.id}</span>
+                                        {S.telemetryCard.identifikator}: <span className="font-mono">{st.id}</span>
                                     </div>
                                 )}
                                 {st.lastError && (
                                     <div className="text-xs text-warning-fg">
-                                        {t('Прошлая отправка не удалась')}: {st.lastError}
+                                        {S.telemetryCard.proshlayaOtpravkaNeUdalas}: {st.lastError}
                                     </div>
                                 )}
                             </>
@@ -200,16 +200,16 @@ export default function TelemetryCard() {
 
                 <div className="space-y-1 text-xs leading-relaxed text-muted-foreground">
                     <div>
-                        <span className="font-medium text-foreground">{t('Уезжает')}</span>: {SENDS}
+                        <span className="font-medium text-foreground">{S.telemetryCard.uezzhaet}</span>: {SENDS}
                     </div>
                     <div>
-                        <span className="font-medium text-foreground">{t('Не уезжает')}</span>: {NEVER}
+                        <span className="font-medium text-foreground">{S.telemetryCard.neUezzhaet}</span>: {NEVER}
                     </div>
                     {/* Честная оговорка: обещать «мы не знаем ваш адрес» нельзя — его видит
                         любой получатель любого запроса. Обещать можно только то, что в пакете
                         адреса нет и в базу он не пишется. */}
                     <div>
-                        {t('В пакете адреса нет. При самой отправке получатель видит адрес, как его видит любой сайт, и в базу он не пишется.')}
+                        {S.telemetryCard.vPaketeAdresaNet}
                     </div>
                 </div>
 
@@ -220,7 +220,7 @@ export default function TelemetryCard() {
                         disabled={asking}
                         onClick={() => void preview()}
                     >
-                        {asking ? t('Собираем…') : t('Показать пакет')}
+                        {asking ? S.telemetryCard.sobiraem : S.telemetryCard.pokazatPaket}
                     </Button>
                     {/* Показывается ровно то, что вернул роутер: отступы для читаемости,
                         значения — без единой правки. */}

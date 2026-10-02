@@ -7,6 +7,7 @@ import { pending } from './pending'
 import { foldStatus } from './specv2'
 import { buildId } from './assets'
 
+import { S } from '@/copy'
 /** Живые данные экрана — ОДИН опрос на всё.
  *
  *  Раньше их читала только страница состояния. Теперь они нужны и закреплённой колонке, и
@@ -104,8 +105,8 @@ export interface Live {
 /** Байты человеческим размером. Точность до десятой доли: «223,4 МБ» отвечает на вопрос,
  *  а «234085837» требует считать разряды глазами. */
 export function human(n: number) {
-    if (!isFinite(n) || n <= 0) return '0 Б'
-    const u = ['Б', 'КБ', 'МБ', 'ГБ', 'ТБ']
+    if (!isFinite(n) || n <= 0) return S.live.n0B
+    const u = [S.live.b, S.live.kb, S.live.mb, S.live.gb, S.live.tb]
     let i = 0
     let v = n
     while (v >= 1024 && i < u.length - 1) { v /= 1024; i++ }
@@ -117,9 +118,9 @@ export function human(n: number) {
 export function rate(bytes: number, ms: number) {
     if (!(ms > 0) || !(bytes > 0)) return null
     const bits = (bytes * 8 * 1000) / ms
-    if (bits >= 1e6) return `${(bits / 1e6).toFixed(1).replace('.', ',')} Мбит/с`
-    if (bits >= 1e3) return `${Math.round(bits / 1e3)} кбит/с`
-    return `${Math.round(bits)} бит/с`
+    if (bits >= 1e6) return S.live.mbitS((bits / 1e6).toFixed(1).replace('.', ','))
+    if (bits >= 1e3) return S.live.kbitS(Math.round(bits / 1e3))
+    return S.live.bitS(Math.round(bits))
 }
 
 const PERIOD_MS = 5000
@@ -272,7 +273,7 @@ export function useLive(): Live {
             if (o.ok === false || o.ok === 0)
                 /* Текста у отказа может не быть вовсе — тогда своя строка. Слово «бэкенд»
                  * человеку ничего не говорит: для него отказал роутер. */
-                return typeof o.error === 'string' && o.error ? o.error : 'роутер вернул ошибку'
+                return typeof o.error === 'string' && o.error ? o.error : S.live.routerVernulOshibku
             return null
         }
         const asText = (e: unknown): string => String(e instanceof Error ? e.message : e)

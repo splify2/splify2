@@ -5,6 +5,7 @@ import { inputCls } from '@/components/formbits'
 import { isIp4 } from '@/lib/validate'
 import type { Obfs, Output } from '@/lib/model'
 
+import { S } from '@/copy'
 // «WireGuard поверх TCP» для выхода kind=interface.
 //
 // Зачем это в интерфейсе вообще. Симптом, ради которого сюда приходят, звучит как «всё
@@ -86,48 +87,44 @@ export default function ObfsPanel({ output, onChange }: Props) {
             <ToggleRow
                 label={
                     <span className="flex flex-wrap items-center gap-2">
-                        WireGuard поверх TCP
-                        {on && <Badge variant="secondary">обфускация включена</Badge>}
+                        {S.obfsPanel.wireguardPoverhTcp}{on && <Badge variant="secondary">{S.obfsPanel.obfuskatsiyaVklyuchena}</Badge>}
                     </span>
                 }
                 caption={
                     <>
-                        Прячет туннель в поток, похожий на обычный TCP. Нужно там, где UDP режут: маршрутизация выглядит
-                        исправной, а туннель не поднимается.
-                        На другой стороне должен работать <code>steer obfs-server</code> или phantun.
-                    </>
+                        {S.obfsPanel.pryachetTunnelVPotok}<code>steer obfs-server</code> {S.obfsPanel.iliPhantun}</>
                 }
                 on={on}
                 onToggle={() => toggle(!on)}
-                switchLabel="WireGuard поверх TCP"
+                switchLabel={S.obfsPanel.wireguardPoverhTcp}
             />
 
             {on && (
                 <div className="divide-y divide-border border-t border-border">
-                    <FieldRow label="Сервер обфускации">
+                    <FieldRow label={S.obfsPanel.serverObfuskatsii}>
                         <input
                             value={host}
                             placeholder="203.0.113.10"
                             onChange={(e) => { setHost(e.currentTarget.value); push({ host: e.currentTarget.value }) }}
                             className={`${inputCls} w-full font-mono`}
-                            aria-label="Адрес сервера обфускации"
+                            aria-label={S.obfsPanel.adresServeraObfuskatsii}
                         />
                     </FieldRow>
-                    <FieldRow label="Порт">
+                    <FieldRow label={S.obfsPanel.port}>
                         <input
                             value={sport}
                             placeholder="4567"
                             onChange={(e) => { setSport(e.currentTarget.value); push({ sport: e.currentTarget.value }) }}
                             className={`${inputCls} w-full font-mono`}
-                            aria-label="Порт сервера обфускации"
+                            aria-label={S.obfsPanel.portServeraObfuskatsii}
                         />
                     </FieldRow>
-                    <FieldRow label="Локальный порт (= Endpoint пира)">
+                    <FieldRow label={S.obfsPanel.lokalnyyPortEndpointPira}>
                         <input
                             value={lport}
                             onChange={(e) => { setLport(e.currentTarget.value); push({ lport: e.currentTarget.value }) }}
                             className={`${inputCls} w-full font-mono`}
-                            aria-label="Локальный порт обфускатора"
+                            aria-label={S.obfsPanel.lokalnyyPortObfuskatora}
                         />
                     </FieldRow>
 
@@ -137,28 +134,22 @@ export default function ObfsPanel({ output, onChange }: Props) {
                         сохранения, а не отказом движка после. */}
                     {host.length === 0 && (
                         <p className="text-xs text-warning-fg">
-                            Без адреса сервера обфускации выход не сохранится.
-                        </p>
+                            {S.obfsPanel.bezAdresaServeraObfuskatsii}</p>
                     )}
                     {hostBad && (
                         <p className="text-xs text-warning-fg">
                             {/* Имена здесь не разрешаются намеренно: запрос к DNS ушёл бы в тот
                               * самый туннель, который через этот сервер и поднимается, — курица
                               * и яйцо. Человеку от этой причины пользы нет, ему нужен адрес. */}
-                            Нужен адрес, а не имя.
-                        </p>
+                            {S.obfsPanel.nuzhenAdresANe}</p>
                     )}
                     {(sportBad || lportBad) && (
-                        <p className="text-xs text-warning-fg">Порт — число от 1 до 65535.</p>
+                        <p className="text-xs text-warning-fg">{S.obfsPanel.portChisloOt1}</p>
                     )}
 
                     <p className="text-xs text-muted-foreground">
-                        В настройках пира WireGuard <code>Endpoint</code> должен указывать на{' '}
-                        <code>{LOCAL_ADDR}:{lport || '…'}</code> — иначе трафик уйдёт мимо
-                        обфускатора и туннель молча не поднимется. И MTU: поверх TCP конверт
-                        на 12 байт больше, чем поверх UDP, поэтому у интерфейса туннеля
-                        обычно <code>1428</code> вместо 1440, одинаково с обеих сторон.
-                    </p>
+                        {S.obfsPanel.vNastroykahPiraWireguard}<code>Endpoint</code> {S.obfsPanel.dolzhenUkazyvatNa}{' '}
+                        <code>{LOCAL_ADDR}:{lport || '…'}</code> {S.obfsPanel.inacheTrafikUydetMimo}<code>1428</code> {S.obfsPanel.vmesto1440OdinakovoS}</p>
                     </div>
                 </div>
             )}

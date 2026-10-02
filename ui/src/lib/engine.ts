@@ -1,6 +1,7 @@
 import type { Build } from '@/lib/live'
 import { type Status } from '@/lib/model'
 
+import { S } from '@/copy'
 /** Что можно предложить сделать с движком — в одном месте на весь интерфейс.
  *
  *  Место одно потому, что мест было два и они расходились. Левая колонка выбирала подпись
@@ -88,18 +89,18 @@ export interface EngineAction {
 export function engineAction(build: Build | null, releases: Releases | null): EngineAction {
     const latest = releases?.versions?.length ? releases.versions[0] : null
 
-    if (!build?.present) return { label: 'Установить', latest, outdated: false }
+    if (!build?.present) return { label: S.engine.ustanovit, latest, outdated: false }
 
     // Список ещё не пришёл (или интернета на роутере нет) — значит про «свежее» мы не знаем
     // ничего. Молчание здесь честнее догадки: обещать обновление, которого никто не
     // проверял, и есть та самая находка.
-    if (!latest || !build.version) return { label: 'Переустановить', latest, outdated: false }
+    if (!latest || !build.version) return { label: S.engine.pereustanovit, latest, outdated: false }
 
     const outdated = cmpVersion(build.version, latest) < 0
     /* Подпись называет выпуск так, как он подписан на странице релизов: человек читал
      * «Обновить до 26.9», а искал «Andromeda» — и не находил, потому что искал не число. */
     return {
-        label: outdated ? `Обновить до ${releaseName(latest, releases?.names)}` : 'Переустановить',
+        label: outdated ? S.engine.obnovitDo(releaseName(latest, releases?.names)) : S.engine.pereustanovit,
         latest,
         outdated,
     }

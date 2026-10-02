@@ -24,6 +24,7 @@ import { Block, Group } from '@/components/ui/layout'
 import RuleEditor from '@/components/tabs/RuleEditor'
 import { pathFor, ruleFiles, selectedIds, srsOf } from '@/lib/rulefiles'
 
+import { S } from '@/copy'
 /** Правила: единственное место, где что-то назначается.
  *
  *  Строка читается как предложение — что перенаправляем, кого касается, куда. Порядок задаёт
@@ -41,15 +42,15 @@ function describe(ch: Channel, services: ServiceEntry[]) {
     const entries = services.filter((sv) => ids.includes(sv.id))
     if (!entries.length) {
         const files = ruleFiles(ch)
-        if (ch.match.any) return 'весь трафик'
-        if (!files.length) return 'сервис не выбран'
-        return `свои списки: ${files.length}`
+        if (ch.match.any) return S.rulesTab.vesTrafik
+        if (!files.length) return S.rulesTab.servisNeVybran
+        return S.rulesTab.svoiSpiski(files.length)
     }
     const total = entries.reduce((n, sv) => n + (sv.count || 0), 0)
     const what = entries.length <= 3
         ? entries.map((sv) => sv.name).join(', ')
-        : `${entries.slice(0, 2).map((sv) => sv.name).join(', ')} и ещё ${entries.length - 2}`
-    return total ? `${what} · ${total.toLocaleString('ru-RU')} записей` : what
+        : S.rulesTab.iEsche(entries.slice(0, 2).map((sv) => sv.name).join(', '), entries.length - 2)
+    return total ? S.rulesTab.zapisey(what, total.toLocaleString('ru-RU')) : what
 }
 
 /** Куда вести новое правило, пока человек не выбрал сам: первый туннельный выход, а не первый
@@ -68,9 +69,9 @@ function defaultOut(spec: Spec): string | undefined {
  *  Счётчик остаётся счётчиком — «устройств: 2», подпись с двоеточием и числом, — и склонения
  *  после числительного здесь не нужны по построению. */
 function whoTextFor(ch: Channel) {
-    if (!ch.from?.length) return 'всех устройств'
+    if (!ch.from?.length) return S.rulesTab.vsehUstroystv
     if (ch.from.length === 1) return ch.from[0]
-    return `адресов и подсетей: ${ch.from.length}`
+    return S.rulesTab.adresovIPodsetey(ch.from.length)
 }
 
 /** Спорят ли два правила за одни и те же записи.
@@ -128,7 +129,7 @@ export default function RulesTab({
         rpc.manifest()
             .then((m) => {
                 const c = toCatalog(m)
-                if (!c.services.length) throw new Error('пустой каталог')
+                if (!c.services.length) throw new Error(S.rulesTab.pustoyKatalog)
                 setServices(c.services)
             })
             .catch(() =>
@@ -167,7 +168,7 @@ export default function RulesTab({
         onWantedUsed?.()
         const out = defaultOut(spec)
         if (!out) {
-            notify('Сначала настройте выход VPN — правилу некуда вести', 'warning')
+            notify(S.rulesTab.snachalaNastroyteVyhodVpn, 'warning')
             return
         }
         /* Набор каталога встаёт списками или файлом — как в редакторе (srsOf); пока роутер
@@ -228,13 +229,13 @@ export default function RulesTab({
         if (!spec) return
         const out = defaultOut(spec)
         if (!out) {
-            notify('Сначала настройте выход VPN — правилу некуда вести', 'warning')
+            notify(S.rulesTab.snachalaNastroyteVyhodVpn, 'warning')
             return
         }
         const used = new Set(spec.channels.map((c) => c.name))
         let n = spec.channels.length + 1
-        while (used.has(`правило${n}`)) n++
-        edit({ ...spec, channels: [...spec.channels, { name: `правило${n}`, match: {}, out }] })
+        while (used.has(S.rulesTab.pravilo(n))) n++
+        edit({ ...spec, channels: [...spec.channels, { name: S.rulesTab.pravilo(n), match: {}, out }] })
         setOpen(spec.channels.length)
     }
 
@@ -263,9 +264,9 @@ export default function RulesTab({
             outputs = { ...outputs, [out]: { name: out, kind: 'direct' } }
         }
         const used = new Set(spec.channels.map((c) => c.name))
-        let name = 'исключение'
+        let name = S.rulesTab.isklyuchenie
         let n = 2
-        while (used.has(name)) name = `исключение ${n++}`
+        while (used.has(name)) name = S.rulesTab.isklyuchenie2(n++)
         /* Место — перед первым туннельным правилом, а не в конец списка: исключение, попавшее
          * ниже туннельного канала с теми же записями, не срабатывает вовсе. Не в самое начало
          * тоже осознанно — так уже стоящие исключения сохраняют свой порядок между собой. */
@@ -309,7 +310,7 @@ export default function RulesTab({
             })
     }, [spec, search, services])
 
-    if (!spec) return <div className="p-5 text-sm text-muted-foreground">Загрузка…</div>
+    if (!spec) return <div className="p-5 text-sm text-muted-foreground">{S.rulesTab.zagruzka}</div>
 
     /** Выходы: спека плюс то, что о них знает движок.
      *
@@ -331,10 +332,10 @@ export default function RulesTab({
             .filter(({ o, k }) => k !== open && selectedIds(o, services).some((id) => mine.has(id)))
         const above = clashing.filter(({ k }) => k < open)
         const clash = clashing.length
-            ? `Общие записи с: ${clashing.map(({ o }) => o.name).join(', ')}. ` +
+            ? S.rulesTab.obschieZapisiS(clashing.map(({ o }) => o.name).join(', ')) +
               (above.length
-                  ? `Совпавшее заберёт «${above[above.length - 1].o.name}» — оно выше.`
-                  : 'Совпавшее заберёт это правило — оно выше.')
+                  ? S.rulesTab.sovpavsheeZaberetOnoVyshe(above[above.length - 1].o.name)
+                  : S.rulesTab.sovpavsheeZaberetEtoPravilo)
             : null
         /* Перекрытие исключения — отдельно от `clash`: то говорит, кто заберёт общие записи,
          * а это отвечает на вопрос «сработает ли вообще». Считается только для канала в
@@ -403,7 +404,7 @@ export default function RulesTab({
                     aria-hidden="true"
                 />
                 <span className="truncate text-foreground">
-                    {o ? (o.kind === 'direct' ? 'Напрямую' : ch.out) : `${ch.out} — не найден`}
+                    {o ? (o.kind === 'direct' ? S.rulesTab.napryamuyu : ch.out) : S.rulesTab.neNayden(ch.out)}
                 </span>
             </span>
         )
@@ -416,8 +417,8 @@ export default function RulesTab({
             <Button
                 variant="ghost"
                 size="icon"
-                aria-label="Поднять приоритет"
-                title={isFiltering ? 'Сбросьте поиск для изменения порядка' : undefined}
+                aria-label={S.rulesTab.podnyatPrioritet}
+                title={isFiltering ? S.rulesTab.sbrostePoiskDlyaIzmeneniya : undefined}
                 disabled={i === 0 || isFiltering}
                 onClick={() => move(i, -1)}
             >
@@ -426,18 +427,18 @@ export default function RulesTab({
             <Button
                 variant="ghost"
                 size="icon"
-                aria-label="Опустить приоритет"
-                title={isFiltering ? 'Сбросьте поиск для изменения порядка' : undefined}
+                aria-label={S.rulesTab.opustitPrioritet}
+                title={isFiltering ? S.rulesTab.sbrostePoiskDlyaIzmeneniya : undefined}
                 disabled={i === spec!.channels.length - 1 || isFiltering}
                 onClick={() => move(i, 1)}
             >
                 <ArrowDown className="h-4 w-4" aria-hidden="true" />
             </Button>
-            <Button variant="ghost" size="icon" aria-label="Изменить правило"
+            <Button variant="ghost" size="icon" aria-label={S.rulesTab.izmenitPravilo}
                     onClick={() => setOpen(i)}>
                 <Pencil className="h-4 w-4" aria-hidden="true" />
             </Button>
-            <Button variant="ghost" size="icon" aria-label="Удалить правило"
+            <Button variant="ghost" size="icon" aria-label={S.rulesTab.udalitPravilo}
                     className="hover:bg-destructive/10 hover:text-destructive"
                     onClick={() => edit({ ...spec!, channels: spec!.channels.filter((_, k) => k !== i) })}>
                 <Trash2 className="h-4 w-4" aria-hidden="true" />
@@ -450,14 +451,12 @@ export default function RulesTab({
     const addButtons = (
         <div className="flex flex-col gap-2 sm:flex-row">
             <Button variant="outline" onClick={add} className="w-full sm:flex-1">
-                <Plus className="mr-1 h-4 w-4" aria-hidden="true" /> Новое правило
-            </Button>
+                <Plus className="mr-1 h-4 w-4" aria-hidden="true" /> {S.rulesTab.novoePravilo}</Button>
             {/* Без иконки и вторичной кнопкой: исключение — частный случай правила, а
                 не второй способ его завести. Название кнопки и есть вся новизна — сам
                 механизм в движке тот же. */}
             <Button variant="ghost" onClick={addException} className="w-full sm:w-auto">
-                Исключение
-            </Button>
+                {S.rulesTab.isklyuchenie3}</Button>
         </div>
     )
 
@@ -467,16 +466,13 @@ export default function RulesTab({
                 и здесь, и человек видел одну и ту же настройку в двух разделах. Правила — про
                 то, ЧТО и КУДА; откуда приходят клиенты — настройка роутера, а не правила. */}
             <p className="text-xs text-muted-foreground">
-                Сверху вниз — побеждает{' '}
+                {S.rulesTab.sverhuVnizPobezhdaet}{' '}
                 {/* Под этим стоит раздача меток движком: метку ставит первое совпавшее сверху
                     правило, и именно поэтому «Напрямую» выше туннельного работает как
                     исключение. На экране остаётся само правило игры и действие — стрелки. */}
-                <Hint tip="Адрес достаётся самому верхнему правилу, которое его назвало; остальное идёт напрямую. Порядок меняется стрелками.">
-                    первое совпадение
-                </Hint>
-                . Изменения сохраняются сами. Правило «Напрямую» выше туннельных — это
-                исключение: выбранное пойдёт мимо VPN.
-            </p>
+                <Hint tip={S.rulesTab.adresDostaetsyaSamomuVerhnemu}>
+                    {S.rulesTab.pervoeSovpadenie}</Hint>
+                {S.rulesTab.izmeneniyaSohranyayutsyaSamiPravilo}</p>
 
             {spec.channels.length > 0 && (
                 <div className="flex items-center gap-2 rounded-xl border border-border bg-card px-3 py-1.5 shadow-card">
@@ -484,14 +480,14 @@ export default function RulesTab({
                     <input
                         value={search}
                         onChange={(e) => setSearch(e.currentTarget.value)}
-                        placeholder="Поиск правил по названию, сервису или выходу…"
+                        placeholder={S.rulesTab.poiskPravilPoNazvaniyu}
                         className="min-w-0 flex-1 bg-transparent py-1 text-sm outline-none placeholder:text-muted-foreground"
                     />
                     {search && (
                         <button
                             type="button"
                             onClick={() => setSearch('')}
-                            aria-label="Очистить строку поиска"
+                            aria-label={S.rulesTab.ochistitStrokuPoiska}
                             className="text-muted-foreground transition-colors hover:text-foreground"
                         >
                             <X className="h-4 w-4" aria-hidden="true" />
@@ -499,7 +495,7 @@ export default function RulesTab({
                     )}
                     {search.trim() ? (
                         <span className="shrink-0 text-xs text-muted-foreground">
-                            найдено {filteredChannels.length} из {spec.channels.length}
+                            {S.rulesTab.naydeno}{filteredChannels.length} {S.rulesTab.iz}{spec.channels.length}
                         </span>
                     ) : null}
                 </div>
@@ -507,17 +503,14 @@ export default function RulesTab({
 
             {spec.channels.length === 0 ? (
                 <Block className="text-center">
-                    <p className="text-sm font-medium">Правил нет — весь трафик идёт напрямую.</p>
+                    <p className="text-sm font-medium">{S.rulesTab.pravilNetVesTrafik}</p>
                     <p className="text-xs text-muted-foreground">
-                        Добавьте правила для сервисов (YouTube, Telegram, Discord...) или направьте нужный трафик через VPN.
-                    </p>
+                        {S.rulesTab.dobavtePravilaDlyaServisov}</p>
                     <div className="flex flex-wrap justify-center gap-2 pt-1">
                         <Button onClick={add}>
-                            <Plus className="mr-1 h-4 w-4" aria-hidden="true" /> Новое правило
-                        </Button>
+                            <Plus className="mr-1 h-4 w-4" aria-hidden="true" /> {S.rulesTab.novoePravilo}</Button>
                         <Button variant="ghost" onClick={addException}>
-                            Исключение
-                        </Button>
+                            {S.rulesTab.isklyuchenie3}</Button>
                     </div>
                     {routedOutputs(outputs).length === 0 && (
                         <div className="text-xs">
@@ -526,18 +519,16 @@ export default function RulesTab({
                                 onClick={onGoOutbounds}
                                 className="text-primary underline decoration-dotted"
                             >
-                                Настроить выход VPN
-                            </button>
+                                {S.rulesTab.nastroitVyhodVpn}</button>
                         </div>
                     )}
                 </Block>
             ) : filteredChannels.length === 0 ? (
                 <Block className="text-center text-sm text-muted-foreground">
-                    <div>По запросу «{search}» ничего не нашлось.</div>
+                    <div>{S.rulesTab.poZaprosu}{search}{S.rulesTab.nichegoNeNashlos}</div>
                     <div>
                         <Button variant="outline" size="sm" onClick={() => setSearch('')}>
-                            Сбросить поиск
-                        </Button>
+                            {S.rulesTab.sbrositPoisk}</Button>
                     </div>
                 </Block>
             ) : (
@@ -572,12 +563,12 @@ export default function RulesTab({
                                             <span className="min-w-0 flex-1">
                                                 <span className="block truncate text-sm font-semibold">{ch.name}</span>
                                                 <span className="mt-0.5 block text-[13px] leading-snug text-subtle">
-                                                    <span>для {whoTextFor(ch)}</span>
+                                                    <span>{S.rulesTab.dlya}{whoTextFor(ch)}</span>
                                                     <span aria-hidden="true"> → </span>
                                                     <span>{describe(ch, services)}</span>
                                                     <span aria-hidden="true"> → </span>
                                                     {ruleOut(ch)}
-                                                    {!on && ' · выключено'}
+                                                    {!on && S.rulesTab.vyklyucheno}
                                                 </span>
                                             </span>
                                         </button>
@@ -587,7 +578,7 @@ export default function RulesTab({
                                         <div className="order-2 flex min-h-[44px] shrink-0 items-center md:order-3">
                                             <Switch
                                                 on={on}
-                                                label={on ? `Выключить правило ${ch.name}` : `Включить правило ${ch.name}`}
+                                                label={on ? S.rulesTab.vyklyuchitPravilo(ch.name) : S.rulesTab.vklyuchitPravilo(ch.name)}
                                                 onClick={() => toggle(originalIndex, !on)}
                                             />
                                         </div>

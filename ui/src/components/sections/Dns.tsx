@@ -9,6 +9,7 @@ import { rpc, type DnsLog } from '@/lib/rpc'
 import { isPart, type DomainMode, type DnsSpec, type Spec, type Upstream } from '@/lib/model'
 import { type Live } from '@/lib/live'
 
+import { S } from '@/copy'
 /** DNS: какими серверами и через какой выход резолвер движка спрашивает имена под правилами.
  *
  *  Резолвер движка отвечает только на имена, которые попали под правило; остальные спрашивает
@@ -26,15 +27,15 @@ const PRESETS: { title: string; name: string; up: Upstream }[] = [
 ]
 
 const STATE_TEXT: Record<string, string> = {
-    ready: 'работает',
-    idle: 'ждёт вопросов',
-    connecting: 'соединяется',
-    down: 'не отвечает',
-    unmarked: 'выход не размечен',
-    'no-tls': 'нужна сборка с TLS',
+    ready: S.dns.rabotaet,
+    idle: S.dns.zhdetVoprosov,
+    connecting: S.dns.soedinyaetsya,
+    down: S.dns.neOtvechaet,
+    unmarked: S.dns.vyhodNeRazmechen,
+    'no-tls': S.dns.nuzhnaSborkaSTls,
 }
 
-const PROTO_TEXT: Record<string, string> = { udp: 'DNS', tcp: 'DNS по TCP', dot: 'DoT', doh: 'DoH', doq: 'DoQ' }
+const PROTO_TEXT: Record<string, string> = { udp: 'DNS', tcp: S.dns.dnsPoTcp, dot: 'DoT', doh: 'DoH', doq: 'DoQ' }
 
 const listOf = (s: string) => s.split(/[\s,]+/).map((x) => x.trim()).filter(Boolean)
 
@@ -54,7 +55,7 @@ export default function Dns(_props: { live?: Live }) {
         return () => { stop = true; clearInterval(id) }
     }, [])
 
-    if (!spec) return <div className="p-5 text-sm text-muted-foreground">Загрузка…</div>
+    if (!spec) return <div className="p-5 text-sm text-muted-foreground">{S.dns.zagruzka}</div>
 
     const dns: DnsSpec = spec.dns || {}
     const ups = dns.upstreams || {}
@@ -88,7 +89,7 @@ export default function Dns(_props: { live?: Live }) {
     }
     function remove(name: string) {
         const used = spec!.channels.filter((c) => c.dns === name).map((c) => c.name)
-        if (used.length) { notify(`Сервер «${name}» выбран в правилах: ${used.join(', ')}`, 'warning'); return }
+        if (used.length) { notify(S.dns.serverVybranVPravilah(name, used.join(', ')), 'warning'); return }
         const rest = { ...ups }
         delete rest[name]
         setDns({ ...dns, upstreams: rest, upstream: dns.upstream === name ? undefined : dns.upstream })
@@ -124,11 +125,10 @@ export default function Dns(_props: { live?: Live }) {
     return (
         <div className="space-y-4">
             <Block>
-                <CardHead title="Серверы DNS" meta={names.length ? `серверов: ${names.length}` : undefined} />
+                <CardHead title={S.dns.serveryDns} meta={names.length ? S.dns.serverov(names.length) : undefined} />
                 {names.length === 0 && (
                     <p className="text-sm text-muted-foreground">
-                        Серверов нет: имена под правилами спрашиваются у системного DNS роутера.
-                    </p>
+                        {S.dns.serverovNetImenaPod}</p>
                 )}
                 {names.length > 0 && (
                     <div className="divide-y divide-border">
@@ -141,22 +141,22 @@ export default function Dns(_props: { live?: Live }) {
                                         <span className={`h-2 w-2 shrink-0 rounded-full ${dotOf(s?.state)}`} aria-hidden="true" />
                                         <input
                                             defaultValue={n}
-                                            aria-label={`имя сервера ${n}`}
+                                            aria-label={S.dns.imyaServera(n)}
                                             onBlur={(e) => rename(n, e.currentTarget.value.trim())}
                                             className={`${inputCls} w-40 font-mono`}
                                         />
                                         {s && (
                                             <span className={`text-xs ${s.state === 'down' || s.state === 'no-tls' ? 'text-destructive' : 'text-muted-foreground'}`}>
                                                 {PROTO_TEXT[s.proto] || s.proto} · {STATE_TEXT[s.state] || s.state}
-                                                {s.ok !== undefined ? ` · ответов: ${s.ok}` : ''}
+                                                {s.ok !== undefined ? S.dns.otvetov(s.ok) : ''}
                                             </span>
                                         )}
                                         <span className="flex-1" />
-                                        <button type="button" aria-label={`убрать ${n}`} onClick={() => remove(n)} className="sp-row bg-transparent p-0 text-muted-foreground hover:text-destructive">
+                                        <button type="button" aria-label={S.dns.ubrat(n)} onClick={() => remove(n)} className="sp-row bg-transparent p-0 text-muted-foreground hover:text-destructive">
                                             <Trash2 className="h-4 w-4" />
                                         </button>
                                     </div>
-                                    <FieldRow label="Адрес">
+                                    <FieldRow label={S.dns.adres}>
                                         <input
                                             value={u.url}
                                             onChange={(e) => setUp(n, { ...u, url: e.currentTarget.value.trim() })}
@@ -164,17 +164,17 @@ export default function Dns(_props: { live?: Live }) {
                                             className={`${inputCls} w-full font-mono`}
                                         />
                                     </FieldRow>
-                                    <FieldRow label="Через выход">
+                                    <FieldRow label={S.dns.cherezVyhod}>
                                         <select
                                             value={u.out || ''}
                                             onChange={(e) => setUp(n, { ...u, out: e.currentTarget.value || undefined })}
                                             className={`${inputCls} w-full`}
                                         >
-                                            <option value="">напрямую</option>
+                                            <option value="">{S.dns.napryamuyu}</option>
                                             {outs.map((o) => <option key={o} value={o}>{o}</option>)}
                                         </select>
                                     </FieldRow>
-                                    <FieldRow label="Адреса сервера">
+                                    <FieldRow label={S.dns.adresaServera}>
                                         <input
                                             defaultValue={(u.ips || []).join(', ')}
                                             onBlur={(e) => setUp(n, { ...u, ips: listOf(e.currentTarget.value) })}
@@ -191,31 +191,31 @@ export default function Dns(_props: { live?: Live }) {
                 <div className="flex flex-wrap items-center gap-2 border-t border-border pt-3">
                     <select
                         value={preset}
-                        aria-label="Добавить"
+                        aria-label={S.dns.dobavit}
                         onChange={(e) => setPreset(e.currentTarget.value)}
                         className={`${inputCls} min-w-0 flex-1`}
                     >
                         {PRESETS.map((p) => <option key={p.name} value={p.name}>{p.title}</option>)}
                     </select>
-                    <Button onClick={addPreset}><Plus className="h-4 w-4" aria-hidden="true" /> Добавить</Button>
-                    <Button variant="secondary" onClick={addCustom}>Свой адрес</Button>
+                    <Button onClick={addPreset}><Plus className="h-4 w-4" aria-hidden="true" /> {S.dns.dobavit2}</Button>
+                    <Button variant="secondary" onClick={addCustom}>{S.dns.svoyAdres}</Button>
                 </div>
             </Block>
 
             <Block>
-                <CardHead title="Как спрашивать" />
+                <CardHead title={S.dns.kakSprashivat} />
                 <div className="divide-y divide-border">
-                    <FieldRow label="Сервер по умолчанию для имён под правилами">
+                    <FieldRow label={S.dns.serverPoUmolchaniyuDlya}>
                         <select
                             value={dns.upstream || ''}
                             onChange={(e) => setDns({ ...dns, upstream: e.currentTarget.value || undefined })}
                             className={`${inputCls} w-full`}
                         >
-                            <option value="">системный DNS роутера</option>
+                            <option value="">{S.dns.sistemnyyDnsRoutera}</option>
                             {names.map((n) => <option key={n} value={n}>{n}</option>)}
                         </select>
                     </FieldRow>
-                    <FieldRow label="Серверы для разрешения имён серверов (обычный DNS)">
+                    <FieldRow label={S.dns.serveryDlyaRazresheniyaImen}>
                         <input
                             defaultValue={(dns.bootstrap || []).join(', ')}
                             onBlur={(e) => setDns({ ...dns, bootstrap: listOf(e.currentTarget.value).slice(0, 4) })}
@@ -224,29 +224,29 @@ export default function Dns(_props: { live?: Live }) {
                         />
                     </FieldRow>
                     <div className="space-y-2 py-3">
-                        <div className="text-sm text-subtle">Режим доменных правил</div>
+                        <div className="text-sm text-subtle">{S.dns.rezhimDomennyhPravil}</div>
                         <Segmented
-                            label="Режим доменных правил"
+                            label={S.dns.rezhimDomennyhPravil}
                             value={mode}
                             onChange={(v) => setDns({ ...dns, mode: v === 'fakeip' ? undefined : v })}
                             items={[
-                                { value: 'fakeip', label: 'Поддельные адреса' },
-                                { value: 'realip', label: 'Настоящие адреса' },
+                                { value: 'fakeip', label: S.dns.poddelnyeAdresa },
+                                { value: 'realip', label: S.dns.nastoyaschieAdresa },
                             ]}
                         />
                         <p className="text-xs text-muted-foreground">
                             {mode === 'fakeip'
-                                ? 'точнее по доменам, значение по умолчанию'
-                                : 'трассировка видит настоящие узлы'}
+                                ? S.dns.tochneePoDomenamZnachenie
+                                : S.dns.trassirovkaViditNastoyaschieUzly}
                         </p>
                     </div>
-                    <FieldRow label="Записей в кэше ответов">
+                    <FieldRow label={S.dns.zapiseyVKesheOtvetov}>
                         <input
                             type="number"
                             inputMode="numeric"
                             value={dns.cache ?? ''}
                             min={0}
-                            placeholder="0 — без кэша"
+                            placeholder={S.dns.n0BezKesha}
                             onChange={(e) => {
                                 const v = e.currentTarget.value.trim()
                                 const n = Number(v)
@@ -258,8 +258,8 @@ export default function Dns(_props: { live?: Live }) {
                     {log?.cache && (
                         <div className="py-2.5">
                             <KV
-                                k="кэш"
-                                v={`в кэше ${log.cache.entries} из ${log.cache.max} · попаданий ${log.cache.hits}, промахов ${log.cache.misses}`}
+                                k={S.dns.kesh}
+                                v={S.dns.vKesheIzPopadaniy(log.cache.entries, log.cache.max, log.cache.hits, log.cache.misses)}
                             />
                         </div>
                     )}

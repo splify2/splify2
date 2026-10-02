@@ -8,6 +8,7 @@ import { pending } from '@/lib/pending'
 import { EMPTY_SPEC, type Output, type Spec } from '@/lib/model'
 import { type Live } from '@/lib/live'
 
+import { S } from '@/copy'
 /** Какие туннели роутера splify2 берёт в работу.
  *
  *  Здесь человек отвечает на один вопрос: этот туннель мой рабочий или нет. Сам туннель
@@ -42,7 +43,7 @@ export default function IfacesPanel({ live }: { live: Live }) {
         pending.edit(next)
     }
 
-    if (!spec) return <div className="p-5 text-sm text-muted-foreground">Загрузка…</div>
+    if (!spec) return <div className="p-5 text-sm text-muted-foreground">{S.ifacesPanel.zagruzka}</div>
 
     /** Выходы, называющие это устройство. Их может быть несколько: одно и то же устройство
      *  законно стоит и в своём выходе, и запасным в пуле. */
@@ -70,7 +71,7 @@ export default function IfacesPanel({ live }: { live: Live }) {
             if (devList(o).includes(dev) && rest.length === 0) {
                 const used = spec!.channels.filter((c) => c.out === n).map((c) => c.name)
                 if (used.length) {
-                    notify(`Выход «${n}» занят правилами: ${used.join(', ')}`, 'warning')
+                    notify(S.ifacesPanel.vyhodZanyatPravilami(n, used.join(', ')), 'warning')
                     return
                 }
                 continue
@@ -83,7 +84,7 @@ export default function IfacesPanel({ live }: { live: Live }) {
     if (devices.length === 0) {
         return (
             <Group>
-                <Empty icon={ShieldCheck} text="Туннельных устройств нет. Туннель создаётся в настройках сети роутера." />
+                <Empty icon={ShieldCheck} text={S.ifacesPanel.tunnelnyhUstroystvNetTunnel} />
             </Group>
         )
     }
@@ -105,7 +106,7 @@ export default function IfacesPanel({ live }: { live: Live }) {
                         <div className="min-w-0 flex-1">
                             <div className="truncate text-sm font-medium">{d.name}</div>
                             <div className="mt-0.5 truncate text-xs text-subtle">
-                                {[d.kind, on ? `в выходах: ${outs.map(([n]) => n).join(', ')}` : '']
+                                {[d.kind, on ? S.ifacesPanel.vVyhodah(outs.map(([n]) => n).join(', ')) : '']
                                     .filter(Boolean)
                                     .join(' · ')}
                             </div>

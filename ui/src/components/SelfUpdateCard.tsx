@@ -5,8 +5,8 @@ import { Button } from '@/components/ui/button'
 import { notify } from '@/lib/notify'
 import { rpc } from '@/lib/rpc'
 import { cmpVersion, type SelfUpdateInfo, releaseName } from '@/lib/engine'
-import { t } from '@/lib/i18n'
 
+import { S } from '@/copy'
 // Обновление самого интерфейса.
 //
 // Зачем это вообще нужно. Ни один пакет проекта не лежит в feeds OpenWrt, поэтому
@@ -37,24 +37,24 @@ export default function SelfUpdateCard({
     // мы не знаем ничего, и обещать обновление нельзя.
     const outdated = !!(latest && info?.current && cmpVersion(info.current, latest) < 0)
     const label = outdated
-        ? `${t('Обновить до')} ${releaseName(latest!, info?.names)}`
-        : t('Переустановить')
+        ? `${S.selfUpdateCard.obnovitDo} ${releaseName(latest!, info?.names)}`
+        : S.selfUpdateCard.pereustanovit
 
     useEffect(() => {
         if (latest) setVer((v) => v || latest)
     }, [latest])
 
     async function install() {
-        if (!ver) { notify(t('Выберите версию'), 'warning'); return }
+        if (!ver) { notify(S.selfUpdateCard.vyberiteVersiyu, 'warning'); return }
         setBusy(true)
         try {
             const r = await rpc.splify2Install(ver)
-            if (!r.ok) throw new Error(r.error || t('не установилось'))
+            if (!r.ok) throw new Error(r.error || S.selfUpdateCard.neUstanovilos)
             // via — путь, которым приехал пакет, если прямая ссылка релиза не отдала
             // (закрытый githubusercontent, splify2#15).
             notify(
-                `${t('Интерфейс обновлён')}: ${r.installed}${r.via ? ` (${r.via})` : ''}. ` +
-                    t('Перезагрузите страницу.'),
+                `${S.selfUpdateCard.interfeysObnovlen}: ${r.installed}${r.via ? ` (${r.via})` : ''}. ` +
+                    S.selfUpdateCard.perezagruziteStranitsu,
             )
             /* Слова установщика — на экран, дословно и целиком. Сокращать нельзя по той же
                причине, по которой не сокращаются предупреждения движка: там названа
@@ -71,29 +71,29 @@ export default function SelfUpdateCard({
 
     return (
         <Block>
-                <CardHead title={t('Интерфейс')} />
+                <CardHead title={S.selfUpdateCard.interfeys} />
                 <p className="text-xs text-muted-foreground">
-                    {t('Сейчас')}: luci-app-splify2 {info?.current || '?'}
+                    {S.selfUpdateCard.seychas}: luci-app-splify2 {info?.current || '?'}
                 </p>
                 {/* Единственное, что человеку нужно знать ДО нажатия: страницу придётся
                     перезагрузить, иначе он увидит старый интерфейс поверх нового бэкенда. */}
-                <p className="text-sm">{t('После установки перезагрузите страницу.')}</p>
+                <p className="text-sm">{S.selfUpdateCard.posleUstanovkiPerezagruziteStranitsu}</p>
 
                 <div className="flex flex-wrap items-center gap-2">
                     <select
                         value={ver}
                         onChange={(e) => setVer(e.target.value)}
-                        aria-label={t('Версия интерфейса')}
+                        aria-label={S.selfUpdateCard.versiyaInterfeysa}
                         className="rounded-lg border border-input bg-transparent px-3 py-2 text-sm focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring"
                     >
-                        {info === null && <option value="">{t('загрузка…')}</option>}
-                        {info !== null && versions.length === 0 && <option value="">{t('релизов не найдено')}</option>}
+                        {info === null && <option value="">{S.selfUpdateCard.zagruzka}</option>}
+                        {info !== null && versions.length === 0 && <option value="">{S.selfUpdateCard.relizovNeNaydeno}</option>}
                         {/* Подпись — название выпуска, значение — версия: ею собирается имя
                             файла пакета, и пробелу там места нет. */}
                         {versions.map((v, i) => (
                             <option key={v} value={v}>
                                 {releaseName(v, info?.names)}
-                                {i === 0 ? ` — ${t('свежая')}` : ''}
+                                {i === 0 ? ` — ${S.selfUpdateCard.svezhaya}` : ''}
                             </option>
                         ))}
                     </select>
@@ -115,15 +115,14 @@ export default function SelfUpdateCard({
                     движка объясняла это с самого начала, карточка интерфейса молчала. */}
                 {info !== null && versions.length === 0 && (
                     <p className="text-xs text-muted-foreground">
-                        {t('Список версий не пришёл — проверьте интернет на роутере. Можно поставить пакет вручную:')}{' '}
+                        {S.selfUpdateCard.spisokVersiyNePrishel}{' '}
                         <a
                             href="https://gitlab.com/xyzmean/splify2/-/tree/dist"
                             target="_blank"
                             rel="noreferrer"
                             className="underline decoration-dotted"
                         >
-                            gitlab.com/xyzmean/splify2 (ветка dist)
-                        </a>
+                            {S.selfUpdateCard.gitlabComXyzmeanSplify2}</a>
                     </p>
                 )}
 
@@ -132,7 +131,7 @@ export default function SelfUpdateCard({
                     может о чём-то попросить человека с браузером. */}
                 {notes && (
                     <div className="rounded-md border border-warning/40 bg-warning/10 p-3">
-                        <p className="text-xs font-semibold text-warning-fg">{t('Установщик сказал')}:</p>
+                        <p className="text-xs font-semibold text-warning-fg">{S.selfUpdateCard.ustanovschikSkazal}:</p>
                         <pre className="mt-1 overflow-x-auto whitespace-pre-wrap break-words font-mono text-xs">
                             {notes}
                         </pre>

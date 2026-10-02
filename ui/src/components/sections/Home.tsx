@@ -13,6 +13,7 @@ import { country } from '@/lib/geo'
 import Flag from '@/components/Flag'
 import { type SectionId } from '@/lib/sections'
 
+import { S } from '@/copy'
 /** Главная: работает ли, куда идут правила и чем роутер выходит наружу.
  *
  *  ДВА СТОЛБЦА, И ЭТО ДВА РАЗНЫХ ВОПРОСА. Слева правила: что куда ведёт, сколько через него
@@ -42,21 +43,21 @@ function verdict(live: Live): Verdict {
     /* Советы (note) в цвет не идут: они верны всегда, и красить ими состояние значило бы
      * держать роутер вечно нездоровым. Полный перечень остаётся в диагностике. */
     const notes = (live.diag?.checks || []).filter((c) => c.verdict === 'note')
-    if (live.error) return { text: 'Ядро не отвечает', tone: 'bad', why: live.error, notes }
+    if (live.error) return { text: S.home.yadroNeOtvechaet, tone: 'bad', why: live.error, notes }
     if (live.diag?.fail)
-        return { text: 'Есть поломки', tone: 'bad', why: `проверок с отказом: ${live.diag.fail}`, notes }
+        return { text: S.home.estPolomki, tone: 'bad', why: S.home.proverokSOtkazom(live.diag.fail), notes }
     if (live.diag?.warn)
         return {
-            text: 'Маршрутизация работает',
+            text: S.home.marshrutizatsiyaRabotaet,
             tone: 'warn',
-            why: `проверок с предупреждением: ${live.diag.warn}`,
+            why: S.home.proverokSPreduprezhdeniem(live.diag.warn),
             notes,
         }
-    if (!live.status) return { text: 'Загрузка…', tone: 'idle', why: '', notes }
+    if (!live.status) return { text: S.home.zagruzka, tone: 'idle', why: '', notes }
     return {
-        text: 'Маршрутизация работает',
+        text: S.home.marshrutizatsiyaRabotaet,
         tone: 'good',
-        why: notes.length ? `советов: ${notes.length}` : '',
+        why: notes.length ? S.home.sovetov(notes.length) : '',
         notes,
     }
 }
@@ -78,21 +79,21 @@ function verdictNow(live: Live): Verdict {
      * поломки, а стройплощадка. Выше «Обновление…» нарочно: пока применяется, ответы
      * приезжают, и «свежие» они ровно в том смысле, в котором бесполезны. */
     if (live.phase)
-        return { ...v, text: live.phase === 'applying' ? 'Применяется…' : 'Запускается…', tone: 'idle', why: '', notes: [] }
-    return live.stale ? { ...v, text: 'Обновление…', tone: 'warn' } : v
+        return { ...v, text: live.phase === 'applying' ? S.home.primenyaetsya : S.home.zapuskaetsya, tone: 'idle', why: '', notes: [] }
+    return live.stale ? { ...v, text: S.home.obnovlenie, tone: 'warn' } : v
 }
 
 /** «4 ч 12 мин» — то, как об этом говорят. Секунды показываем только первую минуту: дальше они
  *  ничего не добавляют, а строку удлиняют. */
 function uptimeText(sec: number) {
     if (!(sec > 0)) return null
-    if (sec < 60) return `${sec} с`
+    if (sec < 60) return S.home.s(sec)
     const m = Math.floor(sec / 60) % 60
     const h = Math.floor(sec / 3600) % 24
     const d = Math.floor(sec / 86400)
-    if (d) return `${d} д ${h} ч`
-    if (h) return `${h} ч ${m} мин`
-    return `${m} мин`
+    if (d) return S.home.dCh(d, h)
+    if (h) return S.home.chMin(h, m)
+    return S.home.min(m)
 }
 
 const DOT: Record<string, string> = {
@@ -261,11 +262,9 @@ export default function Home({
         <div className="space-y-4">
             {specV2Unsupported(live.status) && (
                 <Block className="border-destructive">
-                    <CardHead title="Ядро не читает новую спеку" />
+                    <CardHead title={S.home.yadroNeChitaetNovuyu} />
                     <p className="text-sm">
-                        Этот интерфейс записывает настройки в формате ядра 2.0. Установленное ядро старше, и
-                        изменения не применятся. Обновите ядро: Настройки → О ПО.
-                    </p>
+                        {S.home.etotInterfeysZapisyvaetNastroyki}</p>
                 </Block>
             )}
 
@@ -284,9 +283,9 @@ export default function Home({
                         <p className="mt-1 text-[13px] text-muted-foreground">
                             {live.net && (
                                 <>
-                                    устройств в сети: {live.net.active_clients}
+                                    {S.home.ustroystvVSeti}{live.net.active_clients}
                                     {uptimeText(live.net.uptime) && (
-                                        <> · время работы {uptimeText(live.net.uptime)}</>
+                                        <> {S.home.vremyaRaboty}{uptimeText(live.net.uptime)}</>
                                     )}
                                 </>
                             )}
@@ -315,7 +314,7 @@ export default function Home({
                         />
                         <span className="min-w-0 flex-1">{v.why}</span>
                         <span className="flex shrink-0 items-center gap-1 text-muted-foreground">
-                            диагностика <ArrowRight className="h-3.5 w-3.5" aria-hidden="true" />
+                            {S.home.diagnostika}<ArrowRight className="h-3.5 w-3.5" aria-hidden="true" />
                         </span>
                     </button>
                 )}
@@ -328,7 +327,7 @@ export default function Home({
                         onClick={() => onSection('settings', 'diag')}
                         className="block w-full text-left text-xs text-muted-foreground underline decoration-dotted"
                     >
-                        {v.notes.length > 1 ? `${v.why}: ` : 'совет: '}
+                        {v.notes.length > 1 ? `${v.why}: ` : S.home.sovet}
                         {v.notes[0].what}
                     </button>
                 )}
@@ -343,13 +342,10 @@ export default function Home({
                 {(nowhere || noDevice.length > 0 || dead.length > 0) && (
                     <div className="rounded-xl border border-warning/40 bg-warning/10 p-3">
                         <h2 className="sp-sub flex items-center gap-2 text-warning-fg">
-                            <TriangleAlert className="h-4 w-4" aria-hidden="true" /> Трафику некуда идти
-                        </h2>
+                            <TriangleAlert className="h-4 w-4" aria-hidden="true" /> {S.home.trafikuNekudaIdti}</h2>
                         {nowhere ? (
                             <p className="mt-2 text-xs">
-                                Выходов нет: ни один туннель не заведён, поэтому правилам некуда вести
-                                трафик — он идёт напрямую, как будто ничего не настроено. Выход
-                                создаётся в разделе{' '}
+                                {S.home.vyhodovNetNiOdin}{' '}
                                 <button
                                     type="button"
                                     onClick={() => onSection('vpn')}
@@ -357,24 +353,18 @@ export default function Home({
                                 >
                                     VPN
                                 </button>
-                                , а само туннельное устройство — в настройках сети роутера.
-                            </p>
+                                {S.home.aSamoTunnelnoeUstroystvo}</p>
                         ) : (
                             <ul className="mt-2 space-y-2 text-xs">
                                 {noDevice.map((n) => (
                                     <li key={n.name}>
-                                        Выход <span className="font-medium">{n.name}</span> не поднят:
-                                        устройство ему не назначено, маршрутизировать нечем.
-                                    </li>
+                                        {S.home.vyhod}<span className="font-medium">{n.name}</span> {S.home.nePodnyatUstroystvoEmu}</li>
                                 ))}
                                 {dead.map((n) => (
                                     <li key={n.name}>
-                                        Выход <span className="font-medium">{n.name}</span> не поднят:{' '}
-                                        {n.want.length > 1 ? 'устройств' : 'устройства'}{' '}
-                                        <span className="font-mono">{n.want.join(', ')}</span> нет в
-                                        системе. Туннель создаётся в настройках сети роутера — пока
-                                        устройства нет, трафик этого выхода не уходит никуда.
-                                    </li>
+                                        {S.home.vyhod}<span className="font-medium">{n.name}</span> {S.home.nePodnyat}{' '}
+                                        {n.want.length > 1 ? S.home.ustroystv : S.home.ustroystva}{' '}
+                                        <span className="font-mono">{n.want.join(', ')}</span> {S.home.netVSistemeTunnel}</li>
                                 ))}
                             </ul>
                         )}
@@ -386,8 +376,7 @@ export default function Home({
                 {(live.status?.warnings?.length ?? 0) > 0 && (
                     <div className="rounded-xl border border-warning/40 bg-warning/10 p-3">
                         <h2 className="sp-sub flex items-center gap-2 text-warning-fg">
-                            <TriangleAlert className="h-4 w-4" aria-hidden="true" /> Предупреждения steer
-                        </h2>
+                            <TriangleAlert className="h-4 w-4" aria-hidden="true" /> {S.home.preduprezhdeniyaSteer}</h2>
                         <ul className="mt-2 space-y-2 text-xs">
                             {live.status!.warnings!.map((w, i) => (
                                 <li key={i}>
@@ -401,8 +390,7 @@ export default function Home({
 
                 <div className="flex justify-end border-t border-border pt-3">
                     <Button onClick={() => onAddRule?.()} className="w-full sm:w-auto">
-                        <Plus className="h-4 w-4" aria-hidden="true" /> Добавить правило
-                    </Button>
+                        <Plus className="h-4 w-4" aria-hidden="true" /> {S.home.dobavitPravilo}</Button>
                 </div>
             </Block>
 
@@ -490,11 +478,10 @@ function RulesBoard({
     const peak = Math.max(0, ...rows.map((r) => load(r.name)))
     return (
         <Block>
-            <CardHead title="Правила" meta="с загрузки роутера" />
+            <CardHead title={S.home.pravila} meta={S.home.sZagruzkiRoutera} />
             {rows.length === 0 ? (
                 <p className="py-4 text-center text-sm text-muted-foreground">
-                    Правил нет — весь трафик идёт напрямую.
-                </p>
+                    {S.home.pravilNetVesTrafik}</p>
             ) : (
                 <ul className="divide-y divide-border">
                     {rows.map((r, i) => (
@@ -542,7 +529,7 @@ function RuleRow({
         const p = spec?.outputs?.[d]
         if (!p || !isPart(p)) return d
         const s = remembered.find((x) => x.path === p.sub_file)
-        return s?.title || s?.name || 'подписка'
+        return s?.title || s?.name || S.home.podpiska
     }
     const spare = cands.filter((d) => d !== active).map(label)
     const place = country(facts?.geo?.cc)
@@ -555,9 +542,9 @@ function RuleRow({
     const up = set?.bytes === undefined ? null : human(set.bytes)
     const shared = (set?.channels?.length ?? 0) > 1
     const reserve = spare.length
-        ? `запас: ${spare.join(', ')}`
+        ? S.home.zapas(spare.join(', '))
         : st && st.kind !== 'direct'
-          ? `если всё упало: ${ON_FAIL_TEXT[st.on_fail || 'drop']}`
+          ? S.home.esliVseUpalo(ON_FAIL_TEXT[st.on_fail || 'drop'])
           : ''
 
     /* Строка устроена как строка «Трафика по правилам» приложения: имя слева, счётчики у
@@ -571,11 +558,11 @@ function RuleRow({
                     <span className="flex min-w-0 items-baseline gap-2">
                         <span className="min-w-0 truncate text-sm font-medium">{row.name}</span>
                         {!row.enabled && (
-                            <span className="shrink-0 text-[11px] text-muted-foreground">выключено</span>
+                            <span className="shrink-0 text-[11px] text-muted-foreground">{S.home.vyklyucheno}</span>
                         )}
                         {/* Пока применяется — набор и должен отсутствовать: таблица пересобирается. */}
                         {row.enabled && set && !set.live && !phase && (
-                            <span className="shrink-0 text-[11px] text-destructive">нет в ядре Linux</span>
+                            <span className="shrink-0 text-[11px] text-destructive">{S.home.netVYadreLinux}</span>
                         )}
                     </span>
                     {/* Счётчик принадлежит НАБОРУ. Там, где движок свёл несколько правил в один
@@ -595,24 +582,23 @@ function RuleRow({
                     <span className="min-w-0 truncate text-[13px]">{row.out}</span>
                     <span className="min-w-0 truncate text-xs text-muted-foreground">
                         {st?.kind === 'direct'
-                            ? 'напрямую'
+                            ? S.home.napryamuyu
                             : [
                                   via,
-                                  facts?.ping && facts.ping.ms >= 0 ? `${facts.ping.ms} мс` : null,
-                                  grp && !grp.selected ? 'члены не отвечают' : null,
-                                  st?.node_down ? 'узел не отвечает' : null,
+                                  facts?.ping && facts.ping.ms >= 0 ? S.home.ms(facts.ping.ms) : null,
+                                  grp && !grp.selected ? S.home.chlenyNeOtvechayut : null,
+                                  st?.node_down ? S.home.uzelNeOtvechaet : null,
                               ]
                                   .filter(Boolean)
-                                  .join(' · ') || 'не поднят'}
+                                  .join(' · ') || S.home.nePodnyat2}
                     </span>
                 </button>
                 <Meter value={share} muted={st?.kind === 'direct'} />
                 {(shared || reserve) && (
                     <div className="flex flex-wrap gap-x-3 text-[11px] text-subtle">
                         {shared && (
-                            <span title={`общий счётчик: ${set!.channels!.join(', ')}`}>
-                                счётчик общий
-                            </span>
+                            <span title={S.home.obschiySchetchik(set!.channels!.join(', '))}>
+                                {S.home.schetchikObschiy}</span>
                         )}
                         {/* Запас — не украшение: пока он есть, падение туннеля не останавливает
                             трафик, а когда его нет, решает «если всё упало». */}
@@ -688,7 +674,7 @@ function OutputsColumn({
     return (
         <Block>
             <CardHead
-                title="Выходы"
+                title={S.home.vyhody}
                 action={
                     <button
                         type="button"
@@ -699,14 +685,13 @@ function OutputsColumn({
                         {busy ? (
                             <LoaderCircle className="h-3 w-3 animate-spin" aria-hidden="true" />
                         ) : null}
-                        {busy ? 'меряем…' : 'проверить'}
+                        {busy ? S.home.meryaem : S.home.proverit}
                     </button>
                 }
             />
             {noCurl && (
                 <p className="text-xs text-warning-fg">
-                    Не установлен curl: страна и отклик выходов не измеряются. Установите пакет curl.
-                </p>
+                    {S.home.neUstanovlenCurlStrana}</p>
             )}
 
             <div className="divide-y divide-border">
@@ -726,7 +711,7 @@ function OutputsColumn({
                                       name, st, facts: facts[name], phase: live.phase,
                                       /* Локация, взятая в пул, так и подписана: иначе строка под
                                          подпиской и строка в блоке пула читались как два туннеля. */
-                                      note: spec?.outputs?.[name]?.part_of ? `в пуле ${spec.outputs[name].part_of}` : undefined,
+                                      note: spec?.outputs?.[name]?.part_of ? S.home.vPule(spec.outputs[name].part_of) : undefined,
                                   }))}
                           />
                       ))}
@@ -781,14 +766,14 @@ function ExplainCard() {
 
     return (
         <Block>
-            <CardHead title="Куда пойдёт запрос" />
+            <CardHead title={S.home.kudaPoydetZapros} />
             <div className="flex flex-wrap gap-2">
                 <div className="relative min-w-0 flex-1">
                     <input
                         value={q}
                         onChange={(e) => setQ(e.currentTarget.value)}
                         onKeyDown={(e) => e.key === 'Enter' && void ask()}
-                        placeholder="youtube.com — куда пойдёт трафик?"
+                        placeholder={S.home.youtubeComKudaPoydet}
                         className="w-full rounded-lg border border-border bg-background px-3 py-2 pr-8 font-mono text-[13px] focus:outline-none focus:ring-1 focus:ring-primary"
                     />
                     {(q || answer) && (
@@ -796,7 +781,7 @@ function ExplainCard() {
                             type="button"
                             onClick={clear}
                             className="absolute right-2.5 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground"
-                            aria-label="Очистить"
+                            aria-label={S.home.ochistit}
                         >
                             <X className="h-4 w-4" />
                         </button>
@@ -808,12 +793,12 @@ function ExplainCard() {
                     ) : (
                         <Search className="h-4 w-4" aria-hidden="true" />
                     )}
-                    {asking ? 'Спрашиваем…' : 'Проверить'}
+                    {asking ? S.home.sprashivaem : S.home.proverit2}
                 </Button>
             </div>
 
             <div className="flex flex-wrap items-center gap-1.5 text-xs text-muted-foreground">
-                <span>Примеры:</span>
+                <span>{S.home.primery}</span>
                 {SUGGESTED_DOMAINS.map((domain) => (
                     <button
                         key={domain}

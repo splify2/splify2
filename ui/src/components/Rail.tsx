@@ -4,6 +4,7 @@ import { type Live } from '@/lib/live'
 import { assetUrl } from '@/lib/assets'
 import { type SectionId } from '@/lib/sections'
 
+import { S } from '@/copy'
 /** Рельс разделов: шесть пунктов, у каждого своя роль.
  *
  *  Заменил строку вкладок. Вкладок было четыре, и в одну из них («Логи steer») въехало всё,
@@ -25,11 +26,11 @@ import { type SectionId } from '@/lib/sections'
  *  часть подписи. */
 
 const ITEMS: { id: SectionId; label: string; icon: typeof House }[] = [
-    { id: 'home', label: 'Главная', icon: House },
-    { id: 'rules', label: 'Правила', icon: Route },
+    { id: 'home', label: S.rail.glavnaya, icon: House },
+    { id: 'rules', label: S.rail.pravila, icon: Route },
     { id: 'vpn', label: 'VPN', icon: ShieldCheck },
     { id: 'dns', label: 'DNS', icon: Lock },
-    { id: 'settings', label: 'Настройки', icon: Settings },
+    { id: 'settings', label: S.rail.nastroyki, icon: Settings },
 ]
 
 export interface RailProps {
@@ -77,7 +78,7 @@ export default function Rail({ live, section, onSection, counts }: RailProps) {
                     </div>
                 </div>
 
-                <nav className="flex flex-col gap-0.5" aria-label="Разделы">
+                <nav className="flex flex-col gap-0.5" aria-label={S.rail.razdely}>
                     {ITEMS.map(({ id, label, icon: Icon }) => {
                         const on = section === id
                         const c = counts[id]
@@ -124,7 +125,7 @@ export default function Rail({ live, section, onSection, counts }: RailProps) {
                 оказывались под ней — человек видел четыре кнопки из шести. Портрет уже 768, там
                 меню у темы спрятано, и панель была целой; отсюда «не всегда». */}
             <nav
-                aria-label="Разделы"
+                aria-label={S.rail.razdely}
                 className="sp-bottom-bar fixed bottom-0 z-40 flex border-t border-border bg-rail lg:hidden"
             >
                 {ITEMS.map(({ id, label, icon: Icon }) => {

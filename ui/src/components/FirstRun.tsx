@@ -1,6 +1,7 @@
 import EngineCard from '@/components/EngineCard'
 import { type Live } from '@/lib/live'
 
+import { S } from '@/copy'
 /** Первый экран у беты: движка нет.
  *
  *  Показывается ВМЕСТО вкладок, а не рядом с ними. Прежде интерфейс в этом случае открывал
@@ -16,28 +17,22 @@ export default function FirstRun({ live }: { live: Live }) {
         <div className="sp-root text-foreground">
             <div className="mx-auto max-w-2xl space-y-4">
                 <div className="rounded-2xl border border-border bg-card p-5 shadow-card">
-                    <h1 className="sp-title">Ядро не установлено</h1>
+                    <h1 className="sp-title">{S.firstRun.yadroNeUstanovleno}</h1>
                     <p className="mt-2 text-sm text-muted-foreground">
                         {/* Разделение ролей (splify2 — интерфейс, steer — маршрутизация) на экран
                           * не выносим: человеку нужно не устройство продукта, а то, что до
                           * установки движка ничего не заработает, и с чего начать. */}
-                        Маршрутизацией занимается <b>steer</b>. Пока его нет, проверять и применять
-                        нечего — начните отсюда.
-                    </p>
+                        {S.firstRun.marshrutizatsieyZanimaetsya}<b>steer</b>{S.firstRun.pokaEgoNetProveryat}</p>
                     <ul className="mt-3 space-y-1.5 text-sm">
                         <li>
                             <b>extended</b>
                             <span className="text-muted-foreground">
-                                {' '}— поднимает VLESS/Reality сам, достаточно подписки. Нужен, если туннеля
-                                на роутере ещё нет.
-                            </span>
+                                {' '}{S.firstRun.podnimaetVlessRealitySam}</span>
                         </li>
                         <li>
                             <b>basic</b>
                             <span className="text-muted-foreground">
-                                {' '}— только маршрутизация по готовым устройствам: wireguard, amneziawg,
-                                любой существующий интерфейс.
-                            </span>
+                                {' '}{S.firstRun.tolkoMarshrutizatsiyaPoGotovym}</span>
                         </li>
                     </ul>
                 </div>
@@ -45,10 +40,8 @@ export default function FirstRun({ live }: { live: Live }) {
                 <EngineCard engine={live.build} releases={live.releases} onInstalled={live.refresh} />
 
                 <p className="text-xs text-muted-foreground">
-                    Пакет можно поставить и руками:{' '}
-                    <code className="font-mono">apk add --allow-untrusted ./steer-extended-*.apk</code>. На роутере с 64 МБ памяти перед установкой остановите ядро, если оно работает: иначе обновлению
-                    может не хватить памяти.
-                </p>
+                    {S.firstRun.paketMozhnoPostavitI}{' '}
+                    <code className="font-mono">apk add --allow-untrusted ./steer-extended-*.apk</code>{S.firstRun.naRoutereS64}</p>
             </div>
         </div>
     )

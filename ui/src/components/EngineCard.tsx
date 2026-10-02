@@ -5,8 +5,8 @@ import { Button } from '@/components/ui/button'
 import { notify } from '@/lib/notify'
 import { rpc } from '@/lib/rpc'
 import { engineAction, engineTooOld, type Releases, releaseName } from '@/lib/engine'
-import { t } from '@/lib/i18n'
 
+import { S } from '@/copy'
 // Установка движка из интерфейса.
 //
 // Зачем это здесь, а не в установочном скрипте (он тоже есть). Движок — отдельный пакет, и
@@ -57,25 +57,25 @@ export default function EngineCard({ engine, releases, onInstalled }: Props) {
     }, [versions])
 
     async function install() {
-        if (!ver) { notify(t('Выберите версию'), 'warning'); return }
+        if (!ver) { notify(S.engineCard.vyberiteVersiyu, 'warning'); return }
         setBusy(true)
         try {
             const r = await rpc.steerInstall(ver, ext)
-            if (!r.ok) throw new Error(r.error || t('не установилось'))
+            if (!r.ok) throw new Error(r.error || S.engineCard.neUstanovilos)
             // Пакет встал — это ещё не «работает». apk остановил сервис, а поднять его
             // обратно должен был restart, и rpcd отдельно сообщает, получилось ли. Пока
             // это поле не показывали, неподнявшийся движок отчитывался тем же зелёным
             // «Движок установлен» — при уже снесённой таблице nft (I-053).
             if (r.restarted === false) {
                 notify(
-                    `${t('Пакет установлен')}: ${r.installed}. ${t('Ядро при этом не запустилось — маршрутизации сейчас нет. Посмотрите журнал.')}`,
+                    `${S.engineCard.paketUstanovlen}: ${r.installed}. ${S.engineCard.yadroPriEtomNe}`,
                     'warning',
                 )
             } else {
                 // via — путь, которым приехал пакет, когда прямая ссылка релиза не
                 // отдала (закрытый githubusercontent, splify2#15). Молчать нельзя:
                 // установка в этом случае идёт заметно дольше.
-                notify(`${t('Ядро установлено')}: ${r.installed}${r.via ? ` (${r.via})` : ''}`)
+                notify(`${S.engineCard.yadroUstanovleno}: ${r.installed}${r.via ? ` (${r.via})` : ''}`)
             }
             onInstalled()
         } catch (e) {
@@ -91,12 +91,12 @@ export default function EngineCard({ engine, releases, onInstalled }: Props) {
      *  Устаревший — раньше базового: базовый нужного возраста работает, устаревший
      *  расширенный — нет. */
     const title = !engine?.present
-        ? t('Ядро не установлено')
+        ? S.engineCard.yadroNeUstanovleno
         : tooOld
-          ? t('Ядро устарело')
+          ? S.engineCard.yadroUstarelo
           : !engine.vless
-            ? t('Установлено базовое ядро')
-            : t('Ядро')
+            ? S.engineCard.ustanovlenoBazovoeYadro
+            : S.engineCard.yadro
 
     return (
         /* Bode: как экран «Движок» приложения — заголовок, затем факты полосами «подпись —
@@ -105,9 +105,9 @@ export default function EngineCard({ engine, releases, onInstalled }: Props) {
             <CardHead title={title} />
                 {engine?.present && (
                     <div className="space-y-1">
-                        <KV k={t('версия')} v={`steer ${engine.version || '?'}`} />
-                        <KV k={t('вариант')} v={engine.vless ? t('расширенный') : t('базовый')} />
-                        {engine.arch && <KV k={t('архитектура')} v={<span className="font-mono">{engine.arch}</span>} />}
+                        <KV k={S.engineCard.versiya} v={`steer ${engine.version || '?'}`} />
+                        <KV k={S.engineCard.variant} v={engine.vless ? S.engineCard.rasshirennyy : S.engineCard.bazovyy} />
+                        {engine.arch && <KV k={S.engineCard.arhitektura} v={<span className="font-mono">{engine.arch}</span>} />}
                     </div>
                 )}
                 {!engine?.present && (
@@ -117,7 +117,7 @@ export default function EngineCard({ engine, releases, onInstalled }: Props) {
                                 куда идёт трафик) — это про наше устройство. Человеку на этом
                                 экране нужно одно: без движка ничего не заработает, ставить
                                 отсюда. */}
-                            {t('Без него маршрутизировать нечем: ни одно правило не заработает.')}
+                            {S.engineCard.bezNegoMarshrutizirovatNechem}
                         </p>
                         {/* Архитектура — именно здесь, где движка ещё нет. Это единственное
                             состояние, в котором её не показывает никто (у метода engine в
@@ -125,7 +125,7 @@ export default function EngineCard({ engine, releases, onInstalled }: Props) {
                             скачается ли пакет: релиз собран под шесть целей (I-051). */}
                         {releases?.arch && (
                             <p className="font-mono text-xs text-muted-foreground">
-                                {t('Архитектура пакетов')}: {releases.arch}
+                                {S.engineCard.arhitekturaPaketov}: {releases.arch}
                             </p>
                         )}
                     </>
@@ -135,12 +135,12 @@ export default function EngineCard({ engine, releases, onInstalled }: Props) {
                     // обновил интерфейс ради нового и не тронул движок, иначе узнаёт об этом по
                     // одному отказу за раз («подписка не скачалась» без причины).
                     <p className="text-sm">
-                        {`${t('Этот интерфейс собран под ядро')} ${tooOld} ${t('и новее. С установленным не заработают подписка по ссылке, часть списков каталога и отчёт о работе. Обновите ядро — версии ниже.')}`}
+                        {`${S.engineCard.etotInterfeysSobranPod} ${tooOld} ${S.engineCard.iNoveeSUstanovlennym}`}
                     </p>
                 )}
                 {engine?.present && !engine.vless && (
                     <p className="text-sm">
-                        {t('Базовый умеет всё, кроме одного: поднимать туннель VLESS сам. Для подписки нужен расширенный.')}
+                        {S.engineCard.bazovyyUmeetVseKrome}
                     </p>
                 )}
 
@@ -160,13 +160,13 @@ export default function EngineCard({ engine, releases, onInstalled }: Props) {
                     {[
                         {
                             on: true,
-                            name: t('Расширенный'),
-                            why: t('Поднимает туннель сам: вставили ссылку подписки — и всё. Занимает на флеше ~500 КБ.'),
+                            name: S.engineCard.rasshirennyy2,
+                            why: S.engineCard.podnimaetTunnelSamVstavili,
                         },
                         {
                             on: false,
-                            name: t('Базовый'),
-                            why: t('Только маршрутизация. Туннель поднимаете вы: wireguard, amneziawg — что уже работает. Занимает на флеше ~250 КБ, вдвое меньше расширенного.'),
+                            name: S.engineCard.bazovyy2,
+                            why: S.engineCard.tolkoMarshrutizatsiyaTunnelPodnimaete,
                         },
                     ].map((o) => (
                         <button
@@ -202,24 +202,24 @@ export default function EngineCard({ engine, releases, onInstalled }: Props) {
                     <select
                         value={ver}
                         onChange={(e) => setVer(e.target.value)}
-                        aria-label={t('Версия ядра')}
+                        aria-label={S.engineCard.versiyaYadra}
                         className="w-full rounded-lg border border-input bg-transparent px-3 py-2 text-sm focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring"
                     >
-                        {versions === null && <option value="">{t('загрузка…')}</option>}
-                        {versions?.length === 0 && <option value="">{t('релизов не найдено')}</option>}
+                        {versions === null && <option value="">{S.engineCard.zagruzka}</option>}
+                        {versions?.length === 0 && <option value="">{S.engineCard.relizovNeNaydeno}</option>}
                         {/* Показывается НАЗВАНИЕ выпуска, ставится ВЕРСИЯ: value — то, что
                             уедет в steer_install и попадёт в имя файла пакета, а подпись —
                             то, как выпуск подписан на странице релизов. */}
                         {versions?.map((v, i) => (
                             <option key={v} value={v}>
                                 {releaseName(v, releases?.names)}
-                                {i === 0 ? ` — ${t('свежая')}` : ''}
+                                {i === 0 ? ` — ${S.engineCard.svezhaya}` : ''}
                             </option>
                         ))}
                     </select>
                     <Button onClick={install} disabled={busy || !ver} className="w-full">
                         {busy ? <Loader2 className="h-4 w-4 animate-spin" /> : <Download className="h-4 w-4" />}
-                        {t(action.label)}
+                        {action.label}
                     </Button>
                 </div>
 
@@ -233,7 +233,7 @@ export default function EngineCard({ engine, releases, onInstalled }: Props) {
 
                 {versions?.length === 0 && (
                     <p className="text-xs text-muted-foreground">
-                        {t('Список версий не пришёл — проверьте интернет на роутере. Можно поставить пакет вручную:')}{' '}
+                        {S.engineCard.spisokVersiyNePrishel}{' '}
                         {/* Зеркало, а не github.com: у того, кто видит этот текст, закрыт
                             обычно именно GitHub, и ссылка туда бесполезна ровно для того,
                             кому адресована. В ветке dist лежат те же пакеты релиза, и
@@ -244,8 +244,7 @@ export default function EngineCard({ engine, releases, onInstalled }: Props) {
                             rel="noreferrer"
                             className="underline decoration-dotted"
                         >
-                            gitlab.com/xyzmean/steer (ветка dist)
-                        </a>
+                            {S.engineCard.gitlabComXyzmeanSteer}</a>
                     </p>
                 )}
         </Block>

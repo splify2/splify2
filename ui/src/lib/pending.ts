@@ -4,6 +4,7 @@ import { rpc } from '@/lib/rpc'
 import { EMPTY_SPEC, type Channel, type Spec } from '@/lib/model'
 import { encodeSpec, wasV1 } from '@/lib/specv2'
 
+import { S } from '@/copy'
 /** Автосохранение и счётчик неприменённого — одно место на весь экран.
  *
  *  Правка уходит в spec_set сама, через полсекунды тишины: кнопок «Сохранить» больше
@@ -144,7 +145,7 @@ class PendingStore {
                 if (!r.ok) {
                     /* Отказ dry-run — это не «потеряно»: спека осталась в памяти, человек
                      * видит причину и правит дальше; следующая правка попробует снова. */
-                    notify(('error' in r && r.error) || 'не удалось сохранить', 'error')
+                    notify(('error' in r && r.error) || S.pending.neUdalosSohranit, 'error')
                     this.dirty = true
                     this.emit()
                 } else if (drafts) {
@@ -240,7 +241,7 @@ class PendingStore {
         try {
             await this.flush()
             const r = await rpc.apply()
-            notify(r.output?.trim() || (r.ok ? 'Применено' : 'сбой применения'), r.ok ? 'info' : 'error')
+            notify(r.output?.trim() || (r.ok ? S.pending.primeneno : S.pending.sboyPrimeneniya), r.ok ? 'info' : 'error')
             if (r.ok) {
                 /* Применено то, что было записано, — без черновиков: они на роутер не ездили,
                  * и считать их применёнными значило бы обнулить счётчик на правиле, которого

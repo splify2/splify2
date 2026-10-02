@@ -28,6 +28,7 @@ export { pathFor, srsPathFor, ruleFiles, onRouter, srsOf, selectedIds, isDomains
 import { pathFor, srsPathFor, ruleFiles, onRouter, srsOf, selectedIds, isDomains, serviceFiles } from '@/lib/rulefiles'
 
 
+import { S } from '@/copy'
 interface Props {
     ch: Channel
     index: number
@@ -224,17 +225,16 @@ export default function RuleEditor({
     return (
         <div className="space-y-4">
             <ScreenHeader
-                title={`Правило ${index + 1} из ${rulesTotal}`}
+                title={S.ruleEditor.praviloIz(index + 1, rulesTotal)}
                 back={onClose}
-                backLabel="Все правила"
+                backLabel={S.ruleEditor.vsePravila}
             />
 
             <div className="grid gap-4 lg:grid-cols-2 lg:items-start">
                 <div className="min-w-0 space-y-4">
                     <Block>
                         <label className="flex flex-col gap-1.5 text-xs text-subtle">
-                            Название правила
-                            <input
+                            {S.ruleEditor.nazvaniePravila}<input
                                 value={ch.name}
                                 onChange={(e) => onChange({ ...ch, name: e.currentTarget.value })}
                                 className="rounded-lg border border-border bg-background px-3 py-2 text-sm text-foreground"
@@ -243,12 +243,12 @@ export default function RuleEditor({
                     </Block>
 
                     <Block>
-                        <CardHead title="Кого касается" />
+                        <CardHead title={S.ruleEditor.kogoKasaetsya} />
                         {/* Два варианта — сегментами, как «Кому» в приложении. Значение то же,
                             что у прежних переключателей: пустой `from` — все устройства,
                             непустой — только перечисленные. */}
                         <Segmented
-                            label="Кого касается"
+                            label={S.ruleEditor.kogoKasaetsya}
                             value={someone ? 'some' : 'all'}
                             onChange={(v) =>
                                 v === 'all'
@@ -258,8 +258,8 @@ export default function RuleEditor({
                             /* Подписи мельче на узком экране и переносятся: «Все устройства в
                                сети» в половине ширины телефона иначе обрезалась бы многоточием. */
                             items={[
-                                { value: 'all', label: <span className="block whitespace-normal text-xs leading-tight sm:text-sm">Все устройства в сети</span> },
-                                { value: 'some', label: <span className="block whitespace-normal text-xs leading-tight sm:text-sm">Только выбранные</span> },
+                                { value: 'all', label: <span className="block whitespace-normal text-xs leading-tight sm:text-sm">{S.ruleEditor.vseUstroystvaVSeti}</span> },
+                                { value: 'some', label: <span className="block whitespace-normal text-xs leading-tight sm:text-sm">{S.ruleEditor.tolkoVybrannye}</span> },
                             ]}
                         />
                         {someone && (
@@ -302,7 +302,7 @@ export default function RuleEditor({
                                 )}
                                 <input
                                     value={(ch.from || []).join(', ')}
-                                    placeholder="192.168.1.50, 192.168.1.0/24 или MAC"
+                                    placeholder={S.ruleEditor.n192168150}
                                     onChange={(e) => {
                                         const v = e.currentTarget.value
                                             .split(',')
@@ -316,16 +316,13 @@ export default function RuleEditor({
                                     внутри правила, поэтому движок такую спеку отвергает. Сказать
                                     это здесь дешевле, чем получить отказ при сохранении. */}
                                 <p className="text-xs text-muted-foreground">
-                                    Либо адреса и подсети, либо MAC — вместе в одном правиле нельзя. MAC виден только у устройств
-                                    своей сети: за вторым роутером правило накроет всех, кто за ним.
-                                </p>
+                                    {S.ruleEditor.liboAdresaIPodseti}</p>
                                 {(() => {
                                     const macs = (ch.from || []).filter((x) => x.includes(':')).length
                                     const mixed = macs > 0 && macs !== (ch.from || []).filter(Boolean).length
                                     return mixed ? (
                                         <p className="text-xs text-destructive">
-                                            Здесь и адреса, и MAC — ядро такое правило отвергнет.
-                                        </p>
+                                            {S.ruleEditor.zdesIAdresaI}</p>
                                     ) : null
                                 })()}
                                 {/* Опечатка в адресе не отвергается, а МОЛЧА выпадает: наборы nft
@@ -344,9 +341,7 @@ export default function RuleEditor({
                                         )
                                     return bad.length ? (
                                         <p className="text-xs text-destructive">
-                                            Не адрес и не MAC: {bad.join(', ')} — такую запись ядро
-                                            выбросит молча, и правило накроет не тех.
-                                        </p>
+                                            {S.ruleEditor.neAdresINe}{bad.join(', ')} {S.ruleEditor.takuyuZapisYadroVybrosit}</p>
                                     ) : null
                                 })()}
                             </>
@@ -357,8 +352,8 @@ export default function RuleEditor({
                 <div className="min-w-0 space-y-4">
                     <Block>
                         <CardHead
-                            title="Что перенаправляем"
-                            meta={chosen.length ? `${chosen.length} записей выбрано` : 'ничего не выбрано'}
+                            title={S.ruleEditor.chtoPerenapravlyaem}
+                            meta={chosen.length ? S.ruleEditor.zapiseyVybrano(chosen.length) : S.ruleEditor.nichegoNeVybrano}
                         />
                         {/* Счёт сервисов и записей стоял в шапке редактора справа. В шапке
                             экрана по образцу приложения на 390 пикселях он отнимал место у
@@ -366,9 +361,9 @@ export default function RuleEditor({
                             блоку — сюда и переехал. */}
                         <div className="-mt-2 font-mono text-xs text-muted-foreground">
                             {chosenEntries.length
-                                ? `сервисов ${chosenEntries.length}`
-                                : 'сервис не выбран'}
-                            {total ? ` · ${total.toLocaleString('ru-RU')} записей` : ''}
+                                ? S.ruleEditor.servisov(chosenEntries.length)
+                                : S.ruleEditor.servisNeVybran}
+                            {total ? S.ruleEditor.zapisey(total.toLocaleString('ru-RU')) : ''}
                         </div>
 
                         {chosenEntries.length > 0 && (
@@ -391,12 +386,11 @@ export default function RuleEditor({
                             <input
                                 value={q}
                                 onChange={(e) => setQ(e.currentTarget.value)}
-                                placeholder="поиск по каталогу — сервисы, категории"
+                                placeholder={S.ruleEditor.poiskPoKataloguServisy}
                                 className="min-w-0 flex-1 bg-transparent py-2 text-sm outline-none"
                             />
                             <span className="shrink-0 text-xs text-muted-foreground">
-                                {shown.length} записей
-                            </span>
+                                {shown.length} {S.ruleEditor.zapisey2}</span>
                         </div>
 
                         {/* Каталог — строками через волосяную линию, галочка у правого края, как
@@ -404,7 +398,7 @@ export default function RuleEditor({
                             а блок «Куда» должен оставаться в пределах досягаемости. */}
                         <div className="max-h-72 divide-y divide-border overflow-y-auto">
                             {shown.length === 0 && (
-                                <p className="py-3 text-xs text-muted-foreground">Ничего не нашлось.</p>
+                                <p className="py-3 text-xs text-muted-foreground">{S.ruleEditor.nichegoNeNashlos}</p>
                             )}
                             {shown.map((sv) => {
                                 const on = chosen.includes(sv.id)
@@ -422,20 +416,18 @@ export default function RuleEditor({
                                                 обрезался как раз у самых длинных названий. */}
                                             {probing.has(sv.id) ? (
                                                 <span className="ml-2 text-xs text-muted-foreground">
-                                                    скачивается
-                                                </span>
+                                                    {S.ruleEditor.skachivaetsya}</span>
                                             ) : missing > 0 && (
                                                 <span className="ml-2 text-xs text-muted-foreground">
-                                                    скачается
-                                                </span>
+                                                    {S.ruleEditor.skachaetsya}</span>
                                             )}
                                         </span>
                                         <span className="shrink-0 whitespace-nowrap text-xs text-muted-foreground">
                                             {kinds.length === 2
-                                                ? 'домены и адреса'
+                                                ? S.ruleEditor.domenyIAdresa
                                                 : kinds[0] === 'domains'
-                                                  ? 'домены'
-                                                  : 'адреса'}
+                                                  ? S.ruleEditor.domeny
+                                                  : S.ruleEditor.adresa}
                                             {sv.count ? ` · ${sv.count.toLocaleString('ru-RU')}` : ''}
                                         </span>
                                         <input
@@ -459,8 +451,7 @@ export default function RuleEditor({
                                единственное место, где такой файл вообще виден. */
                             <div className="rounded-xl border border-border p-3">
                                 <div className="mb-1 text-xs font-medium text-warning-fg">
-                                    В правиле есть файлы не из каталога
-                                </div>
+                                    {S.ruleEditor.vPravileEstFayly}</div>
                                 <ul className="divide-y divide-border">
                                     {foreign.map((f) => (
                                         <li key={f} className="flex items-center gap-2 py-1 text-xs">
@@ -470,36 +461,29 @@ export default function RuleEditor({
                                                 onClick={() => dropFile(f)}
                                                 className="shrink-0 text-muted-foreground underline decoration-dotted hover:text-destructive"
                                             >
-                                                убрать
-                                            </button>
+                                                {S.ruleEditor.ubrat}</button>
                                         </li>
                                     ))}
                                 </ul>
                                 <p className="mt-1 text-xs text-muted-foreground">
-                                    Они продолжают работать и обновляться. Каталог их больше не предлагает,
-                                    поэтому выбрать такой файл заново отсюда будет нельзя.
-                                </p>
+                                    {S.ruleEditor.oniProdolzhayutRabotatI}</p>
                             </div>
                         )}
 
                         <p className="text-xs text-muted-foreground">
-                            Выбирается сервис: если у него есть и домены, и адреса, в правило попадут оба. Домены точнее,
-                            адреса работают и когда устройство не спрашивает DNS роутера.
-                        </p>
+                            {S.ruleEditor.vybiraetsyaServisEsliU}</p>
                         {clash && <p className="text-xs text-warning-fg">{clash}</p>}
                     </Block>
 
                     <Block>
-                        <CardHead title="Куда — направление (выход)" />
+                        <CardHead title={S.ruleEditor.kudaNapravlenieVyhod} />
                         {outNames.length === 0 && (
                             <p className="text-xs text-warning-fg">
-                                Выходов нет — правилу некуда вести. Подключение настраивается во вкладке «VPN».
-                            </p>
+                                {S.ruleEditor.vyhodovNetPraviluNekuda}</p>
                         )}
                         {orphans.map((d) => (
                             <p key={d.name} className="text-xs text-warning-fg">
-                                Туннель {d.name} поднят, но не привязан к выходу — во вкладке «VPN».
-                            </p>
+                                {S.ruleEditor.tunnel}{d.name} {S.ruleEditor.podnyatNoNePrivyazan}</p>
                         ))}
                         {/* Радиосписок с точкой состояния выхода, как «Куда» в приложении:
                             кружок выбора, точка, имя, справа — чем выход является. */}
@@ -529,19 +513,19 @@ export default function RuleEditor({
                                                 спеки: «direct» в списке целей читалось как чьё-то
                                                 имя выхода, а не как «никуда не уводить». */}
                                             <span className="min-w-0 flex-1 truncate">
-                                                {o.kind === 'direct' ? 'Напрямую' : n}
+                                                {o.kind === 'direct' ? S.ruleEditor.napryamuyu : n}
                                             </span>
                                             <span className="shrink-0 text-xs text-muted-foreground">
                                                 {/* «нет NAT» — только у своего устройства: у туннеля
                                                     подписки (и у пула, где активна часть подписки)
                                                     masquerade не нужен вовсе, и метка пугала зря. */}
                                                 {o.kind === 'direct'
-                                                    ? 'мимо туннеля'
+                                                    ? S.ruleEditor.mimoTunnelya
                                                     : o.nat === false && o.kind === 'interface' && !isPart(outputs[o.device || ''])
                                                           && !(o.device && isTunnelKind(outputs[o.device]?.kind))
-                                                      ? 'нет NAT'
+                                                      ? S.ruleEditor.netNat
                                                       : o.kind === 'interface' && o.device && isPart(outputs[o.device])
-                                                        ? 'подписка'
+                                                        ? S.ruleEditor.podpiska
                                                         : o.device || ''}
                                             </span>
                                         </label>
@@ -560,24 +544,20 @@ export default function RuleEditor({
                                     совпадение сверху. Раздача меток — устройство движка, и на экране
                                     ей не место; место в очереди человек видит числом и правит
                                     стрелками. */}
-                                Это исключение: выбранное пойдёт мимо туннеля. Работает, пока правило
-                                стоит выше туннельных. Сейчас оно {index + 1}-е из {rulesTotal}.
+                                {S.ruleEditor.etoIsklyuchenieVybrannoePoydet}{index + 1}{S.ruleEditor.eIz}{rulesTotal}.
                             </p>
                         )}
                         {isException && coveredBy.length > 0 && (
                             <p className="text-xs text-destructive">
-                                Исключение перекрыто: выше стоит «{coveredBy.join('», «')}» с теми же
-                                записями — трафик заберёт оно, и исключение не сработает. Поднимите его
-                                стрелкой ↑ в списке правил.
-                            </p>
+                                {S.ruleEditor.isklyucheniePerekrytoVysheStoit}{coveredBy.join('», «')}{S.ruleEditor.sTemiZheZapisyami}</p>
                         )}
                         {hasDomains && (
                             /* Два режима — сегментами, как любой выбор из двух-четырёх вариантов в
                                приложении; значения те же, что были у выпадающего списка. */
                             <div className="space-y-1.5 border-t border-border pt-3 text-xs">
-                                <div className="text-subtle">Режим доменов</div>
+                                <div className="text-subtle">{S.ruleEditor.rezhimDomenov}</div>
                                 <Segmented
-                                    label="Режим доменов"
+                                    label={S.ruleEditor.rezhimDomenov}
                                     value={ch.match.mode ?? 'fakeip'}
                                     onChange={(m) =>
                                         onChange({
@@ -586,19 +566,17 @@ export default function RuleEditor({
                                         })
                                     }
                                     items={[
-                                        { value: 'fakeip', label: 'fake-IP — точнее' },
-                                        { value: 'realip', label: 'real-IP — дешевле' },
+                                        { value: 'fakeip', label: S.ruleEditor.fakeIpTochnee },
+                                        { value: 'realip', label: S.ruleEditor.realIpDeshevle },
                                     ]}
                                 />
                                 <p className="text-muted-foreground">
-                                    fake-IP: каждому домену свой адрес — точно, но дороже по памяти. real-IP: настоящие адреса из
-                                    ответа — дешевле, но два домена за одним адресом станут одним.
-                                </p>
+                                    {S.ruleEditor.fakeIpKazhdomuDomenu}</p>
                             </div>
                         )}
                         {hasDomains && upstreamNames.length > 0 && (
                             <label className="flex items-center justify-between gap-3 text-xs">
-                                <span className="text-subtle">Сервер DNS</span>
+                                <span className="text-subtle">{S.ruleEditor.serverDns}</span>
                                 <select
                                     value={typeof ch.dns === 'string' ? ch.dns : ''}
                                     onChange={(e) => {
@@ -610,7 +588,7 @@ export default function RuleEditor({
                                     }}
                                     className="min-w-0 rounded-lg border border-border bg-background px-2 py-1.5 text-sm"
                                 >
-                                    <option value="">по умолчанию</option>
+                                    <option value="">{S.ruleEditor.poUmolchaniyu}</option>
                                     {upstreamNames.map((n) => <option key={n} value={n}>{n}</option>)}
                                 </select>
                             </label>
@@ -620,14 +598,13 @@ export default function RuleEditor({
             </div>
 
             <div className="space-y-2">
-                <Button onClick={onClose} className="w-full">Готово</Button>
+                <Button onClick={onClose} className="w-full">{S.ruleEditor.gotovo}</Button>
                 <Button
                     variant="outline"
                     onClick={onDelete}
                     className="w-full border-destructive text-destructive hover:bg-destructive/10 hover:text-destructive"
                 >
-                    <Trash2 className="mr-1 h-4 w-4" aria-hidden="true" /> Удалить правило
-                </Button>
+                    <Trash2 className="mr-1 h-4 w-4" aria-hidden="true" /> {S.ruleEditor.udalitPravilo}</Button>
             </div>
         </div>
     )

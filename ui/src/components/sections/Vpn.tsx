@@ -10,6 +10,7 @@ import { usePending } from '@/lib/pending'
 import { devList, isPart, isTunnelKind } from '@/lib/model'
 import { type Live } from '@/lib/live'
 
+import { S } from '@/copy'
 /** VPN: чем роутер выходит наружу.
  *
  *  Три входа и один список. Входы отвечают на «что у меня есть»: свои туннели, узлы подписки,
@@ -29,7 +30,7 @@ import { type Live } from '@/lib/live'
 type Screen = 'root' | 'ifaces' | 'vless' | 'xsteer'
 
 const TITLE: Record<Exclude<Screen, 'root'>, string> = {
-    ifaces: 'Свои туннели',
+    ifaces: S.vpn.svoiTunneli,
     vless: 'VLESS',
     xsteer: 'XSTEER',
 }
@@ -87,8 +88,8 @@ export default function Vpn({ live }: { live: Live }) {
                     что за ней — WireGuard, AmneziaWG и прочие устройства самого роутера. */}
                 <TapRow
                     icon={ShieldCheck}
-                    title="Свои туннели"
-                    subtitle={ifaceDevs.length ? `взяты: ${ifaceDevs.join(', ')}` : 'WireGuard, AmneziaWG, OpenVPN — ни один не взят'}
+                    title={S.vpn.svoiTunneli}
+                    subtitle={ifaceDevs.length ? S.vpn.vzyaty(ifaceDevs.join(', ')) : S.vpn.wireguardAmneziawgOpenvpnNi}
                     onClick={() => setScreen('ifaces')}
                 />
                 <TapRow
@@ -106,15 +107,15 @@ export default function Vpn({ live }: { live: Live }) {
                        случае прямо врал. */
                     subtitle={
                         vlessCount
-                            ? `взяты: ${subCount === 1 ? '1 подписка' : subCount >= 2 && subCount <= 4 ? `${subCount} подписки` : `${subCount} подписок`} · ${vlessCount === 1 ? '1 локация' : vlessCount >= 2 && vlessCount <= 4 ? `${vlessCount} локации` : `${vlessCount} локаций`}`
-                            : 'ни одна подписка не взята выходом'
+                            ? S.vpn.vzyaty2(S.vpn.subscriptions(subCount), S.vpn.locations(vlessCount))
+                            : S.vpn.niOdnaPodpiskaNe
                     }
                     onClick={() => setScreen('vless')}
                 />
                 <TapRow
                     icon={Network}
                     title="XSTEER"
-                    subtitle={xs.length ? xs.join(', ') : 'интерфейсов нет'}
+                    subtitle={xs.length ? xs.join(', ') : S.vpn.interfeysovNet}
                     onClick={() => setScreen('xsteer')}
                 />
             </Group>}

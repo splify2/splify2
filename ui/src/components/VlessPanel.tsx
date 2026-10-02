@@ -7,6 +7,7 @@ import { rpc } from '@/lib/rpc'
 import { isSubSource } from '@/lib/validate'
 import type { Output, VlessNode, VlessProbe, VlessSkip } from '@/lib/model'
 
+import { S } from '@/copy'
 // Настройка выхода kind=vless: подписка и выбор узла.
 //
 // Почему узел выбирается номером, а не именем: имена узлов в подписке приходят от
@@ -122,8 +123,8 @@ export default function VlessPanel({ name, output, onChange, saved }: Props) {
         setBusy('sub')
         try {
             const r = await rpc.subSet(urlText)
-            if (!r.ok) throw new Error(r.error || 'не скачалось')
-            notify(`Подписка загружена: ${r.bytes} байт`)
+            if (!r.ok) throw new Error(r.error || S.vlessPanel.neSkachalos)
+            notify(S.vlessPanel.podpiskaZagruzhenaBayt(r.bytes))
             /* Сказанное панелью про устройство — на экран и до перезагрузки страницы, а не
                всплывашкой: там бывает «освободите слот», то есть работа в чужом боте, и
                уехавший через пять секунд тост означал бы, что человек её не сделает. */
@@ -220,33 +221,32 @@ export default function VlessPanel({ name, output, onChange, saved }: Props) {
     // отдельно: здесь источник обязателен.
     const urlBad = urlText.length > 0 && !isSubSource(urlText)
     const urlErr = urlBad
-        ? 'Нужна ссылка вида https://… на подписку либо одна или несколько ссылок vless:// или hysteria2:// '
-          + 'через пробел. Смешивать эти две формы нельзя: роутер возьмёт только одну.'
-        : urlTried && !urlText ? 'Вставьте ссылку на подписку или ссылку vless://.' : ''
+        ? S.vlessPanel.nuzhnaSsylkaVidaHttps
+          + S.vlessPanel.cherezProbelSmeshivatEti
+        : urlTried && !urlText ? S.vlessPanel.vstavteSsylkuNaPodpisku : ''
     const chosenName = chosen < 0
-        ? 'первый рабочий'
-        : nodes?.find((n) => n.index === chosen)?.name || `узел ${chosen}`
+        ? S.vlessPanel.pervyyRabochiy
+        : nodes?.find((n) => n.index === chosen)?.name || S.vlessPanel.uzel(chosen)
     const left = Object.keys(phase).length
 
     return (
         <div className="space-y-3 rounded-lg border border-border p-3">
             <div className="flex flex-wrap items-end gap-2">
                 <label className="flex flex-1 flex-col gap-1 text-xs">
-                    Ссылка на подписку или vless://
-                    <input
+                    {S.vlessPanel.ssylkaNaPodpiskuIli}<input
                         value={url}
                         onChange={(e) => setUrl(e.currentTarget.value)}
-                        placeholder="https://example.com/sub/xxxxx  —  или  vless://…"
+                        placeholder={S.vlessPanel.httpsExampleComSub}
                         className="h-[38px] w-full rounded-lg border border-border bg-background px-3 text-sm"
-                        aria-label="Ссылка на подписку или vless://"
+                        aria-label={S.vlessPanel.ssylkaNaPodpiskuIli}
                         aria-invalid={urlBad || undefined}
                         aria-describedby={urlErr ? `sub-url-err-${name}` : undefined}
                     />
                 </label>
                 <Button variant="secondary" className="h-[38px]" disabled={busy === 'sub'} onClick={fetchSub}>
                     {sub?.present
-                        ? <><RefreshCw className="mr-1 h-4 w-4" aria-hidden="true" /> Обновить</>
-                        : <><Download className="mr-1 h-4 w-4" aria-hidden="true" /> Загрузить</>}
+                        ? <><RefreshCw className="mr-1 h-4 w-4" aria-hidden="true" /> {S.vlessPanel.obnovit}</>
+                        : <><Download className="mr-1 h-4 w-4" aria-hidden="true" /> {S.vlessPanel.zagruzit}</>}
                 </Button>
             </div>
 
@@ -267,7 +267,7 @@ export default function VlessPanel({ name, output, onChange, saved }: Props) {
               * работают» — то есть как поломка на нашей стороне. */}
             {devWarn && (
                 <p role="alert" className="rounded-md border border-warning/40 bg-warning/10 p-2 text-xs">
-                    Панель подписки: {devWarn}
+                    {S.vlessPanel.panelPodpiski}{devWarn}
                 </p>
             )}
 
@@ -278,22 +278,21 @@ export default function VlessPanel({ name, output, onChange, saved }: Props) {
               * никакой панели не требуется. */}
             {sub?.hwid && sub.kind === 'url' && (
                 <p className="text-xs text-muted-foreground">
-                    Идентификатор этого роутера для панели:{' '}
+                    {S.vlessPanel.identifikatorEtogoRouteraDlya}{' '}
                     <span className="select-all font-mono">{sub.hwid}</span>
                     {/* Строка выведена из MAC порта — потому она и переживает сброс настроек.
                       * Откуда именно она берётся, человеку не нужно; нужно, что она не меняется
                       * и что сам MAC наружу не уходит. */}
-                    {' '}— он переживает сброс настроек. MAC роутера панели не отправляется.
-                </p>
+                    {' '}{S.vlessPanel.onPerezhivaetSbrosNastroek}</p>
             )}
 
             {sub?.present && (
                 <div className="text-xs text-muted-foreground">
-                    Файл на роутере: {sub.bytes} байт{sub.mtime ? `, обновлён ${when(sub.mtime)}` : ''}
+                    {S.vlessPanel.faylNaRoutere}{sub.bytes} {S.vlessPanel.bayt}{sub.mtime ? S.vlessPanel.obnovlen(when(sub.mtime)) : ''}
                     {meta && (
-                        <> · узлов пригодно {meta.usable}
-                            {meta.skipped ? `, пропущено ${meta.skipped}` : ''}
-                            {meta.foreign ? `, чужих протоколов ${meta.foreign}` : ''}
+                        <> {S.vlessPanel.uzlovPrigodno}{meta.usable}
+                            {meta.skipped ? S.vlessPanel.propuscheno(meta.skipped) : ''}
+                            {meta.foreign ? S.vlessPanel.chuzhihProtokolov(meta.foreign) : ''}
                         </>
                     )}
                 </div>
@@ -308,24 +307,22 @@ export default function VlessPanel({ name, output, onChange, saved }: Props) {
                 <ul className="space-y-0.5 text-xs text-muted-foreground">
                     {skips.map((s) => (
                         <li key={s.reason}>
-                            {s.reason} — {s.count === 1 ? 'узел' : 'узлов'} {s.count}
-                            {s.example ? `, например «${s.example}»` : ''}
+                            {s.reason} — {s.count === 1 ? S.vlessPanel.uzel2 : S.vlessPanel.uzlov} {s.count}
+                            {s.example ? S.vlessPanel.naprimer(s.example) : ''}
                         </li>
                     ))}
-                    {skipOther > 0 && <li>прочие причины — узлов {skipOther}</li>}
+                    {skipOther > 0 && <li>{S.vlessPanel.prochiePrichinyUzlov}{skipOther}</li>}
                 </ul>
             )}
 
             {!sub?.present && (
                 <p className="text-xs text-warning-fg">
-                    Подписки нет. Без неё выход никуда не ведёт: узлы ядро берёт только из файла.
-                </p>
+                    {S.vlessPanel.podpiskiNetBezNee}</p>
             )}
 
             {sub?.present && !saved && (
                 <p className="text-xs text-warning-fg">
-                    Сохраните выход — узлы ядро покажет для уже сохранённой настройки.
-                </p>
+                    {S.vlessPanel.sohraniteVyhodUzlyYadro}</p>
             )}
 
             {nodes && (
@@ -339,7 +336,7 @@ export default function VlessPanel({ name, output, onChange, saved }: Props) {
                     {nodes.length > 0 && (
                         <div className="flex flex-wrap items-center gap-2">
                             <span className="text-sm text-subtle">
-                                узлов {nodes.length} · выбран: {chosenName}
+                                {S.vlessPanel.uzlov2}{nodes.length} {S.vlessPanel.vybran}{chosenName}
                             </span>
                             <Button
                                 variant="secondary"
@@ -348,7 +345,7 @@ export default function VlessPanel({ name, output, onChange, saved }: Props) {
                                 onClick={probeAll}
                             >
                                 <Gauge className="mr-1 h-4 w-4" aria-hidden="true" />
-                                {batchOn ? `Остановить (осталось ${left})` : 'Проверить все'}
+                                {batchOn ? S.vlessPanel.ostanovitOstalos(left) : S.vlessPanel.proveritVse}
                             </Button>
                         </div>
                     )}
@@ -361,12 +358,11 @@ export default function VlessPanel({ name, output, onChange, saved }: Props) {
                             checked={chosen < 0}
                             onChange={() => onChange({ ...output, node: -1 })}
                         />
-                        <span className="font-medium">Первый рабочий</span>
+                        <span className="font-medium">{S.vlessPanel.pervyyRabochiy2}</span>
                         <span className="text-xs text-muted-foreground">
                             {/* Узлы проверяет движок при подъёме и берёт первый ответивший — сам
                               * механизм на экране не нужен, нужно его следствие. */}
-                            не сломается при обновлении подписки
-                        </span>
+                            {S.vlessPanel.neSlomaetsyaPriObnovlenii}</span>
                     </label>
 
                     <div className={`${LIST_MAX} divide-y divide-border overflow-y-auto pr-1`}>
@@ -381,7 +377,7 @@ export default function VlessPanel({ name, output, onChange, saved }: Props) {
                                     name={`node-${name}`}
                                     checked={chosen === n.index}
                                     onChange={() => onChange({ ...output, node: n.index })}
-                                    aria-label={`Узел ${n.name}`}
+                                    aria-label={S.vlessPanel.uzel3(n.name)}
                                 />
                                 <span className={chosen === n.index ? 'font-medium text-primary' : ''}>
                                     {n.name || `${n.host}:${n.port}`}
@@ -392,17 +388,16 @@ export default function VlessPanel({ name, output, onChange, saved }: Props) {
                                 {/* Пока строка в работе, показываем состояние, а не прошлый
                                     замер: старое «ответ 90 мс» рядом с идущей проверкой
                                     читается как её результат. */}
-                                {ph === 'queued' && <Badge variant="secondary">в очереди</Badge>}
-                                {ph === 'running' && <Badge variant="secondary">идёт проверка</Badge>}
+                                {ph === 'queued' && <Badge variant="secondary">{S.vlessPanel.vOcheredi}</Badge>}
+                                {ph === 'running' && <Badge variant="secondary">{S.vlessPanel.idetProverka}</Badge>}
 
                                 {!ph && err && <Badge variant="destructive">{err}</Badge>}
 
                                 {!ph && !err && p && (p.ok
                                     ? <>
-                                        <Badge variant={latencyTone(p.ttfb_ms)}>ответ {p.ttfb_ms} мс</Badge>
+                                        <Badge variant={latencyTone(p.ttfb_ms)}>{S.vlessPanel.otvet}{p.ttfb_ms} {S.vlessPanel.ms}</Badge>
                                         <span className="text-xs text-muted-foreground">
-                                            подключение {p.handshake_ms} мс
-                                        </span>
+                                            {S.vlessPanel.podklyuchenie}{p.handshake_ms} {S.vlessPanel.ms}</span>
                                       </>
                                     /* Причину показываем целиком: «не работает» без причины
                                        заставляет угадывать между ключом, транспортом и мёртвым
@@ -417,7 +412,7 @@ export default function VlessPanel({ name, output, onChange, saved }: Props) {
                                     onClick={() => probeOne(n.index, batch.current)}
                                 >
                                     <Gauge className="mr-1 h-4 w-4" aria-hidden="true" />
-                                    {ph === 'running' ? 'Проверяем…' : ph === 'queued' ? 'В очереди' : 'Проверить'}
+                                    {ph === 'running' ? S.vlessPanel.proveryaem : ph === 'queued' ? S.vlessPanel.vOcheredi2 : S.vlessPanel.proverit}
                                 </Button>
                             </div>
                         )

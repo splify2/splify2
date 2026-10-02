@@ -3,8 +3,8 @@ import { Block, CardHead } from '@/components/ui/layout'
 import { Switch } from '@/components/ui/switch'
 import { rpc } from '@/lib/rpc'
 import { notify } from '@/lib/notify'
-import { t } from '@/lib/i18n'
 
+import { S } from '@/copy'
 /** Чем роутер качает списки и обновления.
  *
  *  ЗАЧЕМ ЭТО ВЫБОР ЧЕЛОВЕКА, А НЕ АВТОМАТИКА. По умолчанию туннель стоит последним: сначала
@@ -47,8 +47,8 @@ export default function FetchCard() {
         setBusy(true)
         try {
             const r = await rpc.fetchModeSet(next)
-            if (!r.ok) throw new Error(r.error || t('не сохранилось'))
-            notify(t('Сохранено'))
+            if (!r.ok) throw new Error(r.error || S.fetchCard.neSohranilos)
+            notify(S.fetchCard.sohraneno)
         } catch (e) {
             // Возврат к прежнему значению обязателен: иначе на экране остаётся выбор,
             // которого на роутере нет, и человек уверен, что настроил.
@@ -63,16 +63,16 @@ export default function FetchCard() {
 
     return (
         <Block>
-                <CardHead title={t('Скачивание')} />
+                <CardHead title={S.fetchCard.skachivanie} />
                 <div className="flex flex-row-reverse items-start justify-between gap-3">
                     <Switch
                         on={on}
-                        label={t('Скачивать списки и обновления через туннель')}
+                        label={S.fetchCard.skachivatSpiskiIObnovleniya}
                         disabled={busy || mode === null}
                         onClick={() => void choose(on ? 'off' : 'always')}
                     />
                     <div className="min-w-0">
-                        <div className="text-[13px]">{t('Скачивать списки и обновления через туннель')}</div>
+                        <div className="text-[13px]">{S.fetchCard.skachivatSpiskiIObnovleniya}</div>
                         {/* Вторая строка — состояние, а не пояснение: включённый выключатель без
                             поднятого выхода ничего не даст, и знать это надо здесь, а не после. */}
                         {/* Ровно состояние, и ничего про то, как мы решаем сами: включатель
@@ -80,9 +80,9 @@ export default function FetchCard() {
                         {on && (
                             <div className="text-xs text-muted-foreground">
                                 {out ? (
-                                    <>{t('пойдёт через выход')} <span className="font-medium text-foreground">{out}</span></>
+                                    <>{S.fetchCard.poydetCherezVyhod} <span className="font-medium text-foreground">{out}</span></>
                                 ) : (
-                                    <span className="text-warning-fg">{t('поднятого выхода сейчас нет')}</span>
+                                    <span className="text-warning-fg">{S.fetchCard.podnyatogoVyhodaSeychasNet}</span>
                                 )}
                             </div>
                         )}
