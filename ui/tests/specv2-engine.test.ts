@@ -171,6 +171,23 @@ describe.skipIf(!HAVE)('кодек v2 против движка: ключи, к�
     })
 })
 
+describe.skipIf(!HAVE)('кодек v2 против движка: адреса и MAC в одном правиле', () => {
+    it('спека проходит ядро и забирает трафик и адреса, и MAC', () => {
+        for (const narrow of [false, true]) {
+            const rs = ruleset(encodeSpec({
+                outputs: { direct: { name: 'direct', kind: 'direct' }, wg0: { name: 'wg0', kind: 'interface', device: 'wg0' } },
+                channels: [{
+                    name: 'dom', out: 'wg0', from: ['192.168.1.50', 'aa:bb:cc:dd:ee:01'],
+                    match: { domains_files: [dom], ...(narrow ? { prefixes_files: [dc] } : {}) },
+                    ...(narrow ? { narrow: { [dc]: { proto: 'udp' as const, ports: ['50000-65535'] } } } : {}),
+                }],
+            }), `mix-${narrow}.json`)
+            expect(rs).toContain('192.168.1.50')
+            expect(rs).toContain('aa:bb:cc:dd:ee:01')
+        }
+    })
+})
+
 describe.skipIf(HAVE)('кодек v2 против движка — ПРОПУЩЕН', () => {
     it('нет движка (make -C ../steer all)', () => {
         expect(HAVE).toBe(false)

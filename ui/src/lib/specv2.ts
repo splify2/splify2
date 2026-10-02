@@ -30,6 +30,11 @@
 // (`proto`/`ports` — свойство списка). Спутник в модели получает имя «<правило> (порты)»; при
 // чтении правила с таким именем и тем же выходом складываются обратно в родителя.
 //
+// АДРЕСА И MAC. Клиентов разных видов в одном правиле ядро 2.0 не сводит («ещё не
+// поддерживается: разнесите их по правилам»), поэтому правило модели с адресами и MAC пишется
+// правилами подряд — по одному на вид, одинаковыми, кроме `for`, — а при чтении соседние правила
+// с тем же именем и всем остальным, но с клиентами другого вида, склеиваются обратно.
+//
 // КЛЮЧИ, КОТОРЫХ МОДЕЛЬ НЕ ЗНАЕТ, доезжают обратно во всех разделах: `extra` у выхода, правила,
 // апстрима, `dns`, `lan` и верхнего уровня; ключи списка (`override_port`…) — по его файлам
 // (`file_extra`), и файлы с разными ключами расходятся по спутникам, как с разным сужением;
@@ -251,6 +256,12 @@ function decodeDns(d: J): DnsSpec | undefined {
     return Object.keys(out).length ? out : undefined
 }
 
+/** Совпадают ли два правила во всём, кроме клиентов. */
+function sameButClients(a: Channel, b: Channel): boolean {
+    const strip = ({ from: _f, raw_clients: _r, ...x }: Channel) => JSON.stringify(x)
+    return strip(a) === strip(b)
+}
+
 function decodeV2(d: J): Spec {
     const lan = isObj(d.lan) ? d.lan : {}
     const clients = isObj(d.clients) ? d.clients : {}
@@ -264,6 +275,8 @@ function decodeV2(d: J): Spec {
 
     /* Правила читаются до разбора пулов: «часть» — это туннель, на который правила не ссылаются. */
     const channels: Channel[] = []
+    /** Виды клиентов правила: a — адреса, m — MAC, x — клиенты как есть. */
+    const kinds = new Map<Channel, Set<string>>()
     rules.forEach((r, i) => {
         if (!isObj(r)) return
         const ch: Channel = { name: str(r.name) || `rule-${i + 1}`, match: {}, out: String(r.out ?? '') }
@@ -281,6 +294,11 @@ function decodeV2(d: J): Spec {
             for (const m of arr(c.mac)) from.push(m)
         }
         if (from.length) ch.from = from
+        const ks = new Set<string>()
+        if (from.some((x) => MAC_RE.test(x))) ks.add('m')
+        if (from.some((x) => !MAC_RE.test(x))) ks.add('a')
+        if (ch.raw_clients) ks.add('x')
+        kinds.set(ch, ks)
         const rx = rest(r, RULE_KEYS)
         if (rx) ch.extra = rx
         const resolve = str(r.resolve)
@@ -325,6 +343,16 @@ function decodeV2(d: J): Spec {
         if (df.length) ch.match.domains_files = df
         if (srs.length) ch.match.srs_files = srs
         if (Object.keys(narrow).length) ch.narrow = narrow
+        /* Правило, которое запись разнесла по видам клиентов (encodeSpec), — обратно в одно:
+         * соседнее с тем же именем и всем остальным, но с клиентами другого вида. */
+        const prev = channels[channels.length - 1]
+        const pk = prev && kinds.get(prev)
+        if (prev && pk && pk.size && ks.size && [...ks].every((k) => !pk.has(k)) && sameButClients(prev, ch)) {
+            if (ch.from) prev.from = [...(prev.from || []), ...ch.from]
+            if (ch.raw_clients) prev.raw_clients = { ...(prev.raw_clients || {}), ...ch.raw_clients }
+            for (const k of ks) pk.add(k)
+            return
+        }
         channels.push(ch)
     })
 
@@ -631,22 +659,24 @@ export function encodeSpec(spec: Spec): J {
     const clientName = makeNamer('c')
     ;(spec.channels || []).forEach((ch, idx) => {
         const n = idx + 1
-        let forRef: string | string[] | undefined
-        const names: string[] = []
+        /* Клиенты — наборами одного вида: адреса, MAC, клиенты как есть. Клиентов разных видов в
+         * одном `for` ядро не сводит («ещё не поддерживается: разнесите их по правилам»), поэтому
+         * правило с несколькими наборами уходит ядру несколькими правилами подряд — одинаковыми,
+         * кроме `for`. По смыслу это то же правило: соседние правила с одним выходом, списками и
+         * режимом забирают объединение своих клиентов. При чтении они склеиваются обратно. */
+        const forSets: string[][] = []
         if (ch.from?.length) {
             const macs = ch.from.filter((x) => MAC_RE.test(x))
             const addrs = ch.from.filter((x) => !MAC_RE.test(x))
-            if (addrs.length) { const cn = clientName(ch.name, n); clients[cn] = { addr: addrs }; names.push(cn) }
-            if (macs.length) { const cn = clientName(`${ch.name}_mac`, n); clients[cn] = { mac: macs }; names.push(cn) }
-            /* Адреса вместе с MAC в одном правиле движок отвергает («разнесите по правилам»);
-             * пишем как есть, чтобы отказ сказал это сам, а не терять часть клиентов молча. */
+            if (addrs.length) { const cn = clientName(ch.name, n); clients[cn] = { addr: addrs }; forSets.push([cn]) }
+            if (macs.length) { const cn = clientName(`${ch.name}_mac`, n); clients[cn] = { mac: macs }; forSets.push([cn]) }
         }
-        for (const [rn, c] of Object.entries(ch.raw_clients || {})) {
+        const raw = Object.entries(ch.raw_clients || {}).map(([rn, c]) => {
             const cn = clientName(rn, n)
             clients[cn] = c
-            names.push(cn)
-        }
-        if (names.length) forRef = names.length === 1 ? names[0] : names
+            return cn
+        })
+        if (raw.length) forSets.push(raw)
         /* Списки, которых модель не выражает файлами, — к первому правилу канала, под своими
          * именами (занятое получает хвост). */
         const rawNames = Object.entries(ch.raw_lists || {}).map(([ln, l]) => {
@@ -654,9 +684,9 @@ export function encodeSpec(spec: Spec): J {
             lists[nm] = l
             return nm
         })
-        const base = (over: Partial<J>): J => {
+        const base = (over: Partial<J>, forRef?: string[]): J => {
             const r: J = { name: ch.name }
-            if (forRef) r.for = forRef
+            if (forRef) r.for = forRef.length === 1 ? forRef[0] : forRef
             Object.assign(r, over)
             r.out = ch.out
             if (ch.match.mode) r.resolve = ch.match.mode
@@ -665,13 +695,21 @@ export function encodeSpec(spec: Spec): J {
             if (ch.scope === 'device') r.scope = 'device'
             return withExtra(r, ch.extra)
         }
+        /* Одно правило модели — по правилу ядра на каждый набор клиентов (см. выше). */
+        const push = (over: Partial<J>, name?: string) => {
+            for (const fs of forSets.length ? forSets : [undefined]) {
+                const r = base(over, fs)
+                if (name) r.name = name
+                rules.push(r)
+            }
+        }
         if (ch.match.any) {
             const nw = { proto: ch.match.proto, ports: ch.match.ports }
             if (narrowKey(nw) || ch.all_extra) {
                 const ln = listName(ch.name, n)
                 lists[ln] = withExtra({ all: true, ...(nw.proto ? { proto: nw.proto } : {}), ...(nw.ports?.length ? { ports: nw.ports } : {}) }, ch.all_extra)
-                rules.push(base({ to: [ln, ...rawNames] }))
-            } else rules.push(base({ to: rawNames.length ? ['all', ...rawNames] : 'all' }))
+                push({ to: [ln, ...rawNames] })
+            } else push({ to: rawNames.length ? ['all', ...rawNames] : 'all' })
             return
         }
         /* Файлы по свойствам списка: сужению и ключам, которых модель не знает. Без них — само
@@ -689,7 +727,7 @@ export function encodeSpec(spec: Spec): J {
         for (const f of ch.match.domains_files || []) grp(f).df.push(f)
         for (const f of ch.match.srs_files || []) grp(f).srs.push(f)
         const order = [...groups.keys()].sort((a, b) => (a === '' ? -1 : b === '' ? 1 : 0))
-        if (!order.length && rawNames.length) rules.push(base({ to: rawNames }))
+        if (!order.length && rawNames.length) push({ to: rawNames })
         order.forEach((k, gi) => {
             const g = groups.get(k)!
             const ln = listName(gi === 0 ? ch.name : `${ch.name}_${gi + 1}`, n)
@@ -700,9 +738,8 @@ export function encodeSpec(spec: Spec): J {
             if (g.n?.proto) l.proto = g.n.proto
             if (g.n?.ports?.length) l.ports = g.n.ports
             lists[ln] = withExtra(l, g.x)
-            const r = base({ to: gi === 0 ? [ln, ...rawNames] : [ln] })
-            if (gi > 0) r.name = gi === 1 ? S.specv2.porty(ch.name) : S.specv2.porty2(ch.name, gi)
-            rules.push(r)
+            push({ to: gi === 0 ? [ln, ...rawNames] : [ln] },
+                gi === 0 ? undefined : gi === 1 ? S.specv2.porty(ch.name) : S.specv2.porty2(ch.name, gi))
         })
     })
     if (Object.keys(clients).length) doc.clients = clients

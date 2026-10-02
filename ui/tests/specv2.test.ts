@@ -255,3 +255,46 @@ describe('ключи, которых модель не знает, доезжа�
     })
 })
 
+describe('правило и на адреса, и на MAC', () => {
+    const ui = (narrow = false): Spec => base({
+        outputs: { direct: { name: 'direct', kind: 'direct' }, wg0: { name: 'wg0', kind: 'interface', device: 'wg0' } },
+        channels: [{
+            name: 'dom', out: 'wg0', from: ['192.168.1.50', 'aa:bb:cc:dd:ee:01'],
+            match: { domains_files: ['/l/a.lst'], ...(narrow ? { prefixes_files: ['/l/dc.lst'] } : {}) },
+            ...(narrow ? { narrow: { '/l/dc.lst': { proto: 'udp' as const, ports: ['50000-65535'] } } } : {}),
+        }],
+    })
+
+    it('ядру уходит двумя правилами — адреса и MAC, остальное одинаково', () => {
+        const d = encodeSpec(ui()) as { clients: Record<string, Record<string, unknown>>; rules: Record<string, unknown>[] }
+        expect(d.rules).toHaveLength(2)
+        const [a, m] = d.rules
+        expect(d.clients[a.for as string]).toEqual({ addr: ['192.168.1.50'] })
+        expect(d.clients[m.for as string]).toEqual({ mac: ['aa:bb:cc:dd:ee:01'] })
+        const { for: _a, ...ra } = a
+        const { for: _m, ...rm } = m
+        expect(rm).toEqual(ra)
+    })
+
+    it('при чтении склеивается обратно в одно правило, и круг ничего не меняет', () => {
+        for (const narrow of [false, true]) {
+            const d = encodeSpec(ui(narrow))
+            const back = decodeSpec(d)
+            expect(back.channels).toHaveLength(1)
+            expect(back.channels[0].from).toEqual(['192.168.1.50', 'aa:bb:cc:dd:ee:01'])
+            expect(encodeSpec(back)).toEqual(d)
+        }
+    })
+
+    it('соседние правила с одним именем на одних адресах не склеиваются', () => {
+        const back = decodeSpec({
+            version: 2,
+            outputs: { wg0: { kind: 'interface', device: 'wg0' } },
+            clients: { a: { addr: ['192.168.1.50'] }, b: { addr: ['192.168.1.51'] } },
+            lists: { l: { domains_file: ['/l/a.lst'] } },
+            rules: [{ name: 'x', for: 'a', to: ['l'], out: 'wg0' }, { name: 'x', for: 'b', to: ['l'], out: 'wg0' }],
+        })
+        expect(back.channels).toHaveLength(2)
+    })
+})
+

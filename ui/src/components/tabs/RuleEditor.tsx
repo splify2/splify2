@@ -290,7 +290,7 @@ export default function RuleEditor({
                                                             const cur = ch.from || []
                                                             const next = on
                                                                 ? cur.filter((x) => x !== l.mac)
-                                                                : [...cur.filter((x) => x.includes(':')), l.mac]
+                                                                : [...cur.filter(Boolean), l.mac]
                                                             onChange({ ...ch, from: next.length ? next : [''] })
                                                         }}
                                                         className="shrink-0"
@@ -312,19 +312,10 @@ export default function RuleEditor({
                                     }}
                                     className="w-full rounded-lg border border-border bg-background px-3 py-2 font-mono text-sm"
                                 />
-                                {/* Смешивать нельзя, и это не наша прихоть: nft не умеет «или»
-                                    внутри правила, поэтому движок такую спеку отвергает. Сказать
-                                    это здесь дешевле, чем получить отказ при сохранении. */}
+                                {/* Адреса и MAC в одном правиле законны: ядру такое правило
+                                    уходит двумя правилами подряд (encodeSpec в lib/specv2.ts). */}
                                 <p className="text-xs text-muted-foreground">
-                                    {S.ruleEditor.liboAdresaIPodseti}</p>
-                                {(() => {
-                                    const macs = (ch.from || []).filter((x) => x.includes(':')).length
-                                    const mixed = macs > 0 && macs !== (ch.from || []).filter(Boolean).length
-                                    return mixed ? (
-                                        <p className="text-xs text-destructive">
-                                            {S.ruleEditor.zdesIAdresaI}</p>
-                                    ) : null
-                                })()}
+                                    {S.ruleEditor.macVidenTolkoU}</p>
                                 {/* Опечатка в адресе не отвергается, а МОЛЧА выпадает: наборы nft
                                     строит shell, и битую запись он выбрасывает по дороге. Наружу это
                                     выходит как «я добавил телефон, а правило его не касается» —
