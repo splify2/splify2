@@ -7,6 +7,7 @@ import PoolEditor from '@/components/PoolEditor'
 import { rpc } from '@/lib/rpc'
 import { missingModule } from '@/lib/engine'
 import { outDownWord, outExtras } from '@/lib/outstate'
+import { hasHelper, helperWords, useHelpers } from '@/lib/helper'
 import { pending } from '@/lib/pending'
 import { country } from '@/lib/geo'
 import { devList, EMPTY_SPEC, isPart, type Spec } from '@/lib/model'
@@ -87,6 +88,17 @@ export default function PoolList({
         }
         return () => { stop = true }
     }, [names])
+
+    /* Помощники выходов глазами демона: модуль другой версии, процесс не запущен, перезапуски.
+     * Заново — при смене состояния выходов, а не на каждом круге опроса (lib/helper.ts). */
+    const outs = live.status?.outputs || {}
+    const helped = Object.entries(spec?.outputs || {})
+        .filter(([, o]) => !isPart(o) && hasHelper(o))
+        .map(([n]) => n)
+    const helpers = useHelpers(
+        helped,
+        helped.map((n) => `${n}:${outs[n]?.up ?? ''}:${outs[n]?.failed ?? ''}`).join(','),
+    )
 
     function edit(next: Spec) {
         setSpec(next)
@@ -221,6 +233,8 @@ export default function PoolList({
                             ? [S.outState.mostTelegram, rules ? S.poolList.pravil(rules) : ''].filter(Boolean).join(' · ')
                             : state
                         const extra = need ? { words: [], alarm: false } : outExtras(o, st)
+                        /* Беда помощника — впереди строки, перезапуски — в конце. */
+                        const hw = need ? { words: [], alarm: false, restarts: null } : helperWords(helpers[name] || [])
                         return (
                             <TapRow
                                 key={name}
@@ -236,8 +250,10 @@ export default function PoolList({
                                               : ShieldCheck
                                 }
                                 title={name}
-                                subtitle={[down, base, ...extra.words].filter(Boolean).join(' · ')}
-                                alarm={!!need || extra.alarm || (o.kind !== 'direct' && st?.up === false)}
+                                subtitle={[down, ...hw.words, base, ...extra.words, hw.restarts]
+                                    .filter(Boolean)
+                                    .join(' · ')}
+                                alarm={!!need || extra.alarm || hw.alarm || (o.kind !== 'direct' && st?.up === false)}
                                 onClick={() => setEditing(o.kind === 'group' ? `${GROUP_PREFIX}${name}` : name)}
                             />
                         )

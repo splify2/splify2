@@ -221,6 +221,13 @@ export const ru = {
         ipv6AdresomHosta: "IPv6 адресом хоста",
         ipv6NePodmenyaetsya: "IPv6 не подменяется",
     },
+    /** Помощник выхода глазами демона (lib/helper.ts). */
+    helperState: {
+        modulDrugoyVersii: "модуль другой версии — обновите ядро",
+        neZapushchen: "не запущен",
+        nuzhenPaket: (m: unknown) => `нужен пакет ${m}`,
+        perezapuskov: (n: number) => `перезапусков: ${n}`,
+    },
     dns: {
         rabotaet: "работает",
         zhdetVoprosov: "ждёт вопросов",
