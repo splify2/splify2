@@ -10,9 +10,10 @@ import Flag from '@/components/Flag'
 import { country } from '@/lib/geo'
 import { ccFromName, plainName } from '@/lib/nodename'
 import { poolsSupported } from '@/lib/engine'
-import { latencyTone, probeKey, useNodeProbe } from '@/lib/probe'
+import { latencyTone, probeKey, probeMs, useNodeProbe } from '@/lib/probe'
 import {
-    devList, isPart, isTunnelKind, ON_FAIL_TEXT, type OnFail, type Output, type Spec, type VlessNode,
+    devList, isPart, isProxyKind, isTunnelKind, ON_FAIL_TEXT, PROXY_KINDS, type OnFail, type Output, type ProxyKind,
+    type Spec, type VlessNode,
 } from '@/lib/model'
 import OutputAdvanced, { advFrom, advApply, type Adv } from '@/components/OutputAdvanced'
 import { type Live } from '@/lib/live'
@@ -53,19 +54,47 @@ interface Sub {
 
 /** Строка состава: одна локация подписки, «любая рабочая» локация подписки либо одно своё
  *  устройство. Порядок строк — порядок предпочтения, каким его расставил человек. */
-type Proto = 'vless' | 'hysteria2'
+type Proto = 'vless' | 'hysteria2' | ProxyKind
 type Row =
     | { kind: 'node'; sub: string; idx: number; proto: Proto }
     | { kind: 'any'; sub: string; proto: Proto }
     | { kind: 'dev'; dev: string }
 
-const PROTO_LABEL: Record<Proto, string> = { vless: 'VLESS', hysteria2: 'hysteria2' }
+const PROTO_LABEL: Record<Proto, string> = {
+    vless: 'VLESS', hysteria2: 'hysteria2',
+    trojan: 'Trojan', shadowsocks: 'Shadowsocks', socks: 'SOCKS', http: 'HTTP', vmess: 'VMess',
+}
+/** Порядок протоколов в подписке: строки и кнопки проверки идут в нём. */
+const PROTOS: Proto[] = ['vless', 'hysteria2', ...PROXY_KINDS]
 
 /** Подписка в таблице замеров. Номера узлов у протоколов свои (у каждого клиента — среди своих
- *  пригодных), поэтому в смешанной подписке «узел 3» бывает двух видов; у hysteria2 ключ
- *  подписки свой, и замеры не смешиваются. */
+ *  пригодных), поэтому в смешанной подписке «узел 3» бывает нескольких видов; у hysteria2 и у
+ *  каждого протокола прокси ключ подписки свой, и замеры не смешиваются. */
 const HY_PROBE = 'hy2|'
-const probeSub = (sub: string, proto: Proto) => (proto === 'hysteria2' ? HY_PROBE + sub : sub)
+const PX_PROBE = /^px\|([a-z]+)\|(.*)$/
+const probeSub = (sub: string, proto: Proto) =>
+    proto === 'vless' ? sub : proto === 'hysteria2' ? HY_PROBE + sub : `px|${proto}|${sub}`
+
+/** Узел прокси подписки. `nd.index` — номер среди узлов СВОЕГО протокола: его ждёт `nodes`
+ *  выхода, ядро считает его так у выхода (pxmain.c, разбор подписки с протоколом выхода). `at` —
+ *  номер в ответе по файлу подписки, сквозной по всем протоколам прокси: его ждёт проверка узла
+ *  по файлу. Один номер вместо двух дал бы выход на чужом узле: «trojan 0» по файлу — это
+ *  любой нулевой узел прокси, хоть shadowsocks. */
+type PxNode = { nd: VlessNode; proto: ProxyKind; at: number }
+
+/** Ответ `proxy_nodes` по файлу — узлами с номерами внутри своего протокола. Узел с
+ *  незнакомым протоколом (ядро новее интерфейса) пропускается: выход на нём собрать нечем. */
+function pxSplit(nodes: VlessNode[] | undefined): PxNode[] {
+    const seen: Partial<Record<ProxyKind, number>> = {}
+    const out: PxNode[] = []
+    for (const n of nodes || []) {
+        if (!isProxyKind(n.type)) continue
+        const i = seen[n.type] ?? 0
+        seen[n.type] = i + 1
+        out.push({ nd: { ...n, index: i }, proto: n.type, at: n.index })
+    }
+    return out
+}
 
 const NAME_RE = /^[A-Za-z0-9_-]{1,24}$/
 /** Имя выхода `kind: vless` становится именем устройства TUN, а у него предел IFNAMSIZ:
@@ -96,7 +125,7 @@ function partsOf(spec: Spec, pool: string | undefined): [string, Output][] {
 /** Строки из выхода kind=vless (обычного или служебной части). */
 function rowsOfVless(o: Output): Row[] {
     const sub = o.sub_file || ''
-    const proto: Proto = o.kind === 'hysteria2' ? 'hysteria2' : 'vless'
+    const proto: Proto = o.kind === 'hysteria2' || isProxyKind(o.kind) ? o.kind : 'vless'
     const nodes = o.nodes?.length
         ? o.nodes
         : typeof o.node === 'number' && o.node >= 0
@@ -120,7 +149,7 @@ function rowsOf(spec: Spec, name: string | undefined): Row[] {
 
 /** Ключ строки — чтобы React не терял состояние при перестановке. */
 function rowKey(r: Row): string {
-    const t = r.kind === 'dev' || r.proto === 'vless' ? '' : 'h'
+    const t = r.kind === 'dev' || r.proto === 'vless' ? '' : r.proto === 'hysteria2' ? 'h' : `${r.proto}:`
     return r.kind === 'node' ? `${t}n:${r.sub}:${r.idx}` : r.kind === 'any' ? `${t}a:${r.sub}` : `d:${r.dev}`
 }
 
@@ -182,6 +211,10 @@ export default function PoolEditor({
     /** Узлы hysteria2 той же подписки: вторая половина смешанной подписки. Спрашивается, когда
      *  движок нашёл в подписке ссылки, которых не признал своими. */
     const [hyBySub, setHyBySub] = useState<Record<string, VlessNode[]>>({})
+    /** Узлы прокси steer-proxy той же подписки (третий клиент), номерами своего протокола. */
+    const [pxBySub, setPxBySub] = useState<Record<string, PxNode[]>>({})
+    /** Сколько ссылок подписки не принял ни один клиент — почти всегда протокол, модуля
+     *  которого нет. */
     const [foreignBySub, setForeignBySub] = useState<Record<string, number>>({})
     /** Проверка узлов — здесь, где их выбирают: см. lib/probe.ts. Спрашивается у подписки
      *  её файлом; движок или бэкенд постарше пути не знают — тогда через любой выход, уже
@@ -194,6 +227,21 @@ export default function PoolEditor({
             /* Узел hysteria2 проверяется клиентом hysteria2 (пакет steer-hysteria2), VLESS —
              * своим; формат ответа тот же. */
             if (sub.startsWith(HY_PROBE)) return await rpc.hysteria2ProbeOfSub(sub.slice(HY_PROBE.length), index)
+            const px = PX_PROBE.exec(sub)
+            if (px) {
+                /* По файлу ядро ждёт сквозной номер и отвечает им же — туда и обратно через `at`. */
+                const list = (pxBySub[px[2]] || []).filter((x) => x.proto === px[1])
+                const it = list.find((x) => x.nd.index === index)
+                if (!it) throw new Error(S.poolEditor.uzlaNetVPodpiske)
+                const r = await rpc.proxyProbeOfSub(px[2], it.at)
+                return {
+                    ...r,
+                    results: (r.results || []).flatMap((res) => {
+                        const own = list.find((x) => x.at === res.index)
+                        return own ? [{ ...res, index: own.nd.index }] : []
+                    }),
+                }
+            }
             return await rpc.vlessProbeOfSub(sub, index)
         } catch (e) {
             if (!asker) throw e
@@ -225,29 +273,47 @@ export default function PoolEditor({
             const asker = Object.entries(spec.outputs).find(
                 ([, o]) => isTunnelKind(o.kind) && o.sub_file === s.path,
             )?.[0]
-            const take = (r: VlessNodesReply, hy: VlessNode[] = []) => {
+            type Other = VlessNodesReply | null
+            /* Ссылки, не принятые ни одним клиентом: всё чужое для VLESS минус то, что разобрали
+             * (или отвергли с причиной) клиенты hysteria2 и прокси. */
+            const rest = (foreign: number, h: Other, p: Other) =>
+                Math.max(0, foreign - (h ? (h.usable ?? 0) + (h.skipped ?? 0) : 0) - (p ? (p.usable ?? 0) + (p.skipped ?? 0) : 0))
+            const take = (r: VlessNodesReply, h: Other = null, p: Other = null) => {
                 if (stop) return
                 setNodesBySub((m) => ({ ...m, [s.path]: r.nodes || [] }))
-                setHyBySub((m) => ({ ...m, [s.path]: hy }))
-                setForeignBySub((m) => ({ ...m, [s.path]: r.foreign || 0 }))
+                setHyBySub((m) => ({ ...m, [s.path]: h?.nodes || [] }))
+                setPxBySub((m) => ({ ...m, [s.path]: pxSplit(p?.nodes) }))
+                setForeignBySub((m) => ({ ...m, [s.path]: rest(r.foreign || 0, h, p) }))
             }
+            /* Клиенты hysteria2 и прокси — модули, которых может не быть: отказ любого из них
+             * значит «узлов этого протокола не показать», а не «подписка не читается». */
+            const others = () => Promise.all([
+                rpc.hysteria2NodesOfSub(s.path).catch((): Other => null),
+                rpc.proxyNodesOfSub(s.path).catch((): Other => null),
+            ])
             rpc.vlessNodesOfSub(s.path)
                 .then((r) => {
-                    /* Ссылки, которых движок не признал своими, — возможно, hysteria2: смешанная
-                     * подписка показывает узлы ОБОИХ протоколов, а не один из двух. Нет ссылок
-                     * такого рода или нет модуля — остаётся ответ VLESS как есть, а число
-                     * непризнанных ссылок говорит, что не хватает пакета. */
+                    /* Ссылки, которых VLESS не признал своими, — hysteria2 или прокси: смешанная
+                     * подписка показывает узлы ВСЕХ протоколов, а не один из них. Чужих ссылок нет
+                     * — остальных клиентов не спрашиваем вовсе. */
                     if (!r.foreign) { take(r); return }
-                    return rpc.hysteria2NodesOfSub(s.path)
-                        .then((h) => take(r, h.nodes || []))
-                        .catch(() => take(r))
+                    return others().then(([h, p]) => take(r, h, p))
                 })
-                .catch(() => {
-                    if (!asker) { if (!stop) setNodesBySub((m) => ({ ...m, [s.path]: null })); return }
-                    rpc.vlessNodes(asker)
-                        .then(take)
-                        .catch(() => { if (!stop) setNodesBySub((m) => ({ ...m, [s.path]: null })) })
-                })
+                .catch(() =>
+                    /* VLESS не ответил — модуля steer-vless может не быть, а подписка из ссылок
+                     * других протоколов: их клиенты спрашиваются всё равно. */
+                    others().then(([h, p]) => {
+                        if (h || p) {
+                            const none: VlessNodesReply = { output: '', sub_file: s.path, node: -1, usable: 0, skipped: 0, foreign: 0, nodes: [] }
+                            take(none, h, p)
+                            return
+                        }
+                        if (!asker) { if (!stop) setNodesBySub((m) => ({ ...m, [s.path]: null })); return }
+                        rpc.vlessNodes(asker)
+                            .then((r) => take(r))
+                            .catch(() => { if (!stop) setNodesBySub((m) => ({ ...m, [s.path]: null })) })
+                    }),
+                )
         }
         return () => { stop = true }
         // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -259,7 +325,9 @@ export default function PoolEditor({
         return s?.title || s?.name || path.replace(/^.*\//, '').replace(/\.txt$/, '')
     }
     const nodeOf = (sub: string, idx: number, proto: Proto = 'vless') =>
-        ((proto === 'hysteria2' ? hyBySub[sub] : nodesBySub[sub]) || []).find((x) => x.index === idx)
+        isProxyKind(proto)
+            ? (pxBySub[sub] || []).find((x) => x.proto === proto && x.nd.index === idx)?.nd
+            : ((proto === 'hysteria2' ? hyBySub[sub] : nodesBySub[sub]) || []).find((x) => x.index === idx)
 
     /** Устройства, занятые ДРУГИМИ выходами: одно устройство в двух выходах kind=interface —
      *  это две таблицы маршрутизации на один туннель, и вторая молча не работает.
@@ -507,6 +575,10 @@ export default function PoolEditor({
     }
 
     const subsInRows = new Set(rows.filter((r) => r.kind !== 'dev').map((r) => (r as { sub: string }).sub))
+    /** Модули клиентов, которых нет на роутере (по перечню бэкенда); перечня нет — не знаем. */
+    const needMods = live?.build?.modules
+        ? (['hysteria2', 'proxy'] as const).filter((m) => !live.build!.modules!.includes(m))
+        : []
 
     /* Bode 26.10, раскладка по образцу приложения Splify2.
      *
@@ -563,16 +635,25 @@ export default function PoolEditor({
                         {subs.map((s) => {
                             const nodes = nodesBySub[s.path]
                             const hy = hyBySub[s.path] || []
-                            /* «Любая рабочая» — у каждого протокола своя: клиенты разные, и
-                             * одна строка не может быть обоими сразу. У подписки только из
-                             * hysteria2 единственная «любая» — её. */
-                            const anyProto: Proto = nodes && nodes.length === 0 && hy.length > 0 ? 'hysteria2' : 'vless'
-                            const any = has({ kind: 'any', sub: s.path, proto: 'vless' }) || has({ kind: 'any', sub: s.path, proto: 'hysteria2' })
-                            const mixed = hy.length > 0
+                            const px = pxBySub[s.path] || []
                             type N = { nd: VlessNode; proto: Proto }
                             const tagged: N[] | undefined = nodes
-                                ? [...nodes.map((nd): N => ({ nd, proto: 'vless' })), ...hy.map((nd): N => ({ nd, proto: 'hysteria2' }))]
+                                ? [
+                                    ...nodes.map((nd): N => ({ nd, proto: 'vless' })),
+                                    ...hy.map((nd): N => ({ nd, proto: 'hysteria2' })),
+                                    ...px.map(({ nd, proto }): N => ({ nd, proto })),
+                                  ]
                                 : undefined
+                            /* Протоколы, узлы которых в подписке есть, — в порядке PROTOS. */
+                            const protos = PROTOS.filter((p) => (tagged || []).some((x) => x.proto === p))
+                            /* «Любая рабочая» — у каждого протокола своя: клиенты разные, и
+                             * одна строка не может быть несколькими сразу. Первая — у первого
+                             * протокола подписки (у подписки только из hysteria2 — его), у
+                             * остальных — своя строка с именем протокола. */
+                            const anyProto: Proto = protos[0] || 'vless'
+                            const any = has({ kind: 'any', sub: s.path, proto: anyProto })
+                            const anyPicked = rows.some((r) => r.kind === 'any' && r.sub === s.path)
+                            const mixed = protos.length > 1
                             /* Что показывать из локаций: при поиске — совпавшие; иначе выбранные
                                и первые FOLD, пока подписку не развернули целиком.
 
@@ -619,7 +700,7 @@ export default function PoolEditor({
                                                     !s.present
                                                         ? <span className="text-warning-fg">{S.poolEditor.neSkachana}</span>
                                                         : nodes
-                                                          ? S.poolEditor.lokatsiy(all.length, picked.size ? S.poolEditor.pickedCount(picked.size) : any ? S.poolEditor.pickedAny : '')
+                                                          ? S.poolEditor.lokatsiy(all.length, picked.size ? S.poolEditor.pickedCount(picked.size) : anyPicked ? S.poolEditor.pickedAny : '')
                                                           : undefined
                                                 }
                                             />
@@ -628,14 +709,14 @@ export default function PoolEditor({
                                                     {/* Проверка всех узлов подписки — рядом с их числом:
                                                         вопрос «какие из них живые» задают до выбора, а
                                                         не после. Повторное нажатие останавливает. */}
-                                                    {([
-                                                        { proto: 'vless' as Proto, list: nodes },
-                                                        { proto: 'hysteria2' as Proto, list: hy },
-                                                    ]).filter((t) => t.list.length > 0).map((t) => {
+                                                    {protos.map((proto) => ({
+                                                        proto,
+                                                        list: (tagged || []).filter((x) => x.proto === proto).map((x) => x.nd),
+                                                    })).map((t) => {
                                                         const id = probeSub(s.path, t.proto)
-                                                        /* В смешанной подписке кнопок две — по протоколу: номера
+                                                        /* В смешанной подписке кнопки — по протоколу: номера
                                                            и клиенты у них свои. */
-                                                        const what = mixed && nodes.length > 0 ? ` ${PROTO_LABEL[t.proto]}` : ''
+                                                        const what = mixed ? ` ${PROTO_LABEL[t.proto]}` : ''
                                                         return (
                                                             <button
                                                                 key={t.proto}
@@ -671,34 +752,34 @@ export default function PoolEditor({
                                                 hint={S.poolEditor.neSlomaetsyaPriObnovlenii}
                                             />
                                         </li>
-                                        {s.present && nodes && hy.length === 0 && (foreignBySub[s.path] || 0) > 0 && (
-                                            /* Чужие ссылки есть, а узлов hysteria2 из них не вышло — почти
-                                               всегда модуля нет. Назван пакет и число узлов, а не
-                                               «ошибка»: это и есть следующий шаг. В смешанной подписке
-                                               узлы VLESS остаются выбираемыми, а сказано о недостающей
-                                               половине. */
+                                        {s.present && nodes && (foreignBySub[s.path] || 0) > 0 && (
+                                            /* Ссылки, которых не принял ни один клиент, — почти всегда
+                                               протокол, модуля которого нет. Назван пакет и число узлов,
+                                               а не «ошибка»: это и есть следующий шаг. В смешанной
+                                               подписке остальные узлы остаются выбираемыми, а сказано о
+                                               недостающей части. */
                                             <li className="px-2.5 py-2.5 text-xs text-muted-foreground">
-                                                {live?.build?.modules && !live.build.modules.includes('hysteria2')
-                                                    ? (nodes.length === 0
-                                                        ? S.poolEditor.uzlovNetDlyaSsylok
-                                                        : S.poolEditor.vPodpiskeEscheUzlov(foreignBySub[s.path]))
-                                                    : (nodes.length === 0
+                                                {needMods.length
+                                                    ? (all.length === 0
+                                                        ? S.poolEditor.uzlovNetNuzhenPaket(needMods)
+                                                        : S.poolEditor.vPodpiskeEscheUzlov(foreignBySub[s.path], needMods))
+                                                    : (all.length === 0
                                                         ? S.poolEditor.uzlovNetYadroNe
                                                         : S.poolEditor.yadroNePrinyaloEsche(foreignBySub[s.path]))}
                                             </li>
                                         )}
-                                        {s.present && mixed && nodes && nodes.length > 0 && (
-                                            /* Вторая «любая рабочая» — для hysteria2: клиенты разные, и
-                                               одна строка не может быть обоими. */
-                                            <li>
+                                        {s.present && protos.slice(1).map((p) => (
+                                            /* «Любая рабочая» остальных протоколов подписки: клиенты
+                                               разные, и одна строка не может быть несколькими. */
+                                            <li key={`any-${p}`}>
                                                 <Choice
-                                                    on={has({ kind: 'any', sub: s.path, proto: 'hysteria2' })}
+                                                    on={has({ kind: 'any', sub: s.path, proto: p })}
                                                     round
-                                                    onClick={() => anyOf(s.path, 'hysteria2')}
-                                                    title={S.poolEditor.lyubayaRabochayaHysteria2}
+                                                    onClick={() => anyOf(s.path, p)}
+                                                    title={S.poolEditor.lyubayaRabochayaOf(PROTO_LABEL[p])}
                                                 />
                                             </li>
-                                        )}
+                                        ))}
                                         {nodes === undefined && s.present && (
                                             <li className="px-2.5 py-2.5 text-xs text-muted-foreground">{S.poolEditor.uzlyChitayutsya}</li>
                                         )}
@@ -750,8 +831,8 @@ export default function PoolEditor({
                                                             : ph === 'running' ? <span className="flex items-center gap-1 text-muted-foreground"><LoaderCircle className="h-3 w-3 animate-spin" aria-hidden="true" />{S.poolEditor.proveryayu}</span>
                                                             : err ? <span className="text-destructive" title={err}>{S.poolEditor.neProverilsya}</span>
                                                             : pr ? (pr.ok
-                                                                ? <span className={latencyTone(pr.ttfb_ms) === 'good' ? 'text-success' : latencyTone(pr.ttfb_ms) === 'ok' ? 'text-muted-foreground' : 'text-warning-fg'}>
-                                                                    {pr.ttfb_ms} {S.poolEditor.ms}</span>
+                                                                ? <span className={latencyTone(probeMs(pr)) === 'good' ? 'text-success' : latencyTone(probeMs(pr)) === 'ok' ? 'text-muted-foreground' : 'text-warning-fg'}>
+                                                                    {probeMs(pr)} {S.poolEditor.ms}</span>
                                                                 /* Причину показываем целиком: «не работает» без
                                                                    причины заставляет угадывать между ключом,
                                                                    транспортом и мёртвым сервером — а движок это
@@ -885,7 +966,7 @@ export default function PoolEditor({
                                            подписки: иначе «узел 3» двух клиентов не отличить. */
                                         const hint = r.kind === 'dev'
                                             ? undefined
-                                            : r.proto === 'hysteria2' || (hyBySub[r.sub]?.length ?? 0) > 0
+                                            : r.proto !== 'vless' || (hyBySub[r.sub]?.length ?? 0) > 0 || (pxBySub[r.sub]?.length ?? 0) > 0
                                               ? `${subTitle(r.sub)} · ${PROTO_LABEL[r.proto]}`
                                               : subTitle(r.sub)
                                         /* Соседние локации одной подписки — одна часть пула, и это

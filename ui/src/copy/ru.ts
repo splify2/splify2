@@ -712,11 +712,17 @@ export const ru = {
         proveritVse: (p0: unknown) => `проверить все${p0}`,
         lyubayaRabochaya: "любая рабочая",
         neSlomaetsyaPriObnovlenii: "не сломается при обновлении подписки",
-        uzlovNetDlyaSsylok: "Узлов нет: для ссылок hysteria2 не установлен пакет steer-hysteria2.",
-        vPodpiskeEscheUzlov: (p0: unknown) => `В подписке ещё ${p0} узлов hysteria2: нужен пакет steer-hysteria2.`,
+        /** Модули клиентов, которых нет: `hysteria2`, `proxy`. Один — назван протокол его ссылок. */
+        uzlovNetNuzhenPaket: (need: readonly string[]) => need.length === 1
+            ? `Узлов нет: для ссылок ${need[0] === 'proxy' ? 'прокси' : need[0]} не установлен пакет steer-${need[0]}.`
+            : `Узлов нет: не установлены пакеты ${need.map((m) => `steer-${m}`).join(' и ')}.`,
+        vPodpiskeEscheUzlov: (p0: unknown, need: readonly string[]) => need.length === 1
+            ? `В подписке ещё ${p0} узлов ${need[0] === 'proxy' ? 'прокси' : need[0]}: нужен пакет steer-${need[0]}.`
+            : `В подписке ещё ${p0} узлов: нужны пакеты ${need.map((m) => `steer-${m}`).join(' и ')}.`,
+        uzlaNetVPodpiske: "Узла нет в подписке",
         uzlovNetYadroNe: "Узлов нет: ядро не приняло ссылки этой подписки.",
         yadroNePrinyaloEsche: (p0: unknown) => `Ядро не приняло ещё ${p0} ссылок этой подписки.`,
-        lyubayaRabochayaHysteria2: "любая рабочая (hysteria2)",
+        lyubayaRabochayaOf: (proto: string) => `любая рабочая (${proto})`,
         uzlyChitayutsya: "узлы читаются…",
         lokatsiiPoyavyatsyaPoslePrimenit: "локации появятся после «Применить»",
         nichegoNeNashlos: "ничего не нашлось",

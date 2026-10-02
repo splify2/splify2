@@ -127,3 +127,10 @@ export function useNodeProbe(ask: (sub: string, index: number) => Promise<ProbeR
 export function latencyTone(ms: number): 'good' | 'ok' | 'slow' {
     return ms < 150 ? 'good' : ms < 400 ? 'ok' : 'slow'
 }
+
+/** Задержка ответившего узла. VLESS меряет ответ через туннель (`ttfb_ms`), hysteria2 и прокси
+ *  steer-proxy — рукопожатие с запросом (`handshake_ms`), а `ttfb_ms` у них всегда -1: по нему
+ *  исправный узел показывался как «-1 мс». */
+export function probeMs(p: { ttfb_ms: number; handshake_ms: number }): number {
+    return p.ttfb_ms >= 0 ? p.ttfb_ms : p.handshake_ms
+}

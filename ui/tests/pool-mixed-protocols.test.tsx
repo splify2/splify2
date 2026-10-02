@@ -98,12 +98,26 @@ describe('смешанная подписка: узлы обоих проток�
     it('модуля hysteria2 нет — узлы VLESS доступны, а о недостающих сказано с числом и пакетом', async () => {
         vi.spyOn(rpc, 'vlessNodesOfSub').mockResolvedValue(reply(vlessNodes, 5))
         vi.spyOn(rpc, 'hysteria2NodesOfSub').mockRejectedValue(new Error('нужен пакет steer-hysteria2'))
+        /* Клиент прокси стоит и чужих ему ссылок не принял — остаток (5) достаётся hysteria2. */
+        vi.spyOn(rpc, 'proxyNodesOfSub').mockResolvedValue(reply([], 51))
+        mount(live({
+            status: { schema: 1, features: ['lan_devices', 'nodes', 'pool', 'groups'], outputs: {}, channels: [] },
+            build: { modules: ['vless', 'proxy'] },
+        }))
+        await waitFor(() => expect(screen.getByText('локаций: 46')).toBeInTheDocument())
+        expect(screen.getByText(/ещё 5 узлов hysteria2: нужен пакет steer-hysteria2/)).toBeInTheDocument()
+    })
+
+    it('нет ни hysteria2, ни прокси — названы оба пакета: чьи это ссылки, не узнать', async () => {
+        vi.spyOn(rpc, 'vlessNodesOfSub').mockResolvedValue(reply(vlessNodes, 5))
+        vi.spyOn(rpc, 'hysteria2NodesOfSub').mockRejectedValue(new Error('нужен пакет steer-hysteria2'))
+        vi.spyOn(rpc, 'proxyNodesOfSub').mockRejectedValue(new Error('нужен пакет steer-proxy'))
         mount(live({
             status: { schema: 1, features: ['lan_devices', 'nodes', 'pool', 'groups'], outputs: {}, channels: [] },
             build: { modules: ['vless'] },
         }))
         await waitFor(() => expect(screen.getByText('локаций: 46')).toBeInTheDocument())
-        expect(screen.getByText(/ещё 5 узлов hysteria2: нужен пакет steer-hysteria2/)).toBeInTheDocument()
+        expect(screen.getByText(/ещё 5 узлов: нужны пакеты steer-hysteria2 и steer-proxy/)).toBeInTheDocument()
     })
 
     it('открытый заново выход hysteria2 возвращается в те же строки с тем же протоколом', async () => {
