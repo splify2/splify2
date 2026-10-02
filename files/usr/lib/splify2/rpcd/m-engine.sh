@@ -488,9 +488,15 @@ case "$2" in
         # Ядро ведёт steer-box-connector (podkop, forkop) — см. box_busy в common.sh.
         busy=""
         box_busy && busy="$BOX_BY"
+        # Версия САМОГО интерфейса (пакет luci-app-splify2) — здесь, а не только в
+        # splify2_versions: тот перед ответом идёт в сеть за перечнем выпусков, и там, где сети
+        # нет, «Сейчас» в карточке интерфейса и подпись рельса ждали её десятки секунд (снято с
+        # QEMU-стенда без DNS: 26 с на вызов). Установленный пакет — местное знание.
+        ui_ver="$(pkg_version luci-app-splify2)"
         if [ ! -x "$STEER" ]; then
             json_init
             json_add_boolean present 0
+            json_add_string ui_version "$ui_ver"
             [ -n "$busy" ] && json_add_string busy "$busy"
             json_add_boolean vless 0
             json_add_boolean enabled "$svc_enabled"
@@ -530,6 +536,7 @@ case "$2" in
         json_add_string version "$(v="$(pkg_version steer-core)"; [ -n "$v" ] || v="$(pkg_version steer-extended)"; [ -n "$v" ] || v="$(pkg_version steer)"; printf '%s' "$v")"
         # Не старше какой версии должен быть движок — см. STEER_MIN_VERSION в шапке файла.
         json_add_string min_version "$STEER_MIN_VERSION"
+        json_add_string ui_version "$ui_ver"
         json_dump
         ;;
 

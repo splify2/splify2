@@ -53,6 +53,8 @@ export interface Build {
     enabled?: boolean
     /** Работает ли хоть один экземпляр прямо сейчас. */
     running?: boolean
+    /** Установленная версия интерфейса — см. rpc.engine. */
+    ui_version?: string
 }
 
 export interface Live {
@@ -556,7 +558,12 @@ export function useLive(): Live {
                  * блокировкам, и пустое значение стёрло бы с экрана то, что уже было известно:
                  * версии до следующего удачного круга держатся прежние (I-337). */
                 const rel = r.status === 'fulfilled' ? r.value : (versionsSaved.current?.releases ?? null)
-                const up = u.status === 'fulfilled' ? u.value : (versionsSaved.current?.selfUpdate ?? null)
+                /* Отказ без запомненного — перечень ПУСТ, а не «ещё едет»: null держал бы в
+                 * карточке «загрузка…» до перезагрузки страницы, а запрос уже вернулся отказом.
+                 * Карточка на пустом перечне так и говорит: список версий не пришёл. */
+                const up = u.status === 'fulfilled'
+                    ? u.value
+                    : (versionsSaved.current?.selfUpdate ?? { current: '', versions: [] })
                 setReleases(rel)
                 setSelfUpdate(up)
                 /* Сохраняется только то, что пришло: два отказа, записанные со свежим сроком,

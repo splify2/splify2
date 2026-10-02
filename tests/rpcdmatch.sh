@@ -1090,6 +1090,21 @@ check "минимум — та константа, что объявлена в 
 check "минимум — не младше 2.0.0: спеку v2 читает только ядро 2.0" "2.0.0" \
       "$(printf '%s\n%s\n' "$(printf '%s' "$out" | jget min_version)" 2.0.0 | sort -V | head -n 1)"
 
+# ---- версия интерфейса — без сети, вместе с ядром ---------------------------------------
+# «Сейчас: luci-app-splify2 …» и подпись рельса брались только из splify2_versions, а он перед
+# ответом идёт в сеть за перечнем выпусков: снято с QEMU-стенда без DNS — 26 секунд на вызов,
+# пока они идут, карточка писала «Сейчас: luci-app-splify2 ?», рельс — одно «Bode». Установленный
+# пакет — местное знание, и отдаёт его engine, который страница спрашивает сразу.
+reset_logs
+out="$(rpcd engine)"
+check "engine называет установленную версию интерфейса" "0.7.6" "$(printf '%s' "$out" | jget ui_version)"
+check "и в сеть за ней не ходит" "0" "$(cat "$T/wget.log" "$T/curl.log" 2>/dev/null | grep -c .)"
+mv "$T/bin/steer" "$T/bin/steer.away"
+out="$(rpcd engine)"
+mv "$T/bin/steer.away" "$T/bin/steer"
+check "ядра нет — версия интерфейса всё равно названа" "false;0.7.6" \
+      "$(printf '%s' "$out" | jget present);$(printf '%s' "$out" | jget ui_version)"
+
 # ---- модули ядра 2.0: перечень с proxy, VLESS — по модулю ------------------------------
 # Модули — бинарники steer-<модуль> рядом с steerd (MODULE_DIR на стенде). steer-proxy (trojan,
 # shadowsocks, socks, http, vmess) — такой же модуль, как остальные: без него в перечне выход

@@ -19,9 +19,13 @@ import { S } from '@/copy'
 
 export default function SelfUpdateCard({
     info,
+    installed,
     onInstalled,
 }: {
     info: SelfUpdateInfo | null
+    /** Установленная версия с метода engine — без сети. Перечень выпусков (info) идёт за ней в
+     *  интернет и там, где его нет, едет десятки секунд; «Сейчас» его не ждёт. */
+    installed?: string
     onInstalled: () => void
 }) {
     const [ver, setVer] = useState('')
@@ -33,16 +37,26 @@ export default function SelfUpdateCard({
 
     const versions = info?.versions ?? []
     const latest = versions.length ? versions[0] : null
+    const current = info?.current || installed || ''
     // Ровно то же правило, что и у движка (I-038): пока список не пришёл, про «свежее»
     // мы не знаем ничего, и обещать обновление нельзя.
-    const outdated = !!(latest && info?.current && cmpVersion(info.current, latest) < 0)
-    const label = outdated
-        ? `${S.selfUpdateCard.obnovitDo} ${releaseName(latest!, info?.names)}`
-        : S.selfUpdateCard.pereustanovit
+    const outdated = !!(latest && current && cmpVersion(current, latest) < 0)
+    /* Подпись — то, что сделает кнопка с ВЫБРАННОЙ версией. Установленной в перечне может не
+     * быть вовсе (сборка новее последнего выпуска: 26.10.0 при выпусках 26.9.x), и тогда
+     * «Переустановить» поставило бы другую версию под чужим словом. */
+    const cmp = ver && current ? cmpVersion(ver, current) : 0
+    const label = cmp > 0
+        ? `${S.selfUpdateCard.obnovitDo} ${releaseName(ver, info?.names)}`
+        : cmp < 0
+          ? `${S.selfUpdateCard.ustanovit} ${releaseName(ver, info?.names)}`
+          : S.selfUpdateCard.pereustanovit
 
+    /* Выбрана сначала свежая, если она новее установленной; иначе — установленная, если она
+     * есть в перечне; иначе — свежая. */
+    const initial = outdated || !versions.includes(current) ? latest : current
     useEffect(() => {
-        if (latest) setVer((v) => v || latest)
-    }, [latest])
+        if (initial) setVer((v) => v || initial)
+    }, [initial])
 
     async function install() {
         if (!ver) { notify(S.selfUpdateCard.vyberiteVersiyu, 'warning'); return }
@@ -72,9 +86,11 @@ export default function SelfUpdateCard({
     return (
         <Block>
                 <CardHead title={S.selfUpdateCard.interfeys} />
-                <p className="text-xs text-muted-foreground">
-                    {S.selfUpdateCard.seychas}: luci-app-splify2 {info?.current || '?'}
-                </p>
+                {current && (
+                    <p className="text-xs text-muted-foreground">
+                        {S.selfUpdateCard.seychas}: luci-app-splify2 {current}
+                    </p>
+                )}
                 {/* Единственное, что человеку нужно знать ДО нажатия: страницу придётся
                     перезагрузить, иначе он увидит старый интерфейс поверх нового бэкенда. */}
                 <p className="text-sm">{S.selfUpdateCard.posleUstanovkiPerezagruziteStranitsu}</p>

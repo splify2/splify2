@@ -955,6 +955,7 @@ export const ru = {
     selfUpdateCard: {
         obnovitDo: "Обновить до",
         pereustanovit: "Переустановить",
+        ustanovit: "Установить",
         vyberiteVersiyu: "Выберите версию",
         neUstanovilos: "не установилось",
         interfeysObnovlen: "Интерфейс обновлён",

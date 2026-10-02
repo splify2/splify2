@@ -90,7 +90,7 @@ export default function Settings({
                                 onInstalled={live.refresh}
                             />
                             <ModulesCard onChanged={live.refresh} />
-                            <SelfUpdateCard info={live.selfUpdate} onInstalled={live.refresh} />
+                            <SelfUpdateCard info={live.selfUpdate} installed={live.build?.ui_version} onInstalled={live.refresh} />
                             {/* Отчёт о работе живёт здесь, а не среди общих выключателей:
                                 «О ПО» — раздел про сам продукт и про то, что он о себе
                                 собирает, и именно это место названо человеку в документации
