@@ -38,7 +38,8 @@ describe('диагностика: журнал steer', () => {
         render(<Diagnostics live={live({ diag: { checks: [], warn: 0, fail: 0 } })} />)
 
         expect(await screen.findByText(/line 1/)).toBeInTheDocument()
-        const refreshBtn = screen.getByRole('button', { name: /Обновить/ })
+        // Имя ровно «Обновить»: у карточек соединений и имён свои кнопки с уточнённым именем.
+        const refreshBtn = screen.getByRole('button', { name: /^Обновить$/ })
         fireEvent.click(refreshBtn)
 
         await waitFor(() => expect(spy).toHaveBeenCalledTimes(2))

@@ -20,6 +20,7 @@ import {
 } from './model'
 
 import type { HelperState } from './helper'
+import type { ConnsReply } from './observe'
 import { S } from '@/copy'
 export { toCatalog }
 
@@ -906,7 +907,7 @@ export const rpc = {
     dnsLog: declare<DnsLog>('dns_log'),
 
     /** Соединения, которые движок повёл в свои выходы (до 2000 записей). */
-    conns: declare<{ shown?: number; total?: number; truncated?: boolean; conns?: unknown[] }>('conns'),
+    conns: declare<ConnsReply>('conns'),
 
     /** Живое состояние помощников выхода из памяти демона — ответ управляющего сокета как есть:
      *  `{code, stdout}`, где stdout — строка JSON на помощника. */
