@@ -244,6 +244,8 @@ export const ru = {
         hranitNeDolshe: "Хранить ответ не дольше, с",
         otritsatelnyyOtvetHranit: "Ответ «нет такого имени» хранить, с",
         minBolsheMax: "«Не меньше» больше, чем «не дольше» — ядро такие настройки не примет.",
+        http: (p0: unknown) => ` · ${p0 === 'h2' ? 'HTTP/2' : 'HTTP/1.1'}`,
+        early: (p0: unknown, p1: unknown) => ` · 0-RTT: ${p0}${p1 ? `, отвергнуто ${p1}` : ''}`,
     },
     engine: {
         ustanovit: "Установить",

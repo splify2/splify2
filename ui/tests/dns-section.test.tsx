@@ -20,6 +20,7 @@ vi.mock('@/lib/rpc', () => ({
 vi.mock('@/lib/notify', () => ({ notify: vi.fn() }))
 
 import Dns from '@/components/sections/Dns'
+import { rpc } from '@/lib/rpc'
 import { S } from '@/copy'
 
 // Раздел DNS: серверы резолвера движка (DoH, DoT, DoQ, обычный DNS), выход для запроса, общий
@@ -107,5 +108,19 @@ describe('раздел DNS', () => {
         render(<Dns />)
         await screen.findByLabelText('имя сервера google')
         expect(screen.queryByLabelText(S.dns.hranitNeMenshe)).toBeNull()
+    })
+
+    it('у сервера видно HTTP-версию и 0-RTT из журнала резолвера', async () => {
+        vi.mocked(rpc.dnsLog).mockResolvedValue({
+            running: true,
+            upstreams: [
+                { name: 'google', url: 'https://dns.google/dns-query', proto: 'doh', via: null, state: 'ready', ok: 3, http: 'h2' },
+                { name: 'adguard', url: 'quic://dns.adguard-dns.com', proto: 'doq', via: null, state: 'ready', ok: 9, early: 4, early_rejected: 1 },
+            ],
+        } as never)
+        current = { ...current, dns: { upstreams: { ...current.dns!.upstreams, adguard: { url: 'quic://dns.adguard-dns.com', ips: ['94.140.14.14'] } } } }
+        render(<Dns />)
+        await waitFor(() => expect(screen.getByText(/DoH · работает/).textContent).toContain(S.dns.http('h2')))
+        expect(screen.getByText(/DoQ · работает/).textContent).toContain(S.dns.early(4, 1))
     })
 })

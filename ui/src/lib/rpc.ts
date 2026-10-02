@@ -188,6 +188,11 @@ export interface DnsUpstreamState {
     last_ok_ago?: number | null
     error?: string | null
     error_ago?: number | null
+    /** DoH после первого соединения: что выбрал сервер — `h2` или `http/1.1`. */
+    http?: string
+    /** DoQ, только когда 0-RTT был: вопросов до конца рукопожатия и отказов сервера в нём. */
+    early?: number
+    early_rejected?: number
 }
 
 export interface DnsLog {

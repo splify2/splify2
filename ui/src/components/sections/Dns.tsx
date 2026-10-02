@@ -176,6 +176,8 @@ export default function Dns(_props: { live?: Live }) {
                                             <span className={`text-xs ${s.state === 'down' || s.state === 'no-tls' ? 'text-destructive' : 'text-muted-foreground'}`}>
                                                 {PROTO_TEXT[s.proto] || s.proto} · {STATE_TEXT[s.state] || s.state}
                                                 {s.ok !== undefined ? S.dns.otvetov(s.ok) : ''}
+                                                {s.http ? S.dns.http(s.http) : ''}
+                                                {s.early || s.early_rejected ? S.dns.early(s.early ?? 0, s.early_rejected ?? 0) : ''}
                                             </span>
                                         )}
                                         <span className="flex-1" />
