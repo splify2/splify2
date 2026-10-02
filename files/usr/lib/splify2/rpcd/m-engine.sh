@@ -407,9 +407,13 @@ case "$2" in
         # через json_load, а он затирает документ, который мы бы в этот момент собирали.
         svc_enabled="$(engine_enabled)"
         svc_running="$(engine_running)"
+        # Ядро ведёт steer-box-connector (podkop, forkop) — см. box_busy в common.sh.
+        busy=""
+        box_busy && busy="$BOX_BY"
         if [ ! -x "$STEER" ]; then
             json_init
             json_add_boolean present 0
+            [ -n "$busy" ] && json_add_string busy "$busy"
             json_add_boolean vless 0
             json_add_boolean enabled "$svc_enabled"
             json_add_boolean running "$svc_running"
@@ -440,6 +444,7 @@ case "$2" in
         # читать состояние, а не помнить своё.
         json_add_boolean enabled "$svc_enabled"
         json_add_boolean running "$svc_running"
+        [ -n "$busy" ] && json_add_string busy "$busy"
         json_add_string arch "$(pkg_arch)"
         # Версия любого из двух вариантов пакета. Через pkg_version, а не своим разбором
         # `apk list`: на opkg-роутере тот отдавал пустоту, и карточка движка показывала
@@ -478,6 +483,20 @@ case "$2" in
         # Обратная половина тумблера. enable перед start, а не после: иначе состояние
         # «работает, но после перезагрузки не поднимется» существует между двумя
         # вызовами, и увидеть его можно ровно в тот момент, когда роутер перезагрузили.
+        #
+        # Ядро ведёт steer-box-connector — службу steer поверх него не поднимаем: она делила бы с
+        # его steerd таблицу nft и метки (box_busy).
+        if box_busy; then
+            en="$(engine_enabled)"; run="$(engine_running)"
+            json_init
+            json_add_boolean ok 0
+            json_add_string error "ядро занято: $BOX_BY"
+            json_add_string busy "$BOX_BY"
+            json_add_boolean enabled "$en"
+            json_add_boolean running "$run"
+            json_dump
+            exit 0
+        fi
         "$INITD" enable >/dev/null 2>&1
         "$INITD" start >/dev/null 2>&1
         en="$(engine_enabled)"; run="$(engine_running)"
@@ -582,6 +601,9 @@ case "$2" in
         ver="$(jsonfilter -s "$input" -e '@.version' 2>/dev/null)"
         ext="$(jsonfilter -s "$input" -e '@.extended' 2>/dev/null)"
         arch="$(pkg_arch)"
+        # Ядро ведёт steer-box-connector: его пакет зависит от steer-core точной версии, и пакеты
+        # ядра здесь — его, а не наши (box_busy).
+        box_busy && fail "ядро занято: $BOX_BY"
         json_init
         case "$ver" in
             ''|*[!0-9.]*) json_add_boolean ok 0; json_add_string error "в версии допустимы только цифры и точки"; json_dump; exit 0 ;;

@@ -781,3 +781,24 @@ backup_build() {
     done
     return 0
 }
+
+# КОННЕКТОР steer-box-connector — sing-box для podkop и forkop на ядре steer. Он ставит свою
+# службу /etc/init.d/sing-box и сам держит steerd своим экземпляром (своя спека, свой каталог
+# состояния /var/run/sing-box/steer); служба steer рядом с ним делила бы таблицу inet steer,
+# поле метки и таблицы маршрутизации. Поэтому при коннекторе splify2 службу steer не включает,
+# спеку не применяет и пакеты ядра не трогает — ядро занято, и сказать это надо словами.
+# Коннектором splify2 не управляет: его служба и настройка — чужие.
+#
+# Признак — тот же, что у скриптов пакетов ядра (steer/build.sh, steer.postinst): чья служба
+# /etc/init.d/sing-box. Кто ведёт коннектор — по службам podkop и forkop рядом; BOX_BY — их
+# имена через запятую, а если нет ни одной — имя самого коннектора.
+box_busy() {
+    _bb_i="${SINGBOX_INITD:-/etc/init.d/sing-box}"
+    grep -q steer-box-connector "$_bb_i" 2>/dev/null || return 1
+    BOX_BY=""
+    for _bb in podkop forkop; do
+        [ -e "${_bb_i%/*}/$_bb" ] && BOX_BY="${BOX_BY:+$BOX_BY, }$_bb"
+    done
+    [ -n "$BOX_BY" ] || BOX_BY=steer-box-connector
+    return 0
+}

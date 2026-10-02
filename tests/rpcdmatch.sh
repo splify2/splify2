@@ -843,6 +843,7 @@ rpcd() {  # МЕТОД [JSON_ЗАПРОСА]  — вызов метода; дл�
         ENGINE_ENABLED="${ENGINE_ENABLED:-0}" \
         APK_LIST="${APK_LIST:-}" \
         MODULE_DIR="${MODULE_DIR_FIXTURE:-$T/mods}" \
+        SINGBOX_INITD="${SINGBOX_INITD_FIXTURE:-$T/box/none}" \
         sh "$SCRIPT" call "$1" 2>"$T/stderr"
 }
 
@@ -1108,6 +1109,38 @@ check "ядро 1.x: VLESS — по пакету steer-extended" "true" "$(print
 out="$(APK_LIST="steer-1.5.9-r1 aarch64_cortex-a53 {steer}" rpcd engine)"
 check "ядро 1.x без steer-extended VLESS не умеет" "false" "$(printf '%s' "$out" | jget vless)"
 rm -rf "$T/mods"
+
+# ---- steer-box-connector: ядро занято podkop/forkop -----------------------------------
+# Коннектор ставит свою службу /etc/init.d/sing-box и держит steerd сам. splify2 видит его по
+# этой службе (то же слово, что ищут скрипты пакетов ядра), говорит, кем занято ядро, и не
+# поднимает службу steer поверх: ни запуском, ни применением спеки, ни установкой пакетов ядра.
+mkdir -p "$T/box"
+printf '#!/bin/sh /etc/rc.common\n# sing-box от steer-box-connector\n' > "$T/box/sing-box"
+printf '#!/bin/sh\n' > "$T/box/forkop"
+out="$(SINGBOX_INITD_FIXTURE="$T/box/sing-box" rpcd engine)"
+check "коннектор: engine называет, кем занято ядро" "forkop" "$(printf '%s' "$out" | jget busy)"
+out="$(rpcd engine)"
+check "без коннектора поля busy нет" "" "$(printf '%s' "$out" | jget busy)"
+printf '#!/bin/sh /etc/rc.common\n# sing-box upstream\n' > "$T/box/sing-box.up"
+out="$(SINGBOX_INITD_FIXTURE="$T/box/sing-box.up" rpcd engine)"
+check "чужой sing-box (не коннектор) ядро не занимает" "" "$(printf '%s' "$out" | jget busy)"
+reset_logs
+out="$(SINGBOX_INITD_FIXTURE="$T/box/sing-box" rpcd engine_start)"
+check "коннектор: запуск службы steer отвергнут" "false" "$(printf '%s' "$out" | jget ok)"
+check "и служба steer не тронута" "" "$(initd_actions)"
+check "отказ называет, кем занято ядро" "ядро занято: forkop" "$(printf '%s' "$out" | jget error)"
+: > "$T/steer.log"
+out="$(SINGBOX_INITD_FIXTURE="$T/box/sing-box" rpcd apply)"
+check "коннектор: применение спеки отвергнуто" "false" "$(printf '%s' "$out" | jget ok)"
+check "и steer apply не звали" "0" "$(grep -c '^apply' "$T/steer.log")"
+reset_logs
+out="$(SINGBOX_INITD_FIXTURE="$T/box/sing-box" rpcd steer_install '{"version":"2.0.0"}')"
+check "коннектор: установка ядра отвергнута до скачивания" "false;0" \
+      "$(printf '%s' "$out" | jget ok);$(cat "$T/wget.log" "$T/curl.log" 2>/dev/null | grep -c .)"
+printf '#!/bin/sh\n' > "$T/box/podkop"
+out="$(SINGBOX_INITD_FIXTURE="$T/box/sing-box" rpcd engine)"
+check "podkop и forkop рядом — названы оба" "podkop, forkop" "$(printf '%s' "$out" | jget busy)"
+rm -rf "$T/box"
 
 # ---- R-042: интерфейс должен уметь обновлять сам себя --------------------------
 # Движок из интерфейса ставится с первого дня, а сам интерфейс — нет: его обновляли
