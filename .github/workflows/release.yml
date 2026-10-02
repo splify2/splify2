@@ -276,5 +276,6 @@ jobs:
           git config user.name 'github-actions[bot]'
           git config user.email 'github-actions[bot]@users.noreply.github.com'
           python3 scripts/publish.py --product splify2 --version "$VERSION" --channel "$channel" \
+            --name "$RELEASE_NAME" \
             --source-tag "v$VERSION" --changelog "$RUNNER_TEMP/release-notes.md" --assets "$assets" \
             --mirror "https://github.com/splify2/splify2/releases/download/v$VERSION"
