@@ -129,3 +129,27 @@ describe('подписка с прокси steer-proxy', () => {
         expect(saved()!.outputs.ss).toMatchObject({ kind: 'shadowsocks', node: 0 })
     })
 })
+
+describe('запасной ход по выходу — только у выхода VLESS', () => {
+    beforeEach(() => {
+        vi.restoreAllMocks()
+        window.localStorage.clear()
+        document.body.innerHTML = ''
+        vi.spyOn(rpc, 'devices').mockResolvedValue({ devices: [] })
+        vi.spyOn(rpc, 'subList').mockResolvedValue({ subs: [SUB] } as never)
+    })
+
+    it('бэкенд не знает узлов подписки, на ней стоит только выход trojan — vless_nodes по нему не зовётся', async () => {
+        vi.spyOn(rpc, 'vlessNodesOfSub').mockRejectedValue(new Error('не указан выход'))
+        vi.spyOn(rpc, 'hysteria2NodesOfSub').mockRejectedValue(new Error('не указан выход'))
+        vi.spyOn(rpc, 'proxyNodesOfSub').mockRejectedValue(new Error('не указан выход'))
+        const vn = vi.spyOn(rpc, 'vlessNodes').mockResolvedValue(reply([]))
+        const spec: Spec = {
+            outputs: { tr: { name: 'tr', kind: 'trojan', sub_file: SUB.path, node: 0, on_fail: 'drop' } },
+            channels: [],
+        }
+        mount(spec, 'tr')
+        await waitFor(() => expect(screen.getByText(/локации появятся после/)).toBeInTheDocument())
+        expect(vn).not.toHaveBeenCalled()
+    })
+})

@@ -217,8 +217,10 @@ export default function PoolEditor({
      *  её файлом; движок или бэкенд постарше пути не знают — тогда через любой выход, уже
      *  стоящий на этой подписке (тот же запасной ход, что у списка узлов ниже). */
     const probe = useNodeProbe(async (sub, index) => {
+        /* Запасной ход — vless_probe по выходу, то есть только выход VLESS: у выхода другого
+         * протокола этот метод отвечает отказом. */
         const asker = Object.entries(spec.outputs).find(
-            ([, o]) => isTunnelKind(o.kind) && o.sub_file === sub,
+            ([, o]) => o.kind === 'vless' && o.sub_file === sub,
         )?.[0]
         try {
             /* Узел hysteria2 проверяется клиентом hysteria2 (пакет steer-hysteria2), VLESS —
@@ -241,7 +243,7 @@ export default function PoolEditor({
             }
             return await rpc.vlessProbeOfSub(sub, index)
         } catch (e) {
-            if (!asker) throw e
+            if (!asker || sub.startsWith(HY_PROBE) || PX_PROBE.test(sub)) throw e
             return rpc.vlessProbe(asker, index)
         }
     })
@@ -267,8 +269,9 @@ export default function PoolEditor({
         let stop = false
         for (const s of subs) {
             if (!s.present) { setNodesBySub((m) => ({ ...m, [s.path]: null })); continue }
+            /* Запасной ход — vless_nodes по выходу VLESS этой подписки (см. проверку выше). */
             const asker = Object.entries(spec.outputs).find(
-                ([, o]) => isTunnelKind(o.kind) && o.sub_file === s.path,
+                ([, o]) => o.kind === 'vless' && o.sub_file === s.path,
             )?.[0]
             type Other = VlessNodesReply | null
             /* Ссылки, не принятые ни одним клиентом: всё чужое для VLESS минус то, что разобрали
