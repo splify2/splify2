@@ -15,11 +15,11 @@ const card = (engine: Parameters<typeof EngineCard>[0]['engine']) => (
 )
 
 describe('движок старее того, под который собран интерфейс', () => {
-    it('младше минимума — заголовок и перечень того, что не заработает, с нужной версией', () => {
-        render(card({ present: true, vless: true, version: '1.3.0', min_version: '1.5.3' }))
+    it('младше минимума — заголовок, нужная версия и действие', () => {
+        render(card({ present: true, vless: true, version: '1.5.9', min_version: '2.0.0' }))
         expect(screen.getByText('Ядро устарело')).toBeInTheDocument()
-        expect(screen.getByText(/собран под ядро 1\.5\.3 и новее/)).toBeInTheDocument()
-        expect(screen.getByText(/подписка по ссылке/)).toBeInTheDocument()
+        expect(screen.getByText(/собран под ядро 2\.0\.0 и новее/)).toBeInTheDocument()
+        expect(screen.getByText(/настройки не применятся\. Обновите ядро/)).toBeInTheDocument()
     })
 
     it('ровно минимум — обычная карточка', () => {

@@ -28,14 +28,14 @@ describe('какого модуля не хватает выходу', () => {
 
 describe('читает ли движок спеку v2', () => {
     const st = (features?: string[]) => ({ features }) as unknown as Status
-    it('признак spec_schema2 — читает', () => {
-        expect(specV2Unsupported(st(['status_cache', 'spec_schema2']))).toBe(false)
+    /* Перечни умений дословно: 1.5.9 — src/steer.c тега v1.5.9, 2.0 — src/daemon/status.c. */
+    const v159 = ['lan_devices', 'nodes', 'pool', 'active_device', 'status_cache', 'xslink', 'xsteer_state', 'spec_schema2', 'awg', 'via']
+    const v200 = [...v159, 'failed', 'groups']
+    it('ядро 1.5.9: spec_schema2 есть (это вторая схема спеки v1), groups нет — не читает', () => {
+        expect(specV2Unsupported(st(v159))).toBe(true)
     })
-    it('промежуточная сборка с groups, но без spec_schema2 — тоже читает', () => {
-        expect(specV2Unsupported(st(['groups']))).toBe(false)
-    })
-    it('перечень есть, а обоих признаков нет — не читает', () => {
-        expect(specV2Unsupported(st(['status_cache', 'xsteer_state']))).toBe(true)
+    it('ядро 2.0 — читает', () => {
+        expect(specV2Unsupported(st(v200))).toBe(false)
     })
     it('перечня нет — утверждать нечего', () => {
         expect(specV2Unsupported(st(undefined))).toBe(false)
