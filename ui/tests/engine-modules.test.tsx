@@ -131,6 +131,11 @@ describe('рельс: коннектор и модули', () => {
         expect(screen.queryByRole('button', { name: /Запустить|Остановить всё/ })).toBeNull()
         expect(screen.getByText('Ядро занято: forkop')).toBeInTheDocument()
     })
+    it('ядро занято, а служба steer работает рядом — «Остановить всё» остаётся', () => {
+        render(rail(live({ build: { present: true, vless: true, version: '2.0.0', modules: ['vless'], enabled: false, running: true, busy: 'forkop' } })))
+        expect(screen.getByRole('button', { name: /Остановить всё/ })).toBeInTheDocument()
+        expect(screen.queryByRole('button', { name: /Запустить/ })).toBeNull()
+    })
     it('под версией — модули, а не «extended/basic»', () => {
         render(rail(live({ build: { present: true, vless: true, version: '2.0.0', modules: ['vless', 'proxy'], enabled: true, running: true } })))
         expect(screen.getByText('steer 2.0.0 · vless, proxy')).toBeInTheDocument()

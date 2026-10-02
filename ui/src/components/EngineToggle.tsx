@@ -119,11 +119,13 @@ export default function EngineToggle({
             )}
 
             {/* Ядро ведёт steer-box-connector (podkop, forkop): службу steer поверх него не
-                поднимаем и не гасим — вместо кнопки состояние. */}
+                поднимаем — вместо «Запустить» состояние. Если служба steer всё же работает рядом
+                с коннектором (подняли руками или осталась от прежней настройки), «Остановить всё»
+                остаётся: гасит она только нашу службу, коннектор не трогает. */}
             {eng.present && eng.busy && (
                 <p className="text-[12px] text-muted-foreground">{S.engineToggle.yadroZanyato(eng.busy)}</p>
             )}
-            {eng.present && !eng.busy && (
+            {eng.present && (!eng.busy || !off) && (
                 <div>
                     <Button
                         variant={off ? 'secondary' : 'destructive'}
