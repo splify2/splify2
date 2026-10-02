@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useState } from 'react'
 import { Check, Info, RefreshCw, Search, TriangleAlert, X, XCircle } from 'lucide-react'
 import { Button } from '@/components/ui/button'
-import { ConnsCard } from '@/components/ObserveCards'
+import { ConnsCard, NamesCard } from '@/components/ObserveCards'
 import { Block, CardHead } from '@/components/ui/layout'
 import { type Live } from '@/lib/live'
 import { parseLog } from '@/lib/log'
@@ -148,8 +148,9 @@ export default function Diagnostics({ live }: { live: Live }) {
                 )}
             </Block>
 
-            {/* Что ядро делает с трафиком сейчас: соединения через выходы. */}
+            {/* Что ядро делает с трафиком сейчас: соединения через выходы и недавние имена. */}
             <ConnsCard />
+            <NamesCard />
 
             <Block>
                 <CardHead

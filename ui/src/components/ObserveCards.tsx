@@ -1,18 +1,19 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { ArrowRight, RefreshCw, Search, X } from 'lucide-react'
 import { Button } from '@/components/ui/button'
-import { Block, CardHead } from '@/components/ui/layout'
+import { Block, CardHead, Segmented } from '@/components/ui/layout'
 import { human } from '@/lib/live'
 import { usePending } from '@/lib/pending'
 import { rpc } from '@/lib/rpc'
-import { hostPort, matches, rulesOf, tcpWord, type Conn } from '@/lib/observe'
+import { agoText, hostPort, matches, rulesOf, tcpWord, type Conn } from '@/lib/observe'
 
 import { S } from '@/copy'
 /** «Что ядро steer делает с трафиком прямо сейчас» — в «Диагностике», рядом с проверками.
  *
  *  Соединения: какие соединения ядро повело в свои выходы — кто, куда, через какой выход и по
  *  какому правилу (`steer conns`). Ответ читается целиком из памяти ядра Linux, без процессов, —
- *  поэтому его можно спрашивать на круге экрана, как журнал.
+ *  поэтому его можно спрашивать на круге экрана, как журнал. Имена: какие имена недавно
+ *  спрашивали у резолвера ядра и какое правило и выход им достались (`steer dns-log`).
  *
  *  Опрос — пока экран открыт и вкладка видна, раз в пять секунд, как у журнала рядом: общий круг
  *  страницы этого не спрашивает, и закрытая «Диагностика» не стоит роутеру ничего. */
@@ -168,6 +169,75 @@ export function ConnsCard() {
                                     who={leases[c.src] || null}
                                     rules={rulesOf(spec, c.out)}
                                 />
+                            ))}
+                        </ul>
+                    )}
+                </div>
+            )}
+        </Block>
+    )
+}
+
+/** Журнал имён резолвера ядра (`steer dns-log`): какие имена недавно спрашивали и какое правило
+ *  и выход им достались. Ответ на «почему этот сайт идёт не туда» по именам, а не по адресам:
+ *  имя, не попавшее ни в одно правило, идёт мимо них, и здесь это видно сразу.
+ *
+ *  Апстримы и кэш из того же ответа показывает раздел «DNS»; здесь — только имена. */
+export function NamesCard() {
+    const ask = useCallback(() => rpc.dnsLog(), [])
+    const { data, failed, busy, pull } = usePoll(ask)
+    const [q, setQ] = useState('')
+    const [ruled, setRuled] = useState<'all' | 'ruled'>('all')
+    const names = useMemo(() => data?.names || [], [data])
+    const shown = useMemo(
+        () => names.filter((n) => (ruled === 'all' || n.channel) && matches(q, [n.name, n.channel, n.out])),
+        [names, q, ruled],
+    )
+    return (
+        <Block>
+            <CardHead
+                title={S.observe.imena}
+                meta={data?.running && names.length ? names.length : undefined}
+                action={<Refresh busy={busy} onClick={pull} label={S.observe.obnovitImena} />}
+            />
+            {data === null && !failed ? (
+                <p className="py-4 text-center text-sm text-muted-foreground">{S.observe.zagruzka}</p>
+            ) : failed ? (
+                <p className="text-sm text-muted-foreground">{S.observe.imenaNedostupny}</p>
+            ) : !data?.running ? (
+                <p className="text-sm text-muted-foreground">{S.observe.rezolverNeZapushchen}</p>
+            ) : names.length === 0 ? (
+                <p className="text-sm text-muted-foreground">{S.observe.imenNet}</p>
+            ) : (
+                <div className="space-y-2">
+                    <SearchBox value={q} onChange={setQ} placeholder={S.observe.poiskImen} />
+                    <Segmented<'all' | 'ruled'>
+                        label={S.observe.kakieImena}
+                        items={[
+                            { value: 'all', label: S.observe.vse },
+                            { value: 'ruled', label: S.observe.podPravilami },
+                        ]}
+                        value={ruled}
+                        onChange={setRuled}
+                    />
+                    {shown.length === 0 ? (
+                        <p className="py-3 text-center text-xs text-muted-foreground">{S.observe.nichegoNeNaydeno}</p>
+                    ) : (
+                        <ul className="max-h-96 divide-y divide-border overflow-auto pr-1">
+                            {shown.map((n) => (
+                                <li key={n.name} className="space-y-0.5 py-2 first:pt-0 last:pb-0">
+                                    <div className="flex items-baseline justify-between gap-3">
+                                        <span className="min-w-0 truncate text-[13px]">{n.name}</span>
+                                        <span className={`shrink-0 text-[13px] ${n.out ? 'font-medium' : 'text-muted-foreground'}`}>
+                                            {n.out ?? S.observe.mimoPravil}
+                                        </span>
+                                    </div>
+                                    <div className="flex flex-wrap gap-x-2 text-[11px] text-subtle">
+                                        {n.channel && <span>{S.observe.poPravilu(n.channel)}</span>}
+                                        <span>{S.observe.raz(n.count)}</span>
+                                        <span>{agoText(n.ago)}</span>
+                                    </div>
+                                </li>
                             ))}
                         </ul>
                     )}
