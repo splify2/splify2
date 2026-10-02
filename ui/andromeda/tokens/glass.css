@@ -10,8 +10,10 @@
                       размытия: двойной blur дорог и мутит текст
      .an-glass-chrome хром: рельс, нижняя панель — прозрачнее карточки
 
-   Без backdrop-filter и при prefers-reduced-transparency — прежние сплошные поверхности
-   (--an-surface-card / --an-surface-rail). Тёмная тема — [data-theme="dark"] или .dark. */
+   Без backdrop-filter — прежние сплошные поверхности (--an-surface-card / --an-surface-rail).
+   prefers-reduced-transparency стекло НЕ выключает — решение владельца: Windows с выключенными
+   «Эффектами прозрачности» шлёт его всем браузерам, и стекло пропадало у большинства людей,
+   которые ни о чём таком не просили. Тёмная тема — [data-theme="dark"] или .dark. */
 :root {
   --an-glass-base: #e6eaf1;
   --an-glass-surface: rgba(255, 255, 255, 0.4);
@@ -89,22 +91,4 @@
     -webkit-backdrop-filter: none;
     backdrop-filter: none;
   }
-}
-
-@media (prefers-reduced-transparency: reduce) {
-  .an-backdrop { background: var(--an-surface-page); }
-  .an-glass,
-  .an-glass .an-glass {
-    background-color: var(--an-surface-card);
-    background-image: none;
-    border-color: var(--an-border);
-    -webkit-backdrop-filter: none;
-    backdrop-filter: none;
-  }
-  .an-glass-chrome {
-    background-color: var(--an-surface-rail);
-    -webkit-backdrop-filter: none;
-    backdrop-filter: none;
-  }
-  :root { --an-glass-field: var(--an-surface-field); --an-glass-tint: var(--an-surface-field); --an-glass-hover: var(--an-surface-field); }
 }
