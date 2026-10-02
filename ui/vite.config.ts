@@ -87,6 +87,10 @@ export default defineConfig({
   resolve: {
     alias: {
       "@": path.resolve(__dirname, "./src"),
+      // Дизайн-система Andromeda — в дереве splify2 (ui/andromeda, git subtree из
+      // xyzmean/andromeda-ui): токены, шрифты, стекло, компоненты. Пакет — исходники TS и CSS,
+      // собирает их эта же сборка.
+      "@andromeda/ui": path.resolve(__dirname, "./andromeda"),
       // ── React -> Preact at BUILD time (source stays plain React) ───────────
       // The dashboard is served by uhttpd, which does NOT gzip: whatever the
       // bundle weighs on disk is what every router client downloads, and it is

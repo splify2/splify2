@@ -56,7 +56,7 @@ export default function Rail({ live, section, onSection, counts }: RailProps) {
             {/* ── широкий экран: колонка слева ─────────────────────────────────────── */}
             {/* self-stretch: у подложки есть нижняя граница высоты (см. .sp-root), и рельс
                 обязан тянуться вместе с ней — иначе под ним видна ступенька другого фона. */}
-            <aside className="sp-glass-rail hidden shrink-0 self-stretch flex-col gap-4 border-r border-border bg-rail p-4 lg:flex lg:w-[236px]">
+            <aside className="an-glass-chrome hidden shrink-0 self-stretch flex-col gap-4 border-r p-4 lg:flex lg:w-[236px]">
                 <div className="flex items-center gap-2.5 px-1.5">
                     {/* Логотип — тот же знак, что на иконке (favicon.svg из сборки), а не квадрат
                         с буквой, который стоял здесь заглушкой (владелец: «у нас же логотип
@@ -127,7 +127,7 @@ export default function Rail({ live, section, onSection, counts }: RailProps) {
                 меню у темы спрятано, и панель была целой; отсюда «не всегда». */}
             <nav
                 aria-label={S.rail.razdely}
-                className="sp-glass-rail sp-bottom-bar fixed bottom-0 z-40 flex border-t border-border bg-rail lg:hidden"
+                className="an-glass-chrome sp-bottom-bar fixed bottom-0 z-40 flex border-t lg:hidden"
             >
                 {ITEMS.map(({ id, label, icon: Icon }) => {
                     const on = section === id
@@ -140,7 +140,8 @@ export default function Rail({ live, section, onSection, counts }: RailProps) {
                             onClick={() => onSection(id)}
                             className={[
                                 'relative flex min-w-0 flex-1 flex-col items-center gap-1 px-0.5 pb-2 pt-2.5',
-                                'text-[11px] leading-tight transition-colors duration-200',
+                                /* 10px: шесть подписей на 390 пикселях, «Диагностика» без многоточия. */
+                                'text-[10px] leading-tight tracking-[-0.01em] transition-colors duration-200',
                                 'focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-primary',
                                 on ? 'font-medium text-primary' : 'text-subtle',
                             ].join(' ')}

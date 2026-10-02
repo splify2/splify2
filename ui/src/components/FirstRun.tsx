@@ -14,7 +14,7 @@ import { S } from '@/copy'
  *  работает» уже после настройки всего остального. Поэтому объяснение стоит РЯДОМ с выбором. */
 export default function FirstRun({ live }: { live: Live }) {
     return (
-        <div className="sp-root text-foreground">
+        <div className="sp-root an-backdrop text-foreground">
             <div className="mx-auto max-w-2xl space-y-4">
                 <div className="rounded-2xl border border-border bg-card p-5 shadow-card">
                     <h1 className="sp-title">{S.firstRun.yadroNeUstanovleno}</h1>

@@ -1,50 +1,11 @@
+/* Дизайн-система Andromeda (ui/andromeda): шрифты (@font-face Onest и JetBrains Mono — вне слоёв,
+ * в документе, как и требует shadow root: Chrome не видит @font-face внутри него), токены --an-*
+ * и стекло (.an-backdrop, .an-glass, .an-glass-chrome). Свои --sp-* ниже берут значения отсюда. */
+@import "@andromeda/ui/styles.css";
+
 @tailwind base;
 @tailwind components;
 @tailwind utilities;
-
-/* ШРИФТЫ — СВОИ, ВШИТЫ В ПАКЕТ.
- *
- *  Раньше корень пульта брал `font-family: inherit`, то есть шрифт темы: у Argon это Google
- *  Sans, у bootstrap — системный, у Material — Roboto. Один и тот же экран выглядел тремя
- *  разными интерфейсами, и проверить вид было нельзя. Теперь Onest (тот же, что в
- *  дизайн-системе Andromeda) и JetBrains Mono для адресов и логов — переменными
- *  шрифтами, обрезанными до кириллицы, латиницы и знаков интерфейса (оси веса 400–600 и
- *  400–500). Все четыре файла — около 67 КБ. Лицензия OFL — рядом, в assets/fonts.
- *
- *  Объявлены ВНЕ слоёв и в документе: Chrome не видит @font-face, объявленный внутри
- *  shadow root, а этот же файл стиля загрузчик ставит и в документ. */
-@font-face {
-  font-family: 'Onest';
-  font-style: normal;
-  font-weight: 400 600;
-  font-display: swap;
-  src: url('./assets/fonts/onest-cyrillic.woff2') format('woff2');
-  unicode-range: U+0301, U+0400-045F, U+0490-0491, U+04B0-04B1, U+2116;
-}
-@font-face {
-  font-family: 'Onest';
-  font-style: normal;
-  font-weight: 400 600;
-  font-display: swap;
-  src: url('./assets/fonts/onest-latin.woff2') format('woff2');
-  unicode-range: U+0000-00FF, U+0131, U+0152-0153, U+02BB-02BC, U+02C6, U+02DA, U+02DC, U+2000-206F, U+20AC, U+20BD, U+2122, U+2190-2193, U+2212, U+221E;
-}
-@font-face {
-  font-family: 'JetBrains Mono';
-  font-style: normal;
-  font-weight: 400 500;
-  font-display: swap;
-  src: url('./assets/fonts/jetbrains-mono-cyrillic.woff2') format('woff2');
-  unicode-range: U+0301, U+0400-045F, U+0490-0491, U+04B0-04B1, U+2116;
-}
-@font-face {
-  font-family: 'JetBrains Mono';
-  font-style: normal;
-  font-weight: 400 500;
-  font-display: swap;
-  src: url('./assets/fonts/jetbrains-mono-latin.woff2') format('woff2');
-  unicode-range: U+0000-00FF, U+0131, U+0152-0153, U+02BB-02BC, U+02C6, U+02DA, U+02DC, U+2000-206F, U+20AC, U+20BD, U+2122, U+2190-2193, U+2212, U+221E;
-}
 
 /* Palette — 1:1 with luci-theme-argon. Every value FIRST tries the CSS custom
    property that Argon itself puts on the page (cascade.css :root + the inline
@@ -88,15 +49,15 @@
 
     --sp-font-sans: 'Onest', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;
     --sp-font-mono: 'JetBrains Mono', ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
-    --sp-background: #f6f7f9;
-    --sp-foreground: #22252e;
-    --sp-card: #ffffff;
-    --sp-card-foreground: #22252e;
+    --sp-background: var(--an-surface-page);
+    --sp-foreground: var(--an-text);
+    --sp-card: var(--an-surface-card);
+    --sp-card-foreground: var(--an-text);
     /* Рельс разделов: на полтона светлее карточки, чтобы отделяться от неё без линии. */
-    --sp-rail: #fbfbfd;
+    --sp-rail: var(--an-surface-rail);
     /* Второй текст: подписи строк и объяснения под ними. Между основным и совсем тусклым —
      * без него объяснение либо кричит, либо не читается. */
-    --sp-fg2: #5b6478;
+    --sp-fg2: var(--an-text-secondary);
     --sp-popover: #ffffff;
     --sp-popover-foreground: #22252e;
     /* Акцент: ВЫБОР ЧЕЛОВЕКА, иначе свой.
@@ -120,7 +81,7 @@
     --sp-muted: #f2f4f7;
     /* Тусклый текст. #8b93a5 из дизайн-пака давал на белом 3,1:1 — подписи 12–13 px не
      * проходили WCAG AA (нужно 4,5:1). #6f778a — 4,6:1 при том же оттенке. */
-    --sp-muted-foreground: #6f778a;
+    --sp-muted-foreground: var(--an-text-muted);
     --sp-accent: #f2f4f7;
     --sp-accent-foreground: #22252e;
     /* Состояния — литералами и БЕЗ обращения к теме. Тема вправе называть свой --danger как
@@ -139,32 +100,12 @@
      * токен, свой на каждую яркость: тёмно-янтарный на светлой и мягкий на тёмной. */
     --sp-warning: #ffc107;
     /* Текст предупреждения: #a97a00 на светлой подложке блока — 3,2:1, теперь 6,2:1. */
-    --sp-warning-fg: #7a5300;
+    --sp-warning-fg: var(--an-warn-ink);
     --sp-info: #11cdef;
-    --sp-border: #eceef3;
+    --sp-border: var(--an-border);
     --sp-input: #d9dee9;
     --sp-ring: var(--primary, #5e72e4);
     --sp-card-shadow: 0 0 1rem 0 rgba(136, 152, 170, 0.15);
-    /* Стекло: карточка и рельс полупрозрачны над подложкой с двумя мягкими пятнами акцента и
-     * размывают её. Непрозрачность держит контраст текста: под стеклом светлая подложка, и
-     * подписи (--sp-muted-foreground) остаются ≥ 4,5:1. Без backdrop-filter — сплошная карточка. */
-    --sp-glass: rgba(255, 255, 255, 0.4);
-    --sp-glass-rail: rgba(255, 255, 255, 0.3);
-    /* Подложка под стеклом темнее страницы: над почти белым фоном белое стекло не видно. */
-    --sp-glass-base: #e6eaf1;
-    --sp-glass-edge: rgba(255, 255, 255, 0.95);
-    /* Блик стекла: свет падает слева сверху. */
-    --sp-glass-sheen: linear-gradient(140deg, rgba(255, 255, 255, 0.55), rgba(255, 255, 255, 0.06) 62%);
-    /* Поверхности ВНУТРИ стекла — поля, чипы, строки, сегменты, вторичные кнопки: тоже стекло,
-     * чуть плотнее карточки, чтобы отделяться от неё без серой заливки. */
-    --sp-glass-field: rgba(255, 255, 255, 0.5);
-    --sp-glass-tint: rgba(255, 255, 255, 0.42);
-    --sp-glass-hover: rgba(255, 255, 255, 0.68);
-    --sp-glass-spot3: rgba(214, 120, 228, 0.26);
-    --sp-glass-border: rgba(140, 157, 175, 0.22);
-    --sp-glass-blur: blur(26px) saturate(150%);
-    --sp-glass-spot1: rgba(94, 114, 228, 0.42);
-    --sp-glass-spot2: rgba(17, 205, 239, 0.34);
     /* Andromeda: кнопка и поле — 10, вложенный блок — 12 (rounded-xl), карточка — 16
      * (rounded-2xl), бейдж — 6 (rounded-sm). Отсюда считаются только первые и последний:
      * rounded-lg = --radius, rounded-md = −2, rounded-sm = −4 (см. tailwind.config.js).
@@ -175,12 +116,12 @@
 
   .dark {
     color-scheme: dark;
-    --sp-background: #121317;
-    --sp-foreground: #e8eaf0;
-    --sp-card: #1b1d22;
-    --sp-card-foreground: #e8eaf0;
-    --sp-rail: #17181c;
-    --sp-fg2: #b6bccb;
+    --sp-background: var(--an-surface-page);
+    --sp-foreground: var(--an-text);
+    --sp-card: var(--an-surface-card);
+    --sp-card-foreground: var(--an-text);
+    --sp-rail: var(--an-surface-rail);
+    --sp-fg2: var(--an-text-secondary);
     --sp-popover: #1b1d22;
     --sp-popover-foreground: #e8eaf0;
     /* То же правило, что и в светлой: выбор человека в Argon (`--dark-primary`), иначе свой
@@ -192,7 +133,7 @@
     --sp-secondary: #23252b;
     --sp-secondary-foreground: #e8eaf0;
     --sp-muted: #23252b;
-    --sp-muted-foreground: #8b93a7;
+    --sp-muted-foreground: var(--an-text-muted);
     --sp-accent: #23252b;
     --sp-accent-foreground: #e8eaf0;
     /* Те же три цвета, что и в светлой: состояние не зависит от яркости страницы. Прежние
@@ -202,24 +143,12 @@
     --sp-destructive-foreground: #ffffff;
     --sp-success: #2dce89;
     --sp-warning: #ffc107;
-    --sp-warning-fg: #e5b23c;
+    --sp-warning-fg: var(--an-warn-ink);
     --sp-info: #11cdef;
-    --sp-border: #2a2c33;
+    --sp-border: var(--an-border);
     --sp-input: #3a3d47;
     --sp-ring: var(--dark-primary, #5e72e4);
     --sp-card-shadow: 0 0 0.5rem 0 rgba(0, 0, 0, 0.35);
-    --sp-glass: rgba(255, 255, 255, 0.045);
-    --sp-glass-rail: rgba(255, 255, 255, 0.03);
-    --sp-glass-edge: rgba(255, 255, 255, 0.1);
-    --sp-glass-sheen: linear-gradient(140deg, rgba(255, 255, 255, 0.07), rgba(255, 255, 255, 0) 60%);
-    --sp-glass-field: rgba(0, 0, 0, 0.2);
-    --sp-glass-tint: rgba(255, 255, 255, 0.06);
-    --sp-glass-hover: rgba(255, 255, 255, 0.1);
-    --sp-glass-spot3: rgba(186, 96, 214, 0.14);
-    --sp-glass-base: #111317;
-    --sp-glass-border: rgba(208, 228, 239, 0.12);
-    --sp-glass-spot1: rgba(94, 114, 228, 0.28);
-    --sp-glass-spot2: rgba(17, 205, 239, 0.14);
   }
 }
 
@@ -273,7 +202,8 @@
    *  внутри контейнера LuCI, и это решение дизайна 26.9 («интерфейс остаётся в LuCI, одно
    *  окно, никакого splify2.lan»). */
   .sp-root {
-    background: var(--sp-background);
+    /* Фон — класс .an-backdrop дизайн-системы (подложка стекла), а не здесь: это правило в
+     * итоговом CSS стоит после импорта andromeda и перебило бы его. */
     border-radius: 1rem;
     overflow: hidden;
     /* Подложка не должна прыгать, пока приезжают данные.
@@ -765,58 +695,17 @@
     vertical-align: middle;
   }
 
-/* ---- стекло ----------------------------------------------------------------------------
- * !important — не каприз: Tailwind здесь собран с important (у .bg-card, .border-border,
- * .shadow-card свой !important), и без него стекло проигрывает карточке, хотя селектор
- * сильнее; при равной важности выигрывает селектор.
- * Подложка пульта — свой фон плюс два мягких пятна акцента (левый верх и правый низ): стекло
- * без того, что под ним, выглядит просто серым. Пятна приколоты к подложке (background-attachment
- * не fixed — в shadow root и на телефоне fixed дорог и дёргается при прокрутке). */
-.splify-react-root .sp-root {
-  background:
-    radial-gradient(ellipse 70% 55% at 88% 6%, var(--sp-glass-spot1), transparent 72%),
-    radial-gradient(ellipse 60% 55% at 4% 96%, var(--sp-glass-spot2), transparent 72%),
-    radial-gradient(ellipse 55% 45% at 50% 50%, var(--sp-glass-spot3), transparent 72%),
-    var(--sp-glass-base, var(--sp-background));
-}
+/* ---- стекло (ui/andromeda/tokens/glass.css) ----------------------------------------------
+ * Поверхности ВНУТРИ стекла — тоже стекло: токены, от которых красятся поля (bg-background),
+ * чипы и строки (bg-muted, bg-secondary) и наведение (bg-accent), переопределяются в стекле, и
+ * экраны правки не требуют. --sp-card не трогается: от него берут фон select и option, а
+ * нативное окно списка прозрачным быть не должно. */
 @supports ((backdrop-filter: blur(1px)) or (-webkit-backdrop-filter: blur(1px))) {
-  .splify-react-root .sp-glass {
-    background-color: var(--sp-glass) !important;
-    -webkit-backdrop-filter: var(--sp-glass-blur);
-    backdrop-filter: var(--sp-glass-blur);
-    background-image: var(--sp-glass-sheen) !important;
-    border-color: var(--sp-glass-border) !important;
-    box-shadow: inset 0 1px 0 var(--sp-glass-edge), var(--sp-card-shadow) !important;
+  .splify-react-root .an-glass,
+  .splify-react-root .an-glass-chrome {
+    --sp-background: var(--an-glass-field);
+    --sp-muted: var(--an-glass-tint);
+    --sp-secondary: var(--an-glass-tint);
+    --sp-accent: var(--an-glass-hover);
   }
-  /* Внутри стекла поверхности элементов — тоже стекло: токены переопределяются здесь, и поля
-   * (bg-background), чипы и строки (bg-muted, bg-secondary), наведение (bg-accent) становятся
-   * полупрозрачными без правки экранов. --sp-card не трогается: от него берут фон select и
-   * option, а нативное окно списка прозрачным быть не должно. */
-  .splify-react-root .sp-glass,
-  .splify-react-root .sp-glass-rail {
-    --sp-background: var(--sp-glass-field);
-    --sp-muted: var(--sp-glass-tint);
-    --sp-secondary: var(--sp-glass-tint);
-    --sp-accent: var(--sp-glass-hover);
-  }
-  .splify-react-root .sp-glass-rail {
-    background-color: var(--sp-glass-rail) !important;
-    border-color: var(--sp-glass-border) !important;
-    -webkit-backdrop-filter: var(--sp-glass-blur);
-    backdrop-filter: var(--sp-glass-blur);
-  }
-  /* Вложенная карточка не размывает ещё раз: двойной blur — двойная цена и мутный текст. */
-  .splify-react-root .sp-glass .sp-glass {
-    -webkit-backdrop-filter: none;
-    backdrop-filter: none;
-    background-color: var(--sp-glass-tint) !important;
-    background-image: none !important;
-    box-shadow: inset 0 1px 0 var(--sp-glass-edge) !important;
-  }
-}
-@media (prefers-reduced-transparency: reduce) {
-  .splify-react-root .sp-glass { background-color: var(--sp-card) !important; background-image: none !important; backdrop-filter: none; -webkit-backdrop-filter: none; }
-  .splify-react-root .sp-glass-rail { background-color: var(--sp-rail) !important; backdrop-filter: none; -webkit-backdrop-filter: none; }
-  :root { --sp-glass-field: #f6f7f9; --sp-glass-tint: #f2f4f7; --sp-glass-hover: #f2f4f7; }
-  .dark { --sp-glass-field: #121317; --sp-glass-tint: #23252b; --sp-glass-hover: #23252b; }
 }

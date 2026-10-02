@@ -14,7 +14,10 @@ const Card = React.forwardRef<
       // читался только под углом, и вложенные блоки выглядели «выпавшими» из неё.
       // Радиус и отступ на узком экране мельче: 16 + 16 из дизайн-пака рассчитаны на
       // широкий, а на 390 пикселях они вместе с отступом раздела съедали треть ширины.
-      "sp-glass rounded-xl border border-border bg-card text-card-foreground shadow-card lg:rounded-2xl",
+      // Стекло: фон, рамку и тень даёт .an-glass дизайн-системы (ui/andromeda/tokens/glass.css).
+      // bg-card / border-border / shadow-card здесь нет намеренно: Tailwind собран с important
+      // и перебил бы стекло; явный bg-* из className по-прежнему главнее.
+      "an-glass rounded-xl border text-card-foreground lg:rounded-2xl",
       className
     )}
     {...props}
