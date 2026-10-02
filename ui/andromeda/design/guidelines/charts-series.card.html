@@ -1,0 +1,23 @@
+<!-- @dsCard group="Color" viewport="700x150" name="Ряды на графиках" subtitle="Акцент — главный ряд, серый — второстепенный, чернила — план; пунктир — всё прогнозное. Состояния в рядах не участвуют" -->
+<!DOCTYPE html>
+<html lang="ru"><head><meta charset="utf-8">
+<link rel="stylesheet" href="../styles.css">
+<style>
+  html, body { margin: 0; }
+  body { padding: 18px; }
+  .row { display: flex; flex-wrap: wrap; gap: 14px; align-items: flex-start; }
+  .item { flex: 1; min-width: 120px; display: flex; flex-direction: column; gap: 8px; }
+  .lbl { font: var(--an-text-caption); color: var(--an-text); }
+  .val { font: var(--an-text-micro); color: var(--an-text-muted); }
+  .bar { height: 42px; border-radius: 10px; }
+  svg { display: block; }
+</style></head>
+<body class="an-root">
+<div class="row">
+  <div class="item"><div class="bar" style="background:var(--an-accent)"></div><div class="lbl">главный ряд</div><div class="val">факт, продажи · --an-accent</div></div>
+  <div class="item"><div class="bar" style="background:var(--an-control-knob-off)"></div><div class="lbl">второстепенный</div><div class="val">выдача, препрогноз · --an-control-knob-off</div></div>
+  <div class="item"><div class="bar" style="background:var(--an-accent-soft);border:1px dashed var(--an-accent-line);box-sizing:border-box"></div><div class="lbl">ожидание</div><div class="val">контур за столбцом · --an-accent-soft</div></div>
+  <div class="item"><svg width="100%" height="42" viewBox="0 0 160 42" preserveAspectRatio="none"><line x1="2" y1="21" x2="158" y2="21" stroke="var(--an-accent)" stroke-width="3" stroke-dasharray="7 5" stroke-linecap="round"/></svg><div class="lbl">прогноз</div><div class="val">пунктир — всегда прогнозное</div></div>
+  <div class="item"><svg width="100%" height="42" viewBox="0 0 160 42" preserveAspectRatio="none"><line x1="80" y1="4" x2="80" y2="38" stroke="var(--an-text)" stroke-width="3" stroke-linecap="round"/></svg><div class="lbl">план, уровень</div><div class="val">засечка чернилами · --an-text</div></div>
+</div>
+</body></html>

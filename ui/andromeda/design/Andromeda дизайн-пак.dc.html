@@ -1,0 +1,194 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+<style>
+  body { margin: 0; background: #f6f7f9; }
+  a { color: #5e72e4; }
+  a:hover { color: #4453b8; }
+</style>
+<script src="https://unpkg.com/lucide@latest/dist/umd/lucide.js"></script>
+</helmet>
+
+<div style="min-height:100vh;font-family:'Google Sans','Helvetica Neue',Helvetica,Arial,sans-serif;color:#22252e;font-size:14px;line-height:1.5;padding:44px 40px 64px">
+  <div style="max-width:1120px;margin:0 auto;display:flex;flex-direction:column;gap:28px">
+
+    <header style="display:flex;align-items:center;gap:16px;flex-wrap:wrap">
+      <img src="uploads/logo-3c.svg" alt="" style="width:44px;height:44px;border-radius:12px">
+      <div style="line-height:1.2">
+        <h1 style="margin:0;font-size:26px;font-weight:600;letter-spacing:-.02em">Andromeda 26.9 — дизайн-пак</h1>
+        <p style="margin:4px 0 0;font-size:13px;color:#8b93a5">splify2 · интерфейс живёт внутри LuCI · акцент берётся из темы Argon</p>
+      </div>
+      <span style="margin-left:auto;display:inline-flex;align-items:center;height:28px;padding:0 12px;border-radius:8px;background:rgba(45,206,137,.14);color:#1c8f5f;font-size:12px;font-weight:600">прототип готов к разбору</span>
+    </header>
+
+    <section>
+      <h2 style="margin:0 0 12px;font-size:16px;font-weight:600">Файлы</h2>
+      <div style="display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:12px">
+        <a href="Andromeda прототип.dc.html" style="display:block;text-decoration:none;color:inherit;border:1px solid #eceef3;background:#fff;border-radius:16px;padding:18px 20px;transition:border-color .18s ease,transform .18s ease" style-hover="border-color:#5e72e4;transform:translateY(-1px)">
+          <div style="display:flex;align-items:center;gap:9px">
+            <i data-lucide="layout-dashboard" style="width:17px;height:17px;color:#5e72e4"></i>
+            <span style="font-size:15px;font-weight:600">Прототип</span>
+            <span style="margin-left:auto;font-size:11px;color:#8b93a5">основной файл</span>
+          </div>
+          <p style="margin:8px 0 0;font-size:13px;color:#5b6478">Шесть разделов, обе темы, всё кликается: обзор с остатком подписки, правила, редактор, выходы с узлами и обфускацией, каталог, диагностика, система.</p>
+        </a>
+
+        <a href="Andromeda UI kit.dc.html" style="display:block;text-decoration:none;color:inherit;border:1px solid #eceef3;background:#fff;border-radius:16px;padding:18px 20px;transition:border-color .18s ease,transform .18s ease" style-hover="border-color:#5e72e4;transform:translateY(-1px)">
+          <div style="display:flex;align-items:center;gap:9px">
+            <i data-lucide="component" style="width:17px;height:17px;color:#5e72e4"></i>
+            <span style="font-size:15px;font-weight:600">Набор элементов</span>
+          </div>
+          <p style="margin:8px 0 0;font-size:13px;color:#5b6478">Кнопки, переключатели, поля, тосты, модальное окно, скелетон, состояния ожидания и отказа. Справочник при вёрстке.</p>
+        </a>
+
+        <a href="Splify2 сейчас.dc.html" style="display:block;text-decoration:none;color:inherit;border:1px solid #eceef3;background:#fff;border-radius:16px;padding:18px 20px;transition:border-color .18s ease,transform .18s ease" style-hover="border-color:#5e72e4;transform:translateY(-1px)">
+          <div style="display:flex;align-items:center;gap:9px">
+            <i data-lucide="history" style="width:17px;height:17px;color:#8b93a5"></i>
+            <span style="font-size:15px;font-weight:600">Как сейчас</span>
+          </div>
+          <p style="margin:8px 0 0;font-size:13px;color:#5b6478">Копия текущего интерфейса по коду — для сравнения «до / после».</p>
+        </a>
+
+        <a href="Andromeda 26.9.dc.html" style="display:block;text-decoration:none;color:inherit;border:1px solid #eceef3;background:#fff;border-radius:16px;padding:18px 20px;transition:border-color .18s ease,transform .18s ease" style-hover="border-color:#5e72e4;transform:translateY(-1px)">
+          <div style="display:flex;align-items:center;gap:9px">
+            <i data-lucide="git-branch" style="width:17px;height:17px;color:#8b93a5"></i>
+            <span style="font-size:15px;font-weight:600">Черновики направлений</span>
+          </div>
+          <p style="margin:8px 0 0;font-size:13px;color:#5b6478">Архив: 1a/1b, 2a/2b, 3a/3b. Взято 1a. Отдельное окно на своём адресе отклонено.</p>
+        </a>
+      </div>
+    </section>
+
+    <section>
+      <h2 style="margin:0 0 12px;font-size:16px;font-weight:600">Решено</h2>
+      <div style="border:1px solid #eceef3;background:#fff;border-radius:16px;padding:20px 22px">
+        <ul style="margin:0;padding:0;list-style:none;display:flex;flex-direction:column;gap:12px;font-size:13px;line-height:1.55;color:#5b6478">
+          <li><b style="color:#22252e">Интерфейс остаётся в LuCI.</b> Одно окно, никакого splify2.lan: второй адрес — второй вход, второй набор состояний и лишний повод путаться.</li>
+          <li><b style="color:#22252e">Вкладки заменены рельсом разделов.</b> Шесть пунктов, у каждого своя роль; вложенных вкладок нет.</li>
+          <li><b style="color:#22252e">Правило читается фразой «что → кому → куда».</b> Выход всегда с расшифровкой: «vless-nl · Нидерланды», «wg0 · свой WireGuard».</li>
+          <li><b style="color:#22252e">Один факт — одно место.</b> Трафик только на обзоре, тексты проверок только в диагностике, остаток подписки только на обзоре, узлы и обфускация только в выходах.</li>
+          <li><b style="color:#22252e">«Применить · N» считает изменения, а не нажатия.</b> N — разница с применённым снимком: вернули тумблер обратно — пилюля исчезла.</li>
+          <li><b style="color:#22252e">Акцент — единственный цвет из темы.</b> Зелёный, жёлтый и красный означают состояние и с темой не меняются.</li>
+        </ul>
+      </div>
+    </section>
+
+    <section>
+      <h2 style="margin:0 0 12px;font-size:16px;font-weight:600">Как писать строки</h2>
+      <div style="border:1px solid #eceef3;background:#fff;border-radius:16px;padding:20px 22px;display:flex;flex-direction:column;gap:14px">
+        <div style="display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1fr);gap:14px">
+          <div style="border-radius:12px;background:rgba(45,206,137,.08);padding:14px 16px">
+            <div style="font-size:12px;font-weight:600;color:#1c8f5f">так</div>
+            <ul style="margin:8px 0 0;padding-left:18px;font-size:13px;line-height:1.6;color:#22252e">
+              <li>проверок с предупреждением: 1</li>
+              <li>устройств в сети: 9</li>
+              <li>записей: 84 312</li>
+              <li>список domains/telegram.lst старше суток</li>
+            </ul>
+          </div>
+          <div style="border-radius:12px;background:rgba(245,54,92,.07);padding:14px 16px">
+            <div style="font-size:12px;font-weight:600;color:#c0304f">не так</div>
+            <ul style="margin:8px 0 0;padding-left:18px;font-size:13px;line-height:1.6;color:#22252e">
+              <li>одна проверка просит внимания</li>
+              <li>всё идёт как настроено</li>
+              <li>есть о чём знать</li>
+              <li>9 устройств подключено к сети</li>
+            </ul>
+          </div>
+        </div>
+        <p style="margin:0;font-size:13px;line-height:1.6;color:#5b6478">Счётчик — подпись, двоеточие, число: тогда не нужны склонения после числительных, а перевод сводится к переводу подписи. Текст находки печатается дословно из <code style="font-family:ui-monospace,Menlo,monospace">diag.checks[].what</code> — интерфейс не пересказывает движок. Заголовок состояния — одна из четырёх готовых строк: «Маршрутизация работает», «Есть поломки», «Движок не отвечает», «Загрузка…».</p>
+        <p style="margin:0;font-size:13px;line-height:1.6;color:#5b6478">Объяснять — только то, без чего можно сделать неверное действие: смешать https:// и vless://, указать имя вместо адреса, забыть Endpoint у пира. Всё остальное убирается.</p>
+      </div>
+    </section>
+
+    <section>
+      <h2 style="margin:0 0 12px;font-size:16px;font-weight:600">Токены</h2>
+      <div style="border:1px solid #eceef3;background:#fff;border-radius:16px;padding:20px 22px;display:flex;flex-direction:column;gap:18px">
+
+        <div>
+          <div style="font-size:12px;text-transform:uppercase;letter-spacing:.04em;color:#8b93a5">Состояния — в обеих темах одинаковы</div>
+          <div style="margin-top:10px;display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:12px">
+            <div><div style="height:40px;border-radius:10px;background:#5e72e4"></div><div style="margin-top:6px;font-size:12px">акцент<br><span style="color:#8b93a5;font-family:ui-monospace,Menlo,monospace">--sp-primary</span></div></div>
+            <div><div style="height:40px;border-radius:10px;background:#2dce89"></div><div style="margin-top:6px;font-size:12px">работает<br><span style="color:#8b93a5;font-family:ui-monospace,Menlo,monospace">#2dce89</span></div></div>
+            <div><div style="height:40px;border-radius:10px;background:#ffc107"></div><div style="margin-top:6px;font-size:12px">предупреждение<br><span style="color:#8b93a5;font-family:ui-monospace,Menlo,monospace">#ffc107</span></div></div>
+            <div><div style="height:40px;border-radius:10px;background:#f5365c"></div><div style="margin-top:6px;font-size:12px">отказ<br><span style="color:#8b93a5;font-family:ui-monospace,Menlo,monospace">#f5365c</span></div></div>
+          </div>
+        </div>
+
+        <div style="display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:14px">
+          <div style="border:1px solid #eceef3;border-radius:12px;padding:14px 16px">
+            <div style="font-size:12px;font-weight:600">Светлая</div>
+            <div style="margin-top:8px;display:flex;flex-direction:column;gap:5px;font-size:12px;font-family:ui-monospace,Menlo,monospace;color:#5b6478">
+              <span>--bg #f6f7f9</span><span>--card #ffffff</span><span>--rail #fbfbfd</span><span>--field #f2f4f7</span><span>--line #eceef3</span><span>--fg #22252e</span><span>--fg2 #5b6478</span><span>--muted #8b93a5</span>
+            </div>
+          </div>
+          <div style="border:1px solid #2a2c33;border-radius:12px;padding:14px 16px;background:#1b1d22;color:#e8eaf0">
+            <div style="font-size:12px;font-weight:600">Тёмная</div>
+            <div style="margin-top:8px;display:flex;flex-direction:column;gap:5px;font-size:12px;font-family:ui-monospace,Menlo,monospace;color:#b6bccb">
+              <span>--bg #121317</span><span>--card #1b1d22</span><span>--rail #17181c</span><span>--field #23252b</span><span>--line #2a2c33</span><span>--fg #e8eaf0</span><span>--fg2 #b6bccb</span><span>--muted #8b93a7</span>
+            </div>
+          </div>
+        </div>
+
+        <div style="display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:14px;font-size:13px;color:#5b6478">
+          <div>
+            <div style="font-size:12px;text-transform:uppercase;letter-spacing:.04em;color:#8b93a5">Радиусы</div>
+            <div style="margin-top:8px;line-height:1.7">карточка 16 · вложенный блок 12 · кнопка и поле 10 · бейдж 6 · пилюля 9999</div>
+          </div>
+          <div>
+            <div style="font-size:12px;text-transform:uppercase;letter-spacing:.04em;color:#8b93a5">Размеры</div>
+            <div style="margin-top:8px;line-height:1.7">кнопка 38–40 · поле 34–40 · строка списка 34 · переключатель 42×24</div>
+          </div>
+          <div>
+            <div style="font-size:12px;text-transform:uppercase;letter-spacing:.04em;color:#8b93a5">Текст</div>
+            <div style="margin-top:8px;line-height:1.7">вердикт 26/600 · заголовок раздела 22/600 · карточка 15/600 · основной 13–14 · подпись 11–12</div>
+          </div>
+        </div>
+
+        <div style="font-size:13px;line-height:1.6;color:#5b6478">Движение: наведение 160 мс, переключение состояния 200–220 мс, смена темы 280 мс, появление панели 260 мс. Кривая <code style="font-family:ui-monospace,Menlo,monospace">cubic-bezier(.4,0,.2,1)</code>. Пульс живого состояния — 2,4 с.</div>
+      </div>
+    </section>
+
+    <section>
+      <h2 style="margin:0 0 12px;font-size:16px;font-weight:600">Нужно от бэкенда</h2>
+      <div style="border:1px solid rgba(255,193,7,.45);background:rgba(255,193,7,.08);border-radius:16px;padding:20px 22px">
+        <ul style="margin:0;padding:0;list-style:none;display:flex;flex-direction:column;gap:12px;font-size:13px;line-height:1.55;color:#5b6478">
+          <li><b style="color:#22252e">Остаток трафика подписки.</b> В <code style="font-family:ui-monospace,Menlo,monospace">sub_info</code> сейчас только url/kind/path/bytes/mtime/hwid. Нужны upload, download, total и expire из заголовка <code style="font-family:ui-monospace,Menlo,monospace">subscription-userinfo</code> ответа панели. Панель отдаёт его не всегда, а вставленные руками ссылки vless:// не несут вовсе — интерфейс к этому готов и показывает «Панель не сообщает остаток».</li>
+          <li><b style="color:#22252e">Средний расход в сутки.</b> Считается на стороне интерфейса из total−used и даты сброса; отдельного поля не нужно.</li>
+        </ul>
+      </div>
+    </section>
+
+    <section>
+      <h2 style="margin:0 0 12px;font-size:16px;font-weight:600">Дальше</h2>
+      <div style="border:1px solid #eceef3;background:#fff;border-radius:16px;padding:20px 22px">
+        <ul style="margin:0;padding:0;list-style:none;display:flex;flex-direction:column;gap:10px;font-size:13px;line-height:1.55;color:#5b6478">
+          <li>Первый запуск: движок → туннель → сервисы, три шага.</li>
+          <li>Мобильная раскладка прототипа: рельс уходит в нижнюю панель.</li>
+          <li>Английские строки — макеты пока русские.</li>
+          <li>Экран релиза «Andromeda» и переход с версий на релизы.</li>
+        </ul>
+      </div>
+    </section>
+
+  </div>
+</div>
+</x-dc>
+<script type="text/x-dc" data-dc-script>
+class Component extends DCLogic {
+  componentDidMount() {
+    const draw = () => { try { window.lucide && window.lucide.createIcons() } catch (e) {} }
+    draw(); setTimeout(draw, 400); setTimeout(draw, 1200)
+  }
+  renderVals() { return {} }
+}
+</script>
+</body>
+</html>

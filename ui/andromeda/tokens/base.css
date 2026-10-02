@@ -1,0 +1,15 @@
+/* Minimal resets. Andromeda never restyles the LuCI host page — scope to .an-root. */
+.an-root {
+  background: var(--an-surface-page);
+  color: var(--an-text);
+  font: var(--an-text-body);
+  -webkit-font-smoothing: antialiased;
+  transition: var(--an-transition-theme);
+}
+
+.an-root a { color: var(--an-accent); text-decoration: none; border-bottom: 1px dotted var(--an-accent-line); }
+.an-root a:hover { color: var(--an-accent-press); border-bottom-color: currentColor; }
+.an-root :focus-visible { outline: 2px solid var(--an-focus-ring); outline-offset: 2px; }
+.an-root code, .an-root pre { font: var(--an-text-code); }
+.an-root h1, .an-root h2, .an-root h3, .an-root p, .an-root dl, .an-root dd { margin: 0; }
+.an-root ul.an-plain { margin: 0; padding: 0; list-style: none; }

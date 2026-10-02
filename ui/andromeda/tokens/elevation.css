@@ -1,0 +1,9 @@
+/* Andromeda is a bordered system, not a shadowed one: cards get a 1px line.
+   Shadow is reserved for things that float above the page. */
+:root {
+  --an-shadow-none: none;
+  --an-shadow-hover: 0 8px 20px var(--an-accent-glow);
+  --an-shadow-float: 0 10px 28px rgba(0, 0, 0, 0.22);
+  --an-shadow-dialog: 0 30px 70px rgba(10, 12, 20, 0.35);
+  --an-shadow-toast: 0 10px 30px rgba(0, 0, 0, 0.24);
+}

@@ -1,0 +1,286 @@
+<!doctype html>
+<html>
+<head>
+  <meta charset="utf-8">
+  <script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+  <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Onest:wght@400;500;600;700&amp;family=JetBrains+Mono:wght@400;500&amp;display=swap">
+  <style>
+/* ── Base palette ──────────────────────────────────────────────────────
+   Accent is the ONLY hue that a host theme may replace (Argon --sp-primary).
+   State hues are fixed in both themes: if "works" and "failed" changed with
+   the theme, colour would stop meaning anything. */
+:root {
+  --an-accent: #5e72e4;
+  --an-accent-press: #4453b8;
+  --an-accent-soft: color-mix(in srgb, var(--an-accent) 12%, transparent);
+  --an-accent-line: color-mix(in srgb, var(--an-accent) 45%, transparent);
+  --an-accent-glow: color-mix(in srgb, var(--an-accent) 40%, transparent);
+  --an-accent-on: #ffffff;
+
+  --an-success: #2dce89;
+  --an-warn: #ffc107;
+  --an-danger: #f5365c;
+  --an-success-ink: #1c8f5f;
+  --an-warn-ink: #a97a00;
+  --an-danger-ink: #c0304f;
+  --an-success-soft: rgba(45, 206, 137, 0.10);
+  --an-warn-soft: rgba(255, 193, 7, 0.08);
+  --an-danger-soft: rgba(245, 54, 92, 0.07);
+  --an-warn-border: rgba(255, 193, 7, 0.45);
+  --an-danger-border: #f7c6d1;
+
+  /* Neutrals — light */
+  --an-grey-00: #ffffff;
+  --an-grey-05: #fbfbfd;
+  --an-grey-10: #f6f7f9;
+  --an-grey-15: #f2f4f7;
+  --an-grey-20: #eceef3;
+  --an-grey-25: #f4f5f8;
+  --an-grey-60: #8b93a5;
+  --an-grey-75: #5b6478;
+  --an-grey-90: #22252e;
+
+  /* ── Semantic aliases (use these in components) ── */
+  --an-surface-page: var(--an-grey-10);
+  --an-surface-card: var(--an-grey-00);
+  --an-surface-rail: var(--an-grey-05);
+  --an-surface-field: var(--an-grey-15);
+  --an-surface-input: transparent;
+  --an-surface-inverse: #1f2333;
+
+  --an-border: var(--an-grey-20);
+  --an-border-soft: var(--an-grey-25);
+
+  --an-text: var(--an-grey-90);
+  --an-text-secondary: var(--an-grey-75);
+  --an-text-muted: var(--an-grey-60);
+  --an-text-on-accent: var(--an-accent-on);
+
+  /* Категориальная шкала — только для наборов, где рядов заведомо несколько и все
+     равноправны (семь дней недели). Не для «второго ряда»: он серый off. */
+  --an-cat-1: #5e72e4;
+  --an-cat-2: #11cdef;
+  --an-cat-3: #2dce89;
+  --an-cat-4: #fb6340;
+  --an-cat-5: #f5365c;
+  --an-cat-6: #8965e0;
+  --an-cat-7: #8898aa;
+
+  --an-control-off: var(--an-grey-15);
+  --an-control-off-border: var(--an-grey-20);
+  --an-control-knob-off: #c3c9d6;
+  --an-control-line: #d9dee9;
+
+  --an-skeleton: linear-gradient(90deg, #f2f4f7 8%, #e7eaf1 18%, #f2f4f7 28%);
+  --an-scrim: rgba(15, 18, 28, 0.42);
+  --an-focus-ring: color-mix(in srgb, var(--an-accent) 55%, transparent);
+}
+
+[data-theme="dark"] {
+  --an-accent-soft: color-mix(in srgb, var(--an-accent) 22%, transparent);
+  --an-warn-soft: rgba(255, 193, 7, 0.10);
+  --an-warn-border: rgba(255, 193, 7, 0.35);
+  --an-danger-soft: rgba(245, 54, 92, 0.12);
+  --an-danger-border: rgba(245, 54, 92, 0.45);
+  --an-warn-ink: #e5b23c;
+  --an-success-ink: #2dce89;
+  --an-danger-ink: #ff6b86;
+
+  --an-surface-page: #121317;
+  --an-surface-card: #1b1d22;
+  --an-surface-rail: #17181c;
+  --an-surface-field: #23252b;
+  --an-surface-input: #1e2025;
+  --an-surface-inverse: #0f1117;
+
+  --an-border: #2a2c33;
+  --an-border-soft: #232529;
+
+  --an-text: #e8eaf0;
+  --an-text-secondary: #b6bccb;
+  --an-text-muted: #8b93a7;
+
+  --an-control-off: #2a2d34;
+  --an-control-off-border: #3a3d47;
+  --an-control-knob-off: #6b7180;
+  --an-control-line: #3a3d47;
+
+  --an-skeleton: linear-gradient(90deg, #22242a 8%, #2b2e36 18%, #22242a 28%);
+  --an-scrim: rgba(6, 8, 14, 0.58);
+}
+
+/* Акцент — единственный цвет, который хост может заменить. Варианты проверены
+   валидатором палитры против серого второстепенного ряда (--an-control-knob-off)
+   в обеих темах: ΔE ≥ 15 при нормальном зрении, ≥ 8 при дейтеранопии.
+   Зелёный не прошёл в тёмной теме и не предлагается. ThemeProvider ставит
+   атрибут data-accent на <html>; без атрибута — индиго из colors.css. */
+[data-accent="dns"] { --an-accent: #c2410c; --an-accent-press: #9a3409; }
+[data-accent="violet"] { --an-accent: #7c5cff; --an-accent-press: #5f43d6; }
+
+/* Andromeda type scale. Two families, six sizes, three weights — nothing else.
+   Sizes are the ones the console actually uses; do not invent intermediates. */
+:root {
+  --an-text-verdict: 600 26px/1.2 var(--an-font-sans);   /* state headline */
+  --an-text-title: 600 22px/1.25 var(--an-font-sans);    /* section heading */
+  --an-text-heading: 600 15px/1.35 var(--an-font-sans);  /* card heading */
+  --an-text-body: 400 14px/1.5 var(--an-font-sans);      /* default */
+  --an-text-body-sm: 400 13px/1.5 var(--an-font-sans);   /* dense rows, prose */
+  --an-text-caption: 400 12px/1.4 var(--an-font-sans);   /* labels, counters */
+  --an-text-micro: 400 11px/1.4 var(--an-font-sans);     /* meta under a value */
+  --an-text-code: 400 12px/1.7 var(--an-font-mono);      /* logs, addresses */
+
+  --an-tracking-verdict: -0.02em;
+  --an-tracking-title: -0.015em;
+  --an-tracking-caps: 0.04em;
+
+  --an-weight-regular: 400;
+  --an-weight-medium: 500;
+  --an-weight-semibold: 600;
+}
+
+/* 2px base, but only these steps exist. Gaps do the spacing — never margins
+   between siblings, so drag-reorder and delete keep the rhythm. */
+:root {
+  --an-space-1: 2px;
+  --an-space-2: 4px;
+  --an-space-3: 6px;
+  --an-space-4: 8px;
+  --an-space-5: 10px;
+  --an-space-6: 12px;
+  --an-space-7: 14px;
+  --an-space-8: 16px;
+  --an-space-9: 20px;
+  --an-space-10: 22px;
+  --an-space-12: 28px;
+  --an-space-14: 40px;
+
+  --an-gap-inline: var(--an-space-4);   /* icon ↔ label */
+  --an-gap-row: var(--an-space-4);      /* list rows */
+  --an-gap-block: var(--an-space-8);    /* cards in a column */
+  --an-gap-section: var(--an-space-9);  /* section ↔ section */
+
+  --an-pad-card: var(--an-space-9) var(--an-space-10);
+  --an-pad-block: var(--an-space-7) var(--an-space-8);
+  --an-pad-row: var(--an-space-6) var(--an-space-8);
+
+  --an-size-control: 40px;   /* primary button, search field */
+  --an-size-control-sm: 34px;
+  --an-size-icon-button: 34px;
+  --an-size-touch: 44px;     /* minimum on phones */
+  --an-rail-width: 236px;
+}
+
+/* One step per nesting level. A block inside a card is always one step tighter. */
+:root {
+  --an-radius-card: 16px;
+  --an-radius-block: 12px;
+  --an-radius-control: 10px;
+  --an-radius-inner: 9px;
+  --an-radius-badge: 6px;
+  --an-radius-pill: 9999px;
+  --an-radius-dot: 50%;
+}
+
+/* Andromeda is a bordered system, not a shadowed one: cards get a 1px line.
+   Shadow is reserved for things that float above the page. */
+:root {
+  --an-shadow-none: none;
+  --an-shadow-hover: 0 8px 20px var(--an-accent-glow);
+  --an-shadow-float: 0 10px 28px rgba(0, 0, 0, 0.22);
+  --an-shadow-dialog: 0 30px 70px rgba(10, 12, 20, 0.35);
+  --an-shadow-toast: 0 10px 30px rgba(0, 0, 0, 0.24);
+}
+
+/* Fast enough to feel answered, slow enough to be seen. One curve. */
+:root {
+  --an-ease: cubic-bezier(0.4, 0, 0.2, 1);
+  --an-dur-hover: 160ms;
+  --an-dur-control: 220ms;
+  --an-dur-enter: 260ms;
+  --an-dur-theme: 280ms;
+  --an-dur-collapse: 320ms;
+  --an-dur-pulse: 2400ms;
+
+  --an-transition-hover: background var(--an-dur-hover) var(--an-ease), border-color var(--an-dur-hover) var(--an-ease), transform var(--an-dur-hover) var(--an-ease);
+  --an-transition-theme: background var(--an-dur-theme) var(--an-ease), color var(--an-dur-theme) var(--an-ease), border-color var(--an-dur-theme) var(--an-ease);
+}
+
+@keyframes an-spin { to { transform: rotate(360deg); } }
+@keyframes an-pulse { 0%, 100% { opacity: 1; } 50% { opacity: 0.3; } }
+@keyframes an-enter { from { opacity: 0; transform: translateY(8px); } to { opacity: 1; transform: none; } }
+@keyframes an-dialog-in { from { opacity: 0; transform: translateY(12px) scale(0.97); } to { opacity: 1; transform: none; } }
+@keyframes an-fade { from { opacity: 0; } to { opacity: 1; } }
+@keyframes an-pop { 0% { transform: scale(0.6); opacity: 0; } 60% { transform: scale(1.12); } 100% { transform: scale(1); opacity: 1; } }
+@keyframes an-bar { from { transform: scaleX(0); } to { transform: scaleX(1); } }
+@keyframes an-bar-up { from { transform: scaleY(0); } to { transform: scaleY(1); } }
+@keyframes an-shimmer { 0% { background-position: -420px 0; } 100% { background-position: 420px 0; } }
+
+@media (prefers-reduced-motion: reduce) {
+  :root { --an-dur-hover: 1ms; --an-dur-control: 1ms; --an-dur-enter: 1ms; --an-dur-theme: 1ms; --an-dur-collapse: 1ms; }
+  .an-root *, .an-root *::before, .an-root *::after { animation-duration: 1ms !important; animation-delay: 0ms !important; }
+}
+
+/* Minimal resets. Andromeda never restyles the LuCI host page — scope to .an-root. */
+.an-root {
+  background: var(--an-surface-page);
+  color: var(--an-text);
+  font: var(--an-text-body);
+  -webkit-font-smoothing: antialiased;
+  transition: var(--an-transition-theme);
+}
+
+.an-root a { color: var(--an-accent); text-decoration: none; border-bottom: 1px dotted var(--an-accent-line); }
+.an-root a:hover { color: var(--an-accent-press); border-bottom-color: currentColor; }
+.an-root :focus-visible { outline: 2px solid var(--an-focus-ring); outline-offset: 2px; }
+.an-root code, .an-root pre { font: var(--an-text-code); }
+.an-root h1, .an-root h2, .an-root h3, .an-root p, .an-root dl, .an-root dd { margin: 0; }
+.an-root ul.an-plain { margin: 0; padding: 0; list-style: none; }
+
+:root { --an-font-sans: "Onest", "Google Sans", -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+        --an-font-mono: "JetBrains Mono", ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; }
+html, body { margin: 0; padding: 0; }
+.an-root { min-height: 100vh; }
+.an-root * { box-sizing: border-box; }
+.an-root a { color: var(--an-accent); text-decoration: none; }
+.an-root a:hover { color: var(--an-accent-press); }
+.tab { font-variant-numeric: tabular-nums; }
+
+  </style>
+</helmet>
+<div class="an-root" data-theme="{{ theme }}" style="{{ accentVars }}">
+<div style="width: 1440px; min-height: 100vh; background: var(--an-surface-page); color: var(--an-text); font: var(--an-text-body); -webkit-font-smoothing: antialiased;">
+<div style="display: flex; align-items: stretch; min-height: 100vh;"><aside style="width: var(--an-rail-width); flex: 0 0 var(--an-rail-width); background: var(--an-surface-rail); border-right: 1px solid var(--an-border); padding: 18px 14px; display: flex; flex-direction: column; gap: var(--an-gap-section); position: sticky; top: 0; min-height: 100vh; align-self: stretch;">
+  <div style="display: flex; align-items: center; gap: var(--an-space-5); padding: 0 6px;">
+    <div style="width: 32px; height: 32px; border-radius: 9px; background: var(--an-accent); display: flex; align-items: center; justify-content: center; color: var(--an-text-on-accent); font: var(--an-text-heading); font-size: 16px;">A</div>
+    <div style="line-height: 1.15;"><div style="font: var(--an-text-heading);">Andromeda</div><div style="font: var(--an-text-micro); color: var(--an-text-muted);">дизайн-система</div></div>
+  </div>
+  <nav style="display: flex; flex-direction: column; gap: 2px;"><div style="display: flex; align-items: center; gap: var(--an-space-5); width: 100%; padding: 10px 12px; border-radius: var(--an-radius-inner); font: var(--an-text-body); font-weight: var(--an-weight-medium); background: var(--an-accent-soft); color: var(--an-accent); cursor: pointer;"><span style="display: inline-flex; width: 18px; height: 18px;"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="display: block; flex: 0 0 auto;"><path d="M12 15a3 3 0 1 0 0-6 3 3 0 0 0 0 6M3 12a9 9 0 0 1 18 0"></path></svg></span>Обзор</div><div style="display: flex; align-items: center; gap: var(--an-space-5); width: 100%; padding: 10px 12px; border-radius: var(--an-radius-inner); font: var(--an-text-body); font-weight: var(--an-weight-regular); background: transparent; color: var(--an-text-secondary); cursor: pointer;"><span style="display: inline-flex; width: 18px; height: 18px;"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="display: block; flex: 0 0 auto;"><path d="M3 3v18h18M7 14l4-4 4 3 5-6"></path></svg></span>Данные</div><div style="display: flex; align-items: center; gap: var(--an-space-5); width: 100%; padding: 10px 12px; border-radius: var(--an-radius-inner); font: var(--an-text-body); font-weight: var(--an-weight-regular); background: transparent; color: var(--an-text-secondary); cursor: pointer;"><span style="display: inline-flex; width: 18px; height: 18px;"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="display: block; flex: 0 0 auto;"><path d="M3 17l6-6 4 4 8-8M14 7h7v7"></path></svg></span>Отчёты</div><div style="display: flex; align-items: center; gap: var(--an-space-5); width: 100%; padding: 10px 12px; border-radius: var(--an-radius-inner); font: var(--an-text-body); font-weight: var(--an-weight-regular); background: transparent; color: var(--an-text-secondary); cursor: pointer;"><span style="display: inline-flex; width: 18px; height: 18px;"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="display: block; flex: 0 0 auto;"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2M9 11a4 4 0 1 0 0-8 4 4 0 0 0 0 8"></path></svg></span>Команда</div><div style="display: flex; align-items: center; gap: var(--an-space-5); width: 100%; padding: 10px 12px; border-radius: var(--an-radius-inner); font: var(--an-text-body); font-weight: var(--an-weight-regular); background: transparent; color: var(--an-text-secondary); cursor: pointer;"><span style="display: inline-flex; width: 18px; height: 18px;"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="display: block; flex: 0 0 auto;"><path d="M12 22a10 10 0 1 0 0-20 10 10 0 0 0 0 20M12 18a6 6 0 1 0 0-12 6 6 0 0 0 0 12M12 14a2 2 0 1 0 0-4 2 2 0 0 0 0 4"></path></svg></span>Цели</div><div style="display: flex; align-items: center; gap: var(--an-space-5); width: 100%; padding: 10px 12px; border-radius: var(--an-radius-inner); font: var(--an-text-body); font-weight: var(--an-weight-regular); background: transparent; color: var(--an-text-secondary); cursor: pointer;"><span style="display: inline-flex; width: 18px; height: 18px;"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="display: block; flex: 0 0 auto;"><path d="M4 21v-7M4 10V3M12 21v-9M12 8V3M20 21v-5M20 12V3M1 14h6M9 8h6M17 16h6"></path></svg></span>Модель</div><div style="display: flex; align-items: center; gap: var(--an-space-5); width: 100%; padding: 10px 12px; border-radius: var(--an-radius-inner); font: var(--an-text-body); font-weight: var(--an-weight-regular); background: transparent; color: var(--an-text-secondary); cursor: pointer;"><span style="display: inline-flex; width: 18px; height: 18px;"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="display: block; flex: 0 0 auto;"><path d="M19 11H5a2 2 0 0 0-2 2v7a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7a2 2 0 0 0-2-2zM7 11V7a5 5 0 0 1 10 0v4"></path></svg></span>Доступ</div></nav>
+  <div style="margin-top: auto; display: flex; flex-direction: column; gap: var(--an-space-5);">
+    <div style="display: flex; gap: var(--an-space-2); padding: var(--an-space-2); border-radius: var(--an-radius-control); background: var(--an-surface-field);"><span style="flex: 1; display: inline-flex; align-items: center; justify-content: center; gap: 6px; height: 30px; border-radius: var(--an-radius-inner); background: var(--an-accent); color: var(--an-text-on-accent); font: var(--an-text-body-sm); font-weight: var(--an-weight-medium);"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="display: block; flex: 0 0 auto;"><path d="M12 17a5 5 0 1 0 0-10 5 5 0 0 0 0 10M12 1v2M12 21v2M4.2 4.2l1.4 1.4M18.4 18.4l1.4 1.4M1 12h2M21 12h2M4.2 19.8l1.4-1.4M18.4 5.6l1.4-1.4"></path></svg> Светлая</span><span style="flex: 1; display: inline-flex; align-items: center; justify-content: center; gap: 6px; height: 30px; border-radius: var(--an-radius-inner); color: var(--an-text-secondary); font: var(--an-text-body-sm);"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="display: block; flex: 0 0 auto;"><path d="M21 12.8A9 9 0 1 1 11.2 3a7 7 0 0 0 9.8 9.8z"></path></svg> Тёмная</span></div>
+    <div style="border: 1px solid var(--an-border); border-radius: var(--an-radius-control); padding: 11px; display: flex; flex-direction: column; gap: 4px;">
+      <div style="display: flex; align-items: center; gap: 7px; font: var(--an-text-caption); color: var(--an-text-muted);"><span style="width: 8px; height: 8px; border-radius: 50%; background: var(--an-success); animation: an-pulse var(--an-dur-pulse) ease-in-out infinite;"></span>данные свежие</div>
+      <div style="font: var(--an-text-body-sm);">обновлено 11:05 · следующее 12:05</div>
+      <div style="font: var(--an-text-micro); color: var(--an-text-muted);">источник отвечает за 42 мс</div>
+    </div>
+  </div>
+</aside><main style="flex: 1; min-width: 0; padding: 24px 28px 40px; display: flex; flex-direction: column; gap: var(--an-gap-section);"><div style="display: flex; align-items: flex-start; justify-content: space-between; gap: var(--an-space-8);"><div style="display: flex; flex-direction: column; gap: var(--an-space-2);"><h1 style="margin: 0; font: var(--an-text-title); letter-spacing: var(--an-tracking-title);">Обзор</h1><div style="font: var(--an-text-body-sm); color: var(--an-text-muted);">что сегодня и где теряем</div></div><button type="button" style="display: inline-flex; align-items: center; justify-content: center; gap: var(--an-gap-inline);  border-radius: var(--an-radius-control); cursor: pointer; white-space: nowrap; height: var(--an-size-control); padding: 0 18px; font: var(--an-text-body-sm); background: var(--an-surface-card); color: var(--an-text); border: 1px solid var(--an-border);"><span style="display: inline-flex; width: 16px; height: 16px; align-items: center; justify-content: center;"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="display: block; flex: 0 0 auto;"><path d="M5 12h14M12 5l7 7-7 7"></path></svg></span>Экспорт</button></div><div style="display: flex; align-items: center; gap: var(--an-space-6); flex-wrap: wrap; padding: var(--an-space-4) var(--an-space-6); border: 1px solid var(--an-border); border-radius: var(--an-radius-block); background: var(--an-surface-card);"><span style="font: var(--an-text-micro); letter-spacing: var(--an-tracking-caps); text-transform: uppercase; color: var(--an-text-muted);">срез</span><div style="display: inline-flex; gap: var(--an-space-2); padding: var(--an-space-2); border-radius: var(--an-radius-control); background: var(--an-surface-field);"><button type="button" style="height: 30px; padding: 0 14px; border: 0; border-radius: var(--an-radius-inner); background: transparent; color: var(--an-text-secondary); font: var(--an-text-body-sm); font-weight: var(--an-weight-regular); cursor: pointer; white-space: nowrap;">А</button><button type="button" style="height: 30px; padding: 0 14px; border: 0; border-radius: var(--an-radius-inner); background: var(--an-accent); color: var(--an-text-on-accent); font: var(--an-text-body-sm); font-weight: var(--an-weight-medium); cursor: pointer; white-space: nowrap;">Всё</button><button type="button" style="height: 30px; padding: 0 14px; border: 0; border-radius: var(--an-radius-inner); background: transparent; color: var(--an-text-secondary); font: var(--an-text-body-sm); font-weight: var(--an-weight-regular); cursor: pointer; white-space: nowrap;">Б</button></div><span style="width: 1px; height: 22px; background: var(--an-border);"></span><div style="display: inline-flex; gap: var(--an-space-2); padding: var(--an-space-2); border-radius: var(--an-radius-control); background: var(--an-surface-field);"><button type="button" style="height: 30px; padding: 0 14px; border: 0; border-radius: var(--an-radius-inner); background: transparent; color: var(--an-text-secondary); font: var(--an-text-body-sm); font-weight: var(--an-weight-regular); cursor: pointer; white-space: nowrap;">сегодня</button><button type="button" style="height: 30px; padding: 0 14px; border: 0; border-radius: var(--an-radius-inner); background: transparent; color: var(--an-text-secondary); font: var(--an-text-body-sm); font-weight: var(--an-weight-regular); cursor: pointer; white-space: nowrap;">7 дней</button><button type="button" style="height: 30px; padding: 0 14px; border: 0; border-radius: var(--an-radius-inner); background: var(--an-accent); color: var(--an-text-on-accent); font: var(--an-text-body-sm); font-weight: var(--an-weight-medium); cursor: pointer; white-space: nowrap;">30 дней</button><button type="button" style="height: 30px; padding: 0 14px; border: 0; border-radius: var(--an-radius-inner); background: transparent; color: var(--an-text-secondary); font: var(--an-text-body-sm); font-weight: var(--an-weight-regular); cursor: pointer; white-space: nowrap;">90 дней</button><button type="button" style="height: 30px; padding: 0 14px; border: 0; border-radius: var(--an-radius-inner); background: transparent; color: var(--an-text-secondary); font: var(--an-text-body-sm); font-weight: var(--an-weight-regular); cursor: pointer; white-space: nowrap;">вся история</button></div><span style="width: 1px; height: 22px; background: var(--an-border);"></span><div style="display: flex; gap: var(--an-space-2);"><span style="display: inline-flex; align-items: center; gap: var(--an-space-3); height: 28px; padding: 0 10px; border-radius: var(--an-radius-inner); font: var(--an-text-body-sm); white-space: nowrap; border: 1px solid var(--an-border); background: var(--an-surface-field); color: var(--an-text-secondary);">пн</span><span style="display: inline-flex; align-items: center; gap: var(--an-space-3); height: 28px; padding: 0 10px; border-radius: var(--an-radius-inner); font: var(--an-text-body-sm); white-space: nowrap; border: 1px solid var(--an-border); background: var(--an-surface-field); color: var(--an-text-secondary);">вт</span><span style="display: inline-flex; align-items: center; gap: var(--an-space-3); height: 28px; padding: 0 10px; border-radius: var(--an-radius-inner); font: var(--an-text-body-sm); white-space: nowrap; border: 1px solid var(--an-border); background: var(--an-surface-field); color: var(--an-text-secondary);">ср</span><span style="display: inline-flex; align-items: center; gap: var(--an-space-3); height: 28px; padding: 0 10px; border-radius: var(--an-radius-inner); font: var(--an-text-body-sm); white-space: nowrap; border: 1px solid var(--an-border); background: var(--an-surface-field); color: var(--an-text-secondary);">чт</span><span style="display: inline-flex; align-items: center; gap: var(--an-space-3); height: 28px; padding: 0 10px; border-radius: var(--an-radius-inner); font: var(--an-text-body-sm); white-space: nowrap; border: 1px solid var(--an-border); background: var(--an-surface-field); color: var(--an-text-secondary);">пт</span><span style="display: inline-flex; align-items: center; gap: var(--an-space-3); height: 28px; padding: 0 10px; border-radius: var(--an-radius-inner); font: var(--an-text-body-sm); white-space: nowrap; border: 1px solid var(--an-accent-line); background: var(--an-accent-soft); color: var(--an-accent);">сб</span><span style="display: inline-flex; align-items: center; gap: var(--an-space-3); height: 28px; padding: 0 10px; border-radius: var(--an-radius-inner); font: var(--an-text-body-sm); white-space: nowrap; border: 1px solid var(--an-accent-line); background: var(--an-accent-soft); color: var(--an-accent);">вс</span></div><span style="margin-left: auto; font: var(--an-text-caption); color: var(--an-text-muted);">23 закрытых дня в месяце</span></div><div style="display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: var(--an-gap-block); align-items: start;"><section style="display: flex; flex-direction: column; gap: var(--an-space-8); border-radius: var(--an-radius-card); padding: var(--an-pad-card); border: 1px solid var(--an-border); background: var(--an-surface-card); "><div style="display: flex; flex-direction: column; gap: var(--an-space-2); min-width: 0; "><div style="display: flex; align-items: center; gap: var(--an-space-3); font: var(--an-text-caption); color: var(--an-text-muted);">оборот · 30 дней</div><div style="display: flex; align-items: baseline; gap: var(--an-space-4); flex-wrap: wrap;"><span class="tab" style="font: var(--an-text-verdict); font-size: 28px; letter-spacing: -0.02em; line-height: 1.05; color: var(--an-text); white-space: nowrap;">124,7</span><span style="font: var(--an-text-body-sm); color: var(--an-text-muted);">млн ₽</span><span class="tab" style="display: inline-flex; align-items: center; gap: var(--an-space-2); height: 20px; padding: 0 8px; border-radius: var(--an-radius-badge); font: var(--an-text-micro); font-weight: var(--an-weight-medium); white-space: nowrap; background: var(--an-success-soft); color: var(--an-success-ink);"><span>↑</span>4,2 %</span></div><div style="font: var(--an-text-micro); color: var(--an-text-muted);">30 дней в срезе</div></div></section><section style="display: flex; flex-direction: column; gap: var(--an-space-8); border-radius: var(--an-radius-card); padding: var(--an-pad-card); border: 1px solid var(--an-border); background: var(--an-surface-card); "><div style="display: flex; flex-direction: column; gap: var(--an-space-2); min-width: 0; "><div style="display: flex; align-items: center; gap: var(--an-space-3); font: var(--an-text-caption); color: var(--an-text-muted);">чеки</div><div style="display: flex; align-items: baseline; gap: var(--an-space-4); flex-wrap: wrap;"><span class="tab" style="font: var(--an-text-verdict); font-size: 28px; letter-spacing: -0.02em; line-height: 1.05; color: var(--an-text); white-space: nowrap;">9 784</span><span style="font: var(--an-text-body-sm); color: var(--an-text-muted);">шт</span><span class="tab" style="display: inline-flex; align-items: center; gap: var(--an-space-2); height: 20px; padding: 0 8px; border-radius: var(--an-radius-badge); font: var(--an-text-micro); font-weight: var(--an-weight-medium); white-space: nowrap; background: var(--an-danger-soft); color: var(--an-danger-ink);"><span>↓</span>1,6 %</span></div><div style="font: var(--an-text-micro); color: var(--an-text-muted);">326 в день</div></div></section><section style="display: flex; flex-direction: column; gap: var(--an-space-8); border-radius: var(--an-radius-card); padding: var(--an-pad-card); border: 1px solid var(--an-border); background: var(--an-surface-card); "><div style="display: flex; flex-direction: column; gap: var(--an-space-2); min-width: 0; "><div style="display: flex; align-items: center; gap: var(--an-space-3); font: var(--an-text-caption); color: var(--an-text-muted);">средний чек</div><div style="display: flex; align-items: baseline; gap: var(--an-space-4); flex-wrap: wrap;"><span class="tab" style="font: var(--an-text-verdict); font-size: 28px; letter-spacing: -0.02em; line-height: 1.05; color: var(--an-text); white-space: nowrap;">12 746</span><span style="font: var(--an-text-body-sm); color: var(--an-text-muted);">₽</span></div><div style="font: var(--an-text-micro); color: var(--an-text-muted);">оборот ÷ чеки по срезу</div></div></section><section style="display: flex; flex-direction: column; gap: var(--an-space-8); border-radius: var(--an-radius-card); padding: var(--an-pad-card); border: 1px solid var(--an-border); background: var(--an-surface-card); "><div style="display: flex; flex-direction: column; gap: var(--an-space-2); min-width: 0; "><div style="display: flex; align-items: center; gap: var(--an-space-3); font: var(--an-text-caption); color: var(--an-text-muted);">лучший день</div><div style="display: flex; align-items: baseline; gap: var(--an-space-4); flex-wrap: wrap;"><span class="tab" style="font: var(--an-text-verdict); font-size: 28px; letter-spacing: -0.02em; line-height: 1.05; color: var(--an-text); white-space: nowrap;">5,8</span><span style="font: var(--an-text-body-sm); color: var(--an-text-muted);">млн</span></div><div style="font: var(--an-text-micro); color: var(--an-text-muted);">22 августа</div></div></section></div><section style="display: flex; flex-direction: column; gap: var(--an-space-8); border-radius: var(--an-radius-card); padding: var(--an-pad-card); border: 1px solid var(--an-border); background: var(--an-surface-card); "><div style="display: flex; align-items: baseline; justify-content: space-between; gap: var(--an-space-6);"><h2 style="margin: 0; font: var(--an-text-heading); color: var(--an-text);">Месяц против плана</h2><span style="font: var(--an-text-caption); color: var(--an-text-muted);">факт по 22 число</span></div><div style="display: flex; flex-direction: column; gap: var(--an-gap-block);"><div style="display: flex; align-items: center; gap: var(--an-space-10); flex-wrap: wrap;"><div style="display: flex; flex-direction: column; gap: var(--an-space-2); min-width: 0; "><div style="display: flex; align-items: center; gap: var(--an-space-3); font: var(--an-text-caption); color: var(--an-text-muted);">факт</div><div style="display: flex; align-items: baseline; gap: var(--an-space-4); flex-wrap: wrap;"><span class="tab" style="font: var(--an-text-heading); font-size: 20px; line-height: 1.1; color: var(--an-text); white-space: nowrap;">98,6</span><span style="font: var(--an-text-body-sm); color: var(--an-text-muted);">млн</span></div></div><div style="display: flex; flex-direction: column; gap: var(--an-space-2); min-width: 0; "><div style="display: flex; align-items: center; gap: var(--an-space-3); font: var(--an-text-caption); color: var(--an-text-muted);">прогноз</div><div style="display: flex; align-items: baseline; gap: var(--an-space-4); flex-wrap: wrap;"><span class="tab" style="font: var(--an-text-heading); font-size: 20px; line-height: 1.1; color: var(--an-text); white-space: nowrap;">135,5</span><span style="font: var(--an-text-body-sm); color: var(--an-text-muted);">млн</span><span class="tab" style="display: inline-flex; align-items: center; gap: var(--an-space-2); height: 20px; padding: 0 8px; border-radius: var(--an-radius-badge); font: var(--an-text-micro); font-weight: var(--an-weight-medium); white-space: nowrap; background: var(--an-success-soft); color: var(--an-success-ink);"><span>↑</span>23,4 %</span></div></div><div style="display: flex; flex-direction: column; gap: var(--an-space-2); min-width: 0; "><div style="display: flex; align-items: center; gap: var(--an-space-3); font: var(--an-text-caption); color: var(--an-text-muted);">план</div><div style="display: flex; align-items: baseline; gap: var(--an-space-4); flex-wrap: wrap;"><span class="tab" style="font: var(--an-text-heading); font-size: 20px; line-height: 1.1; color: var(--an-text); white-space: nowrap;">109,8</span><span style="font: var(--an-text-body-sm); color: var(--an-text-muted);">млн</span></div></div></div><div style="display: flex; flex-direction: column; gap: var(--an-space-3);"><div style="position: relative; height: 10px; border-radius: 5.0px; background: var(--an-surface-field);"><span style="position: absolute; left: 0; top: 0; height: 10px; width: 94.3%; border-radius: 5.0px; background: var(--an-accent-soft); border: 1px dashed var(--an-accent-line);"></span><span style="position: absolute; left: 0; top: 0; height: 10px; width: 68.6%; border-radius: 5.0px; background: var(--an-accent);"></span><span style="position: absolute; left: 76.4%; top: -3px; width: 2px; height: 16px; margin-left: -1px; background: var(--an-text); border-radius: 1px;"></span></div><div class="tab" style="display: flex; gap: var(--an-space-7); flex-wrap: wrap; font: var(--an-text-caption); color: var(--an-text-muted);"><span style="display: inline-flex; align-items: center; gap: var(--an-space-3);"><span style="display: inline-block; width: 10px; height: 10px; border-radius: 3px; background: var(--an-accent);"></span><span>факт <b style="color: var(--an-text); font-weight: var(--an-weight-semibold);">98,6 млн</b></span></span><span style="display: inline-flex; align-items: center; gap: var(--an-space-3);"><span style="display: inline-block; width: 10px; height: 10px; border-radius: 3px; background: var(--an-accent-soft); border: 1px dashed var(--an-accent-line);"></span><span>прогноз <b style="color: var(--an-text); font-weight: var(--an-weight-semibold);">135,5 млн</b></span></span><span style="display: inline-flex; align-items: center; gap: var(--an-space-3);"><span style="display: inline-block; width: 2px; height: 11px; background: var(--an-text);"></span><span>план <b style="color: var(--an-text); font-weight: var(--an-weight-semibold);">109,8 млн</b></span></span><span style="margin-left: auto; color: var(--an-success-ink);">прогноз выше плана на 25,7 млн</span></div></div></div></section><div style="display: grid; grid-template-columns: 1.5fr 1fr; gap: var(--an-gap-block); align-items: start;"><section style="display: flex; flex-direction: column; gap: var(--an-space-8); border-radius: var(--an-radius-card); padding: var(--an-pad-card); border: 1px solid var(--an-border); background: var(--an-surface-card); "><div style="display: flex; align-items: baseline; justify-content: space-between; gap: var(--an-space-6);"><h2 style="margin: 0; font: var(--an-text-heading); color: var(--an-text);">Как идёт месяц</h2><span style="font: var(--an-text-caption); color: var(--an-text-muted);">сплошная — факт, пунктир — прогноз, чернила — план</span></div><div style="display: flex; flex-direction: column; gap: var(--an-gap-block);"><div style="display: flex; flex-wrap: wrap; gap: var(--an-space-4) var(--an-space-8); font: var(--an-text-caption); color: var(--an-text-secondary);"><span style="display: inline-flex; align-items: center; gap: var(--an-space-3);"><svg width="18" height="10" viewBox="0 0 18 10"><line x1="1" y1="5" x2="17" y2="5" stroke="var(--an-accent)" stroke-width="2"  stroke-linecap="round"></line></svg>факт</span><span style="display: inline-flex; align-items: center; gap: var(--an-space-3);"><svg width="18" height="10" viewBox="0 0 18 10"><line x1="1" y1="5" x2="17" y2="5" stroke="var(--an-accent)" stroke-width="2" stroke-dasharray=&quot;3 3&quot; stroke-linecap="round"></line></svg>прогноз</span><span style="display: inline-flex; align-items: center; gap: var(--an-space-3);"><svg width="18" height="10" viewBox="0 0 18 10"><line x1="1" y1="5" x2="17" y2="5" stroke="var(--an-text)" stroke-width="2"  stroke-linecap="round"></line></svg>план</span></div><svg viewBox="0 0 635 220" width="635" height="220" style="display: block; overflow: visible; max-width: 100%;"><line x1="44" x2="627" y1="198.0" y2="198.0" stroke="var(--an-border-soft)" stroke-dasharray="3 3"></line><text x="36" y="202.0" text-anchor="end" font-size="11" fill="var(--an-text-muted)" style="font-family: var(--an-font-sans); font-variant-numeric: tabular-nums;">0,0</text><line x1="44" x2="627" y1="154.1" y2="154.1" stroke="var(--an-border-soft)" stroke-dasharray="3 3"></line><text x="36" y="158.1" text-anchor="end" font-size="11" fill="var(--an-text-muted)" style="font-family: var(--an-font-sans); font-variant-numeric: tabular-nums;">1,4</text><line x1="44" x2="627" y1="110.3" y2="110.3" stroke="var(--an-border-soft)" stroke-dasharray="3 3"></line><text x="36" y="114.3" text-anchor="end" font-size="11" fill="var(--an-text-muted)" style="font-family: var(--an-font-sans); font-variant-numeric: tabular-nums;">2,9</text><line x1="44" x2="627" y1="66.4" y2="66.4" stroke="var(--an-border-soft)" stroke-dasharray="3 3"></line><text x="36" y="70.4" text-anchor="end" font-size="11" fill="var(--an-text-muted)" style="font-family: var(--an-font-sans); font-variant-numeric: tabular-nums;">4,3</text><line x1="44" x2="627" y1="22.5" y2="22.5" stroke="var(--an-border-soft)" stroke-dasharray="3 3"></line><text x="36" y="26.5" text-anchor="end" font-size="11" fill="var(--an-text-muted)" style="font-family: var(--an-font-sans); font-variant-numeric: tabular-nums;">5,8</text><text x="44.0" y="214" text-anchor="middle" font-size="11" fill="var(--an-text-muted)" style="font-family: var(--an-font-sans);">01</text><text x="124.4" y="214" text-anchor="middle" font-size="11" fill="var(--an-text-muted)" style="font-family: var(--an-font-sans);">05</text><text x="204.8" y="214" text-anchor="middle" font-size="11" fill="var(--an-text-muted)" style="font-family: var(--an-font-sans);">09</text><text x="285.2" y="214" text-anchor="middle" font-size="11" fill="var(--an-text-muted)" style="font-family: var(--an-font-sans);">13</text><text x="365.7" y="214" text-anchor="middle" font-size="11" fill="var(--an-text-muted)" style="font-family: var(--an-font-sans);">17</text><text x="446.1" y="214" text-anchor="middle" font-size="11" fill="var(--an-text-muted)" style="font-family: var(--an-font-sans);">21</text><text x="526.5" y="214" text-anchor="middle" font-size="11" fill="var(--an-text-muted)" style="font-family: var(--an-font-sans);">25</text><text x="606.9" y="214" text-anchor="middle" font-size="11" fill="var(--an-text-muted)" style="font-family: var(--an-font-sans);">29</text><text x="627.0" y="214" text-anchor="middle" font-size="11" fill="var(--an-text-muted)" style="font-family: var(--an-font-sans);">30</text><path d="M 44.0 67.9 L 64.1 55.8 L 84.2 95.1 L 104.3 92.1 L 124.4 52.8 L 144.5 61.9 L 164.6 28.6 L 184.7 58.8 L 204.8 83.0 L 224.9 22.5 L 245.0 64.9 L 265.1 74.0 L 285.2 49.8 L 305.3 40.7 L 325.4 77.0 L 345.6 80.0 L 365.7 55.8 L 385.8 43.7 L 405.9 67.9 L 426.0 52.8 L 446.1 46.7 L 466.2 70.9" fill="none" stroke="var(--an-accent)" stroke-width="2" stroke-linejoin="round" stroke-linecap="round"></path><circle cx="466.2" cy="70.9" r="3" fill="var(--an-accent)" stroke="var(--an-surface-card)" stroke-width="2"></circle><path d="M 466.2 46.7 L 486.3 58.8 L 506.4 64.9 L 526.5 49.8 L 546.6 37.7 L 566.7 31.6 L 586.8 55.8 L 606.9 61.9 L 627.0 64.9" fill="none" stroke="var(--an-accent)" stroke-width="2" stroke-dasharray="5 4" stroke-linejoin="round" stroke-linecap="round"></path><path d="M 44.0 92.1 L 64.1 92.1 L 84.2 92.1 L 104.3 92.1 L 124.4 92.1 L 144.5 92.1 L 164.6 92.1 L 184.7 92.1 L 204.8 92.1 L 224.9 92.1 L 245.0 92.1 L 265.1 92.1 L 285.2 92.1 L 305.3 92.1 L 325.4 92.1 L 345.6 92.1 L 365.7 92.1 L 385.8 92.1 L 405.9 92.1 L 426.0 92.1 L 446.1 92.1 L 466.2 92.1 L 486.3 92.1 L 506.4 92.1 L 526.5 92.1 L 546.6 92.1 L 566.7 92.1 L 586.8 92.1 L 606.9 92.1 L 627.0 92.1" fill="none" stroke="var(--an-text)" stroke-width="1.2" stroke-linejoin="round" stroke-linecap="round"></path></svg></div></section><section style="display: flex; flex-direction: column; gap: var(--an-space-8); border-radius: var(--an-radius-card); padding: var(--an-pad-card); border: 1px solid var(--an-border); background: var(--an-surface-card); "><div style="display: flex; align-items: baseline; justify-content: space-between; gap: var(--an-space-6);"><h2 style="margin: 0; font: var(--an-text-heading); color: var(--an-text);">Ход дня по часам</h2><span style="font: var(--an-text-caption); color: var(--an-text-muted);">контур — ожидание на сегодня</span></div><div style="display: flex; flex-direction: column; gap: var(--an-gap-block);"><div style="display: flex; flex-wrap: wrap; gap: var(--an-space-4) var(--an-space-8); font: var(--an-text-caption); color: var(--an-text-secondary);"><span style="display: inline-flex; align-items: center; gap: var(--an-space-3);"><span style="display: inline-block; width: 10px; height: 10px; border-radius: 3px; background: var(--an-accent); "></span>А</span><span style="display: inline-flex; align-items: center; gap: var(--an-space-3);"><span style="display: inline-block; width: 10px; height: 10px; border-radius: 3px; background: var(--an-control-knob-off); "></span>Б</span><span style="display: inline-flex; align-items: center; gap: var(--an-space-3);"><span style="display: inline-block; width: 10px; height: 10px; border-radius: 3px; background: var(--an-accent-soft); border: 1px dashed var(--an-accent-line);"></span>ожидание</span></div><svg viewBox="0 0 408 220" width="408" height="220" style="display: block; overflow: visible; max-width: 100%;"><line x1="4" x2="404" y1="156.3" y2="156.3" stroke="var(--an-border-soft)" stroke-dasharray="3 3"></line><line x1="4" x2="404" y1="114.7" y2="114.7" stroke="var(--an-border-soft)" stroke-dasharray="3 3"></line><line x1="4" x2="404" y1="73.0" y2="73.0" stroke="var(--an-border-soft)" stroke-dasharray="3 3"></line><line x1="4" x2="404" y1="31.3" y2="31.3" stroke="var(--an-border-soft)" stroke-dasharray="3 3"></line><rect x="9.1" y="38.6" width="26.2" height="159.4" rx="4" fill="none" stroke="var(--an-accent-line)" stroke-dasharray="3 3"></rect><rect x="9.1" y="103.8" width="26.2" height="94.2" rx="0" fill="var(--an-accent)"></rect><rect x="9.1" y="42.2" width="26.2" height="59.6" rx="4" fill="var(--an-control-knob-off)"></rect><text x="22.2" y="37.2" text-anchor="middle" font-size="11" fill="var(--an-text-secondary)" style="font-family: var(--an-font-sans); font-variant-numeric: tabular-nums;">0,43</text><text x="22.2" y="214" text-anchor="middle" font-size="11" fill="var(--an-text-muted)" style="font-family: var(--an-font-sans);">09</text><rect x="45.5" y="71.2" width="26.2" height="126.8" rx="4" fill="none" stroke="var(--an-accent-line)" stroke-dasharray="3 3"></rect><rect x="45.5" y="136.4" width="26.2" height="61.6" rx="0" fill="var(--an-accent)"></rect><rect x="45.5" y="82.1" width="26.2" height="52.3" rx="4" fill="var(--an-control-knob-off)"></rect><text x="58.5" y="77.1" text-anchor="middle" font-size="11" fill="var(--an-text-secondary)" style="font-family: var(--an-font-sans); font-variant-numeric: tabular-nums;">0,32</text><text x="58.5" y="214" text-anchor="middle" font-size="11" fill="var(--an-text-muted)" style="font-family: var(--an-font-sans);">10</text><rect x="81.8" y="78.4" width="26.2" height="119.6" rx="4" fill="none" stroke="var(--an-accent-line)" stroke-dasharray="3 3"></rect><rect x="81.8" y="140.0" width="26.2" height="58.0" rx="0" fill="var(--an-accent)"></rect><rect x="81.8" y="85.7" width="26.2" height="52.3" rx="4" fill="var(--an-control-knob-off)"></rect><text x="94.9" y="80.7" text-anchor="middle" font-size="11" fill="var(--an-text-secondary)" style="font-family: var(--an-font-sans); font-variant-numeric: tabular-nums;">0,31</text><text x="94.9" y="214" text-anchor="middle" font-size="11" fill="var(--an-text-muted)" style="font-family: var(--an-font-sans);">11</text><rect x="118.2" y="96.6" width="26.2" height="101.4" rx="4" fill="none" stroke="var(--an-accent-line)" stroke-dasharray="3 3"></rect><rect x="118.2" y="136.4" width="26.2" height="61.6" rx="0" fill="var(--an-accent)"></rect><rect x="118.2" y="111.0" width="26.2" height="23.4" rx="4" fill="var(--an-control-knob-off)"></rect><text x="131.3" y="106.0" text-anchor="middle" font-size="11" fill="var(--an-text-secondary)" style="font-family: var(--an-font-sans); font-variant-numeric: tabular-nums;">0,24</text><text x="131.3" y="214" text-anchor="middle" font-size="11" fill="var(--an-text-muted)" style="font-family: var(--an-font-sans);">12</text><rect x="154.5" y="71.2" width="26.2" height="126.8" rx="4" fill="none" stroke="var(--an-accent-line)" stroke-dasharray="3 3"></rect><rect x="154.5" y="114.7" width="26.2" height="83.3" rx="0" fill="var(--an-accent)"></rect><rect x="154.5" y="82.1" width="26.2" height="30.6" rx="4" fill="var(--an-control-knob-off)"></rect><text x="167.6" y="77.1" text-anchor="middle" font-size="11" fill="var(--an-text-secondary)" style="font-family: var(--an-font-sans); font-variant-numeric: tabular-nums;">0,32</text><text x="167.6" y="214" text-anchor="middle" font-size="11" fill="var(--an-text-muted)" style="font-family: var(--an-font-sans);">13</text><rect x="190.9" y="45.8" width="26.2" height="152.2" rx="4" fill="none" stroke="var(--an-accent-line)" stroke-dasharray="3 3"></rect><rect x="190.9" y="96.6" width="26.2" height="101.4" rx="0" fill="var(--an-accent)"></rect><rect x="190.9" y="56.7" width="26.2" height="37.9" rx="4" fill="var(--an-control-knob-off)"></rect><text x="204.0" y="51.7" text-anchor="middle" font-size="11" fill="var(--an-text-secondary)" style="font-family: var(--an-font-sans); font-variant-numeric: tabular-nums;">0,39</text><text x="204.0" y="214" text-anchor="middle" font-size="11" fill="var(--an-text-muted)" style="font-family: var(--an-font-sans);">14</text><rect x="227.3" y="60.3" width="26.2" height="137.7" rx="4" fill="none" stroke="var(--an-accent-line)" stroke-dasharray="3 3"></rect><rect x="227.3" y="107.4" width="26.2" height="90.6" rx="0" fill="var(--an-accent)"></rect><rect x="227.3" y="71.2" width="26.2" height="34.2" rx="4" fill="var(--an-control-knob-off)"></rect><text x="240.4" y="66.2" text-anchor="middle" font-size="11" fill="var(--an-text-secondary)" style="font-family: var(--an-font-sans); font-variant-numeric: tabular-nums;">0,35</text><text x="240.4" y="214" text-anchor="middle" font-size="11" fill="var(--an-text-muted)" style="font-family: var(--an-font-sans);">15</text><rect x="263.6" y="78.4" width="26.2" height="119.6" rx="4" fill="none" stroke="var(--an-accent-line)" stroke-dasharray="3 3"></rect><rect x="263.6" y="118.3" width="26.2" height="79.7" rx="0" fill="var(--an-accent)"></rect><rect x="263.6" y="89.3" width="26.2" height="27.0" rx="4" fill="var(--an-control-knob-off)"></rect><text x="276.7" y="84.3" text-anchor="middle" font-size="11" fill="var(--an-text-secondary)" style="font-family: var(--an-font-sans); font-variant-numeric: tabular-nums;">0,30</text><text x="276.7" y="214" text-anchor="middle" font-size="11" fill="var(--an-text-muted)" style="font-family: var(--an-font-sans);">16</text><rect x="300.0" y="53.1" width="26.2" height="144.9" rx="4" fill="none" stroke="var(--an-accent-line)" stroke-dasharray="3 3"></rect><rect x="300.0" y="100.2" width="26.2" height="97.8" rx="0" fill="var(--an-accent)"></rect><rect x="300.0" y="63.9" width="26.2" height="34.2" rx="4" fill="var(--an-control-knob-off)"></rect><text x="313.1" y="58.9" text-anchor="middle" font-size="11" fill="var(--an-text-secondary)" style="font-family: var(--an-font-sans); font-variant-numeric: tabular-nums;">0,37</text><text x="313.1" y="214" text-anchor="middle" font-size="11" fill="var(--an-text-muted)" style="font-family: var(--an-font-sans);">17</text><rect x="336.4" y="31.3" width="26.2" height="166.7" rx="4" fill="none" stroke="var(--an-accent-line)" stroke-dasharray="3 3"></rect><rect x="336.4" y="85.7" width="26.2" height="112.3" rx="0" fill="var(--an-accent)"></rect><rect x="336.4" y="42.2" width="26.2" height="41.5" rx="4" fill="var(--an-control-knob-off)"></rect><text x="349.5" y="37.2" text-anchor="middle" font-size="11" fill="var(--an-text-secondary)" style="font-family: var(--an-font-sans); font-variant-numeric: tabular-nums;">0,43</text><text x="349.5" y="214" text-anchor="middle" font-size="11" fill="var(--an-text-muted)" style="font-family: var(--an-font-sans);">18</text><rect x="372.7" y="100.2" width="26.2" height="97.8" rx="4" fill="none" stroke="var(--an-accent-line)" stroke-dasharray="3 3"></rect><rect x="372.7" y="129.2" width="26.2" height="68.8" rx="0" fill="var(--an-accent)"></rect><rect x="372.7" y="107.4" width="26.2" height="19.7" rx="4" fill="var(--an-control-knob-off)"></rect><text x="385.8" y="102.4" text-anchor="middle" font-size="11" fill="var(--an-text-secondary)" style="font-family: var(--an-font-sans); font-variant-numeric: tabular-nums;">0,25</text><text x="385.8" y="214" text-anchor="middle" font-size="11" fill="var(--an-text-muted)" style="font-family: var(--an-font-sans);">19+</text></svg></div></section></div><section style="display: flex; flex-direction: column; gap: var(--an-space-8); border-radius: var(--an-radius-card); padding: var(--an-pad-card); border: 1px solid var(--an-border); background: var(--an-surface-card); "><div style="display: flex; align-items: baseline; justify-content: space-between; gap: var(--an-space-6);"><h2 style="margin: 0; font: var(--an-text-heading); color: var(--an-text);">Таблица дней</h2><span style="font: var(--an-text-caption); color: var(--an-text-muted);">сортировка по заголовку</span></div><div style="display: flex; flex-direction: column; gap: var(--an-space-4);"><div style="overflow-x: auto;"><table style="width: 100%;  border-collapse: collapse; font: var(--an-text-body-sm); color: var(--an-text);"><thead><tr><th style="width: 140px; text-align: left; padding: 0 8px 6px; border-bottom: 1px solid var(--an-border); font: var(--an-text-micro); letter-spacing: var(--an-tracking-caps); text-transform: uppercase; color: var(--an-accent); font-weight: var(--an-weight-medium); white-space: nowrap;">день ↓</th><th style="width: auto; text-align: right; padding: 0 8px 6px; border-bottom: 1px solid var(--an-border); font: var(--an-text-micro); letter-spacing: var(--an-tracking-caps); text-transform: uppercase; color: var(--an-text-muted); font-weight: var(--an-weight-medium); white-space: nowrap;">оборот, млн</th><th style="width: auto; text-align: right; padding: 0 8px 6px; border-bottom: 1px solid var(--an-border); font: var(--an-text-micro); letter-spacing: var(--an-tracking-caps); text-transform: uppercase; color: var(--an-text-muted); font-weight: var(--an-weight-medium); white-space: nowrap;">чеки</th><th style="width: auto; text-align: right; padding: 0 8px 6px; border-bottom: 1px solid var(--an-border); font: var(--an-text-micro); letter-spacing: var(--an-tracking-caps); text-transform: uppercase; color: var(--an-text-muted); font-weight: var(--an-weight-medium); white-space: nowrap;">средний чек</th><th style="width: auto; text-align: right; padding: 0 8px 6px; border-bottom: 1px solid var(--an-border); font: var(--an-text-micro); letter-spacing: var(--an-tracking-caps); text-transform: uppercase; color: var(--an-text-muted); font-weight: var(--an-weight-medium); white-space: nowrap;">доля А</th></tr></thead><tbody><tr><td class="" style="padding: 6px 8px; text-align: left; border-bottom: 1px solid var(--an-border-soft); ">13 августа</td><td class="tab" style="padding: 6px 8px; text-align: right; border-bottom: 1px solid var(--an-border-soft); ">3,9</td><td class="tab" style="padding: 6px 8px; text-align: right; border-bottom: 1px solid var(--an-border-soft); ">323</td><td class="tab" style="padding: 6px 8px; text-align: right; border-bottom: 1px solid var(--an-border-soft); ">12 023 ₽</td><td class="tab" style="padding: 6px 8px; text-align: right; border-bottom: 1px solid var(--an-border-soft); ">67,5 %</td></tr><tr><td class="" style="padding: 6px 8px; text-align: left; border-bottom: 1px solid var(--an-border-soft); ">12 августа</td><td class="tab" style="padding: 6px 8px; text-align: right; border-bottom: 1px solid var(--an-border-soft); ">4,3</td><td class="tab" style="padding: 6px 8px; text-align: right; border-bottom: 1px solid var(--an-border-soft); ">322</td><td class="tab" style="padding: 6px 8px; text-align: right; border-bottom: 1px solid var(--an-border-soft); ">13 409 ₽</td><td class="tab" style="padding: 6px 8px; text-align: right; border-bottom: 1px solid var(--an-border-soft); ">66,6 %</td></tr><tr><td class="" style="padding: 6px 8px; text-align: left; border-bottom: 1px solid var(--an-border-soft); ">11 августа</td><td class="tab" style="padding: 6px 8px; text-align: right; border-bottom: 1px solid var(--an-border-soft); ">3,9</td><td class="tab" style="padding: 6px 8px; text-align: right; border-bottom: 1px solid var(--an-border-soft); ">320</td><td class="tab" style="padding: 6px 8px; text-align: right; border-bottom: 1px solid var(--an-border-soft); ">12 202 ₽</td><td class="tab" style="padding: 6px 8px; text-align: right; border-bottom: 1px solid var(--an-border-soft); ">70,1 %</td></tr><tr><td class="" style="padding: 6px 8px; text-align: left; border-bottom: 1px solid var(--an-border-soft); "><b>10 августа</b></td><td class="tab" style="padding: 6px 8px; text-align: right; border-bottom: 1px solid var(--an-border-soft); ">4,8</td><td class="tab" style="padding: 6px 8px; text-align: right; border-bottom: 1px solid var(--an-border-soft); ">309</td><td class="tab" style="padding: 6px 8px; text-align: right; border-bottom: 1px solid var(--an-border-soft); ">15 576 ₽</td><td class="tab" style="padding: 6px 8px; text-align: right; border-bottom: 1px solid var(--an-border-soft); ">69,1 %</td></tr><tr><td class="" style="padding: 6px 8px; text-align: left; border-bottom: 1px solid var(--an-border-soft); "><b>9 августа</b></td><td class="tab" style="padding: 6px 8px; text-align: right; border-bottom: 1px solid var(--an-border-soft); ">3,4</td><td class="tab" style="padding: 6px 8px; text-align: right; border-bottom: 1px solid var(--an-border-soft); ">277</td><td class="tab" style="padding: 6px 8px; text-align: right; border-bottom: 1px solid var(--an-border-soft); ">12 411 ₽</td><td class="tab" style="padding: 6px 8px; text-align: right; border-bottom: 1px solid var(--an-border-soft); ">67,8 %</td></tr><tr><td class="" style="padding: 6px 8px; text-align: left; border-bottom: 1px solid var(--an-border-soft); ">8 августа</td><td class="tab" style="padding: 6px 8px; text-align: right; border-bottom: 1px solid var(--an-border-soft); ">4,1</td><td class="tab" style="padding: 6px 8px; text-align: right; border-bottom: 1px solid var(--an-border-soft); ">333</td><td class="tab" style="padding: 6px 8px; text-align: right; border-bottom: 1px solid var(--an-border-soft); ">12 339 ₽</td><td class="tab" style="padding: 6px 8px; text-align: right; border-bottom: 1px solid var(--an-border-soft); ">82,3 %</td></tr></tbody></table></div><div style="font: var(--an-text-caption); color: var(--an-text-muted);">6 из 30 · остальные ниже</div></div></section></main></div>
+</div>
+</div>
+</x-dc>
+<script data-dc-script data-props='{"theme":{"editor":"enum","options":["light","dark"],"default":"light","section":"Тема"},"accent":{"editor":"color","options":["#5e72e4","#c2410c","#1c8f5f"],"default":"#5e72e4","section":"Тема"}}'>
+class Component extends DCLogic {
+  renderVals() {
+    const accent = this.props.accent ?? '#5e72e4';
+    return {
+      theme: this.props.theme ?? 'light',
+      accentVars: `--an-accent:${accent};--an-accent-press:color-mix(in srgb, ${accent} 78%, black);`,
+    };
+  }
+}
+</script>
+</body>
+</html>

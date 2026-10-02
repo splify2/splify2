@@ -1,0 +1,85 @@
+<!-- @dsCard group="Console" viewport="1280x760" name="Консоль splify2 — обзор" subtitle="Шесть разделов, обе темы, счётчик изменений считает диф со применённым" -->
+<!-- @startingPoint section="Console" subtitle="Полная консоль: рельс, обзор, правила, редактор, выходы, каталог, диагностика" viewport="1280x760" -->
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>splify2 · 26.9 Andromeda</title>
+<link rel="icon" href="../../assets/logo-andromeda.svg">
+<link rel="stylesheet" href="../../styles.css">
+<style>
+  html, body { margin: 0; }
+  body { background: var(--an-surface-page); }
+  .console-root {
+    --an-rail-width: 272px;
+    --an-size-control: 46px;
+    --an-size-control-sm: 38px;
+    --an-pad-card: var(--an-space-10) var(--an-space-12);
+    --an-pad-block: var(--an-space-8) var(--an-space-9);
+    --an-text-verdict: 600 34px/1.16 var(--an-font-sans);
+    --an-text-title: 600 30px/1.2 var(--an-font-sans);
+    --an-text-heading: 600 17px/1.35 var(--an-font-sans);
+    --an-text-body: 400 15px/1.5 var(--an-font-sans);
+    --an-text-body-sm: 400 14px/1.5 var(--an-font-sans);
+    --an-text-caption: 400 13px/1.4 var(--an-font-sans);
+    --an-text-micro: 400 12px/1.4 var(--an-font-sans);
+  }
+  .console-main { min-width: 0; padding: 42px 52px 132px; max-width: 1720px; width: 100%; box-sizing: border-box; background: linear-gradient(135deg, var(--an-surface-page) 0%, var(--an-accent-soft) 180%); }
+  .console-page-header { display: flex; align-items: center; justify-content: space-between; gap: 24px; padding: 0 0 30px; margin-bottom: 36px; border-bottom: 1px solid var(--an-border-soft); }
+  .console-page-header h1 { margin: 5px 0 7px; font: var(--an-text-title); font-size: 44px; letter-spacing: -0.05em; }
+  .console-eyebrow { margin: 0; color: var(--an-accent); font: var(--an-text-caption); font-weight: var(--an-weight-semibold); letter-spacing: .09em; text-transform: uppercase; }
+  .console-page-detail { margin: 0; color: var(--an-text-muted); font: var(--an-text-body-sm); }
+  .console-connection { display: inline-flex; align-items: center; gap: 8px; padding: 9px 12px; border: 1px solid var(--an-accent-line); border-radius: var(--an-radius-pill); background: var(--an-accent-soft); color: var(--an-text-secondary); font: var(--an-text-caption); white-space: nowrap; }
+  .console-connection-dot { width: 7px; height: 7px; border-radius: 50%; background: var(--an-success); box-shadow: 0 0 0 3px var(--an-success-soft); flex: 0 0 auto; }
+  .console-screen { max-width: 1320px; }
+  .console-toolbar { display: flex; align-items: center; justify-content: space-between; gap: var(--an-space-8); min-height: 46px; padding: var(--an-space-6) var(--an-space-8); border: 1px solid var(--an-border-soft); border-radius: var(--an-radius-block); background: var(--an-surface-card); }
+  .console-toolbar-note { color: var(--an-text-secondary); font: var(--an-text-body-sm); }
+  .overview-hero { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: var(--an-gap-block); padding: 6px; border: 1px solid var(--an-border-soft); border-radius: calc(var(--an-radius-card) + 2px); background: var(--an-surface-card); }
+  .overview-hero-verdict { min-width: 0; padding: 26px; border-radius: var(--an-radius-block); background: linear-gradient(135deg, var(--an-accent-soft), var(--an-surface-card) 72%); }
+  .overview-hero-verdict > *:first-child { min-width: 0; }
+  .overview-hero-caption { display: inline-flex; align-items: center; gap: 9px; margin-top: 18px; color: var(--an-text-muted); font: var(--an-text-caption); }
+  .overview-hero-actions { display: flex; flex-direction: column; justify-content: space-between; align-items: stretch; width: 220px; padding: 20px 18px; color: var(--an-text-muted); font: var(--an-text-caption); line-height: 1.45; }
+  .overview-hero-actions .an-button { justify-content: center; }
+  .overview-content-grid { display: grid; grid-template-columns: minmax(0, 1.55fr) minmax(300px, 1fr); gap: var(--an-gap-block); align-items: start; }
+  .overview-stats { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: var(--an-gap-block); margin: 0; }
+  .overview-stats > * { padding: 2px 0; }
+  @media (max-width: 760px) {
+    .an-root { display: flex !important; flex-direction: column; }
+    .console-rail { width: auto !important; padding: 12px 14px !important; gap: 12px !important; border-right: 0 !important; border-bottom: 1px solid var(--an-border); }
+    .console-rail nav { overflow-x: auto; flex-direction: row !important; padding-bottom: 2px; }
+    .console-rail nav > * { flex: 0 0 auto; }
+    .console-rail > div:last-child { display: none !important; }
+    .console-root { --an-rail-width: 236px; --an-size-control: 42px; --an-text-verdict: 600 28px/1.2 var(--an-font-sans); }
+    .console-main { padding: 24px 16px 104px; }
+    .console-page-header { margin-bottom: 20px; padding-bottom: 16px; }
+    .console-page-header h1 { font-size: 32px; }
+    .console-page-detail, .console-connection { display: none; }
+    .overview-hero { grid-template-columns: 1fr; }
+    .overview-hero-actions { width: auto; flex-direction: row; align-items: center; gap: var(--an-space-6); }
+    .console-toolbar { align-items: stretch; flex-direction: column; }
+  }
+  @media (max-width: 1000px) {
+    .overview-content-grid { grid-template-columns: 1fr; }
+    .overview-stats { grid-template-columns: repeat(2, minmax(0,1fr)); }
+  }
+</style>
+<script src="../../_vendor/react.js"></script>
+<script src="../../_vendor/react-dom.js"></script>
+<script src="../../_ds_bundle.js"></script>
+<script src="../../_preview/console.js"></script>
+</head>
+<body>
+<div id="root"></div>
+<script>
+  (function () {
+    var el = document.getElementById("root");
+    try {
+      ReactDOM.createRoot(el).render(React.createElement(__AndromedaConsole.Console));
+    } catch (e) {
+      el.innerHTML = '<pre style="padding:24px;font-family:ui-monospace,Menlo,monospace">' + String(e && e.stack || e) + '</pre>';
+    }
+  })();
+</script>
+</body>
+</html>

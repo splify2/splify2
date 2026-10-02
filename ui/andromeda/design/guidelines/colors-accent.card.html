@@ -1,0 +1,22 @@
+<!-- @dsCard group="Colors" viewport="700x150" name="Акцент" subtitle="Единственный цвет, который заменяет тема хоста (Argon --sp-primary)" -->
+<!DOCTYPE html>
+<html lang="ru"><head><meta charset="utf-8">
+<link rel="stylesheet" href="../styles.css">
+<style>
+  html, body { margin: 0; }
+  body { padding: 18px; }
+  .row { display: flex; flex-wrap: wrap; gap: 12px; align-items: center; }
+  .col { display: flex; flex-direction: column; gap: 10px; }
+  .sw { border-radius: 10px; height: 42px; }
+  .lbl { font: var(--an-text-micro); color: var(--an-text-muted); margin-top: 6px; }
+  .val { font: var(--an-text-micro); font-family: var(--an-font-mono); color: var(--an-text-muted); }
+</style></head>
+<body class="an-root">
+<div class="row" style="gap:14px">
+  <div style="flex:1"><div class="sw" style="background:var(--an-accent)"></div><div class="lbl">--an-accent <span class="val">#5e72e4</span></div></div>
+  <div style="flex:1"><div class="sw" style="background:var(--an-accent-press)"></div><div class="lbl">--an-accent-press <span class="val">#4453b8</span></div></div>
+  <div style="flex:1"><div class="sw" style="background:var(--an-accent-soft)"></div><div class="lbl">--an-accent-soft <span class="val">12% / 22% dark</span></div></div>
+  <div style="flex:1"><div class="sw" style="background:transparent;border:1px solid var(--an-accent-line)"></div><div class="lbl">--an-accent-line <span class="val">45%</span></div></div>
+  <div style="flex:1"><div class="sw" style="background:var(--an-accent);box-shadow:var(--an-shadow-hover)"></div><div class="lbl">--an-accent-glow <span class="val">hover</span></div></div>
+</div>
+</body></html>

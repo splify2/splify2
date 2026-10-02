@@ -1,0 +1,23 @@
+<!-- @dsCard group="Type" viewport="700x212" name="Шкала" subtitle="Шесть размеров; промежуточных не бывает" -->
+<!DOCTYPE html>
+<html lang="ru"><head><meta charset="utf-8">
+<link rel="stylesheet" href="../styles.css">
+<style>
+  html, body { margin: 0; }
+  body { padding: 18px; }
+  .row { display: flex; flex-wrap: wrap; gap: 12px; align-items: center; }
+  .col { display: flex; flex-direction: column; gap: 10px; }
+  .sw { border-radius: 10px; height: 42px; }
+  .lbl { font: var(--an-text-micro); color: var(--an-text-muted); margin-top: 6px; }
+  .val { font: var(--an-text-micro); font-family: var(--an-font-mono); color: var(--an-text-muted); }
+</style></head>
+<body class="an-root">
+<div class="col" style="gap:8px">
+  <div style="font:var(--an-text-verdict);letter-spacing:var(--an-tracking-verdict)">Маршрутизация работает <span class="val">26/600</span></div>
+  <div style="font:var(--an-text-title);letter-spacing:var(--an-tracking-title)">Правила <span class="val">22/600</span></div>
+  <div style="font:var(--an-text-heading)">Подписка <span class="val">15/600</span></div>
+  <div style="font:var(--an-text-body)">Куда идёт трафик <span class="val">14/400</span></div>
+  <div style="font:var(--an-text-body-sm);color:var(--an-text-secondary)">Сверху вниз — побеждает первое совпадение <span class="val">13/400</span></div>
+  <div style="font:var(--an-text-caption);color:var(--an-text-muted)">устройств в сети <span class="val">12/400</span></div>
+</div>
+</body></html>

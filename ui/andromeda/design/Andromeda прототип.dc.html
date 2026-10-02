@@ -1,0 +1,1325 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+<style>
+  body { margin: 0; }
+  @keyframes ap-spin { to { transform: rotate(360deg) } }
+  @keyframes ap-pulse { 0%,100% { opacity: 1 } 50% { opacity: .3 } }
+  @keyframes ap-in { from { opacity: 0; transform: translateY(8px) } to { opacity: 1; transform: none } }
+  @keyframes ap-pop { 0% { transform: scale(.6); opacity: 0 } 60% { transform: scale(1.12) } 100% { transform: scale(1); opacity: 1 } }
+  @keyframes ap-bar { from { transform: scaleX(0) } to { transform: scaleX(1) } }
+  @keyframes ap-modal { from { opacity: 0; transform: translateY(12px) scale(.97) } to { opacity: 1; transform: none } }
+  @keyframes ap-fade { from { opacity: 0 } to { opacity: 1 } }
+</style>
+<script src="https://unpkg.com/lucide@latest/dist/umd/lucide.js"></script>
+</helmet>
+
+<div style="{{ themeVars }}">
+<div style="min-height:100vh;background:var(--bg,#f4f5f7);color:var(--fg,#32325d);font-family:'Google Sans','Helvetica Neue',Helvetica,Arial,sans-serif;font-size:14px;line-height:1.5;transition:background .28s ease,color .28s ease;display:grid;grid-template-columns:236px minmax(0,1fr)">
+
+  <aside style="background:var(--rail,#fbfbfd);border-right:1px solid var(--line,#e9ecef);padding:18px 14px;display:flex;flex-direction:column;gap:18px;transition:background .28s ease,border-color .28s ease">
+    <div style="display:flex;align-items:center;gap:10px;padding:0 6px">
+      <img src="uploads/logo-3c.svg" alt="splify2" style="width:32px;height:32px;border-radius:9px">
+      <div style="line-height:1.15">
+        <div style="font-size:15px;font-weight:600">splify2</div>
+        <div style="font-size:11px;color:var(--muted,#8898aa)">26.9 Andromeda</div>
+      </div>
+    </div>
+
+    <nav style="display:flex;flex-direction:column;gap:2px">
+      <button type="button" onClick="{{ goOverview }}" style="display:flex;align-items:center;gap:10px;padding:10px 12px;border-radius:9px;border:0;font:inherit;font-size:14px;cursor:pointer;text-align:left;transition:background .2s ease,color .2s ease;background:{{ navOverviewBg }};color:{{ navOverviewFg }};font-weight:{{ navOverviewW }}">
+        <i data-lucide="gauge" style="width:18px;height:18px"></i> Обзор
+      </button>
+      <button type="button" onClick="{{ goRules }}" style="display:flex;align-items:center;gap:10px;padding:10px 12px;border-radius:9px;border:0;font:inherit;font-size:14px;cursor:pointer;text-align:left;transition:background .2s ease,color .2s ease;background:{{ navRulesBg }};color:{{ navRulesFg }};font-weight:{{ navRulesW }}">
+        <i data-lucide="route" style="width:18px;height:18px"></i> Правила
+        <span style="margin-left:auto;font-size:11px;color:var(--muted,#8898aa)">{{ rulesCount }}</span>
+      </button>
+      <button type="button" onClick="{{ goOutputs }}" style="display:flex;align-items:center;gap:10px;padding:10px 12px;border-radius:9px;border:0;font:inherit;font-size:14px;cursor:pointer;text-align:left;transition:background .2s ease,color .2s ease;background:{{ navOutputsBg }};color:{{ navOutputsFg }};font-weight:{{ navOutputsW }}">
+        <i data-lucide="waypoints" style="width:18px;height:18px"></i> Выходы
+        <span style="margin-left:auto;font-size:11px;color:var(--muted,#8898aa)">3</span>
+      </button>
+      <button type="button" onClick="{{ goCatalog }}" style="display:flex;align-items:center;gap:10px;padding:10px 12px;border-radius:9px;border:0;font:inherit;font-size:14px;cursor:pointer;text-align:left;transition:background .2s ease,color .2s ease;background:{{ navCatalogBg }};color:{{ navCatalogFg }};font-weight:{{ navCatalogW }}">
+        <i data-lucide="library" style="width:18px;height:18px"></i> Каталог
+      </button>
+      <button type="button" onClick="{{ goDiag }}" style="display:flex;align-items:center;gap:10px;padding:10px 12px;border-radius:9px;border:0;font:inherit;font-size:14px;cursor:pointer;text-align:left;transition:background .2s ease,color .2s ease;background:{{ navDiagBg }};color:{{ navDiagFg }};font-weight:{{ navDiagW }}">
+        <i data-lucide="stethoscope" style="width:18px;height:18px"></i> Диагностика
+        <span style="margin-left:auto;display:inline-flex;align-items:center;justify-content:center;height:18px;min-width:18px;padding:0 5px;border-radius:9px;background:rgba(255,193,7,.18);color:var(--warn-fg,#a97a00);font-size:11px;font-weight:600">1</span>
+      </button>
+      <button type="button" onClick="{{ goSystem }}" style="display:flex;align-items:center;gap:10px;padding:10px 12px;border-radius:9px;border:0;font:inherit;font-size:14px;cursor:pointer;text-align:left;transition:background .2s ease,color .2s ease;background:{{ navSystemBg }};color:{{ navSystemFg }};font-weight:{{ navSystemW }}">
+        <i data-lucide="settings" style="width:18px;height:18px"></i> Система
+      </button>
+    </nav>
+
+    <div style="margin-top:auto;display:flex;flex-direction:column;gap:10px">
+      <div style="display:flex;gap:4px;padding:4px;border-radius:11px;background:var(--field,#f1f3f7);transition:background .28s ease">
+        <button type="button" onClick="{{ setLight }}" style="flex:1;height:30px;border-radius:8px;border:0;font:inherit;font-size:12px;cursor:pointer;display:inline-flex;align-items:center;justify-content:center;gap:6px;transition:all .2s ease;background:{{ lightBg }};color:{{ lightFg }}"><i data-lucide="sun" style="width:14px;height:14px"></i> Светлая</button>
+        <button type="button" onClick="{{ setDark }}" style="flex:1;height:30px;border-radius:8px;border:0;font:inherit;font-size:12px;cursor:pointer;display:inline-flex;align-items:center;justify-content:center;gap:6px;transition:all .2s ease;background:{{ darkBg }};color:{{ darkFg }}"><i data-lucide="moon" style="width:14px;height:14px"></i> Тёмная</button>
+      </div>
+      <div style="border:1px solid var(--line,#e9ecef);border-radius:10px;padding:11px">
+        <div style="font-size:12px;color:var(--muted,#8898aa)">движок</div>
+        <div style="font-size:13px;margin-top:2px">steer 1.1.2 · extended</div>
+        <button type="button" onClick="{{ goDiag }}" style="margin-top:6px;font-size:12px;color:var(--accent,#5e72e4);background:none;border:0;padding:0;cursor:pointer;font-family:inherit;border-bottom:1px dotted var(--accent,#5e72e4)">Обновить до 1.1.3</button>
+      </div>
+      <button type="button" onClick="{{ openModal }}" style="display:flex;align-items:center;justify-content:center;gap:8px;height:40px;border-radius:10px;border:1px solid var(--danger-line,#f7c6d1);background:transparent;color:#f5365c;font:inherit;font-size:13px;cursor:pointer;transition:background .18s ease" style-hover="background:rgba(245,54,92,.08)">
+        <i data-lucide="power" style="width:16px;height:16px"></i> Остановить всё
+      </button>
+    </div>
+  </aside>
+
+  <main style="min-width:0;padding:24px 28px 90px">
+
+    <sc-if value="{{ isOverview }}" hint-placeholder-val="{{ true }}">
+      <div style="display:flex;flex-direction:column;gap:20px;animation:ap-in .28s ease">
+        <div style="display:flex;align-items:flex-start;gap:16px;flex-wrap:wrap">
+          <div style="flex:1;min-width:0">
+            <div style="display:flex;align-items:center;gap:10px">
+              <span style="height:11px;width:11px;border-radius:50%;background:#2dce89;animation:ap-pulse 2.4s ease-in-out infinite"></span>
+              <h1 style="margin:0;font-size:26px;font-weight:600;letter-spacing:-.02em">Маршрутизация работает</h1>
+            </div>
+            <p style="margin:6px 0 0;font-size:13px;color:var(--muted,#8898aa)">устройств в сети: 9 · время работы 4 ч 12 мин</p>
+          </div>
+          <button type="button" onClick="{{ newRule }}" style="display:inline-flex;align-items:center;gap:8px;height:40px;padding:0 18px;border-radius:12px;border:0;background:var(--accent,#5e72e4);color:#fff;font:inherit;font-size:13px;font-weight:500;cursor:pointer;transition:transform .16s ease,box-shadow .16s ease" style-hover="transform:translateY(-1px);box-shadow:0 8px 20px var(--accent-glow,rgba(94,114,228,.35))"><i data-lucide="plus" style="width:16px;height:16px"></i> Новое правило</button>
+        </div>
+
+        <button type="button" onClick="{{ goDiag }}" style="display:flex;align-items:center;gap:10px;width:100%;text-align:left;border:0;border-radius:12px;background:var(--warn-bg,rgba(255,193,7,.08));color:var(--warn-fg,#a97a00);padding:11px 14px;font:inherit;font-size:13px;cursor:pointer;transition:filter .18s ease" style-hover="filter:brightness(.97)">
+          <i data-lucide="triangle-alert" style="width:15px;height:15px;flex-shrink:0"></i>
+          проверок с предупреждением: 1
+          <span style="margin-left:auto;display:inline-flex;align-items:center;gap:5px;opacity:.85">диагностика <i data-lucide="arrow-right" style="width:14px;height:14px"></i></span>
+        </button>
+
+        <div style="display:grid;grid-template-columns:minmax(0,1.5fr) minmax(0,1fr);gap:16px;align-items:start">
+          <div style="border:1px solid var(--line,#e9ecef);background:var(--card,#fff);border-radius:16px;padding:20px 22px;transition:background .28s ease,border-color .28s ease">
+            <div style="display:flex;align-items:baseline;justify-content:space-between;gap:12px">
+              <h2 style="margin:0;font-size:15px;font-weight:600">Куда идёт трафик</h2>
+              <span style="font-size:12px;color:var(--muted,#8898aa)">с загрузки роутера</span>
+            </div>
+            <div style="margin-top:16px;display:flex;flex-direction:column;gap:14px">
+              <div>
+                <div style="display:flex;align-items:baseline;gap:10px;font-size:13px">
+                  <span style="flex:1;min-width:0;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">YouTube <span style="color:var(--muted,#8898aa)">→ vless-nl</span></span>
+                  <span style="color:var(--fg2,#5b6478)">↓ 12,4 ГБ</span>
+                  <span style="color:var(--muted,#8898aa)">↑ 1,8 ГБ</span>
+                  <span style="width:96px;text-align:right;color:var(--fg2,#5b6478)">4,2 Мбит/с</span>
+                </div>
+                <span style="margin-top:7px;display:block;height:8px;border-radius:4px;background:var(--field,#f1f3f7);overflow:hidden"><span style="display:block;height:8px;width:74%;border-radius:4px;background:var(--accent,#5e72e4);transform-origin:left;animation:ap-bar .9s cubic-bezier(.4,0,.2,1)"></span></span>
+              </div>
+              <div>
+                <div style="display:flex;align-items:baseline;gap:10px;font-size:13px">
+                  <span style="flex:1;min-width:0;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">Telegram <span style="color:var(--muted,#8898aa)">→ wg0</span></span>
+                  <span style="color:var(--fg2,#5b6478)">↓ 412,7 МБ</span>
+                  <span style="color:var(--muted,#8898aa)">↑ 96,3 МБ</span>
+                  <span style="width:96px;text-align:right;color:var(--muted,#8898aa)">—</span>
+                </div>
+                <span style="margin-top:7px;display:block;height:8px;border-radius:4px;background:var(--field,#f1f3f7);overflow:hidden"><span style="display:block;height:8px;width:23%;border-radius:4px;background:var(--accent,#5e72e4);transform-origin:left;animation:ap-bar .9s cubic-bezier(.4,0,.2,1) .07s both"></span></span>
+              </div>
+              <div>
+                <div style="display:flex;align-items:baseline;gap:10px;font-size:13px">
+                  <span style="flex:1;min-width:0;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">Spotify <span style="color:var(--muted,#8898aa)">→ напрямую</span></span>
+                  <span style="color:var(--fg2,#5b6478)">↓ 238,4 МБ</span>
+                  <span style="color:var(--muted,#8898aa)">↑ 12,1 МБ</span>
+                  <span style="width:96px;text-align:right;color:var(--muted,#8898aa)">—</span>
+                </div>
+                <span style="margin-top:7px;display:block;height:8px;border-radius:4px;background:var(--field,#f1f3f7);overflow:hidden"><span style="display:block;height:8px;width:13%;border-radius:4px;background:var(--muted,#c3c9d6);transform-origin:left;animation:ap-bar .9s cubic-bezier(.4,0,.2,1) .14s both"></span></span>
+              </div>
+            </div>
+            <p style="margin:12px 0 0;font-size:12px;color:var(--muted,#8898aa)">Считает ядро по наборам выхода; отключённые правила в списке не появляются.</p>
+
+            <div style="margin-top:18px;padding-top:16px;border-top:1px solid var(--line-soft,#f1f3f7);display:flex;align-items:center;gap:12px;flex-wrap:wrap">
+              <div style="display:flex;align-items:center;gap:10px;flex:1;min-width:260px;border:1px solid var(--line,#e9ecef);border-radius:10px;padding:0 12px;transition:border-color .18s ease" style-hover="border-color:var(--accent,#5e72e4)">
+                <i data-lucide="search" style="width:16px;height:16px;color:var(--muted,#8898aa)"></i>
+                <input value="{{ explainQuery }}" onInput="{{ setExplain }}" placeholder="youtube.com — куда пойдёт трафик?" style="flex:1;height:40px;border:0;background:transparent;outline:none;font:inherit;font-size:14px;color:var(--fg,#32325d);font-family:ui-monospace,Menlo,monospace">
+              </div>
+              <button type="button" onClick="{{ ask }}" style="height:40px;padding:0 16px;border-radius:10px;border:0;background:var(--accent,#5e72e4);color:#fff;font:inherit;font-size:13px;font-weight:500;cursor:pointer;display:inline-flex;align-items:center;gap:8px;transition:transform .16s ease" style-hover="transform:translateY(-1px)">
+                <span style="display:inline-flex;width:16px;height:16px;animation:{{ askSpin }}"><i data-lucide="{{ askIcon }}" style="width:16px;height:16px"></i></span> {{ askLabel }}
+              </button>
+            </div>
+            <sc-if value="{{ hasAnswer }}">
+              <pre style="margin:12px 0 0;padding:12px 14px;border-radius:10px;background:var(--field,#f1f3f7);border:1px solid var(--line,#e9ecef);font-family:ui-monospace,Menlo,monospace;font-size:12px;line-height:1.6;white-space:pre-wrap;animation:ap-in .24s ease;color:var(--fg,#32325d)">{{ answer }}</pre>
+            </sc-if>
+          </div>
+
+          <div style="border:1px solid var(--line,#e9ecef);background:var(--card,#fff);border-radius:16px;padding:20px 22px;transition:background .28s ease,border-color .28s ease">
+            <div style="display:flex;align-items:baseline;justify-content:space-between;gap:12px">
+              <h2 style="margin:0;font-size:15px;font-weight:600">Подписка</h2>
+              <span style="font-size:12px;color:var(--muted,#8898aa)">{{ quotaAge }}</span>
+            </div>
+
+            <sc-if value="{{ hasQuota }}" hint-placeholder-val="{{ true }}">
+              <div style="margin-top:16px">
+                <div style="display:flex;align-items:baseline;gap:8px">
+                  <span style="font-size:30px;font-weight:600;letter-spacing:-.025em;white-space:nowrap;color:{{ quotaColor }};transition:color .28s ease">{{ quotaLeft }}</span>
+                  <span style="font-size:13px;color:var(--muted,#8898aa)">из {{ quotaTotal }} осталось</span>
+                </div>
+                <span style="margin-top:12px;display:block;height:10px;border-radius:5px;background:var(--field,#f1f3f7);overflow:hidden"><span style="display:block;height:10px;border-radius:5px;transform-origin:left;animation:ap-bar 1s cubic-bezier(.4,0,.2,1);width:{{ quotaPct }};background:{{ quotaColor }};transition:width .4s ease,background .28s ease"></span></span>
+                <div style="margin-top:8px;display:flex;align-items:baseline;justify-content:space-between;font-size:12px;color:var(--muted,#8898aa)">
+                  <span>израсходовано {{ quotaUsed }}</span>
+                  <span>сброс {{ quotaReset }}</span>
+                </div>
+
+                <dl style="margin:18px 0 0;display:flex;flex-direction:column;gap:10px;font-size:13px">
+                  <div style="display:flex;align-items:baseline;justify-content:space-between;gap:10px">
+                    <dt style="color:var(--muted,#8898aa)">до конца периода</dt>
+                    <dd style="margin:0">{{ quotaDays }}</dd>
+                  </div>
+                  <div style="display:flex;align-items:baseline;justify-content:space-between;gap:10px">
+                    <dt style="color:var(--muted,#8898aa)">в среднем в сутки</dt>
+                    <dd style="margin:0">{{ quotaPerDay }}</dd>
+                  </div>
+                  <div style="display:flex;align-items:baseline;justify-content:space-between;gap:10px">
+                    <dt style="color:var(--muted,#8898aa)">хватит при таком темпе</dt>
+                    <dd style="margin:0;white-space:nowrap;color:{{ forecastColor }};transition:color .28s ease">{{ quotaForecast }}</dd>
+                  </div>
+                </dl>
+
+                <sc-if value="{{ quotaTight }}">
+                  <p style="margin:14px 0 0;padding:10px 12px;border-radius:10px;background:var(--warn-bg,rgba(255,193,7,.08));color:var(--warn-fg,#a97a00);font-size:12px;line-height:1.5">При нынешнем темпе трафик кончится раньше сброса. Когда он кончится, узел перестанет подниматься: выход упадёт, а правила останутся на месте.</p>
+                </sc-if>
+
+                <p style="margin:14px 0 0;font-size:11px;line-height:1.5;color:var(--muted,#8898aa)">Цифры считает панель продавца и отдаёт в заголовке подписки. Они не совпадут со счётчиками роутера слева: те обнуляются при перезагрузке и не видят трафик с телефонов мимо роутера.</p>
+              </div>
+            </sc-if>
+
+            <sc-if value="{{ noQuota }}">
+              <div style="margin-top:16px">
+                <div style="font-size:15px">Панель не сообщает остаток</div>
+                <p style="margin:8px 0 0;font-size:12px;line-height:1.55;color:var(--muted,#8898aa)">Остаток берётся из заголовка ответа подписки. Его отдают не все панели, а вставленные руками ссылки vless:// не несут его вовсе — тогда считать нечего.</p>
+              </div>
+            </sc-if>
+          </div>
+        </div>
+      </div>
+    </sc-if>
+
+    <sc-if value="{{ isRules }}">
+      <div style="display:flex;flex-direction:column;gap:16px;animation:ap-in .28s ease">
+        <div style="display:flex;align-items:flex-start;gap:16px;flex-wrap:wrap">
+          <div style="flex:1;min-width:0">
+            <h1 style="margin:0;font-size:22px;font-weight:600;letter-spacing:-.015em">Правила</h1>
+            <p style="margin:5px 0 0;font-size:13px;color:var(--muted,#8898aa)">Сверху вниз — побеждает первое совпадение.</p>
+          </div>
+          <div style="display:flex;gap:8px">
+            <button type="button" onClick="{{ newException }}" style="height:38px;padding:0 14px;border-radius:10px;border:1px solid var(--line,#e9ecef);background:transparent;color:var(--fg,#32325d);font:inherit;font-size:13px;cursor:pointer;transition:background .18s ease" style-hover="background:var(--field,#f1f3f7)">Исключение</button>
+            <button type="button" onClick="{{ newRule }}" style="display:inline-flex;align-items:center;gap:8px;height:38px;padding:0 16px;border-radius:10px;border:0;background:var(--accent,#5e72e4);color:#fff;font:inherit;font-size:13px;font-weight:500;cursor:pointer;transition:transform .16s ease,box-shadow .16s ease" style-hover="transform:translateY(-1px);box-shadow:0 6px 16px var(--accent-glow,rgba(94,114,228,.35))"><i data-lucide="plus" style="width:16px;height:16px"></i> Новое правило</button>
+          </div>
+        </div>
+
+        <div style="display:flex;flex-direction:column;gap:8px">
+          <sc-for list="{{ rules }}" as="rule" hint-placeholder-count="4">
+            <div style="border:1px solid var(--line,#e9ecef);background:var(--card,#fff);border-radius:12px;padding:14px 16px;display:flex;align-items:center;gap:14px;opacity:{{ rule.opacity }};transition:opacity .25s ease,border-color .18s ease,background .28s ease;animation:ap-in .26s ease" style-hover="border-color:var(--accent-line,rgba(94,114,228,.45))">
+              <span style="display:flex;align-items:center;gap:8px;color:var(--muted,#8898aa)">
+                <i data-lucide="grip-vertical" style="width:16px;height:16px"></i>
+                <span style="font-size:12px">{{ rule.pos }}</span>
+              </span>
+              <div style="min-width:0;flex:1">
+                <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap">
+                  <span style="font-size:14px;font-weight:600">{{ rule.name }}</span>
+                  <sc-if value="{{ rule.isException }}">
+                    <span style="height:20px;padding:0 8px;border-radius:6px;background:var(--field,#f1f3f7);color:var(--fg2,#5b6478);font-size:11px;font-weight:500;display:inline-flex;align-items:center">исключение</span>
+                  </sc-if>
+                </div>
+                <div style="margin-top:6px;display:flex;align-items:center;gap:8px;flex-wrap:wrap;font-size:13px;color:var(--fg2,#5b6478)">
+                  <span style="display:inline-flex;align-items:center;height:24px;padding:0 9px;border-radius:7px;background:var(--field,#f6f7fa);border:1px solid var(--line,#edeff4)">{{ rule.what }}</span>
+                  <span style="color:var(--muted,#c3c9d6)">для</span>
+                  <span style="display:inline-flex;align-items:center;height:24px;padding:0 9px;border-radius:7px;background:var(--field,#f6f7fa);border:1px solid var(--line,#edeff4)">{{ rule.who }}</span>
+                  <i data-lucide="arrow-right" style="width:15px;height:15px;color:var(--muted,#c3c9d6)"></i>
+                  <span style="display:inline-flex;align-items:center;gap:6px;height:24px;padding:0 9px;border-radius:7px;background:{{ rule.outBg }};border:1px solid {{ rule.outLine }};color:{{ rule.outFg }};font-weight:500"><span style="height:7px;width:7px;border-radius:50%;background:{{ rule.outDot }}"></span>{{ rule.outText }}</span>
+                </div>
+              </div>
+              <button type="button" onClick="{{ rule.up }}" aria-label="Поднять" style="height:34px;width:34px;border-radius:9px;border:0;background:transparent;color:var(--muted,#8898aa);cursor:pointer;display:inline-flex;align-items:center;justify-content:center;transition:background .16s ease" style-hover="background:var(--field,#f1f3f7)"><i data-lucide="arrow-up" style="width:16px;height:16px"></i></button>
+              <button type="button" onClick="{{ rule.down }}" aria-label="Опустить" style="height:34px;width:34px;border-radius:9px;border:0;background:transparent;color:var(--muted,#8898aa);cursor:pointer;display:inline-flex;align-items:center;justify-content:center;transition:background .16s ease" style-hover="background:var(--field,#f1f3f7)"><i data-lucide="arrow-down" style="width:16px;height:16px"></i></button>
+              <button type="button" onClick="{{ rule.edit }}" aria-label="Изменить" style="height:34px;width:34px;border-radius:9px;border:0;background:transparent;color:var(--muted,#8898aa);cursor:pointer;display:inline-flex;align-items:center;justify-content:center;transition:background .16s ease" style-hover="background:var(--field,#f1f3f7)"><i data-lucide="pencil" style="width:16px;height:16px"></i></button>
+              <button type="button" role="switch" onClick="{{ rule.toggle }}" style="height:24px;width:42px;border-radius:12px;border:1px solid {{ rule.swLine }};padding:0;background:{{ rule.swBg }};display:flex;align-items:center;cursor:pointer;transition:background .22s ease,border-color .22s ease">
+                <span style="display:block;height:18px;width:18px;border-radius:50%;background:{{ rule.swKnob }};transition:transform .22s cubic-bezier(.4,0,.2,1);transform:translateX({{ rule.swX }})"></span>
+              </button>
+            </div>
+          </sc-for>
+        </div>
+      </div>
+    </sc-if>
+
+    <sc-if value="{{ isEditor }}">
+      <div style="display:flex;flex-direction:column;gap:16px;animation:ap-in .28s ease">
+        <div style="display:flex;align-items:center;gap:10px;font-size:13px;color:var(--muted,#8898aa)">
+          <button type="button" onClick="{{ closeEditor }}" style="display:inline-flex;align-items:center;gap:6px;background:none;border:0;padding:0;cursor:pointer;font:inherit;color:var(--muted,#8898aa)"><i data-lucide="arrow-left" style="width:15px;height:15px"></i> Правила</button>
+          <span>/</span>
+          <span style="color:var(--fg,#32325d);font-weight:500">{{ editName }}</span>
+          <span style="margin-left:auto;font-size:12px">место в очереди: {{ editPos }} из {{ rulesCount }}</span>
+        </div>
+
+        <div style="border:1px solid var(--line,#e9ecef);background:var(--card,#fff);border-radius:14px;padding:20px 22px;display:flex;flex-direction:column;gap:18px;transition:background .28s ease,border-color .28s ease">
+          <input value="{{ editName }}" onInput="{{ setName }}" style="height:46px;border-radius:11px;border:1px solid var(--line,#e9ecef);padding:0 14px;font:inherit;font-size:16px;font-weight:600;color:var(--fg,#32325d);background:var(--field-input,transparent);transition:border-color .18s ease" style-focus="border-color:var(--accent,#5e72e4);outline:none">
+
+          <div style="display:flex;flex-wrap:wrap;gap:12px;align-items:stretch">
+
+            <div style="flex:2 1 330px;min-width:0;border:1px solid var(--line,#e9ecef);border-radius:12px;padding:14px 16px">
+              <div style="display:flex;align-items:baseline;justify-content:space-between">
+                <div style="font-size:12px;color:var(--muted,#8898aa);text-transform:uppercase;letter-spacing:.04em">Что</div>
+                <div style="font-size:12px;color:var(--muted,#8898aa)">записей: {{ editTotal }}</div>
+              </div>
+              <div style="margin-top:10px;display:flex;align-items:center;gap:8px;border:1px solid var(--line,#e9ecef);border-radius:9px;padding:0 10px">
+                <i data-lucide="search" style="width:15px;height:15px;color:var(--muted,#8898aa)"></i>
+                <input value="{{ query }}" onInput="{{ setQuery }}" placeholder="поиск по каталогу" style="flex:1;height:34px;border:0;background:transparent;outline:none;font:inherit;font-size:13px;color:var(--fg,#32325d)">
+              </div>
+              <div style="margin-top:8px;max-height:210px;overflow-y:auto;overflow-x:hidden;display:flex;flex-direction:column;gap:2px">
+                <sc-for list="{{ shownServices }}" as="sv" hint-placeholder-count="5">
+                  <label onClick="{{ sv.pick }}" style="display:flex;align-items:center;gap:9px;padding:7px 6px;border-radius:8px;font-size:13px;cursor:pointer;transition:background .16s ease" style-hover="background:var(--field,#f1f3f7)">
+                    <span style="height:17px;width:17px;flex-shrink:0;border-radius:5px;border:1.5px solid {{ sv.line }};background:{{ sv.bg }};display:flex;align-items:center;justify-content:center;transition:all .18s ease">
+                      <i data-lucide="check" style="width:11px;height:11px;color:#fff;opacity:{{ sv.op }};transition:opacity .18s ease"></i>
+                    </span>
+                    <span style="flex:1 1 auto;min-width:64px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">{{ sv.name }}</span>
+                    <span style="flex:0 0 auto;white-space:nowrap;font-size:11px;color:var(--muted,#8898aa)">{{ sv.meta }}</span>
+                  </label>
+                </sc-for>
+              </div>
+            </div>
+
+            <div style="flex:1 1 230px;min-width:0;border:1px solid var(--line,#e9ecef);border-radius:12px;padding:14px 16px">
+              <div style="font-size:12px;color:var(--muted,#8898aa);text-transform:uppercase;letter-spacing:.04em">Кому</div>
+              <div style="margin-top:12px;display:flex;flex-direction:column;gap:10px;font-size:14px">
+                <label onClick="{{ whoAll }}" style="display:flex;align-items:center;gap:9px;cursor:pointer">
+                  <span style="height:17px;width:17px;border-radius:50%;border:1.5px solid {{ whoAllLine }};background:{{ whoAllBg }};display:flex;align-items:center;justify-content:center;transition:all .2s ease"><span style="height:7px;width:7px;border-radius:50%;background:#fff;transform:scale({{ whoAllDot }});transition:transform .2s cubic-bezier(.4,0,.2,1)"></span></span>
+                  Все устройства в сети
+                </label>
+                <label onClick="{{ whoSome }}" style="display:flex;align-items:center;gap:9px;cursor:pointer">
+                  <span style="height:17px;width:17px;border-radius:50%;border:1.5px solid {{ whoSomeLine }};background:{{ whoSomeBg }};display:flex;align-items:center;justify-content:center;transition:all .2s ease"><span style="height:7px;width:7px;border-radius:50%;background:#fff;transform:scale({{ whoSomeDot }});transition:transform .2s cubic-bezier(.4,0,.2,1)"></span></span>
+                  Только выбранные
+                </label>
+                <div style="overflow:hidden;transition:max-height .3s cubic-bezier(.4,0,.2,1),opacity .26s ease;max-height:{{ leasesH }};opacity:{{ leasesOp }}">
+                  <div style="margin-top:4px;border:1px solid var(--line,#e9ecef);border-radius:9px;overflow:hidden">
+                    <sc-for list="{{ leases }}" as="l" hint-placeholder-count="3">
+                      <label onClick="{{ l.pick }}" style="display:flex;align-items:center;gap:9px;padding:7px 10px;font-size:13px;cursor:pointer;border-bottom:1px solid var(--line-soft,#f1f3f7);transition:background .16s ease" style-hover="background:var(--field,#f1f3f7)">
+                        <span style="height:16px;width:16px;flex-shrink:0;border-radius:5px;border:1.5px solid {{ l.line }};background:{{ l.bg }};display:flex;align-items:center;justify-content:center;transition:all .18s ease"><i data-lucide="check" style="width:10px;height:10px;color:#fff;opacity:{{ l.op }}"></i></span>
+                        <span style="flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">{{ l.name }}</span>
+                        <span style="font-family:ui-monospace,Menlo,monospace;font-size:11px;color:var(--muted,#8898aa)">{{ l.mac }}</span>
+                      </label>
+                    </sc-for>
+                  </div>
+                  <input value="{{ fromText }}" onInput="{{ setFrom }}" placeholder="192.168.1.50, 192.168.1.0/24 или MAC" style="margin-top:8px;width:100%;height:34px;border-radius:9px;border:1px solid var(--line,#e9ecef);background:var(--field-input,transparent);color:var(--fg,#32325d);font-family:ui-monospace,Menlo,monospace;font-size:12px;padding:0 10px">
+                  <p style="margin:6px 0 0;font-size:11px;line-height:1.5;color:var(--muted,#8898aa)">Либо адреса и подсети, либо MAC — вместе в одном правиле нельзя: nft не умеет «или» внутри правила. MAC виден только у соседа по сети.</p>
+                  <sc-if value="{{ hasFromError }}">
+                    <p style="margin:6px 0 0;font-size:11px;color:#f5365c">{{ fromError }}</p>
+                  </sc-if>
+                </div>
+              </div>
+            </div>
+
+            <div style="flex:1 1 250px;min-width:0;border:1px solid var(--line,#e9ecef);border-radius:12px;padding:14px 16px">
+              <div style="font-size:12px;color:var(--muted,#8898aa);text-transform:uppercase;letter-spacing:.04em">Куда</div>
+              <div style="margin-top:12px;display:flex;flex-direction:column;gap:10px;font-size:14px">
+                <sc-for list="{{ outChoices }}" as="oc" hint-placeholder-count="3">
+                  <label onClick="{{ oc.pick }}" style="display:flex;align-items:center;gap:9px;cursor:pointer">
+                    <span style="height:17px;width:17px;flex-shrink:0;border-radius:50%;border:1.5px solid {{ oc.line }};background:{{ oc.bg }};display:flex;align-items:center;justify-content:center;transition:all .2s ease"><span style="height:7px;width:7px;border-radius:50%;background:#fff;transform:scale({{ oc.dot }});transition:transform .2s cubic-bezier(.4,0,.2,1)"></span></span>
+                    <span style="height:8px;width:8px;border-radius:50%;background:{{ oc.stateDot }}"></span>
+                    <span style="flex:1 1 auto;min-width:52px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">{{ oc.name }}</span>
+                    <span style="flex:0 0 auto;white-space:nowrap;font-size:11px;color:var(--muted,#8898aa)">{{ oc.hint }}</span>
+                  </label>
+                </sc-for>
+              </div>
+              <sc-if value="{{ editIsException }}">
+                <p style="margin:12px 0 0;font-size:12px;line-height:1.5;color:var(--fg2,#5b6478)">Это исключение: выбранное пойдёт мимо туннеля. Работает, пока правило стоит выше туннельных — метку раздаёт первое совпадение.</p>
+              </sc-if>
+            </div>
+          </div>
+
+          <div style="display:flex;align-items:center;gap:12px;flex-wrap:wrap;border-top:1px solid var(--line-soft,#f1f3f7);padding-top:14px">
+            <span style="font-size:13px;color:var(--fg2,#5b6478)">Режим доменов: <b>fake-IP</b> — точнее, но на домен нужен элемент набора.</span>
+            <div style="margin-left:auto;display:flex;gap:8px">
+              <button type="button" onClick="{{ deleteRule }}" style="height:38px;padding:0 14px;border-radius:10px;border:1px solid var(--danger-line,#f7c6d1);background:transparent;color:#f5365c;font:inherit;font-size:13px;cursor:pointer;transition:background .18s ease" style-hover="background:rgba(245,54,92,.08)">Удалить правило</button>
+              <button type="button" onClick="{{ closeEditor }}" style="height:38px;padding:0 18px;border-radius:10px;border:0;background:var(--accent,#5e72e4);color:#fff;font:inherit;font-size:13px;font-weight:500;cursor:pointer;transition:transform .16s ease" style-hover="transform:translateY(-1px)">Готово</button>
+            </div>
+          </div>
+        </div>
+      </div>
+    </sc-if>
+
+    <sc-if value="{{ isOutputs }}">
+      <div style="display:flex;flex-direction:column;gap:16px;animation:ap-in .28s ease">
+        <div style="display:flex;align-items:flex-start;gap:16px;flex-wrap:wrap">
+          <div style="flex:1;min-width:0">
+            <h1 style="margin:0;font-size:22px;font-weight:600;letter-spacing:-.015em">Выходы</h1>
+            <p style="margin:5px 0 0;font-size:13px;color:var(--muted,#8898aa)">Куда правила могут вести. Правило указывает на имя выхода, не на устройство.</p>
+          </div>
+          <div style="display:flex;gap:8px">
+            <button type="button" onClick="{{ addOutput }}" style="height:38px;padding:0 14px;border-radius:10px;border:1px solid var(--line,#e9ecef);background:transparent;color:var(--fg,#32325d);font:inherit;font-size:13px;cursor:pointer;transition:background .18s ease" style-hover="background:var(--field,#f1f3f7)">+ Туннель</button>
+            <button type="button" onClick="{{ addOutput }}" style="height:38px;padding:0 14px;border-radius:10px;border:1px solid var(--line,#e9ecef);background:transparent;color:var(--fg,#32325d);font:inherit;font-size:13px;cursor:pointer;transition:background .18s ease" style-hover="background:var(--field,#f1f3f7)">+ VLESS</button>
+            <button type="button" onClick="{{ addOutput }}" style="height:38px;padding:0 14px;border-radius:10px;border:1px solid var(--line,#e9ecef);background:transparent;color:var(--fg,#32325d);font:inherit;font-size:13px;cursor:pointer;transition:background .18s ease" style-hover="background:var(--field,#f1f3f7)">+ Напрямую</button>
+          </div>
+        </div>
+
+        <div style="border:1px solid var(--line,#e9ecef);background:var(--card,#fff);border-radius:14px;padding:18px 20px;display:flex;flex-direction:column;gap:14px;transition:background .28s ease,border-color .28s ease">
+          <div style="display:flex;align-items:center;gap:12px;flex-wrap:wrap">
+            <span style="height:9px;width:9px;border-radius:50%;background:#2dce89"></span>
+            <span style="font-size:16px;font-weight:600">vless-nl</span>
+            <span style="height:22px;padding:0 9px;border-radius:6px;background:var(--accent-soft,rgba(94,114,228,.12));color:var(--accent,#5e72e4);font-size:11px;font-weight:600;display:inline-flex;align-items:center">VLESS/Reality</span>
+            <span style="font-size:13px;color:var(--muted,#8898aa)">Нидерланды · steer0 · метка 0x100000, таблица 300</span>
+            <span style="margin-left:auto;font-size:13px;color:#2dce89">42 мс</span>
+          </div>
+          <div style="display:flex;align-items:center;gap:12px;flex-wrap:wrap;font-size:13px">
+            <span style="color:var(--muted,#8898aa)">если всё упало</span>
+            <select style="height:34px;border-radius:9px;border:1px solid var(--line,#e9ecef);background:var(--field-input,transparent);color:var(--fg,#32325d);font:inherit;font-size:13px;padding:0 8px">
+              <option>Остановить трафик</option>
+              <option>Пустить напрямую</option>
+            </select>
+            <span style="margin-left:auto;color:var(--muted,#8898aa)">правил: 2</span>
+          </div>
+
+          <div style="border:1px solid var(--line,#e9ecef);border-radius:11px;padding:12px 14px;display:flex;flex-direction:column;gap:10px">
+            <div style="font-size:12px;color:var(--muted,#8898aa)">Подписка</div>
+            <div style="display:flex;align-items:flex-end;gap:10px;flex-wrap:wrap">
+              <label style="flex:1;min-width:280px;display:flex;flex-direction:column;gap:4px;font-size:12px">
+                Ссылка на подписку или vless://
+                <input value="{{ subUrl }}" onInput="{{ setSubUrl }}" placeholder="https://example.com/sub/xxxxx — или vless://…" style="height:36px;border-radius:9px;border:1px solid {{ subLine }};background:var(--field-input,transparent);color:var(--fg,#32325d);font:inherit;font-size:13px;padding:0 10px;transition:border-color .18s ease">
+              </label>
+              <button type="button" onClick="{{ fetchSub }}" style="height:36px;padding:0 14px;border-radius:9px;border:1px solid var(--line,#e9ecef);background:transparent;color:var(--fg,#32325d);font:inherit;font-size:13px;cursor:pointer;display:inline-flex;align-items:center;gap:7px;transition:background .18s ease" style-hover="background:var(--field,#f1f3f7)">
+                <span style="display:inline-flex;width:15px;height:15px;animation:{{ subSpin }}"><i data-lucide="{{ subIcon }}" style="width:15px;height:15px"></i></span> {{ subBtn }}
+              </button>
+            </div>
+            <sc-if value="{{ subBad }}">
+              <p style="margin:0;font-size:12px;color:var(--warn-fg,#a97a00)">Нужна ссылка вида https://… на подписку либо одна или несколько ссылок vless:// через пробел. Смешивать эти две формы нельзя: роутер возьмёт только одну.</p>
+            </sc-if>
+            <div style="font-size:12px;color:var(--muted,#8898aa)">Файл на роутере: 4 812 байт, обновлён 22.08.2026, 14:10 · узлов пригодно: 6, пропущено: 3 — транспорт tls без reality</div>
+            <div style="font-size:12px;color:var(--muted,#8898aa)">Идентификатор роутера для панели: <span style="font-family:ui-monospace,Menlo,monospace;user-select:all">a4f1-9c33-71b0</span></div>
+            <button type="button" onClick="{{ goOverview }}" style="align-self:flex-start;background:none;border:0;padding:0;cursor:pointer;font:inherit;font-size:12px;color:var(--accent,#5e72e4);border-bottom:1px dotted var(--accent,#5e72e4)">Остаток трафика — на обзоре</button>
+
+            <div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap;border-top:1px solid var(--line-soft,#f1f3f7);padding-top:10px">
+              <span style="font-size:12px;color:var(--muted,#8898aa)">узлов: {{ nodesCount }}</span>
+              <button type="button" onClick="{{ probeNodes }}" style="margin-left:auto;height:32px;padding:0 12px;border-radius:9px;border:1px solid var(--line,#e9ecef);background:transparent;color:var(--fg,#32325d);font:inherit;font-size:12px;cursor:pointer;display:inline-flex;align-items:center;gap:7px;transition:background .18s ease" style-hover="background:var(--field,#f1f3f7)"><i data-lucide="gauge" style="width:14px;height:14px"></i> {{ probeNodesLabel }}</button>
+            </div>
+
+            <label onClick="{{ pickAuto }}" style="display:flex;align-items:center;gap:9px;font-size:13px;cursor:pointer">
+              <span style="height:16px;width:16px;flex-shrink:0;border-radius:50%;border:1.5px solid {{ autoLine }};background:{{ autoBg }};display:flex;align-items:center;justify-content:center;transition:all .2s ease"><span style="height:6px;width:6px;border-radius:50%;background:#fff;transform:scale({{ autoDot }});transition:transform .2s ease"></span></span>
+              <span style="font-weight:500">Первый рабочий</span>
+              <span style="font-size:11px;color:var(--muted,#8898aa)">движок выберёт сам при подъёме</span>
+            </label>
+
+            <sc-for list="{{ nodes }}" as="n" hint-placeholder-count="3">
+              <label onClick="{{ n.pick }}" style="display:flex;align-items:center;gap:9px;font-size:13px;cursor:pointer;padding:3px 0">
+                <span style="height:16px;width:16px;flex-shrink:0;border-radius:50%;border:1.5px solid {{ n.line }};background:{{ n.bg }};display:flex;align-items:center;justify-content:center;transition:all .2s ease"><span style="height:6px;width:6px;border-radius:50%;background:#fff;transform:scale({{ n.dot }});transition:transform .2s ease"></span></span>
+                <span style="min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">{{ n.name }}</span>
+                <span style="flex:0 0 auto;height:20px;padding:0 8px;border-radius:6px;background:var(--field,#f1f3f7);color:var(--fg2,#5b6478);font-size:11px;display:inline-flex;align-items:center">{{ n.tag }}</span>
+                <span style="flex:0 0 auto;height:20px;padding:0 8px;border-radius:6px;font-size:11px;display:inline-flex;align-items:center;background:{{ n.stateBg }};color:{{ n.stateFg }};transition:all .2s ease">{{ n.state }}</span>
+                <button type="button" onClick="{{ n.probe }}" style="margin-left:auto;flex:0 0 auto;height:28px;padding:0 10px;border-radius:8px;border:0;background:transparent;color:var(--muted,#8898aa);font:inherit;font-size:12px;cursor:pointer;transition:background .16s ease" style-hover="background:var(--field,#f1f3f7)">Проверить</button>
+              </label>
+            </sc-for>
+
+            <p style="margin:0;font-size:11px;color:var(--muted,#8898aa)">Ответ — время до первого байта через туннель, не пинг: ICMP через туннель не ходит.</p>
+          </div>
+        </div>
+
+        <div style="border:1px solid var(--line,#e9ecef);background:var(--card,#fff);border-radius:14px;padding:18px 20px;display:flex;flex-direction:column;gap:14px;transition:background .28s ease,border-color .28s ease">
+          <div style="display:flex;align-items:center;gap:12px;flex-wrap:wrap">
+            <span style="height:9px;width:9px;border-radius:50%;background:#2dce89"></span>
+            <span style="font-size:16px;font-weight:600">wg0</span>
+            <span style="font-size:13px;color:var(--muted,#8898aa)">свой WireGuard · NAT есть</span>
+            <span style="margin-left:auto;font-size:13px;color:#2dce89">61 мс</span>
+          </div>
+          <div style="border:1px solid var(--line,#e9ecef);border-radius:10px;padding:10px 12px">
+            <div style="font-size:12px;color:var(--muted,#8898aa)">устройства по приоритету — трафик пойдёт через первое работающее</div>
+            <div style="margin-top:8px;display:flex;align-items:center;gap:10px;font-size:14px">
+              <span style="width:14px;font-size:12px;color:var(--muted,#8898aa)">1</span>
+              <span style="font-weight:500;color:var(--accent,#5e72e4)">wg0</span>
+              <span style="height:20px;padding:0 8px;border-radius:6px;background:var(--accent,#5e72e4);color:#fff;font-size:11px;font-weight:600;display:inline-flex;align-items:center">активно</span>
+            </div>
+            <div style="margin-top:6px;display:flex;align-items:center;gap:10px;font-size:14px">
+              <span style="width:14px;font-size:12px;color:var(--muted,#8898aa)">2</span>
+              <span>awg0</span>
+              <span style="height:20px;padding:0 8px;border-radius:6px;background:var(--field,#f1f3f7);color:var(--fg2,#5b6478);font-size:11px;font-weight:600;display:inline-flex;align-items:center">выключено</span>
+              <select style="margin-left:auto;height:30px;border-radius:8px;border:1px solid var(--line,#e9ecef);background:var(--field-input,transparent);color:var(--fg,#32325d);font:inherit;font-size:12px;padding:0 8px">
+                <option>+ добавить устройство</option>
+                <option>tun0</option>
+              </select>
+            </div>
+          </div>
+
+          <div style="border:1px solid var(--line,#e9ecef);border-radius:11px;padding:12px 14px">
+            <label onClick="{{ toggleObfs }}" style="display:flex;align-items:center;gap:9px;font-size:14px;cursor:pointer">
+              <span style="height:17px;width:17px;flex-shrink:0;border-radius:5px;border:1.5px solid {{ obfsLine }};background:{{ obfsBg }};display:flex;align-items:center;justify-content:center;transition:all .18s ease"><i data-lucide="check" style="width:11px;height:11px;color:#fff;opacity:{{ obfsOp }}"></i></span>
+              WireGuard поверх TCP
+              <sc-if value="{{ obfsOn }}">
+                <span style="height:20px;padding:0 8px;border-radius:6px;background:var(--accent-soft,rgba(94,114,228,.12));color:var(--accent,#5e72e4);font-size:11px;font-weight:600;display:inline-flex;align-items:center">обфускация включена</span>
+              </sc-if>
+            </label>
+            <p style="margin:6px 0 0;font-size:12px;line-height:1.5;color:var(--muted,#8898aa)">Нужно там, где режут UDP. На другой стороне должен работать <code style="font-family:ui-monospace,Menlo,monospace">steer obfs-server</code> или phantun.</p>
+            <div style="overflow:hidden;transition:max-height .3s cubic-bezier(.4,0,.2,1),opacity .26s ease;max-height:{{ obfsH }};opacity:{{ obfsFieldsOp }}">
+              <div style="margin-top:12px;display:flex;gap:12px;flex-wrap:wrap;align-items:flex-end">
+                <label style="display:flex;flex-direction:column;gap:4px;font-size:12px">Сервер обфускации<input value="{{ obfsHost }}" onInput="{{ setObfsHost }}" placeholder="203.0.113.10" style="width:170px;height:34px;border-radius:9px;border:1px solid var(--line,#e9ecef);background:var(--field-input,transparent);color:var(--fg,#32325d);font:inherit;font-size:13px;padding:0 10px"></label>
+                <label style="display:flex;flex-direction:column;gap:4px;font-size:12px">Порт<input value="{{ obfsPort }}" onInput="{{ setObfsPort }}" placeholder="4567" style="width:90px;height:34px;border-radius:9px;border:1px solid var(--line,#e9ecef);background:var(--field-input,transparent);color:var(--fg,#32325d);font:inherit;font-size:13px;padding:0 10px"></label>
+                <label style="display:flex;flex-direction:column;gap:4px;font-size:12px">Локальный порт (= Endpoint пира)<input value="{{ obfsLocal }}" onInput="{{ setObfsLocal }}" style="width:120px;height:34px;border-radius:9px;border:1px solid var(--line,#e9ecef);background:var(--field-input,transparent);color:var(--fg,#32325d);font:inherit;font-size:13px;padding:0 10px"></label>
+              </div>
+              <sc-if value="{{ obfsWarn }}">
+                <p style="margin:10px 0 0;font-size:12px;color:var(--warn-fg,#a97a00)">{{ obfsWarnText }}</p>
+              </sc-if>
+              <p style="margin:10px 0 0;font-size:12px;line-height:1.5;color:var(--muted,#8898aa)">У пира WireGuard <code style="font-family:ui-monospace,Menlo,monospace">Endpoint</code> должен быть <code style="font-family:ui-monospace,Menlo,monospace">127.0.0.1:{{ obfsLocal }}</code>, MTU — 1428 с обеих сторон.</p>
+            </div>
+          </div>
+        </div>
+
+        <div style="border:1px solid var(--line,#e9ecef);background:var(--card,#fff);border-radius:14px;padding:18px 20px;display:flex;align-items:center;gap:12px;flex-wrap:wrap;transition:background .28s ease,border-color .28s ease">
+          <span style="height:9px;width:9px;border-radius:50%;background:var(--muted,#8898aa)"></span>
+          <span style="font-size:16px;font-weight:600">напрямую</span>
+          <span style="font-size:13px;color:var(--muted,#8898aa)">без устройства</span>
+          <span style="margin-left:auto;font-size:13px;color:var(--muted,#8898aa)">правил: 1</span>
+        </div>
+      </div>
+    </sc-if>
+
+    <sc-if value="{{ isCatalog }}">
+      <div style="display:flex;flex-direction:column;gap:16px;animation:ap-in .28s ease">
+        <div>
+          <h1 style="margin:0;font-size:22px;font-weight:600;letter-spacing:-.015em">Каталог</h1>
+          <p style="margin:5px 0 0;font-size:13px;color:var(--muted,#8898aa)">Запись работает, когда на неё указывает правило. Списки обновляются сами.</p>
+        </div>
+
+        <div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap">
+          <div style="display:flex;align-items:center;gap:10px;flex:1;min-width:260px;border:1px solid var(--line,#e9ecef);border-radius:10px;padding:0 12px;background:var(--card,#fff);transition:border-color .18s ease,background .28s ease" style-hover="border-color:var(--accent,#5e72e4)">
+            <i data-lucide="search" style="width:16px;height:16px;color:var(--muted,#8898aa)"></i>
+            <input value="{{ query }}" onInput="{{ setQuery }}" placeholder="поиск по каталогу" style="flex:1;height:40px;border:0;background:transparent;outline:none;font:inherit;font-size:14px;color:var(--fg,#32325d)">
+          </div>
+          <div style="display:flex;gap:4px;padding:4px;border-radius:11px;background:var(--field,#f1f3f7);transition:background .28s ease">
+            <button type="button" onClick="{{ segAll }}" style="height:32px;padding:0 14px;border-radius:8px;border:0;font:inherit;font-size:13px;cursor:pointer;transition:all .2s ease;background:{{ segAllBg }};color:{{ segAllFg }}">все · {{ servicesTotal }}</button>
+            <button type="button" onClick="{{ segUsed }}" style="height:32px;padding:0 14px;border-radius:8px;border:0;font:inherit;font-size:13px;cursor:pointer;transition:all .2s ease;background:{{ segUsedBg }};color:{{ segUsedFg }}">используются · {{ servicesUsed }}</button>
+          </div>
+          <button type="button" onClick="{{ toggleCustom }}" style="height:40px;padding:0 16px;border-radius:10px;border:1px solid var(--line,#e9ecef);background:var(--card,#fff);color:var(--fg,#32325d);font:inherit;font-size:13px;cursor:pointer;display:inline-flex;align-items:center;gap:8px;transition:background .18s ease" style-hover="background:var(--field,#f1f3f7)"><i data-lucide="plus" style="width:16px;height:16px"></i> Свой список</button>
+        </div>
+
+        <sc-if value="{{ customOpen }}">
+          <div style="border:1px solid var(--line,#e9ecef);background:var(--card,#fff);border-radius:14px;padding:18px 20px;display:flex;flex-direction:column;gap:12px;animation:ap-in .24s ease;transition:background .28s ease,border-color .28s ease">
+            <div>
+              <div style="font-size:15px;font-weight:600">Свои списки</div>
+              <div style="margin-top:4px;font-size:12px;color:var(--muted,#8898aa)">Домены и подсети, которых нет у издателя.</div>
+            </div>
+
+            <sc-for list="{{ myLists }}" as="ml" hint-placeholder-count="1">
+              <div style="display:flex;align-items:center;gap:10px;font-size:14px;padding:8px 10px;border-radius:9px;background:var(--field,#f6f7fa)">
+                <span style="flex:1;min-width:0">{{ ml.name }} <span style="font-size:12px;color:var(--muted,#8898aa)">{{ ml.kind }} · записей {{ ml.count }}</span></span>
+                <button type="button" onClick="{{ ml.remove }}" aria-label="Удалить список" style="height:30px;width:30px;border-radius:8px;border:0;background:transparent;color:var(--muted,#8898aa);cursor:pointer;display:inline-flex;align-items:center;justify-content:center;transition:background .16s ease" style-hover="background:var(--card,#fff)"><i data-lucide="trash-2" style="width:15px;height:15px"></i></button>
+              </div>
+            </sc-for>
+
+            <div style="display:flex;gap:10px;flex-wrap:wrap;align-items:center">
+              <input value="{{ customName }}" onInput="{{ setCustomName }}" placeholder="имя списка" style="flex:1;min-width:180px;height:38px;border-radius:10px;border:1px solid var(--line,#e9ecef);background:var(--field-input,transparent);color:var(--fg,#32325d);font:inherit;font-size:13px;padding:0 12px">
+              <div style="display:flex;gap:4px;padding:4px;border-radius:10px;background:var(--field,#f1f3f7)">
+                <button type="button" onClick="{{ pickDomains }}" style="height:30px;padding:0 12px;border-radius:8px;border:0;font:inherit;font-size:12px;cursor:pointer;transition:all .2s ease;background:{{ kindDomainsBg }};color:{{ kindDomainsFg }}">домены</button>
+                <button type="button" onClick="{{ pickPrefixes }}" style="height:30px;padding:0 12px;border-radius:8px;border:0;font:inherit;font-size:12px;cursor:pointer;transition:all .2s ease;background:{{ kindPrefixesBg }};color:{{ kindPrefixesFg }}">подсети</button>
+              </div>
+            </div>
+            <sc-if value="{{ customNameBad }}">
+              <p style="margin:0;font-size:12px;color:#f5365c">имя пойдёт в имя файла на роутере: только латиница, цифры, дефис и подчёркивание</p>
+            </sc-if>
+
+            <textarea value="{{ customText }}" onInput="{{ setCustomText }}" rows="4" placeholder="{{ customPlaceholder }}" style="width:100%;border-radius:10px;border:1px solid var(--line,#e9ecef);background:var(--field-input,transparent);color:var(--fg,#32325d);font-family:ui-monospace,Menlo,monospace;font-size:12px;padding:10px 12px;resize:vertical"></textarea>
+
+            <div style="display:flex;gap:10px;flex-wrap:wrap;align-items:center">
+              <button type="button" onClick="{{ saveCustom }}" style="height:38px;padding:0 16px;border-radius:10px;border:0;background:var(--accent,#5e72e4);color:#fff;font:inherit;font-size:13px;font-weight:500;cursor:pointer;display:inline-flex;align-items:center;gap:8px;transition:transform .16s ease" style-hover="transform:translateY(-1px)"><i data-lucide="plus" style="width:16px;height:16px"></i> Сохранить</button>
+              <button type="button" onClick="{{ fetchCustomUrl }}" style="height:38px;padding:0 14px;border-radius:10px;border:1px solid var(--line,#e9ecef);background:transparent;color:var(--fg,#32325d);font:inherit;font-size:13px;cursor:pointer;transition:background .18s ease" style-hover="background:var(--field,#f1f3f7)">Скачать по ссылке</button>
+              <span style="font-size:12px;color:var(--muted,#8898aa)">или файлом — читается в браузере и уходит порциями</span>
+            </div>
+            <p style="margin:0;font-size:12px;color:var(--muted,#8898aa)">Скачивается один раз: расписание есть только у списков издателя.</p>
+          </div>
+        </sc-if>
+
+        <div style="border:1px solid var(--line,#e9ecef);background:var(--card,#fff);border-radius:14px;overflow:hidden;transition:background .28s ease,border-color .28s ease">
+          <sc-for list="{{ catalogRows }}" as="row" hint-placeholder-count="6">
+            <div style="display:flex;align-items:center;gap:14px;padding:13px 18px;border-bottom:1px solid var(--line-soft,#f1f3f7);transition:background .16s ease;animation:ap-in .22s ease" style-hover="background:var(--field,#f8f9fb)">
+              <div style="flex:1;min-width:0">
+                <div style="font-size:14px;font-weight:500">{{ row.name }}</div>
+                <div style="margin-top:3px;font-size:12px;color:var(--muted,#8898aa)">{{ row.meta }}</div>
+              </div>
+              <div style="width:120px;text-align:right;font-size:13px;color:var(--fg2,#5b6478)">{{ row.count }}</div>
+              <div style="width:190px;text-align:right;font-size:13px">
+                <sc-if value="{{ row.used }}">
+                  <span style="color:var(--accent,#5e72e4)">{{ row.usedBy }}</span>
+                </sc-if>
+                <sc-if value="{{ row.free }}">
+                  <button type="button" onClick="{{ row.use }}" style="background:none;border:0;padding:0;cursor:pointer;font:inherit;font-size:13px;color:var(--accent,#5e72e4);border-bottom:1px dotted var(--accent,#5e72e4)">В правило</button>
+                </sc-if>
+              </div>
+            </div>
+          </sc-for>
+        </div>
+      </div>
+    </sc-if>
+
+    <sc-if value="{{ isDiag }}">
+      <div style="display:flex;flex-direction:column;gap:16px;animation:ap-in .28s ease">
+        <div>
+          <h1 style="margin:0;font-size:22px;font-weight:600;letter-spacing:-.015em">Диагностика</h1>
+          <p style="margin:5px 0 0;font-size:13px;color:var(--muted,#8898aa)">Проверки идут по ядру и живым процессам, не по настройке.</p>
+        </div>
+
+        <div style="border:1px solid var(--line,#e9ecef);background:var(--card,#fff);border-radius:14px;padding:18px 20px;transition:background .28s ease,border-color .28s ease">
+          <div style="font-size:15px;font-weight:600">проверок с предупреждением: 1</div>
+          <div style="margin-top:12px;display:flex;gap:10px">
+            <i data-lucide="triangle-alert" style="width:16px;height:16px;color:#ffc107;flex-shrink:0;margin-top:2px"></i>
+            <div>
+              <div style="font-size:14px">список domains/telegram.lst старше суток</div>
+              <div style="font-size:12px;color:var(--muted,#8898aa)">последняя удачная загрузка: 21 ч назад</div>
+            </div>
+          </div>
+          <div style="margin-top:14px">
+            <button type="button" onClick="{{ toggleChecks }}" style="font-size:13px;color:var(--muted,#8898aa);background:none;border:0;padding:0;cursor:pointer;font-family:inherit;text-decoration:underline">{{ checksLabel }}</button>
+            <div style="overflow:hidden;transition:max-height .32s cubic-bezier(.4,0,.2,1),opacity .28s ease;max-height:{{ checksH }};opacity:{{ checksOp }}">
+              <div style="margin-top:10px;display:flex;flex-direction:column;gap:8px">
+                <div style="display:flex;gap:9px;font-size:13px;color:var(--fg2,#5b6478)"><i data-lucide="check" style="width:15px;height:15px;color:#2dce89;flex-shrink:0"></i> таблица inet steer загружена в ядро</div>
+                <div style="display:flex;gap:9px;font-size:13px;color:var(--fg2,#5b6478)"><i data-lucide="check" style="width:15px;height:15px;color:#2dce89;flex-shrink:0"></i> резолвер отвечает на 127.0.0.1:5353</div>
+                <div style="display:flex;gap:9px;font-size:13px;color:var(--fg2,#5b6478)"><i data-lucide="check" style="width:15px;height:15px;color:#2dce89;flex-shrink:0"></i> NAT найден для устройства steer0</div>
+                <div style="display:flex;gap:9px;font-size:13px;color:var(--fg2,#5b6478)"><i data-lucide="check" style="width:15px;height:15px;color:#2dce89;flex-shrink:0"></i> метки и таблицы совпадают с реестром</div>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <div style="border:1px solid var(--line,#e9ecef);background:var(--card,#fff);border-radius:16px;padding:20px 22px;transition:background .28s ease,border-color .28s ease">
+          <div style="font-size:15px;font-weight:600">Логи steer</div>
+          <div style="margin-top:12px;max-height:220px;overflow:auto;border-radius:10px;border:1px solid var(--line,#e9ecef);background:var(--field,#f4f5f7);padding:12px;font-family:ui-monospace,Menlo,monospace;font-size:11px;line-height:1.7">
+            <div><span style="color:var(--muted,#8898aa)">info</span> steer[info] spec compiled: 4 channels, 3 outputs</div>
+            <div><span style="color:var(--muted,#8898aa)">info</span> steer[info] resolver up on 127.0.0.1:5353, fake-IP pool 198.18.0.0/15</div>
+            <div><span style="color:#e0a800">warn</span> steer[warn] list domains/telegram.lst older than 24h</div>
+            <div><span style="color:var(--muted,#8898aa)">info</span> steer[info] output vless-nl up: dev steer0, mark 0x100000, table 300</div>
+            <div><span style="color:var(--muted,#8898aa)">info</span> steer[info] output wg0 up: dev wg0, mark 0x100001, table 301</div>
+          </div>
+        </div>
+      </div>
+    </sc-if>
+
+    <sc-if value="{{ isSystem }}">
+      <div style="display:flex;flex-direction:column;gap:16px;animation:ap-in .28s ease;max-width:860px">
+        <div>
+          <h1 style="margin:0;font-size:22px;font-weight:600;letter-spacing:-.015em">Система</h1>
+          <p style="margin:5px 0 0;font-size:13px;color:var(--muted,#8898aa)">Пакеты и архив настроек.</p>
+        </div>
+
+        <div style="border:1px solid var(--line,#e9ecef);background:var(--card,#fff);border-radius:14px;padding:18px 20px;display:flex;flex-direction:column;gap:14px;transition:background .28s ease,border-color .28s ease">
+          <div>
+            <div style="font-size:15px;font-weight:600">Движок</div>
+            <div style="margin-top:4px;font-size:12px;color:var(--muted,#8898aa)">Сейчас: steer 1.1.2 (расширенный) · aarch64_cortex-a53</div>
+          </div>
+
+          <button type="button" onClick="{{ pickExt }}" style="display:flex;align-items:flex-start;gap:10px;width:100%;text-align:left;border:1px solid {{ extLine }};background:{{ extBg }};border-radius:11px;padding:12px 14px;cursor:pointer;font:inherit;transition:all .2s ease;color:var(--fg,#32325d)">
+            <span style="margin-top:2px;height:17px;width:17px;flex-shrink:0;border-radius:50%;border:1.5px solid {{ extLine }};background:{{ extBg }};display:flex;align-items:center;justify-content:center"><span style="height:7px;width:7px;border-radius:50%;background:var(--accent,#5e72e4);transform:scale({{ extDot }});transition:transform .2s ease"></span></span>
+            <span>
+              <span style="font-size:14px;font-weight:500">Расширенный</span>
+              <span style="display:block;margin-top:2px;font-size:12px;color:var(--fg2,#5b6478)">Поднимает туннель сам: вставили ссылку подписки — и всё. Занимает на флеше ~500 КБ.</span>
+            </span>
+          </button>
+          <button type="button" onClick="{{ pickBasic }}" style="display:flex;align-items:flex-start;gap:10px;width:100%;text-align:left;border:1px solid {{ basicLine }};background:{{ basicBg }};border-radius:11px;padding:12px 14px;cursor:pointer;font:inherit;transition:all .2s ease;color:var(--fg,#32325d)">
+            <span style="margin-top:2px;height:17px;width:17px;flex-shrink:0;border-radius:50%;border:1.5px solid {{ basicLine }};background:{{ basicBg }};display:flex;align-items:center;justify-content:center"><span style="height:7px;width:7px;border-radius:50%;background:var(--accent,#5e72e4);transform:scale({{ basicDot }});transition:transform .2s ease"></span></span>
+            <span>
+              <span style="font-size:14px;font-weight:500">Базовый</span>
+              <span style="display:block;margin-top:2px;font-size:12px;color:var(--fg2,#5b6478)">Только маршрутизация. Туннель поднимаете вы: wireguard, amneziawg — что уже работает. Занимает ~250 КБ, вдвое меньше расширенного.</span>
+            </span>
+          </button>
+
+          <div style="display:flex;gap:10px;flex-wrap:wrap;align-items:center">
+            <select style="height:38px;border-radius:10px;border:1px solid var(--line,#e9ecef);background:var(--field-input,transparent);color:var(--fg,#32325d);font:inherit;font-size:13px;padding:0 10px">
+              <option>1.1.3 — свежая</option>
+              <option>1.1.2</option>
+              <option>1.1.1</option>
+            </select>
+            <button type="button" onClick="{{ installEngine }}" style="height:38px;padding:0 16px;border-radius:10px;border:0;background:var(--accent,#5e72e4);color:#fff;font:inherit;font-size:13px;font-weight:500;cursor:pointer;display:inline-flex;align-items:center;gap:8px;transition:transform .16s ease" style-hover="transform:translateY(-1px)">
+              <span style="display:inline-flex;width:16px;height:16px;animation:{{ engineSpin }}"><i data-lucide="{{ engineIcon }}" style="width:16px;height:16px"></i></span> {{ engineBtn }}
+            </button>
+          </div>
+        </div>
+
+        <div style="border:1px solid var(--line,#e9ecef);background:var(--card,#fff);border-radius:14px;padding:18px 20px;display:flex;flex-direction:column;gap:12px;transition:background .28s ease,border-color .28s ease">
+          <div>
+            <div style="font-size:15px;font-weight:600">Интерфейс</div>
+            <div style="margin-top:4px;font-size:12px;color:var(--muted,#8898aa)">Сейчас: luci-app-splify2 26.9</div>
+          </div>
+          <p style="margin:0;font-size:13px;line-height:1.55;color:var(--fg2,#5b6478)">Пакета нет в feeds OpenWrt — обновляется отсюда, не через apk upgrade. После установки перезагрузите страницу.</p>
+          <div style="display:flex;gap:10px;flex-wrap:wrap;align-items:center">
+            <select style="height:38px;border-radius:10px;border:1px solid var(--line,#e9ecef);background:var(--field-input,transparent);color:var(--fg,#32325d);font:inherit;font-size:13px;padding:0 10px">
+              <option>26.9 — свежая</option>
+              <option>26.8.2</option>
+            </select>
+            <button type="button" onClick="{{ installUi }}" style="height:38px;padding:0 16px;border-radius:10px;border:1px solid var(--line,#e9ecef);background:transparent;color:var(--fg,#32325d);font:inherit;font-size:13px;cursor:pointer;display:inline-flex;align-items:center;gap:8px;transition:background .18s ease" style-hover="background:var(--field,#f1f3f7)">
+              <span style="display:inline-flex;width:16px;height:16px;animation:{{ uiSpin }}"><i data-lucide="{{ uiIcon }}" style="width:16px;height:16px"></i></span> {{ uiBtn }}
+            </button>
+          </div>
+        </div>
+
+        <div style="border:1px solid var(--line,#e9ecef);background:var(--card,#fff);border-radius:14px;padding:18px 20px;display:flex;flex-direction:column;gap:12px;transition:background .28s ease,border-color .28s ease">
+          <div style="font-size:15px;font-weight:600">Бекап настроек</div>
+          <p style="margin:0;font-size:13px;line-height:1.55;color:var(--fg2,#5b6478)">Один файл: правила, выходы, подписка и свои списки. Категорий издателя в нём нет — роутер скачивает их сам.</p>
+          <p style="margin:0;font-size:12px;color:var(--warn-fg,#a97a00)">В файле есть ссылки vless:// с ключами. Храните его как пароль.</p>
+          <div style="display:flex;gap:10px;flex-wrap:wrap;align-items:center">
+            <button type="button" onClick="{{ backupExport }}" style="height:38px;padding:0 16px;border-radius:10px;border:0;background:var(--accent,#5e72e4);color:#fff;font:inherit;font-size:13px;font-weight:500;cursor:pointer;display:inline-flex;align-items:center;gap:8px;transition:transform .16s ease" style-hover="transform:translateY(-1px)"><i data-lucide="download" style="width:16px;height:16px"></i> Скачать архив</button>
+            <button type="button" onClick="{{ backupImport }}" style="height:38px;padding:0 14px;border-radius:10px;border:1px solid var(--line,#e9ecef);background:transparent;color:var(--fg,#32325d);font:inherit;font-size:13px;cursor:pointer;display:inline-flex;align-items:center;gap:8px;transition:background .18s ease" style-hover="background:var(--field,#f1f3f7)"><i data-lucide="upload" style="width:16px;height:16px"></i> Восстановить из файла</button>
+          </div>
+          <p style="margin:0;font-size:12px;color:var(--muted,#8898aa)">Восстановление ничего не применяет: файл проверяется, настройки сохраняются, а маршрутизация меняется только после «Применить».</p>
+        </div>
+      </div>
+    </sc-if>
+
+  </main>
+
+  <sc-if value="{{ pillVisible }}">
+    <div style="position:fixed;bottom:26px;left:calc(50% + 118px);transform:translateX(-50%);z-index:60;animation:ap-in .28s cubic-bezier(.4,0,.2,1)">
+      <button type="button" onClick="{{ apply }}" style="display:flex;height:46px;align-items:center;gap:10px;border-radius:9999px;padding:0 24px;font:inherit;font-size:14px;font-weight:500;color:#fff;border:0;cursor:pointer;box-shadow:0 10px 28px rgba(0,0,0,.22);transition:background .28s ease,transform .18s ease;background:{{ pillBg }}" style-hover="transform:translateY(-2px)">
+        <span style="display:inline-flex;width:17px;height:17px;align-items:center;justify-content:center;animation:{{ pillSpin }}"><i data-lucide="{{ pillIcon }}" style="width:17px;height:17px"></i></span>
+        {{ pillLabel }}
+        <sc-if value="{{ pillCountVisible }}">
+          <span style="display:flex;height:23px;min-width:23px;align-items:center;justify-content:center;border-radius:9999px;background:rgba(255,255,255,.26);padding:0 7px;font-size:12px;font-weight:600;animation:ap-pop .3s cubic-bezier(.4,0,.2,1)">{{ pillCount }}</span>
+        </sc-if>
+      </button>
+    </div>
+  </sc-if>
+
+  <div style="position:fixed;right:24px;bottom:24px;z-index:70;display:flex;flex-direction:column;gap:10px;align-items:flex-end">
+    <sc-for list="{{ toasts }}" as="toast" hint-placeholder-count="0">
+      <div style="display:flex;align-items:center;gap:10px;padding:12px 16px;border-radius:12px;background:var(--toast,#1f2333);color:#fff;font-size:13px;box-shadow:0 10px 30px rgba(0,0,0,.24);animation:ap-in .26s cubic-bezier(.4,0,.2,1);border-left:3px solid {{ toast.color }}">
+        <i data-lucide="{{ toast.icon }}" style="width:16px;height:16px;color:{{ toast.color }}"></i>
+        {{ toast.text }}
+      </div>
+    </sc-for>
+  </div>
+
+  <sc-if value="{{ modalOpen }}">
+    <div style="position:fixed;inset:0;z-index:80;background:rgba(15,18,28,.42);display:flex;align-items:center;justify-content:center;padding:24px;animation:ap-fade .2s ease" onClick="{{ closeModal }}">
+      <div style="width:440px;max-width:100%;border-radius:16px;background:var(--card,#fff);color:var(--fg,#32325d);padding:24px;box-shadow:0 30px 70px rgba(10,12,20,.35);animation:ap-modal .26s cubic-bezier(.4,0,.2,1)">
+        <div style="display:flex;align-items:center;gap:10px">
+          <span style="height:34px;width:34px;border-radius:10px;background:rgba(245,54,92,.12);color:#f5365c;display:inline-flex;align-items:center;justify-content:center"><i data-lucide="triangle-alert" style="width:17px;height:17px"></i></span>
+          <div style="font-size:17px;font-weight:600">Остановить всё?</div>
+        </div>
+        <p style="margin:12px 0 0;font-size:13px;line-height:1.55;color:var(--fg2,#5b6478)">Маршрутизация снимется целиком: движок остановится, правила из ядра уйдут. Автозапуск тоже снимется, поэтому перезагрузка роутера ничего не вернёт — включать придётся этой же кнопкой.</p>
+        <div style="margin-top:20px;display:flex;justify-content:flex-end;gap:10px">
+          <button type="button" onClick="{{ closeModal }}" style="height:38px;padding:0 16px;border-radius:10px;border:1px solid var(--line,#e9ecef);background:transparent;color:var(--fg,#32325d);font:inherit;font-size:13px;cursor:pointer">Отмена</button>
+          <button type="button" onClick="{{ confirmStop }}" style="height:38px;padding:0 18px;border-radius:10px;border:0;background:#f5365c;color:#fff;font:inherit;font-size:13px;font-weight:500;cursor:pointer">Остановить</button>
+        </div>
+      </div>
+    </div>
+  </sc-if>
+
+</div>
+</div>
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props="{&quot;$preview&quot;:{&quot;width&quot;:1280,&quot;height&quot;:860},&quot;accent&quot;:{&quot;editor&quot;:&quot;color&quot;,&quot;default&quot;:&quot;#5e72e4&quot;,&quot;tsType&quot;:&quot;string&quot;,&quot;options&quot;:[&quot;#5e72e4&quot;,&quot;#2dce89&quot;,&quot;#8b7cf6&quot;,&quot;#fb6340&quot;],&quot;section&quot;:&quot;Тема Argon&quot;},&quot;quota&quot;:{&quot;editor&quot;:&quot;boolean&quot;,&quot;default&quot;:true,&quot;tsType&quot;:&quot;boolean&quot;,&quot;section&quot;:&quot;Подписка&quot;}}">
+const LIGHT = [
+  '--bg:#f6f7f9', '--card:#ffffff', '--rail:#fbfbfd', '--field:#f2f4f7', '--field-input:transparent',
+  '--line:#eceef3', '--line-soft:#f4f5f8', '--fg:#22252e', '--fg2:#5b6478', '--muted:#8b93a5',
+  '--warn-bg:rgba(255,193,7,.08)', '--warn-line:rgba(255,193,7,.45)', '--warn-fg:#a97a00',
+  '--danger-line:#f7c6d1', '--toast:#1f2333',
+]
+const DARK = [
+  '--bg:#121317', '--card:#1b1d22', '--rail:#17181c', '--field:#23252b', '--field-input:#1e2025',
+  '--line:#2a2c33', '--line-soft:#232529', '--fg:#e8eaf0', '--fg2:#b6bccb', '--muted:#8b93a7',
+  '--warn-bg:rgba(255,193,7,.1)', '--warn-line:rgba(255,193,7,.35)', '--warn-fg:#e5b23c',
+  '--danger-line:rgba(245,54,92,.45)', '--toast:#0f1117',
+]
+
+const SERVICES = [
+  { id: 'youtube', name: 'YouTube', kind: 'домены и адреса', count: 41890 },
+  { id: 'google', name: 'Google', kind: 'домены и адреса', count: 42422 },
+  { id: 'telegram', name: 'Telegram', kind: 'адреса', count: 3118 },
+  { id: 'discord', name: 'Discord', kind: 'домены', count: 902 },
+  { id: 'spotify', name: 'Spotify', kind: 'домены и адреса', count: 1204 },
+  { id: 'cloudflare', name: 'Cloudflare', kind: 'адреса', count: 2640 },
+  { id: 'netflix', name: 'Netflix', kind: 'домены и адреса', count: 8402 },
+  { id: 'adult', name: '18+', kind: 'домены', count: 12908 },
+]
+
+const LEASES = [
+  { mac: 'a4:83:e7:11:20:5c', name: 'iPhone Кати' },
+  { mac: '5c:cf:7f:8a:3d:91', name: 'ТВ в зале' },
+  { mac: 'dc:a6:32:04:77:1e', name: 'Ноутбук' },
+]
+
+const NODES = [
+  { i: 0, name: 'Amsterdam #3', tag: 'reality/vision', ms: 42 },
+  { i: 1, name: 'Amsterdam #1', tag: 'reality', ms: 58 },
+  { i: 2, name: 'Frankfurt #2', tag: 'reality/vision', ms: 71 },
+  { i: 3, name: 'Rotterdam #7', tag: 'reality', ms: 96 },
+  { i: 4, name: 'Helsinki #1', tag: 'reality', ms: 0, why: 'ключ не подошёл' },
+  { i: 5, name: 'Paris #2', tag: 'reality', ms: 133 },
+]
+
+const num = n => n.toLocaleString('ru-RU')
+
+class Component extends DCLogic {
+  state = {
+    dark: false,
+    view: 'overview',
+    editing: null,
+    query: '',
+    seg: 'all',
+    checksOpen: false,
+    modalOpen: false,
+    pill: 'idle',
+    applied: null,
+    appliedObfs: null,
+    subUrl: 'https://sub.example.com/s/9f3a1c',
+    subBusy: false,
+    nodeChoice: -1,
+    nodeStates: {},
+    obfs: { on: false, host: '', port: '', local: '51820' },
+    customOpen: false,
+    customName: '',
+    customKind: 'domains',
+    customText: '',
+    myLists: [{ id: 'work', name: 'work-vpn', kind: 'домены', count: 42 }],
+    engineExt: true,
+    engineVer: '1.1.3',
+    engineBusy: false,
+    uiBusy: false,
+    ask: 'idle',
+    explainQuery: 'youtube.com',
+    answer: '',
+    probing: false,
+    pings: { 'vless-nl': '42 мс', wg0: '61 мс', direct: 'напрямую' },
+    toasts: [],
+    rules: [
+      { id: 1, name: 'Spotify мимо VPN', services: ['spotify'], from: [], out: 'direct', on: true },
+      { id: 2, name: 'YouTube', services: ['youtube', 'google'], from: [], out: 'vless-nl', on: true },
+      { id: 3, name: 'Telegram', services: ['telegram'], from: ['a4:83:e7:11:20:5c', '5c:cf:7f:8a:3d:91'], out: 'wg0', on: true },
+      { id: 4, name: 'Discord', services: ['discord'], from: [], out: 'vless-nl', on: false },
+    ],
+  }
+
+  icons() { try { window.lucide && window.lucide.createIcons() } catch (e) {} }
+  componentDidMount() {
+    this.icons(); setTimeout(() => this.icons(), 400); setTimeout(() => this.icons(), 1200)
+    this.setState(s => ({ applied: this.snapshot(s.rules, s.obfs) }))
+  }
+  componentDidUpdate() { this.icons() }
+  componentWillUnmount() { (this.timers || []).forEach(clearTimeout) }
+  later(fn, ms) { this.timers = this.timers || []; this.timers.push(setTimeout(fn, ms)) }
+
+  toast(text, kind) {
+    const id = Date.now() + Math.random()
+    const color = kind === 'warn' ? '#ffc107' : kind === 'bad' ? '#f5365c' : '#2dce89'
+    const icon = kind === 'warn' ? 'triangle-alert' : kind === 'bad' ? 'circle-x' : 'check'
+    this.setState(s => ({ toasts: [...s.toasts, { id, text, color, icon }] }))
+    this.later(() => this.setState(s => ({ toasts: s.toasts.filter(t => t.id !== id) })), 3200)
+  }
+
+  changed(text) {
+    this.setState({ pill: 'idle' })
+    if (text) this.toast(text, 'ok')
+  }
+
+  /** Снимок применённого. Считаем по нему, а не по нажатиям: вернул тумблер обратно —
+   *  и счётчик обязан погаснуть, иначе он обещает работу, которой нет. */
+  snapshot(rules, obfs) {
+    return {
+      rules: rules.map(r => ({
+        id: r.id, name: r.name, out: r.out, on: r.on,
+        services: [...r.services].sort().join(','),
+        from: [...r.from].sort().join(','),
+      })),
+      obfs: JSON.stringify(obfs),
+    }
+  }
+
+  diff() {
+    const app = this.state.applied
+    if (!app) return 0
+    const cur = this.snapshot(this.state.rules, this.state.obfs)
+    let n = 0
+    const byId = new Map(app.rules.map(r => [r.id, r]))
+    for (const r of cur.rules) {
+      const a = byId.get(r.id)
+      if (!a) { n++; continue }
+      if (a.name !== r.name || a.out !== r.out || a.on !== r.on || a.services !== r.services || a.from !== r.from) n++
+      byId.delete(r.id)
+    }
+    n += byId.size
+    const orderChanged = cur.rules.map(r => r.id).join(',') !== app.rules.map(r => r.id).join(',')
+    if (orderChanged && n === 0) n = 1
+    if (cur.obfs !== app.obfs) n++
+    return n
+  }
+
+  patchRule(id, patch) {
+    this.setState(s => ({ rules: s.rules.map(r => (r.id === id ? { ...r, ...patch } : r)) }))
+    this.changed()
+  }
+
+  move(i, d) {
+    const rules = this.state.rules.slice()
+    const j = i + d
+    if (j < 0 || j >= rules.length) return
+    const t = rules[i]; rules[i] = rules[j]; rules[j] = t
+    this.setState({ rules })
+    this.changed()
+  }
+
+  addRule(kind, serviceId) {
+    const id = Date.now()
+    const isEx = kind === 'exception'
+    const rules = this.state.rules.slice()
+    const rule = {
+      id,
+      name: isEx ? 'исключение' : serviceId ? SERVICES.find(s => s.id === serviceId).name : 'правило ' + (rules.length + 1),
+      services: serviceId ? [serviceId] : [],
+      from: [],
+      out: isEx ? 'direct' : 'vless-nl',
+      on: true,
+    }
+    if (isEx) {
+      const at = rules.findIndex(r => r.out !== 'direct')
+      rules.splice(at < 0 ? rules.length : at, 0, rule)
+    } else rules.push(rule)
+    this.setState({ rules, view: 'rules', editing: id, query: '' })
+    this.changed(isEx ? 'Исключение создано выше туннельных правил' : 'Правило создано')
+  }
+
+  outMeta(out) {
+    if (out === 'direct') return { text: 'напрямую, мимо туннеля', dot: '#8898aa', kind: 'без туннеля' }
+    if (out === 'wg0') return { text: 'wg0 · свой WireGuard', dot: '#2dce89', kind: 'свой WireGuard' }
+    return { text: 'vless-nl · Нидерланды', dot: '#2dce89', kind: 'Нидерланды, VLESS' }
+  }
+
+  renderVals() {
+    const st = this.state
+    const dark = st.dark
+    const a = this.props.accent ?? '#5e72e4'
+    const vars = (dark ? DARK : LIGHT).concat([
+      `--accent:${a}`,
+      `--accent-soft:color-mix(in srgb, ${a} ${dark ? 22 : 12}%, transparent)`,
+      `--accent-line:color-mix(in srgb, ${a} 45%, transparent)`,
+      `--accent-glow:color-mix(in srgb, ${a} 40%, transparent)`,
+    ]).join(';')
+
+    const off = dark ? '#2a2d34' : '#f1f3f7'
+    const offLine = dark ? '#3a3d47' : '#e9ecef'
+    const knobOff = dark ? '#6b7180' : '#c3c9d6'
+    const radioLine = dark ? '#3a3d47' : '#d9dee9'
+    const radioBg = dark ? '#1f2126' : '#ffffff'
+    const softFg = dark ? '#b6bccb' : '#5b6478'
+    const view = st.editing ? 'editor' : st.view
+
+    const nav = id => ({
+      bg: st.view === id && !st.editing ? `color-mix(in srgb, ${a} ${dark ? 22 : 12}%, transparent)` : 'transparent',
+      fg: st.view === id ? a : softFg,
+      w: st.view === id ? '500' : '400',
+    })
+    const nOv = nav('overview'), nRu = nav('rules'), nOut = nav('outputs'), nCat = nav('catalog'), nDia = nav('diag'), nSys = nav('system')
+    const changes = this.diff()
+    const ob = st.obfs
+    const isIp = v => /^(\d{1,3}\.){3}\d{1,3}$/.test(v) && v.split('.').every(p => +p < 256)
+    const isPort = v => /^\d{1,5}$/.test(v) && +v >= 1 && +v <= 65535
+    const obfsWarnText = !ob.host ? 'Без адреса сервера обфускации выход не сохранится.'
+      : !isIp(ob.host) ? 'Нужен адрес, а не имя: движок не разрешает имена — запрос к DNS мог бы уйти в тот самый туннель.'
+      : (ob.port && !isPort(ob.port)) || !isPort(ob.local) ? 'Порт — число от 1 до 65535.' : ''
+    const subText = (st.subUrl || '').trim()
+    const subBad = subText.length > 0 && !/^https?:\/\//.test(subText) && !/^vless:\/\//.test(subText)
+    const nodeBusy = Object.keys(st.nodeStates).some(k => st.nodeStates[k] === 'queued' || st.nodeStates[k] === 'running')
+    const nodes = NODES.map(n => {
+      const s = st.nodeStates[n.i]
+      const on = st.nodeChoice === n.i
+      const good = s === 'done' && !n.why
+      const bad = s === 'done' && !!n.why
+      return {
+        ...n,
+        state: s === 'queued' ? 'в очереди' : s === 'running' ? 'идёт проверка' : s === 'done' ? (n.why || `ответ ${n.ms} мс`) : 'не проверялся',
+        stateBg: bad ? 'rgba(245,54,92,.14)' : good ? 'rgba(45,206,137,.14)' : off,
+        stateFg: bad ? '#f5365c' : good ? '#2dce89' : softFg,
+        line: on ? a : radioLine,
+        bg: on ? a : radioBg,
+        dot: on ? '1' : '0',
+        pick: () => this.setState({ nodeChoice: n.i }),
+        probe: () => {
+          this.setState(s2 => ({ nodeStates: { ...s2.nodeStates, [n.i]: 'running' } }))
+          this.later(() => this.setState(s2 => ({ nodeStates: { ...s2.nodeStates, [n.i]: 'done' } })), 900)
+        },
+      }
+    })
+
+    const sw = on => ({ swBg: on ? a : off, swLine: on ? a : offLine, swKnob: on ? '#fff' : knobOff, swX: on ? '21px' : '2px' })
+
+    const describe = r => {
+      const list = r.services.map(id => SERVICES.find(s => s.id === id)).filter(Boolean)
+      if (!list.length) return 'сервис не выбран'
+      const total = list.reduce((n, s) => n + s.count, 0)
+      const names = list.length <= 2 ? list.map(s => s.name).join(', ') : `${list[0].name} и ещё ${list.length - 1}`
+      return `${names} · записей: ${num(total)}`
+    }
+
+    const rules = st.rules.map((r, i) => {
+      const m = this.outMeta(r.out)
+      const isEx = r.out === 'direct'
+      return {
+        ...r,
+        pos: i + 1,
+        opacity: r.on ? 1 : 0.5,
+        isException: isEx,
+        what: describe(r),
+        who: r.from.length ? `устройств: ${r.from.length}` : 'всех устройств',
+        outText: m.text,
+        outDot: m.dot,
+        outBg: isEx ? off : `color-mix(in srgb, ${a} ${dark ? 22 : 12}%, transparent)`,
+        outLine: isEx ? offLine : `color-mix(in srgb, ${a} 45%, transparent)`,
+        outFg: isEx ? softFg : a,
+        ...sw(r.on),
+        up: () => this.move(i, -1),
+        down: () => this.move(i, 1),
+        edit: () => this.setState({ editing: r.id, query: '' }),
+        toggle: () => this.patchRule(r.id, { on: !r.on }),
+      }
+    })
+
+    const editing = st.rules.find(r => r.id === st.editing) || null
+    const editIndex = st.rules.findIndex(r => r.id === st.editing)
+    const q = st.query.trim().toLowerCase()
+
+    const shownServices = SERVICES.filter(s => !q || s.name.toLowerCase().includes(q)).map(s => {
+      const on = editing ? editing.services.includes(s.id) : false
+      return {
+        ...s,
+        meta: `${s.kind} · ${num(s.count)}`,
+        line: on ? a : radioLine,
+        bg: on ? a : radioBg,
+        op: on ? '1' : '0',
+        pick: () => {
+          if (!editing) return
+          const next = on ? editing.services.filter(x => x !== s.id) : [...editing.services, s.id]
+          this.patchRule(editing.id, { services: next })
+        },
+      }
+    })
+
+    const leases = LEASES.map(l => {
+      const on = editing ? editing.from.includes(l.mac) : false
+      return {
+        ...l,
+        line: on ? a : radioLine,
+        bg: on ? a : radioBg,
+        op: on ? '1' : '0',
+        pick: () => {
+          if (!editing) return
+          const next = on ? editing.from.filter(x => x !== l.mac) : [...editing.from, l.mac]
+          this.patchRule(editing.id, { from: next })
+        },
+      }
+    })
+
+    const outChoices = ['vless-nl', 'wg0', 'direct'].map(name => {
+      const on = editing ? editing.out === name : false
+      const m = this.outMeta(name)
+      return {
+        name,
+        hint: m.kind,
+        stateDot: m.dot,
+        line: on ? a : radioLine,
+        bg: on ? a : radioBg,
+        dot: on ? '1' : '0',
+        pick: () => editing && this.patchRule(editing.id, { out: name }),
+      }
+    })
+
+    const usedBy = id => st.rules.filter(r => r.services.includes(id)).map(r => r.name)
+    const catalogRows = SERVICES
+      .filter(s => !q || s.name.toLowerCase().includes(q))
+      .filter(s => (st.seg === 'used' ? usedBy(s.id).length > 0 : true))
+      .map(s => {
+        const by = usedBy(s.id)
+        return {
+          ...s,
+          meta: s.kind,
+          count: num(s.count),
+          used: by.length > 0,
+          free: by.length === 0,
+          usedBy: by.join(', '),
+          use: () => this.addRule('rule', s.id),
+        }
+      })
+
+    const outputs = ['vless-nl', 'wg0', 'direct'].map(name => {
+      const m = this.outMeta(name)
+      const ping = st.probing ? '…' : st.pings[name]
+      return {
+        name,
+        kind: m.kind,
+        dot: name === 'direct' ? '#8898aa' : '#2dce89',
+        ping,
+        pingColor: st.probing ? 'var(--muted,#8898aa)' : name === 'direct' ? 'var(--muted,#8898aa)' : '#2dce89',
+      }
+    })
+
+    return {
+      themeVars: vars,
+      setLight: () => this.setState({ dark: false }),
+      setDark: () => this.setState({ dark: true }),
+      lightBg: dark ? 'transparent' : a,
+      lightFg: dark ? softFg : '#fff',
+      darkBg: dark ? a : 'transparent',
+      darkFg: dark ? '#fff' : softFg,
+
+      isOverview: view === 'overview',
+      isRules: view === 'rules',
+      isEditor: view === 'editor',
+      isOutputs: view === 'outputs',
+      isCatalog: view === 'catalog',
+      isDiag: view === 'diag',
+      isSystem: view === 'system',
+      goSystem: () => this.setState({ view: 'system', editing: null }),
+      navSystemBg: nSys.bg, navSystemFg: nSys.fg, navSystemW: nSys.w,
+
+      subUrl: st.subUrl,
+      setSubUrl: e => this.setState({ subUrl: e.target.value }),
+      subBad,
+      subLine: subBad ? '#ffc107' : 'var(--line,#e9ecef)',
+      subBtn: st.subBusy ? 'Скачиваем…' : 'Обновить',
+      subIcon: st.subBusy ? 'loader-circle' : 'refresh-cw',
+      subSpin: st.subBusy ? 'ap-spin 1s linear infinite' : 'none',
+      fetchSub: () => {
+        if (st.subBusy || subBad) return
+        this.setState({ subBusy: true })
+        this.later(() => { this.setState({ subBusy: false }); this.toast('Подписка загружена: 4 812 байт, узлов пригодно: 6', 'ok') }, 1300)
+      },
+      nodes,
+      nodesCount: NODES.length,
+      probeNodesLabel: nodeBusy ? 'Остановить' : 'Проверить все',
+      probeNodes: () => {
+        if (nodeBusy) { this.setState({ nodeStates: {} }); return }
+        const queued = {}
+        NODES.forEach(n => { queued[n.i] = 'queued' })
+        this.setState({ nodeStates: queued })
+        NODES.forEach((n, k) => {
+          this.later(() => this.setState(s2 => ({ nodeStates: { ...s2.nodeStates, [n.i]: 'running' } })), 200 + k * 380)
+          this.later(() => this.setState(s2 => ({ nodeStates: { ...s2.nodeStates, [n.i]: 'done' } })), 700 + k * 380)
+        })
+      },
+      pickAuto: () => this.setState({ nodeChoice: -1 }),
+      autoLine: st.nodeChoice < 0 ? a : radioLine,
+      autoBg: st.nodeChoice < 0 ? a : radioBg,
+      autoDot: st.nodeChoice < 0 ? '1' : '0',
+
+      obfsOn: ob.on,
+      obfsLine: ob.on ? a : radioLine,
+      obfsBg: ob.on ? a : radioBg,
+      obfsOp: ob.on ? '1' : '0',
+      obfsH: ob.on ? '280px' : '0px',
+      obfsFieldsOp: ob.on ? '1' : '0',
+      obfsHost: ob.host,
+      obfsPort: ob.port,
+      obfsLocal: ob.local,
+      obfsWarn: ob.on && !!obfsWarnText,
+      obfsWarnText,
+      toggleObfs: () => { this.setState(s2 => ({ obfs: { ...s2.obfs, on: !s2.obfs.on } })); this.changed() },
+      setObfsHost: e => { const v = e.target.value; this.setState(s2 => ({ obfs: { ...s2.obfs, host: v } })) },
+      setObfsPort: e => { const v = e.target.value; this.setState(s2 => ({ obfs: { ...s2.obfs, port: v } })) },
+      setObfsLocal: e => { const v = e.target.value; this.setState(s2 => ({ obfs: { ...s2.obfs, local: v } })) },
+
+      customOpen: st.customOpen,
+      toggleCustom: () => this.setState(s2 => ({ customOpen: !s2.customOpen })),
+      customName: st.customName,
+      setCustomName: e => this.setState({ customName: e.target.value }),
+      customText: st.customText,
+      setCustomText: e => this.setState({ customText: e.target.value }),
+      customNameBad: st.customName.length > 0 && !/^[A-Za-z0-9_-]+$/.test(st.customName),
+      customKindDomains: st.customKind === 'domains',
+      customKindPrefixes: st.customKind === 'prefixes',
+      kindDomainsBg: st.customKind === 'domains' ? a : 'transparent',
+      kindDomainsFg: st.customKind === 'domains' ? '#fff' : softFg,
+      kindPrefixesBg: st.customKind === 'prefixes' ? a : 'transparent',
+      kindPrefixesFg: st.customKind === 'prefixes' ? '#fff' : softFg,
+      pickDomains: () => this.setState({ customKind: 'domains' }),
+      pickPrefixes: () => this.setState({ customKind: 'prefixes' }),
+      customPlaceholder: st.customKind === 'domains' ? 'example.org\nsub.example.net' : '10.0.0.0/8\n192.0.2.1',
+      myLists: st.myLists.map(l => ({ ...l, remove: () => { this.setState(s2 => ({ myLists: s2.myLists.filter(x => x.id !== l.id) })); this.toast(`Список «${l.name}» удалён`, 'ok') } })),
+      saveCustom: () => {
+        if (!/^[A-Za-z0-9_-]+$/.test(st.customName)) { this.toast('Имя списка: латиница, цифры, дефис и подчёркивание', 'warn'); return }
+        const lines = st.customText.split('\n').map(x => x.trim()).filter(Boolean)
+        if (!lines.length) { this.toast('Список пуст', 'warn'); return }
+        const dropped = lines.filter(x => /\s/.test(x)).length
+        const nm = st.customName
+        this.setState(s2 => ({
+          myLists: [...s2.myLists, { id: nm, name: nm, kind: s2.customKind === 'domains' ? 'домены' : 'подсети', count: lines.length - dropped }],
+          customText: '', customName: '',
+        }))
+        this.toast(dropped ? `Список «${nm}»: строк ${lines.length - dropped}, отброшено ${dropped} — формат не подошёл` : `Список «${nm}»: строк ${lines.length}`, dropped ? 'warn' : 'ok')
+      },
+      fetchCustomUrl: () => this.toast('Скачивается один раз: расписание есть только у списков издателя', 'warn'),
+
+      engineExtOn: st.engineExt,
+      pickExt: () => this.setState({ engineExt: true }),
+      pickBasic: () => this.setState({ engineExt: false }),
+      extLine: st.engineExt ? a : 'var(--line,#e9ecef)',
+      extBg: st.engineExt ? `color-mix(in srgb, ${a} ${dark ? 20 : 9}%, transparent)` : 'transparent',
+      extDot: st.engineExt ? '1' : '0',
+      basicLine: st.engineExt ? 'var(--line,#e9ecef)' : a,
+      basicBg: st.engineExt ? 'transparent' : `color-mix(in srgb, ${a} ${dark ? 20 : 9}%, transparent)`,
+      basicDot: st.engineExt ? '0' : '1',
+      engineBtn: st.engineBusy ? 'Ставим…' : 'Обновить до 1.1.3',
+      engineSpin: st.engineBusy ? 'ap-spin 1s linear infinite' : 'none',
+      engineIcon: st.engineBusy ? 'loader-circle' : 'download',
+      installEngine: () => {
+        if (st.engineBusy) return
+        this.setState({ engineBusy: true })
+        this.later(() => { this.setState({ engineBusy: false }); this.toast('Движок установлен: steer-extended 1.1.3', 'ok') }, 1800)
+      },
+      uiBtn: st.uiBusy ? 'Ставим…' : 'Переустановить',
+      uiSpin: st.uiBusy ? 'ap-spin 1s linear infinite' : 'none',
+      uiIcon: st.uiBusy ? 'loader-circle' : 'download',
+      installUi: () => {
+        if (st.uiBusy) return
+        this.setState({ uiBusy: true })
+        this.later(() => { this.setState({ uiBusy: false }); this.toast('Интерфейс обновлён: 26.9 — перезагрузите страницу', 'ok') }, 1600)
+      },
+      backupExport: () => this.toast('Архив настроек сохранён: 12 КБ', 'ok'),
+      backupImport: () => this.toast('Настройки восстановлены — применить кнопкой «Применить»', 'warn'),
+      goOverview: () => this.setState({ view: 'overview', editing: null }),
+      goRules: () => this.setState({ view: 'rules', editing: null }),
+      goOutputs: () => this.setState({ view: 'outputs', editing: null }),
+      goCatalog: () => this.setState({ view: 'catalog', editing: null, query: '' }),
+      goDiag: () => this.setState({ view: 'diag', editing: null }),
+
+      navOverviewBg: nOv.bg, navOverviewFg: nOv.fg, navOverviewW: nOv.w,
+      navRulesBg: nRu.bg, navRulesFg: nRu.fg, navRulesW: nRu.w,
+      navOutputsBg: nOut.bg, navOutputsFg: nOut.fg, navOutputsW: nOut.w,
+      navCatalogBg: nCat.bg, navCatalogFg: nCat.fg, navCatalogW: nCat.w,
+      navDiagBg: nDia.bg, navDiagFg: nDia.fg, navDiagW: nDia.w,
+
+      rules,
+      rulesCount: st.rules.length,
+      rulesOn: st.rules.filter(r => r.on).length,
+      newRule: () => this.addRule('rule'),
+      newException: () => this.addRule('exception'),
+
+      editName: editing ? editing.name : '',
+      editPos: editIndex + 1,
+      editTotal: editing ? num(editing.services.reduce((n, id) => n + (SERVICES.find(s => s.id === id) || { count: 0 }).count, 0)) : '0',
+      editIsException: editing ? editing.out === 'direct' : false,
+      setName: e => editing && this.patchRule(editing.id, { name: e.target.value }),
+      closeEditor: () => this.setState({ editing: null, view: 'rules', query: '' }),
+      deleteRule: () => {
+        if (!editing) return
+        this.setState(s => ({ rules: s.rules.filter(r => r.id !== editing.id), editing: null, view: 'rules' }))
+        this.changed('Правило удалено')
+      },
+      shownServices,
+      leases,
+      leasesH: editing && editing.from.length ? '150px' : '0px',
+      leasesOp: editing && editing.from.length ? '1' : '0',
+      whoAll: () => editing && this.patchRule(editing.id, { from: [] }),
+      whoSome: () => editing && editing.from.length === 0 && this.patchRule(editing.id, { from: [LEASES[0].mac] }),
+      whoAllLine: editing && editing.from.length === 0 ? a : radioLine,
+      whoAllBg: editing && editing.from.length === 0 ? a : radioBg,
+      whoAllDot: editing && editing.from.length === 0 ? '1' : '0',
+      whoSomeLine: editing && editing.from.length ? a : radioLine,
+      whoSomeBg: editing && editing.from.length ? a : radioBg,
+      whoSomeDot: editing && editing.from.length ? '1' : '0',
+      outChoices,
+      fromText: editing ? editing.from.join(', ') : '',
+      setFrom: e => {
+        if (!editing) return
+        const list = e.target.value.split(',').map(x => x.trim()).filter(Boolean)
+        this.patchRule(editing.id, { from: list })
+      },
+      ...(() => {
+        const list = editing ? editing.from : []
+        const isMac = x => /^([0-9a-f]{2}:){5}[0-9a-f]{2}$/i.test(x)
+        const isIp4 = x => /^(\d{1,3}\.){3}\d{1,3}$/.test(x) && x.split('.').every(p => +p < 256)
+        const isCidr4 = x => /^(\d{1,3}\.){3}\d{1,3}\/\d{1,2}$/.test(x) && +x.split('/')[1] <= 32 && isIp4(x.split('/')[0])
+        const macs = list.filter(x => x.includes(':')).length
+        const mixed = macs > 0 && macs !== list.length
+        const bad = list.filter(x => (x.includes(':') ? !isMac(x) : !isIp4(x) && !isCidr4(x)))
+        const err = mixed
+          ? 'Здесь и адреса, и MAC — движок такое правило отвергнет.'
+          : bad.length
+            ? `Не адрес и не MAC: ${bad.join(', ')} — такую запись движок выбросит молча, и правило накроет не тех.`
+            : ''
+        return { fromError: err, hasFromError: !!err }
+      })(),
+
+      query: st.query,
+      setQuery: e => this.setState({ query: e.target.value }),
+      seg: st.seg,
+      segAll: () => this.setState({ seg: 'all' }),
+      segUsed: () => this.setState({ seg: 'used' }),
+      segAllBg: st.seg === 'all' ? a : 'transparent',
+      segAllFg: st.seg === 'all' ? '#fff' : softFg,
+      segUsedBg: st.seg === 'used' ? a : 'transparent',
+      segUsedFg: st.seg === 'used' ? '#fff' : softFg,
+      catalogRows,
+      servicesTotal: SERVICES.length,
+      servicesUsed: SERVICES.filter(s => usedBy(s.id).length > 0).length,
+
+      outputs,
+      hasQuota: this.props.quota !== false,
+      noQuota: this.props.quota === false,
+      quotaAge: 'обновлено 12 мин назад',
+      quotaLeft: '68,2 ГБ',
+      quotaTotal: '200 ГБ',
+      quotaUsed: '131,8 ГБ',
+      quotaPct: '66%',
+      quotaColor: '#2dce89',
+      quotaReset: '12 сентября',
+      quotaDays: '15 дней',
+      quotaPerDay: '8,8 ГБ',
+      quotaForecast: 'на 7 дней',
+      forecastColor: '#c99400',
+      quotaTight: true,
+      probeLabel: st.probing ? 'проверяем…' : 'проверить отклик',
+      probeAll: () => {
+        if (st.probing) return
+        this.setState({ probing: true })
+        this.later(() => {
+          this.setState({ probing: false, pings: { 'vless-nl': '39 мс', wg0: '64 мс', direct: 'напрямую' } })
+          this.toast('Отклик обновлён', 'ok')
+        }, 1500)
+      },
+      addOutput: () => this.toast('Свободных туннельных устройств нет — поднимите туннель', 'warn'),
+
+      explainQuery: st.explainQuery,
+      setExplain: e => this.setState({ explainQuery: e.target.value, answer: '', ask: 'idle' }),
+      askLabel: st.ask === 'busy' ? 'Спрашиваем…' : 'Проверить',
+      askIcon: st.ask === 'busy' ? 'loader-circle' : 'search',
+      askSpin: st.ask === 'busy' ? 'ap-spin 1s linear infinite' : 'none',
+      hasAnswer: !!st.answer,
+      answer: st.answer,
+      ask: () => {
+        if (st.ask === 'busy') return
+        this.setState({ ask: 'busy' })
+        this.later(() => {
+          const name = (st.explainQuery || 'youtube.com').trim()
+          this.setState({
+            ask: 'idle',
+            answer: `${name} -> 198.18.0.42 (fake-IP)\nправило YouTube -> выход vless-nl (метка 0x100000, таблица 300)\nответ от резолвера steer, 3 мс`,
+          })
+        }, 1100)
+      },
+
+      checksOpen: st.checksOpen,
+      checksLabel: st.checksOpen ? 'скрыть исправное' : 'исправно: 11 — показать',
+      checksH: st.checksOpen ? '160px' : '0px',
+      checksOp: st.checksOpen ? '1' : '0',
+      toggleChecks: () => this.setState(s => ({ checksOpen: !s.checksOpen })),
+
+      pillVisible: changes > 0 || st.pill !== 'idle',
+      pillBg: st.pill === 'done' ? '#2dce89' : st.pill === 'busy' ? (dark ? '#4b5160' : '#8898aa') : a,
+      pillLabel: st.pill === 'done' ? 'Применено' : st.pill === 'busy' ? 'Применяем…' : 'Применить',
+      pillIcon: st.pill === 'busy' ? 'loader-circle' : 'check',
+      pillSpin: st.pill === 'busy' ? 'ap-spin 1s linear infinite' : 'none',
+      pillCountVisible: st.pill === 'idle',
+      pillCount: changes,
+      apply: () => {
+        if (st.pill !== 'idle') return
+        this.setState({ pill: 'busy' })
+        this.later(() => {
+          this.setState(s2 => ({ pill: 'done', applied: this.snapshot(s2.rules, s2.obfs) }))
+          this.toast('Настройка применена в ядре', 'ok')
+          this.later(() => this.setState({ pill: 'idle' }), 1600)
+        }, 1500)
+      },
+
+      toasts: st.toasts,
+      modalOpen: st.modalOpen,
+      openModal: () => this.setState({ modalOpen: true }),
+      closeModal: () => this.setState({ modalOpen: false }),
+      confirmStop: () => { this.setState({ modalOpen: false }); this.toast('Движок остановлен, автозапуск снят', 'bad') },
+    }
+  }
+}
+</script>
+</body>
+</html>

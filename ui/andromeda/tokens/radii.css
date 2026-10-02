@@ -1,0 +1,10 @@
+/* One step per nesting level. A block inside a card is always one step tighter. */
+:root {
+  --an-radius-card: 16px;
+  --an-radius-block: 12px;
+  --an-radius-control: 10px;
+  --an-radius-inner: 9px;
+  --an-radius-badge: 6px;
+  --an-radius-pill: 9999px;
+  --an-radius-dot: 50%;
+}

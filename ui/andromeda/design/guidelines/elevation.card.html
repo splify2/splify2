@@ -1,0 +1,20 @@
+<!-- @dsCard group="Spacing" viewport="700x160" name="Слои" subtitle="Карточка живёт на линии; тень означает «плавает над страницей»" -->
+<!DOCTYPE html>
+<html lang="ru"><head><meta charset="utf-8">
+<link rel="stylesheet" href="../styles.css">
+<style>
+  html, body { margin: 0; }
+  body { padding: 18px; }
+  .row { display: flex; flex-wrap: wrap; gap: 12px; align-items: center; }
+  .col { display: flex; flex-direction: column; gap: 10px; }
+  .sw { border-radius: 10px; height: 42px; }
+  .lbl { font: var(--an-text-micro); color: var(--an-text-muted); margin-top: 6px; }
+  .val { font: var(--an-text-micro); font-family: var(--an-font-mono); color: var(--an-text-muted); }
+</style></head>
+<body class="an-root">
+<div class="row" style="gap:16px">
+  <div style="flex:1;height:70px;border:1px solid var(--an-border);border-radius:var(--an-radius-card);background:var(--an-surface-card);display:flex;align-items:center;justify-content:center;font:var(--an-text-caption);color:var(--an-text-muted)">карточка · без тени</div>
+  <div style="flex:1;height:70px;border-radius:var(--an-radius-pill);background:var(--an-accent);color:#fff;box-shadow:var(--an-shadow-float);display:flex;align-items:center;justify-content:center;font:var(--an-text-caption)">пилюля · --an-shadow-float</div>
+  <div style="flex:1;height:70px;border-radius:var(--an-radius-card);background:var(--an-surface-card);box-shadow:var(--an-shadow-dialog);display:flex;align-items:center;justify-content:center;font:var(--an-text-caption);color:var(--an-text-muted)">диалог · --an-shadow-dialog</div>
+</div>
+</body></html>

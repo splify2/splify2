@@ -1,0 +1,26 @@
+<!-- @dsCard group="Type" viewport="700x160" name="Числа и счётчики" subtitle="Подпись + число, либо подпись : число — чтобы не согласовывать со склонением" -->
+<!DOCTYPE html>
+<html lang="ru"><head><meta charset="utf-8">
+<link rel="stylesheet" href="../styles.css">
+<style>
+  html, body { margin: 0; }
+  body { padding: 18px; }
+  .row { display: flex; flex-wrap: wrap; gap: 12px; align-items: center; }
+  .col { display: flex; flex-direction: column; gap: 10px; }
+  .sw { border-radius: 10px; height: 42px; }
+  .lbl { font: var(--an-text-micro); color: var(--an-text-muted); margin-top: 6px; }
+  .val { font: var(--an-text-micro); font-family: var(--an-font-mono); color: var(--an-text-muted); }
+</style></head>
+<body class="an-root">
+<div class="row" style="gap:24px;align-items:flex-start">
+  <dl style="display:flex;gap:22px;margin:0">
+    <div><dt style="font:var(--an-text-caption);color:var(--an-text-muted)">устройств в сети</dt><dd style="margin:2px 0 0;font:var(--an-text-heading);font-size:18px">9</dd></div>
+    <div><dt style="font:var(--an-text-caption);color:var(--an-text-muted)">правил включено</dt><dd style="margin:2px 0 0;font:var(--an-text-heading);font-size:18px">4</dd></div>
+    <div><dt style="font:var(--an-text-caption);color:var(--an-text-muted)">время работы</dt><dd style="margin:2px 0 0;font:var(--an-text-heading);font-size:18px">4 ч 12 мин</dd></div>
+  </dl>
+  <div style="font:var(--an-text-body-sm);color:var(--an-text-secondary);border-left:2px solid var(--an-border);padding-left:14px">
+    в строке: <b style="color:var(--an-text)">проверок с предупреждением: 1</b><br>
+    <span style="color:var(--an-danger-ink)">никогда: «одна проверка просит внимания»</span>
+  </div>
+</div>
+</body></html>

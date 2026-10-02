@@ -1,0 +1,31 @@
+/* 2px base, but only these steps exist. Gaps do the spacing — never margins
+   between siblings, so drag-reorder and delete keep the rhythm. */
+:root {
+  --an-space-1: 2px;
+  --an-space-2: 4px;
+  --an-space-3: 6px;
+  --an-space-4: 8px;
+  --an-space-5: 10px;
+  --an-space-6: 12px;
+  --an-space-7: 14px;
+  --an-space-8: 16px;
+  --an-space-9: 20px;
+  --an-space-10: 22px;
+  --an-space-12: 28px;
+  --an-space-14: 40px;
+
+  --an-gap-inline: var(--an-space-4);   /* icon ↔ label */
+  --an-gap-row: var(--an-space-4);      /* list rows */
+  --an-gap-block: var(--an-space-8);    /* cards in a column */
+  --an-gap-section: var(--an-space-9);  /* section ↔ section */
+
+  --an-pad-card: var(--an-space-9) var(--an-space-10);
+  --an-pad-block: var(--an-space-7) var(--an-space-8);
+  --an-pad-row: var(--an-space-6) var(--an-space-8);
+
+  --an-size-control: 40px;   /* primary button, search field */
+  --an-size-control-sm: 34px;
+  --an-size-icon-button: 34px;
+  --an-size-touch: 44px;     /* minimum on phones */
+  --an-rail-width: 236px;
+}

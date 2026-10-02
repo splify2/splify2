@@ -1,0 +1,21 @@
+<!-- @dsCard group="Colors" viewport="700x150" name="Состояния" subtitle="Не меняются с темой и не наследуют акцент — иначе цвет перестаёт значить" -->
+<!DOCTYPE html>
+<html lang="ru"><head><meta charset="utf-8">
+<link rel="stylesheet" href="../styles.css">
+<style>
+  html, body { margin: 0; }
+  body { padding: 18px; }
+  .row { display: flex; flex-wrap: wrap; gap: 12px; align-items: center; }
+  .col { display: flex; flex-direction: column; gap: 10px; }
+  .sw { border-radius: 10px; height: 42px; }
+  .lbl { font: var(--an-text-micro); color: var(--an-text-muted); margin-top: 6px; }
+  .val { font: var(--an-text-micro); font-family: var(--an-font-mono); color: var(--an-text-muted); }
+</style></head>
+<body class="an-root">
+<div class="row" style="gap:14px">
+  <div style="flex:1"><div class="sw" style="background:var(--an-success)"></div><div class="lbl">работает <span class="val">#2dce89</span></div></div>
+  <div style="flex:1"><div class="sw" style="background:var(--an-warn)"></div><div class="lbl">предупреждение <span class="val">#ffc107</span></div></div>
+  <div style="flex:1"><div class="sw" style="background:var(--an-danger)"></div><div class="lbl">отказ <span class="val">#f5365c</span></div></div>
+  <div style="flex:1"><div class="sw" style="background:var(--an-control-knob-off)"></div><div class="lbl">мимо туннеля <span class="val">--an-control-knob-off</span></div></div>
+</div>
+</body></html>

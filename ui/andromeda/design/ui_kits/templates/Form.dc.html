@@ -1,0 +1,286 @@
+<!doctype html>
+<html>
+<head>
+  <meta charset="utf-8">
+  <script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+  <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Onest:wght@400;500;600;700&amp;family=JetBrains+Mono:wght@400;500&amp;display=swap">
+  <style>
+/* ── Base palette ──────────────────────────────────────────────────────
+   Accent is the ONLY hue that a host theme may replace (Argon --sp-primary).
+   State hues are fixed in both themes: if "works" and "failed" changed with
+   the theme, colour would stop meaning anything. */
+:root {
+  --an-accent: #5e72e4;
+  --an-accent-press: #4453b8;
+  --an-accent-soft: color-mix(in srgb, var(--an-accent) 12%, transparent);
+  --an-accent-line: color-mix(in srgb, var(--an-accent) 45%, transparent);
+  --an-accent-glow: color-mix(in srgb, var(--an-accent) 40%, transparent);
+  --an-accent-on: #ffffff;
+
+  --an-success: #2dce89;
+  --an-warn: #ffc107;
+  --an-danger: #f5365c;
+  --an-success-ink: #1c8f5f;
+  --an-warn-ink: #a97a00;
+  --an-danger-ink: #c0304f;
+  --an-success-soft: rgba(45, 206, 137, 0.10);
+  --an-warn-soft: rgba(255, 193, 7, 0.08);
+  --an-danger-soft: rgba(245, 54, 92, 0.07);
+  --an-warn-border: rgba(255, 193, 7, 0.45);
+  --an-danger-border: #f7c6d1;
+
+  /* Neutrals — light */
+  --an-grey-00: #ffffff;
+  --an-grey-05: #fbfbfd;
+  --an-grey-10: #f6f7f9;
+  --an-grey-15: #f2f4f7;
+  --an-grey-20: #eceef3;
+  --an-grey-25: #f4f5f8;
+  --an-grey-60: #8b93a5;
+  --an-grey-75: #5b6478;
+  --an-grey-90: #22252e;
+
+  /* ── Semantic aliases (use these in components) ── */
+  --an-surface-page: var(--an-grey-10);
+  --an-surface-card: var(--an-grey-00);
+  --an-surface-rail: var(--an-grey-05);
+  --an-surface-field: var(--an-grey-15);
+  --an-surface-input: transparent;
+  --an-surface-inverse: #1f2333;
+
+  --an-border: var(--an-grey-20);
+  --an-border-soft: var(--an-grey-25);
+
+  --an-text: var(--an-grey-90);
+  --an-text-secondary: var(--an-grey-75);
+  --an-text-muted: var(--an-grey-60);
+  --an-text-on-accent: var(--an-accent-on);
+
+  /* Категориальная шкала — только для наборов, где рядов заведомо несколько и все
+     равноправны (семь дней недели). Не для «второго ряда»: он серый off. */
+  --an-cat-1: #5e72e4;
+  --an-cat-2: #11cdef;
+  --an-cat-3: #2dce89;
+  --an-cat-4: #fb6340;
+  --an-cat-5: #f5365c;
+  --an-cat-6: #8965e0;
+  --an-cat-7: #8898aa;
+
+  --an-control-off: var(--an-grey-15);
+  --an-control-off-border: var(--an-grey-20);
+  --an-control-knob-off: #c3c9d6;
+  --an-control-line: #d9dee9;
+
+  --an-skeleton: linear-gradient(90deg, #f2f4f7 8%, #e7eaf1 18%, #f2f4f7 28%);
+  --an-scrim: rgba(15, 18, 28, 0.42);
+  --an-focus-ring: color-mix(in srgb, var(--an-accent) 55%, transparent);
+}
+
+[data-theme="dark"] {
+  --an-accent-soft: color-mix(in srgb, var(--an-accent) 22%, transparent);
+  --an-warn-soft: rgba(255, 193, 7, 0.10);
+  --an-warn-border: rgba(255, 193, 7, 0.35);
+  --an-danger-soft: rgba(245, 54, 92, 0.12);
+  --an-danger-border: rgba(245, 54, 92, 0.45);
+  --an-warn-ink: #e5b23c;
+  --an-success-ink: #2dce89;
+  --an-danger-ink: #ff6b86;
+
+  --an-surface-page: #121317;
+  --an-surface-card: #1b1d22;
+  --an-surface-rail: #17181c;
+  --an-surface-field: #23252b;
+  --an-surface-input: #1e2025;
+  --an-surface-inverse: #0f1117;
+
+  --an-border: #2a2c33;
+  --an-border-soft: #232529;
+
+  --an-text: #e8eaf0;
+  --an-text-secondary: #b6bccb;
+  --an-text-muted: #8b93a7;
+
+  --an-control-off: #2a2d34;
+  --an-control-off-border: #3a3d47;
+  --an-control-knob-off: #6b7180;
+  --an-control-line: #3a3d47;
+
+  --an-skeleton: linear-gradient(90deg, #22242a 8%, #2b2e36 18%, #22242a 28%);
+  --an-scrim: rgba(6, 8, 14, 0.58);
+}
+
+/* Акцент — единственный цвет, который хост может заменить. Варианты проверены
+   валидатором палитры против серого второстепенного ряда (--an-control-knob-off)
+   в обеих темах: ΔE ≥ 15 при нормальном зрении, ≥ 8 при дейтеранопии.
+   Зелёный не прошёл в тёмной теме и не предлагается. ThemeProvider ставит
+   атрибут data-accent на <html>; без атрибута — индиго из colors.css. */
+[data-accent="dns"] { --an-accent: #c2410c; --an-accent-press: #9a3409; }
+[data-accent="violet"] { --an-accent: #7c5cff; --an-accent-press: #5f43d6; }
+
+/* Andromeda type scale. Two families, six sizes, three weights — nothing else.
+   Sizes are the ones the console actually uses; do not invent intermediates. */
+:root {
+  --an-text-verdict: 600 26px/1.2 var(--an-font-sans);   /* state headline */
+  --an-text-title: 600 22px/1.25 var(--an-font-sans);    /* section heading */
+  --an-text-heading: 600 15px/1.35 var(--an-font-sans);  /* card heading */
+  --an-text-body: 400 14px/1.5 var(--an-font-sans);      /* default */
+  --an-text-body-sm: 400 13px/1.5 var(--an-font-sans);   /* dense rows, prose */
+  --an-text-caption: 400 12px/1.4 var(--an-font-sans);   /* labels, counters */
+  --an-text-micro: 400 11px/1.4 var(--an-font-sans);     /* meta under a value */
+  --an-text-code: 400 12px/1.7 var(--an-font-mono);      /* logs, addresses */
+
+  --an-tracking-verdict: -0.02em;
+  --an-tracking-title: -0.015em;
+  --an-tracking-caps: 0.04em;
+
+  --an-weight-regular: 400;
+  --an-weight-medium: 500;
+  --an-weight-semibold: 600;
+}
+
+/* 2px base, but only these steps exist. Gaps do the spacing — never margins
+   between siblings, so drag-reorder and delete keep the rhythm. */
+:root {
+  --an-space-1: 2px;
+  --an-space-2: 4px;
+  --an-space-3: 6px;
+  --an-space-4: 8px;
+  --an-space-5: 10px;
+  --an-space-6: 12px;
+  --an-space-7: 14px;
+  --an-space-8: 16px;
+  --an-space-9: 20px;
+  --an-space-10: 22px;
+  --an-space-12: 28px;
+  --an-space-14: 40px;
+
+  --an-gap-inline: var(--an-space-4);   /* icon ↔ label */
+  --an-gap-row: var(--an-space-4);      /* list rows */
+  --an-gap-block: var(--an-space-8);    /* cards in a column */
+  --an-gap-section: var(--an-space-9);  /* section ↔ section */
+
+  --an-pad-card: var(--an-space-9) var(--an-space-10);
+  --an-pad-block: var(--an-space-7) var(--an-space-8);
+  --an-pad-row: var(--an-space-6) var(--an-space-8);
+
+  --an-size-control: 40px;   /* primary button, search field */
+  --an-size-control-sm: 34px;
+  --an-size-icon-button: 34px;
+  --an-size-touch: 44px;     /* minimum on phones */
+  --an-rail-width: 236px;
+}
+
+/* One step per nesting level. A block inside a card is always one step tighter. */
+:root {
+  --an-radius-card: 16px;
+  --an-radius-block: 12px;
+  --an-radius-control: 10px;
+  --an-radius-inner: 9px;
+  --an-radius-badge: 6px;
+  --an-radius-pill: 9999px;
+  --an-radius-dot: 50%;
+}
+
+/* Andromeda is a bordered system, not a shadowed one: cards get a 1px line.
+   Shadow is reserved for things that float above the page. */
+:root {
+  --an-shadow-none: none;
+  --an-shadow-hover: 0 8px 20px var(--an-accent-glow);
+  --an-shadow-float: 0 10px 28px rgba(0, 0, 0, 0.22);
+  --an-shadow-dialog: 0 30px 70px rgba(10, 12, 20, 0.35);
+  --an-shadow-toast: 0 10px 30px rgba(0, 0, 0, 0.24);
+}
+
+/* Fast enough to feel answered, slow enough to be seen. One curve. */
+:root {
+  --an-ease: cubic-bezier(0.4, 0, 0.2, 1);
+  --an-dur-hover: 160ms;
+  --an-dur-control: 220ms;
+  --an-dur-enter: 260ms;
+  --an-dur-theme: 280ms;
+  --an-dur-collapse: 320ms;
+  --an-dur-pulse: 2400ms;
+
+  --an-transition-hover: background var(--an-dur-hover) var(--an-ease), border-color var(--an-dur-hover) var(--an-ease), transform var(--an-dur-hover) var(--an-ease);
+  --an-transition-theme: background var(--an-dur-theme) var(--an-ease), color var(--an-dur-theme) var(--an-ease), border-color var(--an-dur-theme) var(--an-ease);
+}
+
+@keyframes an-spin { to { transform: rotate(360deg); } }
+@keyframes an-pulse { 0%, 100% { opacity: 1; } 50% { opacity: 0.3; } }
+@keyframes an-enter { from { opacity: 0; transform: translateY(8px); } to { opacity: 1; transform: none; } }
+@keyframes an-dialog-in { from { opacity: 0; transform: translateY(12px) scale(0.97); } to { opacity: 1; transform: none; } }
+@keyframes an-fade { from { opacity: 0; } to { opacity: 1; } }
+@keyframes an-pop { 0% { transform: scale(0.6); opacity: 0; } 60% { transform: scale(1.12); } 100% { transform: scale(1); opacity: 1; } }
+@keyframes an-bar { from { transform: scaleX(0); } to { transform: scaleX(1); } }
+@keyframes an-bar-up { from { transform: scaleY(0); } to { transform: scaleY(1); } }
+@keyframes an-shimmer { 0% { background-position: -420px 0; } 100% { background-position: 420px 0; } }
+
+@media (prefers-reduced-motion: reduce) {
+  :root { --an-dur-hover: 1ms; --an-dur-control: 1ms; --an-dur-enter: 1ms; --an-dur-theme: 1ms; --an-dur-collapse: 1ms; }
+  .an-root *, .an-root *::before, .an-root *::after { animation-duration: 1ms !important; animation-delay: 0ms !important; }
+}
+
+/* Minimal resets. Andromeda never restyles the LuCI host page — scope to .an-root. */
+.an-root {
+  background: var(--an-surface-page);
+  color: var(--an-text);
+  font: var(--an-text-body);
+  -webkit-font-smoothing: antialiased;
+  transition: var(--an-transition-theme);
+}
+
+.an-root a { color: var(--an-accent); text-decoration: none; border-bottom: 1px dotted var(--an-accent-line); }
+.an-root a:hover { color: var(--an-accent-press); border-bottom-color: currentColor; }
+.an-root :focus-visible { outline: 2px solid var(--an-focus-ring); outline-offset: 2px; }
+.an-root code, .an-root pre { font: var(--an-text-code); }
+.an-root h1, .an-root h2, .an-root h3, .an-root p, .an-root dl, .an-root dd { margin: 0; }
+.an-root ul.an-plain { margin: 0; padding: 0; list-style: none; }
+
+:root { --an-font-sans: "Onest", "Google Sans", -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+        --an-font-mono: "JetBrains Mono", ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; }
+html, body { margin: 0; padding: 0; }
+.an-root { min-height: 100vh; }
+.an-root * { box-sizing: border-box; }
+.an-root a { color: var(--an-accent); text-decoration: none; }
+.an-root a:hover { color: var(--an-accent-press); }
+.tab { font-variant-numeric: tabular-nums; }
+
+  </style>
+</helmet>
+<div class="an-root" data-theme="{{ theme }}" style="{{ accentVars }}">
+<div style="width: 1440px; min-height: 100vh; background: var(--an-surface-page); color: var(--an-text); font: var(--an-text-body); -webkit-font-smoothing: antialiased;">
+<div style="display: flex; align-items: stretch; min-height: 100vh;"><aside style="width: var(--an-rail-width); flex: 0 0 var(--an-rail-width); background: var(--an-surface-rail); border-right: 1px solid var(--an-border); padding: 18px 14px; display: flex; flex-direction: column; gap: var(--an-gap-section); position: sticky; top: 0; min-height: 100vh; align-self: stretch;">
+  <div style="display: flex; align-items: center; gap: var(--an-space-5); padding: 0 6px;">
+    <div style="width: 32px; height: 32px; border-radius: 9px; background: var(--an-accent); display: flex; align-items: center; justify-content: center; color: var(--an-text-on-accent); font: var(--an-text-heading); font-size: 16px;">A</div>
+    <div style="line-height: 1.15;"><div style="font: var(--an-text-heading);">Andromeda</div><div style="font: var(--an-text-micro); color: var(--an-text-muted);">дизайн-система</div></div>
+  </div>
+  <nav style="display: flex; flex-direction: column; gap: 2px;"><div style="display: flex; align-items: center; gap: var(--an-space-5); width: 100%; padding: 10px 12px; border-radius: var(--an-radius-inner); font: var(--an-text-body); font-weight: var(--an-weight-regular); background: transparent; color: var(--an-text-secondary); cursor: pointer;"><span style="display: inline-flex; width: 18px; height: 18px;"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="display: block; flex: 0 0 auto;"><path d="M12 15a3 3 0 1 0 0-6 3 3 0 0 0 0 6M3 12a9 9 0 0 1 18 0"></path></svg></span>Обзор</div><div style="display: flex; align-items: center; gap: var(--an-space-5); width: 100%; padding: 10px 12px; border-radius: var(--an-radius-inner); font: var(--an-text-body); font-weight: var(--an-weight-regular); background: transparent; color: var(--an-text-secondary); cursor: pointer;"><span style="display: inline-flex; width: 18px; height: 18px;"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="display: block; flex: 0 0 auto;"><path d="M3 3v18h18M7 14l4-4 4 3 5-6"></path></svg></span>Данные</div><div style="display: flex; align-items: center; gap: var(--an-space-5); width: 100%; padding: 10px 12px; border-radius: var(--an-radius-inner); font: var(--an-text-body); font-weight: var(--an-weight-regular); background: transparent; color: var(--an-text-secondary); cursor: pointer;"><span style="display: inline-flex; width: 18px; height: 18px;"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="display: block; flex: 0 0 auto;"><path d="M3 17l6-6 4 4 8-8M14 7h7v7"></path></svg></span>Отчёты</div><div style="display: flex; align-items: center; gap: var(--an-space-5); width: 100%; padding: 10px 12px; border-radius: var(--an-radius-inner); font: var(--an-text-body); font-weight: var(--an-weight-regular); background: transparent; color: var(--an-text-secondary); cursor: pointer;"><span style="display: inline-flex; width: 18px; height: 18px;"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="display: block; flex: 0 0 auto;"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2M9 11a4 4 0 1 0 0-8 4 4 0 0 0 0 8"></path></svg></span>Команда</div><div style="display: flex; align-items: center; gap: var(--an-space-5); width: 100%; padding: 10px 12px; border-radius: var(--an-radius-inner); font: var(--an-text-body); font-weight: var(--an-weight-regular); background: transparent; color: var(--an-text-secondary); cursor: pointer;"><span style="display: inline-flex; width: 18px; height: 18px;"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="display: block; flex: 0 0 auto;"><path d="M12 22a10 10 0 1 0 0-20 10 10 0 0 0 0 20M12 18a6 6 0 1 0 0-12 6 6 0 0 0 0 12M12 14a2 2 0 1 0 0-4 2 2 0 0 0 0 4"></path></svg></span>Цели</div><div style="display: flex; align-items: center; gap: var(--an-space-5); width: 100%; padding: 10px 12px; border-radius: var(--an-radius-inner); font: var(--an-text-body); font-weight: var(--an-weight-medium); background: var(--an-accent-soft); color: var(--an-accent); cursor: pointer;"><span style="display: inline-flex; width: 18px; height: 18px;"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="display: block; flex: 0 0 auto;"><path d="M4 21v-7M4 10V3M12 21v-9M12 8V3M20 21v-5M20 12V3M1 14h6M9 8h6M17 16h6"></path></svg></span>Модель</div><div style="display: flex; align-items: center; gap: var(--an-space-5); width: 100%; padding: 10px 12px; border-radius: var(--an-radius-inner); font: var(--an-text-body); font-weight: var(--an-weight-regular); background: transparent; color: var(--an-text-secondary); cursor: pointer;"><span style="display: inline-flex; width: 18px; height: 18px;"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="display: block; flex: 0 0 auto;"><path d="M19 11H5a2 2 0 0 0-2 2v7a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7a2 2 0 0 0-2-2zM7 11V7a5 5 0 0 1 10 0v4"></path></svg></span>Доступ</div></nav>
+  <div style="margin-top: auto; display: flex; flex-direction: column; gap: var(--an-space-5);">
+    <div style="display: flex; gap: var(--an-space-2); padding: var(--an-space-2); border-radius: var(--an-radius-control); background: var(--an-surface-field);"><span style="flex: 1; display: inline-flex; align-items: center; justify-content: center; gap: 6px; height: 30px; border-radius: var(--an-radius-inner); background: var(--an-accent); color: var(--an-text-on-accent); font: var(--an-text-body-sm); font-weight: var(--an-weight-medium);"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="display: block; flex: 0 0 auto;"><path d="M12 17a5 5 0 1 0 0-10 5 5 0 0 0 0 10M12 1v2M12 21v2M4.2 4.2l1.4 1.4M18.4 18.4l1.4 1.4M1 12h2M21 12h2M4.2 19.8l1.4-1.4M18.4 5.6l1.4-1.4"></path></svg> Светлая</span><span style="flex: 1; display: inline-flex; align-items: center; justify-content: center; gap: 6px; height: 30px; border-radius: var(--an-radius-inner); color: var(--an-text-secondary); font: var(--an-text-body-sm);"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="display: block; flex: 0 0 auto;"><path d="M21 12.8A9 9 0 1 1 11.2 3a7 7 0 0 0 9.8 9.8z"></path></svg> Тёмная</span></div>
+    <div style="border: 1px solid var(--an-border); border-radius: var(--an-radius-control); padding: 11px; display: flex; flex-direction: column; gap: 4px;">
+      <div style="display: flex; align-items: center; gap: 7px; font: var(--an-text-caption); color: var(--an-text-muted);"><span style="width: 8px; height: 8px; border-radius: 50%; background: var(--an-success); animation: an-pulse var(--an-dur-pulse) ease-in-out infinite;"></span>данные свежие</div>
+      <div style="font: var(--an-text-body-sm);">обновлено 11:05 · следующее 12:05</div>
+      <div style="font: var(--an-text-micro); color: var(--an-text-muted);">источник отвечает за 42 мс</div>
+    </div>
+  </div>
+</aside><main style="flex: 1; min-width: 0; padding: 24px 28px 40px; display: flex; flex-direction: column; gap: var(--an-gap-section);"><div style="display: flex; align-items: flex-start; justify-content: space-between; gap: var(--an-space-8);"><div style="display: flex; flex-direction: column; gap: var(--an-space-2);"><h1 style="margin: 0; font: var(--an-text-title); letter-spacing: var(--an-tracking-title);">Настройки модели</h1><div style="font: var(--an-text-body-sm); color: var(--an-text-muted);">форма: поля, переключатели, ползунок</div></div></div><div style="display: grid; grid-template-columns: 1.4fr 1fr; gap: var(--an-gap-block); align-items: start;"><section style="display: flex; flex-direction: column; gap: var(--an-space-8); border-radius: var(--an-radius-card); padding: var(--an-pad-card); border: 1px solid var(--an-border); background: var(--an-surface-card); "><div style="display: flex; align-items: baseline; justify-content: space-between; gap: var(--an-space-6);"><h2 style="margin: 0; font: var(--an-text-heading); color: var(--an-text);">Модель</h2><span style="font: var(--an-text-caption); color: var(--an-text-muted);">параметры влияют на прогноз с следующего расчёта</span></div><div style="display: flex; flex-direction: column; gap: var(--an-space-8);"><label style="display: flex; flex-direction: column; gap: var(--an-space-2); font: var(--an-text-caption);"><span style="color: var(--an-text);">название</span><div style="display: flex; align-items: center; height: var(--an-size-control); width: 100%; padding: 0 12px; border-radius: var(--an-radius-control); border: 1px solid var(--an-border); background: var(--an-surface-input); font: var(--an-text-body); color: var(--an-text);">Основной сценарий</div></label><label style="display: flex; flex-direction: column; gap: var(--an-space-2); font: var(--an-text-caption);"><span style="color: var(--an-text);">метод остатка</span><div style="display: flex; align-items: center; justify-content: space-between; height: var(--an-size-control); width: 100%; padding: 0 10px; border-radius: var(--an-radius-control); border: 1px solid var(--an-border); background: var(--an-surface-input); font: var(--an-text-body-sm); color: var(--an-text);">смешанный · поправка и переобучение<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="var(--an-text-muted)" stroke-width="2" stroke-linecap="round"><path d="m6 9 6 6 6-6"/></svg></div></label><label style="display: flex; flex-direction: column; gap: var(--an-space-2); font: var(--an-text-caption);"><span style="color: var(--an-text);">полуспад уровня</span><span style="display: flex; align-items: center; gap: var(--an-space-5);"><span style="position: relative; flex: 1; height: 20px; display: flex; align-items: center;"><span style="position: absolute; left: 0; right: 0; height: 4px; border-radius: 2px; background: var(--an-surface-field);"></span><span style="position: absolute; left: 0; width: 22.0%; height: 4px; border-radius: 2px; background: var(--an-accent);"></span><span style="position: absolute; left: calc(22.0% - 8px); width: 16px; height: 16px; border-radius: 50%; background: var(--an-accent); border: 2px solid var(--an-surface-card); box-shadow: 0 0 0 1px var(--an-accent-line);"></span></span><span class="tab" style="min-width: 64px; text-align: right; font: var(--an-text-body-sm); color: var(--an-text); white-space: nowrap;">45 дней</span></span><span style="color: var(--an-text-muted); line-height: 1.5;">через сколько дней вес наблюдения падает вдвое</span></label><label style="display: flex; flex-direction: column; gap: var(--an-space-2); font: var(--an-text-caption);"><span style="color: var(--an-text);">ключ источника</span><div style="display: flex; align-items: center; height: var(--an-size-control); width: 100%; padding: 0 12px; border-radius: var(--an-radius-control); border: 1px solid var(--an-border); background: var(--an-surface-input); font: var(--an-text-code); color: var(--an-text);">sk_live_6f3a…</div><span style="color: var(--an-text-muted); line-height: 1.5;">хранится зашифрованным</span></label><label style="display: flex; flex-direction: column; gap: var(--an-space-2); font: var(--an-text-caption);"><span style="color: var(--an-text);">почта для отчёта</span><div style="display: flex; align-items: center; height: var(--an-size-control); width: 100%; padding: 0 12px; border-radius: var(--an-radius-control); border: 1px solid var(--an-warn-border); background: var(--an-surface-input); font: var(--an-text-body); color: var(--an-text);">не-адрес</div><span style="color: var(--an-text-muted); line-height: 1.5;">проверьте формат</span></label></div></section><div style="display: flex; flex-direction: column; gap: var(--an-gap-block);"><section style="display: flex; flex-direction: column; gap: var(--an-space-8); border-radius: var(--an-radius-card); padding: var(--an-pad-card); border: 1px solid var(--an-border); background: var(--an-surface-card); "><div style="display: flex; align-items: baseline; justify-content: space-between; gap: var(--an-space-6);"><h2 style="margin: 0; font: var(--an-text-heading); color: var(--an-text);">Уведомления</h2></div><div style="display: flex; flex-direction: column; gap: var(--an-space-4);"><label style="display: inline-flex; align-items: center; gap: var(--an-space-5); font: var(--an-text-body-sm); color: var(--an-text);"><span style="display: inline-flex; align-items: center; width: 34px; height: 20px; padding: 2px; border-radius: var(--an-radius-pill); box-sizing: border-box; background: var(--an-accent); border: 1px solid var(--an-accent); justify-content: flex-end;"><span style="width: 14px; height: 14px; border-radius: var(--an-radius-dot); background: #fff;"></span></span>вечерний дайджест</label><label style="display: inline-flex; align-items: center; gap: var(--an-space-5); font: var(--an-text-body-sm); color: var(--an-text);"><span style="display: inline-flex; align-items: center; width: 34px; height: 20px; padding: 2px; border-radius: var(--an-radius-pill); box-sizing: border-box; background: var(--an-control-off); border: 1px solid var(--an-control-off-border); justify-content: flex-start;"><span style="width: 14px; height: 14px; border-radius: var(--an-radius-dot); background: var(--an-control-knob-off);"></span></span>падение сбора</label><label style="display: inline-flex; align-items: center; gap: var(--an-space-5); font: var(--an-text-body-sm); color: var(--an-text);"><span style="display: inline-flex; align-items: center; width: 34px; height: 20px; padding: 2px; border-radius: var(--an-radius-pill); box-sizing: border-box; background: var(--an-accent); border: 1px solid var(--an-accent); justify-content: flex-end;"><span style="width: 14px; height: 14px; border-radius: var(--an-radius-dot); background: #fff;"></span></span>выход за интервал</label></div></section><section style="display: flex; flex-direction: column; gap: var(--an-space-8); border-radius: var(--an-radius-card); padding: var(--an-pad-card); border: 1px solid var(--an-border); background: var(--an-surface-card); "><div style="display: flex; align-items: baseline; justify-content: space-between; gap: var(--an-space-6);"><h2 style="margin: 0; font: var(--an-text-heading); color: var(--an-text);">Область</h2></div><div style="display: flex; flex-direction: column; gap: 0;"><label style="display: flex; align-items: flex-start; gap: var(--an-space-5); padding: 7px 6px; font: var(--an-text-body-sm); color: var(--an-text);"><span style="display: inline-flex; align-items: center; justify-content: center; width: 16px; height: 16px; border-radius: var(--an-radius-inner); box-sizing: border-box; border: 1.5px solid var(--an-accent); background: var(--an-accent);"><svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="display: block; flex: 0 0 auto;"><path d="M20 6 9 17l-5-5"></path></svg></span><span><div>Филиал А</div><div style="font: var(--an-text-micro); color: var(--an-text-muted);">продажи в зале</div></span></label><label style="display: flex; align-items: flex-start; gap: var(--an-space-5); padding: 7px 6px; font: var(--an-text-body-sm); color: var(--an-text);"><span style="display: inline-flex; align-items: center; justify-content: center; width: 16px; height: 16px; border-radius: var(--an-radius-inner); box-sizing: border-box; border: 1.5px solid var(--an-accent); background: var(--an-accent);"><svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="display: block; flex: 0 0 auto;"><path d="M20 6 9 17l-5-5"></path></svg></span><span><div>Филиал Б</div><div style="font: var(--an-text-micro); color: var(--an-text-muted);">выдача заказов</div></span></label><label style="display: flex; align-items: flex-start; gap: var(--an-space-5); padding: 7px 6px; font: var(--an-text-body-sm); color: var(--an-text);"><span style="display: inline-flex; align-items: center; justify-content: center; width: 16px; height: 16px; border-radius: var(--an-radius-inner); box-sizing: border-box; border: 1.5px solid var(--an-control-line); background: var(--an-surface-card);"></span><span><div>Кластер</div><div style="font: var(--an-text-micro); color: var(--an-text-muted);">не входит в мониторинг</div></span></label></div></section><section style="display: flex; flex-direction: column; gap: var(--an-space-8); border-radius: var(--an-radius-card); padding: var(--an-pad-card); border: 1px solid var(--an-border); background: var(--an-surface-card); "><div style="display: flex; align-items: baseline; justify-content: space-between; gap: var(--an-space-6);"><h2 style="margin: 0; font: var(--an-text-heading); color: var(--an-text);">Период по умолчанию</h2></div><div style="display: flex; flex-direction: column; gap: 0;"><label style="display: flex; align-items: flex-start; gap: var(--an-space-5); padding: 7px 6px; font: var(--an-text-body-sm); color: var(--an-text);"><span style="display: inline-flex; align-items: center; justify-content: center; width: 16px; height: 16px; border-radius: var(--an-radius-dot); box-sizing: border-box; border: 1.5px solid var(--an-control-line); background: var(--an-surface-card);"></span><span><div>7 дней</div></span></label><label style="display: flex; align-items: flex-start; gap: var(--an-space-5); padding: 7px 6px; font: var(--an-text-body-sm); color: var(--an-text);"><span style="display: inline-flex; align-items: center; justify-content: center; width: 16px; height: 16px; border-radius: var(--an-radius-dot); box-sizing: border-box; border: 1.5px solid var(--an-accent); background: var(--an-accent);"><span style="width: 6px; height: 6px; border-radius: var(--an-radius-dot); background: #fff;"></span></span><span><div>30 дней</div><div style="font: var(--an-text-micro); color: var(--an-text-muted);">как в отчётах</div></span></label><label style="display: flex; align-items: flex-start; gap: var(--an-space-5); padding: 7px 6px; font: var(--an-text-body-sm); color: var(--an-text);"><span style="display: inline-flex; align-items: center; justify-content: center; width: 16px; height: 16px; border-radius: var(--an-radius-dot); box-sizing: border-box; border: 1.5px solid var(--an-control-line); background: var(--an-surface-card);"></span><span><div>вся история</div></span></label></div></section></div></div><div style="display: flex; align-items: center; gap: var(--an-space-4); flex-wrap: wrap;"><button type="button" style="display: inline-flex; align-items: center; justify-content: center; gap: var(--an-gap-inline);  border-radius: var(--an-radius-control); cursor: pointer; white-space: nowrap; height: var(--an-size-control); padding: 0 18px; font: var(--an-text-body-sm); background: transparent; color: var(--an-text-secondary); border: 1px solid transparent;">Сбросить</button><span style="margin-left:auto"></span><button type="button" style="display: inline-flex; align-items: center; justify-content: center; gap: var(--an-gap-inline);  border-radius: var(--an-radius-control); cursor: pointer; white-space: nowrap; height: var(--an-size-control); padding: 0 18px; font: var(--an-text-body-sm); background: var(--an-surface-card); color: var(--an-text); border: 1px solid var(--an-border);">Отмена</button><button type="button" style="display: inline-flex; align-items: center; justify-content: center; gap: var(--an-gap-inline);  border-radius: var(--an-radius-control); cursor: pointer; white-space: nowrap; height: var(--an-size-control); padding: 0 18px; font: var(--an-text-body-sm); background: var(--an-accent); color: var(--an-text-on-accent); border: 1px solid transparent; font-weight: var(--an-weight-medium);"><span style="display: inline-flex; width: 16px; height: 16px; align-items: center; justify-content: center;"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="display: block; flex: 0 0 auto;"><path d="M20 6 9 17l-5-5"></path></svg></span>Сохранить</button></div></main></div>
+</div>
+</div>
+</x-dc>
+<script data-dc-script data-props='{"theme":{"editor":"enum","options":["light","dark"],"default":"light","section":"Тема"},"accent":{"editor":"color","options":["#5e72e4","#c2410c","#1c8f5f"],"default":"#5e72e4","section":"Тема"}}'>
+class Component extends DCLogic {
+  renderVals() {
+    const accent = this.props.accent ?? '#5e72e4';
+    return {
+      theme: this.props.theme ?? 'light',
+      accentVars: `--an-accent:${accent};--an-accent-press:color-mix(in srgb, ${accent} 78%, black);`,
+    };
+  }
+}
+</script>
+</body>
+</html>
