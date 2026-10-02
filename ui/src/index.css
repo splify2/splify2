@@ -2,6 +2,50 @@
 @tailwind components;
 @tailwind utilities;
 
+/* ШРИФТЫ — СВОИ, ВШИТЫ В ПАКЕТ.
+ *
+ *  Раньше корень пульта брал `font-family: inherit`, то есть шрифт темы: у Argon это Google
+ *  Sans, у bootstrap — системный, у Material — Roboto. Один и тот же экран выглядел тремя
+ *  разными интерфейсами, и проверить вид было нельзя. Теперь Onest (тот же, что в
+ *  дизайн-системе Andromeda) и JetBrains Mono для адресов и логов — переменными
+ *  шрифтами, обрезанными до кириллицы, латиницы и знаков интерфейса (оси веса 400–600 и
+ *  400–500). Все четыре файла — около 67 КБ. Лицензия OFL — рядом, в assets/fonts.
+ *
+ *  Объявлены ВНЕ слоёв и в документе: Chrome не видит @font-face, объявленный внутри
+ *  shadow root, а этот же файл стиля загрузчик ставит и в документ. */
+@font-face {
+  font-family: 'Onest';
+  font-style: normal;
+  font-weight: 400 600;
+  font-display: swap;
+  src: url('./assets/fonts/onest-cyrillic.woff2') format('woff2');
+  unicode-range: U+0301, U+0400-045F, U+0490-0491, U+04B0-04B1, U+2116;
+}
+@font-face {
+  font-family: 'Onest';
+  font-style: normal;
+  font-weight: 400 600;
+  font-display: swap;
+  src: url('./assets/fonts/onest-latin.woff2') format('woff2');
+  unicode-range: U+0000-00FF, U+0131, U+0152-0153, U+02BB-02BC, U+02C6, U+02DA, U+02DC, U+2000-206F, U+20AC, U+20BD, U+2122, U+2190-2193, U+2212, U+221E;
+}
+@font-face {
+  font-family: 'JetBrains Mono';
+  font-style: normal;
+  font-weight: 400 500;
+  font-display: swap;
+  src: url('./assets/fonts/jetbrains-mono-cyrillic.woff2') format('woff2');
+  unicode-range: U+0301, U+0400-045F, U+0490-0491, U+04B0-04B1, U+2116;
+}
+@font-face {
+  font-family: 'JetBrains Mono';
+  font-style: normal;
+  font-weight: 400 500;
+  font-display: swap;
+  src: url('./assets/fonts/jetbrains-mono-latin.woff2') format('woff2');
+  unicode-range: U+0000-00FF, U+0131, U+0152-0153, U+02BB-02BC, U+02C6, U+02DA, U+02DC, U+2000-206F, U+20AC, U+20BD, U+2122, U+2190-2193, U+2212, U+221E;
+}
+
 /* Palette — 1:1 with luci-theme-argon. Every value FIRST tries the CSS custom
    property that Argon itself puts on the page (cascade.css :root + the inline
    --primary/--dark-primary block from /etc/config/argon), so a user-configured
@@ -42,6 +86,8 @@
   :root {
     color-scheme: light;
 
+    --sp-font-sans: 'Onest', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;
+    --sp-font-mono: 'JetBrains Mono', ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
     --sp-background: #f6f7f9;
     --sp-foreground: #22252e;
     --sp-card: #ffffff;
@@ -72,7 +118,9 @@
     --sp-secondary-foreground: #22252e;
     /* Поле ввода и вложенный блок. */
     --sp-muted: #f2f4f7;
-    --sp-muted-foreground: #8b93a5;
+    /* Тусклый текст. #8b93a5 из дизайн-пака давал на белом 3,1:1 — подписи 12–13 px не
+     * проходили WCAG AA (нужно 4,5:1). #6f778a — 4,6:1 при том же оттенке. */
+    --sp-muted-foreground: #6f778a;
     --sp-accent: #f2f4f7;
     --sp-accent-foreground: #22252e;
     /* Состояния — литералами и БЕЗ обращения к теме. Тема вправе называть свой --danger как
@@ -90,7 +138,8 @@
      * на белой карточке светло-жёлтые буквы почти не видны. Для текста пак держит отдельный
      * токен, свой на каждую яркость: тёмно-янтарный на светлой и мягкий на тёмной. */
     --sp-warning: #ffc107;
-    --sp-warning-fg: #a97a00;
+    /* Текст предупреждения: #a97a00 на светлой подложке блока — 3,2:1, теперь 6,2:1. */
+    --sp-warning-fg: #7a5300;
     --sp-info: #11cdef;
     --sp-border: #eceef3;
     --sp-input: #d9dee9;
@@ -231,11 +280,16 @@
   }
   .splify-react-root {
     color: var(--sp-foreground);
-    /* Argon renders the whole admin at .875rem over a 16px root — inherit the
-       page font (Google Sans) and match its scale so the view doesn't look
-       like an island. */
-    font-family: inherit;
-    font-size: 0.875rem;
+    /* Шрифт, размер и выравнивание — свои, а не темы: всё наследуемое корень пульта задаёт
+       сам, иначе граница shadow root пропустит их от темы (см. surface() в main.tsx).
+       Размер в px, а не в rem: rem считается от корня ДОКУМЕНТА, а его задаёт тема. */
+    font-family: var(--sp-font-sans);
+    font-size: 14px;
+    font-weight: 400;
+    letter-spacing: normal;
+    text-align: left;
+    -webkit-font-smoothing: antialiased;
+    -moz-osx-font-smoothing: grayscale;
     line-height: 1.5;
     -webkit-text-size-adjust: 100%;
   }

@@ -44,6 +44,12 @@ module.exports = {
       },
     },
     extend: {
+      // Шрифты — свои, вшитые (index.css, @font-face), а не стек Tailwind по умолчанию:
+      // `font-mono` давал ui-monospace, то есть Menlo, Consolas или DejaVu — смотря у кого.
+      fontFamily: {
+        sans: ['var(--sp-font-sans)'],
+        mono: ['var(--sp-font-mono)'],
+      },
       // Tokens are full colours inherited from the Argon theme's own CSS
       // variables (see index.css), NOT HSL triplets — color-mix() re-enables
       // Tailwind's `/NN` opacity modifiers on top of them.

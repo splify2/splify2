@@ -3,6 +3,9 @@ import { defineConfig } from "vite"
 import react from "@vitejs/plugin-react"
 
 export default defineConfig({
+  // Адреса файлов сборки — ОТНОСИТЕЛЬНЫЕ. Под LuCI всё лежит в /luci-static/resources/splify2/,
+  // а не в корне сайта, и шрифты из index.css (url(...)) должны искаться рядом со стилем.
+  base: "./",
   plugins: [react()],
   define: {
     // Приписка к имени выпуска, которую печатает рельс: «26.9 Andromeda beta 1». Версия

@@ -76,15 +76,17 @@ describe.skipIf(!existsSync(DIST))('собранный бандл', () => {
             declare: (o: { method: string }) => () =>
                 Promise.resolve(ANSWER[o.method] ?? {}),
         }
-        const root = document.createElement('div')
-        root.id = 'splify-root'
-        root.className = 'splify-react-root'
-        document.body.appendChild(root)
+        const host = document.createElement('div')
+        host.id = 'splify-root'
+        host.className = 'splify-react-root'
+        document.body.appendChild(host)
 
         await import(/* @vite-ignore */ DIST)
         const mount = (window as never as Record<string, (el: Element) => void>).__splifyMount
-        mount(root)
+        mount(host)
         await new Promise((r) => setTimeout(r, 250))
+        // Пульт рисуется в shadow root контейнера (surface() в main.tsx) — туда и смотрим.
+        const root = (host.shadowRoot ?? host) as unknown as HTMLElement
         expect(root.textContent).toMatch(/Маршрутизация работает|Загрузка/)
 
         const click = (re: RegExp) => {

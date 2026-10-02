@@ -80,6 +80,42 @@ function syncBleed(root: HTMLElement) {
   }
 }
 
+/** Своя поверхность в shadow DOM — вместо заплат против каждой темы LuCI.
+ *
+ *  Пока пульт жил в общем документе, его вид зависел от того, какая тема стоит: Argon красит
+ *  заголовки плашками, bootstrap объявляет `.hidden` с !important, у тем разные рамки кнопок
+ *  и полей. index.css отбивался от этого правило за правилом, и каждое новое столкновение
+ *  находилось на живом роутере. В shadow root стили темы не проходят вовсе — остаются только
+ *  наследуемые свойства, а их корень пульта задаёт сам (шрифт, размер, цвет).
+ *
+ *  Стили сборки внутрь — копией той же <link>, что поставил загрузчик: адрес совпадает до
+ *  `?v=`, и браузер берёт файл из памяти, второго запроса нет. Документный экземпляр стиля
+ *  остаётся: он несёт @font-face (шрифты, объявленные внутри shadow root, Chrome не видит) и
+ *  переменные :root/.dark — пользовательские свойства наследуются сквозь границу.
+ *
+ *  Браузер без attachShadow (очень старый WebView) получает прежнее поведение — пульт прямо
+ *  в контейнере. */
+function surface(host: HTMLElement): HTMLElement {
+  if (typeof host.attachShadow !== 'function') return host
+  const sr = host.shadowRoot ?? host.attachShadow({ mode: 'open' })
+  // Новый монтаж — новые стили: после обновления пакета загрузчик меняет <link> в документе,
+  // и копия старой сборки внутри не должна пережить смену.
+  sr.replaceChildren()
+  const link = document.querySelector<HTMLLinkElement>('link[id^="splify2-app-css"]')
+  if (link) {
+    const copy = link.cloneNode() as HTMLLinkElement
+    copy.removeAttribute('id')
+    sr.appendChild(copy)
+  } else {
+    // Стенд разработчика: vite кладёт стили тегами <style> в <head>.
+    document.querySelectorAll('style[data-vite-dev-id]').forEach((st) => sr.appendChild(st.cloneNode(true)))
+  }
+  const inner = document.createElement('div')
+  inner.className = 'splify-react-root sp-surface'
+  sr.appendChild(inner)
+  return inner
+}
+
 function mount(el?: HTMLElement | null) {
   const rootElement = el ?? document.getElementById('splify-root')
   if (!rootElement) return
@@ -106,7 +142,7 @@ function mount(el?: HTMLElement | null) {
   observer.observe(document.body, { attributes: true, attributeFilter: ['data-theme', 'class', 'style'] })
   window.__splifyObserver = observer
 
-  const root = createRoot(rootElement)
+  const root = createRoot(surface(rootElement))
   window.__splifyRoot = root
   root.render(
     <StrictMode>
