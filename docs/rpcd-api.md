@@ -935,8 +935,12 @@ HWID, который уезжает панели подписки, и разни
 вторую проверку формата, тот же довод, по которому свой список грузится через `list_put`, а не
 загрузкой файла.
 
-**Что в архиве.** Спека (`/etc/steer/spec.json`), подписка (`/etc/steer/sub.txt`), СВОИ списки
-(`/etc/steer/lists/custom/**`) и поля uci `sub_url`, `sub_kind`, `wizard`.
+**Что в архиве.** Спека (`/etc/steer/spec.json`), подписка (`/etc/steer/sub.txt`) и именованные
+подписки (`/etc/steer/subs/<имя>.txt`) со своими ссылками, ключи туннелей xsteer
+(`/etc/steer/xsteer/*.conf`), СВОИ списки (`/etc/steer/lists/custom/**`), поля uci `splify2.main`
+(`sub_url`, `sub_kind`, `sub_title`, `wizard`, `manifest_url`, `fetch_via_tunnel`,
+`list_shrink_factor`, `geo_url`) и выбор у групп `pick: manual` — файл ядра `select` рядом со спекой
+(`/etc/steer/select`, строки «группа член»; с формата 3).
 
 **Чего в архиве нет.** Зеркал категорий издателя в `/etc/steer/lists` — на стенде это 43 файла и
 284 КБ (I-037). Они не настройка, а копия публикуемого upstream: одинаковы у всех, обновляются
@@ -949,12 +953,19 @@ HWID, который уезжает панели подписки, и разни
 оболочке — нет. Содержимое разделов дословное.
 
 ```
-splify2-backup 1
+splify2-backup 3
 # комментарий
 [spec]
-{"schema":1,...}
+{"version":2,...}
 [sub]
 vless://...
+[select]
+eu wg1
+[sub work]
+vless://...
+[xsteer home]
+[Interface]
+PrivateKey = ...
 [list domains mine]
 example.org
 [list prefixes mine]
@@ -963,12 +974,16 @@ example.org
 sub_url=https://example.org/sub
 sub_kind=url
 wizard=<непрозрачная строка мастера>
+sub_work.url=https://example.org/sub2
 ```
+
+Разбор принимает архивы версий 1..3 (новее своей — отказ целиком); разделы, которых в старом
+архиве нет, просто не приезжают.
 
 ### `backup_get` (read)
 
 - **Вход:** `{ "offset": <байт, 0 — собрать заново> }`.
-- **Выход:** `{ "ok": true, "format": 1, "total": <байт>, "offset": <байт>, "next": <байт>,
+- **Выход:** `{ "ok": true, "format": 3, "total": <байт>, "offset": <байт>, "next": <байт>,
   "eof": <bool>, "text": "<кусок архива>" }`. `offset`/`next`/`total` — **байты**, которые считает
   роутер: вызывающий обязан запрашивать следующий кусок ровно тем `next`, который приехал, и не
   считать смещение сам (в UTF-8 символ длиннее байта).
@@ -982,9 +997,10 @@ wizard=<непрозрачная строка мастера>
   принятому, `final` — это последний кусок, начинай разбор. Оба поля **булевы**: число приезжает как
   INT32 и `blobmsg_parse` молча отбросит его (та же ловушка, что стоила правки `list_put`).
 - **Выход** на промежуточном куске: `{ "ok": true, "bytes": <накоплено> }`.
-- **Выход** на последнем: `{ "ok": true, "spec": <bool>, "sub": <bool>,
-  "lists": [ { "name": "...", "kind": "domains|prefixes", "count": N, "dropped": N } ],
-  "warn": "<если что-то требует внимания>" }`.
+- **Выход** на последнем: `{ "ok": true, "spec": <bool>, "sub": <bool>, "subs": N, "xsteer": N,
+  "select": <bool>, "lists": [ { "name": "...", "kind": "domains|prefixes", "count": N, "dropped": N } ],
+  "warn": "<если что-то требует внимания>" }`. `subs` и `xsteer` — сколько именованных подписок и
+  ключей туннелей легло на место, `select` — лёг ли выбор у групп.
 
 **Восстановление не применяет.** Спека кладётся на место, но `steer apply` не зовётся, а снимок
 применённого (`spec.applied.json`) остаётся прежним — поэтому интерфейс показывает восстановленное

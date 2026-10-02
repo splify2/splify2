@@ -2434,6 +2434,9 @@ printf '%s\n' '[Interface]' \
   > "$XSTEER_DIR/home.conf"
 printf '%s\n' '#v1' '--filter-tcp=443' '--dpi-desync=fake,split2' > "$T/etc/steer-zapret/yt.opts"
 printf 'vless://k2@h2:443#second\n' > "$T/etc/subs/work.txt"
+# Выбор у групп «вручную» — файл ядра рядом со спекой. Чужая строка в нём в архив не едет:
+# разборщик восстановления отверг бы из-за неё архив целиком.
+printf '%s\n' 'eu wg1' 'мусор; reboot' > "$T/etc/select"
 uci_set splify2.sub_work subscription
 uci_set splify2.sub_work.url 'https://panel.example.net/sub/2'
 uci_set splify2.sub_work.kind url
@@ -2459,7 +2462,7 @@ check "архив приезжает несколькими кусками и с
       "$([ "$(cat "$T/doc-parts")" -gt 1 ] && echo yes || echo no)"
 check "склеенный архив не потерял ни строки на границах кусков" "1200" \
       "$(printf '%s\n' "$doc" | grep -c '^host[0-9]*\.example$')"
-check "архив начинается своим заголовком с версией" "splify2-backup 2" \
+check "архив начинается своим заголовком с версией" "splify2-backup 3" \
       "$(printf '%s\n' "$doc" | head -1)"
 check "в архиве есть спека, подписка и оба своих списка" "yes" \
       "$(printf '%s\n' "$doc" | grep -q '^\[spec\]$' &&
@@ -2470,6 +2473,8 @@ check "в архиве есть спека, подписка и оба свои�
 # размер, а состав — списка издателя нет ни заголовком, ни содержимым.
 check "зеркал категорий издателя в архиве нет (284 КБ, I-037)" "no" \
       "$(printf '%s\n' "$doc" | grep -qE '^(\[list (prefixes|domains) news\]|10\.0\.0\.0/8|example\.org)$' && echo yes || echo no)"
+check "выбор у групп «вручную» уезжает в архив, чужая строка — нет" "yes;no" \
+      "$(printf '%s\n' "$doc" | grep -q '^\[select\]$' && printf '%s\n' "$doc" | grep -qx 'eu wg1' && echo yes || echo no);$(printf '%s\n' "$doc" | grep -q 'reboot' && echo yes || echo no)"
 check "в архиве есть и большой свой список, и оба маленьких" "yes" \
       "$(printf '%s\n' "$doc" | grep -q '^\[list domains mine-big\]$' && echo yes || echo no)"
 
@@ -2696,6 +2701,17 @@ check "остальные поля uci восстановлены, а не то�
       "$(uci_get splify2.main.sub_title);$(uci_get splify2.main.zm_fix);$(uci_get splify2.main.list_shrink_factor);$(uci_get splify2.main.geo_url)"
 check "в ответе сказано, что именно восстановлено" "1;1" \
       "$(printf '%s' "$out" | jget xsteer);$(printf '%s' "$out" | jget subs)"
+
+# ---- формат 3: выбор у групп «вручную» ------------------------------------------------
+# Без него восстановленная группа pick: manual вела бы трафик через член по умолчанию, а не
+# через тот, что выбрал человек. Ложится файлом `select` рядом со спекой — там его ищет ядро.
+rm -f "$T/etc/select"
+out="$(printf '%s\n' 'splify2-backup 3' '[select]' 'eu wg1' 'fast.pool nl-2' | backup_put)"
+check "выбор у групп восстановлен рядом со спекой" "true;eu wg1|fast.pool nl-2|" \
+      "$(printf '%s' "$out" | jget select);$(tr '\n' '|' < "$T/etc/select" 2>/dev/null)"
+out="$(printf '%s\n' 'splify2-backup 3' '[select]' 'eu wg1; reboot' | backup_put)"
+check "чужая строка в выборе у групп отвергает файл" "false;eu wg1|fast.pool nl-2|" \
+      "$(printf '%s' "$out" | jget ok);$(tr '\n' '|' < "$T/etc/select" 2>/dev/null)"
 
 # Выход, ссылающийся на ИМЕНОВАННУЮ подписку, отвергался проверкой путей: она знала только
 # /etc/steer/sub.txt и каталог списков. То есть архив роутера с двумя подписками нельзя было

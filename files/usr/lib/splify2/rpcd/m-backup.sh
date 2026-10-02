@@ -66,6 +66,7 @@ backup_split() {  # ФАЙЛ КАТАЛОГ
         if ($0 == "[spec]")         { cur = dir "/spec" }
         else if ($0 == "[sub]")     { cur = dir "/sub" }
         else if ($0 == "[options]") { cur = dir "/options" }
+        else if ($0 == "[select]")  { cur = dir "/select" }
         else if ($0 ~ /^\[list (domains|prefixes) [A-Za-z0-9_-]+\]$/) {
             split(substr($0, 2, length($0) - 2), p, " ")
             cur = dir "/list." p[2] "." p[3]
@@ -274,6 +275,19 @@ backup_check_xsteer() {  # ФАЙЛ ИМЯ
     return 0
 }
 
+# Выбор у групп «вручную» из архива: строки «группа член» — имена выходов спеки (буквы,
+# цифры, `_ - .`, до 31 байта, как их проверяет ядро). Файл читает ядро, но пишем его МЫ и
+# рядом со спекой: ничего, кроме таких строк, туда не ляжет.
+backup_check_select() {  # ФАЙЛ
+    sz="$(wc -c 2>/dev/null < "$1" || echo 0)"
+    [ "$sz" -le "$BACKUP_OPT_MAX" ] || { echo "выбор у групп больше $((BACKUP_OPT_MAX / 1024)) КБ"; return 1; }
+    if grep -v '^[[:space:]]*$' "$1" | grep -qvE '^[A-Za-z0-9_.-]{1,31} [A-Za-z0-9_.-]{1,31}$'; then
+        echo "выбор у групп: ждём строки «группа член» из имён выходов"
+        return 1
+    fi
+    return 0
+}
+
 # Ссылка из архива. Уезжает в uci и оттуда в командную строку загрузчика: пробелы, кавычки
 # и подстановки в ней не значат ничего хорошего ни в одном из этих мест.
 #
@@ -469,7 +483,7 @@ case "$2" in
         mkdir -p "$D/clean" || fail "не удалось развернуть архив"
         why="$(backup_split "$BACKUP_IN" "$D")" || backup_giveup "${why:-архив не разбирается}"
         any=0
-        for f in "$D/spec" "$D/sub" "$D/options" "$D"/list.* "$D"/sub.* "$D"/xsteer.*; do
+        for f in "$D/spec" "$D/sub" "$D/options" "$D/select" "$D"/list.* "$D"/sub.* "$D"/xsteer.*; do
             [ -f "$f" ] && any=1
         done
         [ "$any" = 1 ] || backup_giveup "в архиве нет ни настроек, ни списков"
@@ -481,6 +495,9 @@ case "$2" in
         fi
         if [ -f "$D/options" ]; then
             why="$(backup_check_options "$D/options")" || backup_giveup "${why:-настройки из архива не годятся}"
+        fi
+        if [ -f "$D/select" ]; then
+            why="$(backup_check_select "$D/select")" || backup_giveup "${why:-выбор у групп из архива не годится}"
         fi
         # Именованные подписки — ТЕМ ЖЕ проверщиком, что и первая: расхождение между «что
         # принимает подписка main» и «что принимает вторая» означало бы подписку, которую
@@ -619,6 +636,15 @@ case "$2" in
                 { rm -f "$SPEC.new.$$"; backup_giveup "спека не записалась — кончилось место?"; }
             spec_done=1
         fi
+        # Выбор у групп «вручную» — после спеки: строки называют её группы. Ложится рядом со
+        # спекой, где его ищет ядро (steer_keep_dir); действует со следующего применения.
+        select_done=0
+        if [ -f "$D/select" ] && grep -q '[^[:space:]]' "$D/select"; then
+            sel="${SPEC%/*}/select"
+            mkdir -p "${SPEC%/*}"
+            grep -v '^[[:space:]]*$' "$D/select" > "$sel.new.$$" && mv "$sel.new.$$" "$sel" && select_done=1 ||
+                { rm -f "$sel.new.$$"; warn="${warn}выбор у групп не записался; "; }
+        fi
         # Помощников выходов после восстановления перезапускает демон при «Применить»: он
         # сверяет прежнюю спеку с новой и подпись помощника (параметры выхода и содержимое
         # файла подписки) с запущенным.
@@ -631,6 +657,7 @@ case "$2" in
         # тот же довод, по которому отдельными полями стоят spec и sub.
         json_add_int subs "$subs_done"
         json_add_int xsteer "$xsteer_done"
+        json_add_boolean select "$select_done"
         json_add_array lists
         for e in $entries; do
             k="${e%%:*}"; rest="${e#*:}"; nm="${rest%%:*}"; rest="${rest#*:}"
