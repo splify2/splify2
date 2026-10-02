@@ -3,7 +3,7 @@ import { Search, Trash2 } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Block, CardHead, ScreenHeader, Segmented } from '@/components/ui/layout'
 import { rpc } from '@/lib/rpc'
-import { isCidr4, isIp4 } from '@/lib/validate'
+import { isClientAddr } from '@/lib/validate'
 import { usePending } from '@/lib/pending'
 import { type Channel, type Narrow, type OutputStatus, type ServiceEntry, devList, isPart, isTunnelKind } from '@/lib/model'
 
@@ -18,10 +18,9 @@ import { type Channel, type Narrow, type OutputStatus, type ServiceEntry, devLis
  *  спорили об одном и том же. */
 
 /** MAC ровно в том виде, в каком его понимает nft: шесть пар шестнадцатеричных цифр через
- *  двоеточие. Своя проверка, а не из `lib/validate.ts`, потому что там валидаторов адресов
- *  сети хватает, а MAC-адрес нигде больше в формах не набирают. Признак «есть двоеточие»
- *  ниже отделяет MAC от адреса, а эта проверка говорит, правильно ли он написан: `aa:bb:cc`
- *  проходит первый признак и не совпадает ни с одним пакетом. */
+ *  двоеточие. Своя проверка, а не из `lib/validate.ts`, потому что MAC-адрес нигде больше в
+ *  формах не набирают. Двоеточие есть и у IPv6, поэтому запись годна, если она MAC ЛИБО адрес
+ *  (`isClientAddr`): `aa:bb:cc` не проходит ни то, ни другое. */
 const MAC = /^([0-9a-f]{2}:){5}[0-9a-f]{2}$/i
 
 export { pathFor, srsPathFor, ruleFiles, onRouter, srsOf, selectedIds, isDomains } from '@/lib/rulefiles'
@@ -316,20 +315,16 @@ export default function RuleEditor({
                                     уходит двумя правилами подряд (encodeSpec в lib/specv2.ts). */}
                                 <p className="text-xs text-muted-foreground">
                                     {S.ruleEditor.macVidenTolkoU}</p>
-                                {/* Опечатка в адресе не отвергается, а МОЛЧА выпадает: наборы nft
-                                    строит shell, и битую запись он выбрасывает по дороге. Наружу это
-                                    выходит как «я добавил телефон, а правило его не касается» —
-                                    причём касается оно при этом всех остальных, и человек ищет
-                                    поломку в туннеле. Проверки те же, что на shell-стороне
-                                    (lib/validate.ts), сказанные до сохранения. */}
+                                {/* Опечатку в адресе ядро 2.0 не пропускает: спека с ней не
+                                    применится целиком (addr_check спеки v2), и правки соседних
+                                    правил встанут вместе с ней. Проверка та же, что у ядра
+                                    (lib/validate.ts): IPv4 и IPv6 — адрес, подсеть или диапазон
+                                    `a-b`; MAC — шесть пар через двоеточие. Двоеточие само по себе
+                                    MAC не означает: у IPv6 оно тоже есть. */}
                                 {(() => {
                                     const bad = (ch.from || [])
                                         .filter(Boolean)
-                                        .filter((x) =>
-                                            x.includes(':')
-                                                ? !MAC.test(x.trim())
-                                                : !isIp4(x) && !isCidr4(x),
-                                        )
+                                        .filter((x) => !MAC.test(x.trim()) && !isClientAddr(x))
                                     return bad.length ? (
                                         <p className="text-xs text-destructive">
                                             {S.ruleEditor.neAdresINe}{bad.join(', ')} {S.ruleEditor.takuyuZapisYadroVybrosit}</p>

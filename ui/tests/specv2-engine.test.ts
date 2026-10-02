@@ -188,6 +188,17 @@ describe.skipIf(!HAVE)('кодек v2 против движка: адреса и
     })
 })
 
+describe.skipIf(!HAVE)('кодек v2 против движка: «кому» с IPv6 и диапазонами', () => {
+    it('адреса IPv6, подсети IPv6 и диапазоны a-b ядро принимает и ставит в правила', () => {
+        const from = ['192.168.1.10-192.168.1.20', '2001:db8::1', 'fd00::/64', '2001:db8::10-2001:db8::1f']
+        const rs = ruleset(encodeSpec({
+            outputs: { direct: { name: 'direct', kind: 'direct' }, wg0: { name: 'wg0', kind: 'interface', device: 'wg0' } },
+            channels: [{ name: 'v6', out: 'wg0', from, match: { domains_files: [dom], mode: 'fakeip' } }],
+        }), 'from6.json')
+        for (const a of from) expect(rs).toContain(a)
+    })
+})
+
 describe.skipIf(HAVE)('кодек v2 против движка — ПРОПУЩЕН', () => {
     it('нет движка (make -C ../steer all)', () => {
         expect(HAVE).toBe(false)

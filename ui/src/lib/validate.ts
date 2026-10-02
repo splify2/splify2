@@ -18,6 +18,39 @@ export const isIp4 = (v: string) => IPV4.test(v.trim())
 /** Подсеть с длиной префикса — то, что принимает `from` канала и наборы nft. */
 export const isCidr4 = (v: string) => CIDR4.test(v.trim())
 
+/** Адрес IPv6 без длины префикса. Разбирает браузер (`URL` с хостом в скобках) — тот же
+ *  разборщик, что у адресной строки: сжатие `::` и хвост в точечной записи регуляркой не
+ *  опишешь, а ядро steer проверяет ту же запись через inet_pton. Знаки вне состава IPv6
+ *  отсекаются заранее: `]`, `/` или `%` в скобках поменяли бы смысл записи. */
+export const isIp6 = (v: string) => {
+  const s = v.trim()
+  if (!s.includes(':') || !/^[0-9a-f:.]+$/i.test(s)) return false
+  try {
+    new URL(`http://[${s}]/`)
+    return true
+  } catch {
+    return false
+  }
+}
+
+/** Адрес клиента правила так, как его принимает ядро steer 2.0 (`addr_check` спеки v2 —
+ *  `spec_line_family` в src/model/parse.c): IPv4 или IPv6, адресом, подсетью или диапазоном
+ *  `начало-конец` одного семейства. */
+export function isClientAddr(v: string): boolean {
+  const s = v.trim()
+  const dash = s.indexOf('-')
+  if (dash >= 0) {
+    const a = s.slice(0, dash)
+    const b = s.slice(dash + 1)
+    return (isIp4(a) && isIp4(b)) || (isIp6(a) && isIp6(b))
+  }
+  if (isIp4(s) || isCidr4(s)) return true
+  const slash = s.indexOf('/')
+  if (slash < 0) return isIp6(s)
+  const len = s.slice(slash + 1)
+  return /^(12[0-8]|1[01]\d|[1-9]?\d)$/.test(len) && isIp6(s.slice(0, slash))
+}
+
 export const isHttpUrl = (v: string) => {
   const s = v.trim()
   if (!s) return true            // empty = feature off, not an error
