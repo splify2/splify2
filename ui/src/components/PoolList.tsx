@@ -6,7 +6,7 @@ import { CardHead, Empty, Group, TapRow } from '@/components/ui/layout'
 import PoolEditor from '@/components/PoolEditor'
 import { rpc } from '@/lib/rpc'
 import { missingModule } from '@/lib/engine'
-import { outDownWord } from '@/lib/outstate'
+import { outDownWord, outExtras } from '@/lib/outstate'
 import { pending } from '@/lib/pending'
 import { country } from '@/lib/geo'
 import { devList, EMPTY_SPEC, isPart, type Spec } from '@/lib/model'
@@ -214,6 +214,13 @@ export default function PoolList({
                          * словом впереди строки: красный значок без слова не говорит, что
                          * случилось. */
                         const down = need ? null : outDownWord(st)
+                        /* Мост tgws устройства не имеет: «устройство не выбрано» у него было бы
+                         * неправдой. И что ещё ядро знает о выходе: пути моста, проверка
+                         * сертификата, IPv6 от хоста (lib/outstate.ts, outExtras). */
+                        const base = o.kind === 'tgws'
+                            ? [S.outState.mostTelegram, rules ? S.poolList.pravil(rules) : ''].filter(Boolean).join(' · ')
+                            : state
+                        const extra = need ? { words: [], alarm: false } : outExtras(o, st)
                         return (
                             <TapRow
                                 key={name}
@@ -229,8 +236,8 @@ export default function PoolList({
                                               : ShieldCheck
                                 }
                                 title={name}
-                                subtitle={down ? [down, state].filter(Boolean).join(' · ') : state}
-                                alarm={!!need || (o.kind !== 'direct' && st?.up === false)}
+                                subtitle={[down, base, ...extra.words].filter(Boolean).join(' · ')}
+                                alarm={!!need || extra.alarm || (o.kind !== 'direct' && st?.up === false)}
                                 onClick={() => setEditing(o.kind === 'group' ? `${GROUP_PREFIX}${name}` : name)}
                             />
                         )

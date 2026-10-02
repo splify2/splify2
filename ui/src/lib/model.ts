@@ -276,6 +276,30 @@ export interface OutputStatus extends Output {
     on_fail?: OnFail
 }
 
+/* ---- наблюдаемость ядра 2.0: что ещё печатает status у выхода ----
+ *
+ * Своим блоком, слиянием объявлений, а не правкой интерфейса выше: поля пришли вместе, читают
+ * их одни и те же места (строка выхода в «Выходах», беда выхода на главной), и держать их рядом
+ * понятнее, чем рассыпать по длинному объявлению. TypeScript сливает одноимённые интерфейсы. */
+export interface OutputStatus {
+    /** kind=vless: проверка сертификата узлов выключена в спеке (`insecure: true`). Поля нет —
+     *  проверяется. */
+    insecure?: boolean
+    /** Мост tgws (и всякий помощник, который о путях сообщал): пути, которые он отставил и чей
+     *  срок не вышел. Пустой массив — отставленных нет. Только у ядра-демона с помощниками. */
+    paths_down?: PathDown[]
+}
+
+/** Путь моста tgws, который помощник отставил: дата-центр Telegram, медиа ли это, домен и
+ *  срок (секунды Unix) — до `until` мост этим путём не ходит. */
+export interface PathDown {
+    dc: number
+    media: boolean
+    domain: string
+    at: number
+    until: number
+}
+
 export const ON_FAIL_TEXT: Record<OnFail, string> = {
     drop: S.model.ostanovitTrafik,
     direct: S.model.pustitNapryamuyu,
