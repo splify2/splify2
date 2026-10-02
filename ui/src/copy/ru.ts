@@ -633,6 +633,7 @@ export const ru = {
         adresProverki: "Адрес проверки",
         neMeritBezTrafika: "Не мерить без трафика дольше, с",
         n0MeritVsegda: "0 — мерить всегда",
+        neProveryatSertifikat: "Не проверять сертификат узла",
     },
     outputCards: {
         netOtveta: "нет ответа",

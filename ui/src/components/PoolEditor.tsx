@@ -12,7 +12,7 @@ import { ccFromName, plainName } from '@/lib/nodename'
 import { poolsSupported } from '@/lib/engine'
 import { latencyTone, probeKey, probeMs, useNodeProbe } from '@/lib/probe'
 import {
-    devList, isPart, isProxyKind, isTunnelKind, ON_FAIL_TEXT, PROXY_KINDS, type OnFail, type Output, type ProxyKind,
+    devList, insecureApplies, isPart, isProxyKind, isTunnelKind, ON_FAIL_TEXT, PROXY_KINDS, type OnFail, type Output, type ProxyKind,
     type Spec, type VlessNode,
 } from '@/lib/model'
 import OutputAdvanced, { advFrom, advApply, type Adv } from '@/components/OutputAdvanced'
@@ -1082,6 +1082,7 @@ export default function PoolEditor({
                         show={{
                             tunnel: subsInRows.size > 0,
                             vless: rows.some((r) => r.kind !== 'dev' && r.proto === 'vless'),
+                            insecure: rows.some((r) => r.kind !== 'dev' && insecureApplies(r.proto)),
                             iface: rows.length === 1 && rows[0].kind === 'dev',
                             pool: rows.length > 1,
                         }}

@@ -1,6 +1,6 @@
-import { Block, CardHead, FieldRow, Segmented } from '@/components/ui/layout'
+import { Block, CardHead, FieldRow, Segmented, ToggleRow } from '@/components/ui/layout'
 import { Chip, Field, NumField, Radio, inputCls } from '@/components/formbits'
-import { isPart, isTunnelKind, type Ipv6Mode, type Output, type Spec } from '@/lib/model'
+import { insecureApplies, isPart, isTunnelKind, type Ipv6Mode, type Output, type Spec } from '@/lib/model'
 
 import { S } from '@/copy'
 // Дополнительные настройки выхода, которые не зависят от того, из чего он собран: через какой
@@ -18,6 +18,8 @@ export interface Adv {
     over: string
     /** Фильтр транспорта узлов VLESS; пусто — любые. */
     transport: string[]
+    /** Не проверять сертификат узлов с TLS (`insecure`): у vless, trojan, vmess и http. */
+    insecure: boolean
     /** IPv6 от хоста; пусто — как у вида. */
     ipv6: '' | Ipv6Mode
     prefix: string
@@ -41,6 +43,7 @@ export function advFrom(spec: Spec, name?: string): Adv {
     return {
         over: tun?.over || o?.over || '',
         transport: tun?.transport || [],
+        insecure: !!tun?.insecure,
         ipv6: o?.ipv6 || '',
         prefix: o?.prefix || '',
         pick: o?.pick === 'latency' ? 'latency' : 'order',
@@ -60,6 +63,9 @@ export function advApply(o: Output, adv: Adv, role: 'top' | 'tunnel'): Output {
         else delete out.over
         if (o.kind === 'vless' && adv.transport.length) out.transport = adv.transport
         else delete out.transport
+        /* Только у видов с TLS: у hysteria2, shadowsocks и socks ключа нет, ядро его отвергает. */
+        if (adv.insecure && insecureApplies(o.kind)) out.insecure = true
+        else delete out.insecure
     }
     if (role === 'top' && o.kind === 'interface') {
         const pool = (o.devices?.length ?? 0) > 1
@@ -92,6 +98,8 @@ export default function OutputAdvanced({ adv, onChange, spec, self, show, classN
         tunnel: boolean
         /** …и он VLESS (у hysteria2 фильтра транспорта нет). */
         vless: boolean
+        /** …и у него есть TLS (vless, trojan, vmess, http): к нему применим `insecure`. */
+        insecure?: boolean
         /** Выход — одно устройство (не пул): к нему применим IPv6 от хоста. */
         iface: boolean
         /** Выход — пул из нескольких строк. */
@@ -138,6 +146,13 @@ export default function OutputAdvanced({ adv, onChange, spec, self, show, classN
                             ))}
                         </div>
                     </div>
+                )}
+                {show.tunnel && show.insecure && (
+                    <ToggleRow
+                        label={S.outputAdvanced.neProveryatSertifikat}
+                        on={adv.insecure}
+                        onToggle={() => set({ insecure: !adv.insecure })}
+                    />
                 )}
                 {show.iface && (
                     <div className="space-y-1">
