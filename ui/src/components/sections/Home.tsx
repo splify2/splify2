@@ -8,10 +8,10 @@ import { subsRemember, subsRemembered } from '@/lib/subs'
 import { human, type DiagCheck, type Live } from '@/lib/live'
 import { usePending } from '@/lib/pending'
 import { specV2Unsupported } from '@/lib/engine'
-import { ON_FAIL_TEXT, type Channel, type ChannelStatus, type OutputStatus, devList, isPart, isTunnelKind } from '@/lib/model'
+import { ON_FAIL_TEXT, type Channel, type OnFail, type ChannelStatus, type OutputStatus, devList, isPart, isTunnelKind } from '@/lib/model'
 import { devKindsOf } from '@/lib/badges'
 import { country } from '@/lib/geo'
-import { outDownWord } from '@/lib/outstate'
+import { outDown, outDownWord } from '@/lib/outstate'
 import Flag from '@/components/Flag'
 import { type SectionId } from '@/lib/sections'
 
@@ -31,6 +31,9 @@ interface Verdict {
     text: string
     tone: 'good' | 'warn' | 'bad' | 'idle'
     why: string
+    /** Находка строкой под заголовком — и куда она ведёт: проверки ядра — в «Диагностику»,
+     *  неотвечающий выход — к выходам. `bad` красит строку поломкой. Нет — строки нет. */
+    finding?: { go: SectionId; bad: boolean }
     /** Сами советы, а не только их число: строку «советов: N» человек прочитал как вопрос
      *  («что за совет?» — splify2#4, I-039), потому что содержания в ней не было. */
     notes: DiagCheck[]
@@ -41,19 +44,72 @@ interface Verdict {
  *  Порядок именно такой, потому что зелёная надпись сверху при красной проверке ниже учит не
  *  верить надписи. Строк ровно четыре: заголовок состояния не пересказывает находки, что
  *  именно нашлось — читается в диагностике, дословно словами движка. */
+/** Выходы, которые несут правила и сейчас не отвечают, — с правилами и тем, куда идёт их трафик.
+ *
+ *  ЗАЧЕМ СВОЙ ВЗГЛЯД, ЕСЛИ ЕСТЬ ПРОВЕРКИ ЯДРА. `steer diag` спрашивает у выхода, ЕСТЬ ли его
+ *  устройство, а `steer status` — поднято ли оно; устройство в состоянии down проверки не находят
+ *  вовсе. Снято с QEMU-стенда: выход vl правила T не поднят, on_fail: drop — трафик правила
+ *  отбрасывается, — а заголовок зелёный, «Маршрутизация работает». Состояние выхода — тоже слово
+ *  ядра (status), а не мнение интерфейса.
+ *
+ *  Правила берутся из наборов ядра: в них только то, что ядро собрало, — выключенное правило
+ *  трафик не несёт. Перебор узлов — не беда, а подъём: ядро само зовёт его «ждать, а не чинить».
+ *  Группа не отвечает, когда не выбрала ни одного члена. */
+function downOutputs(live: Live): { out: string; rules: string[]; onFail: OnFail }[] {
+    const outs = live.status?.outputs || {}
+    const by = new Map<string, string[]>()
+    for (const set of live.status?.channels || []) {
+        const list = by.get(set.out) || []
+        for (const n of set.channels?.length ? set.channels : [set.name]) if (!list.includes(n)) list.push(n)
+        by.set(set.out, list)
+    }
+    const res: { out: string; rules: string[]; onFail: OnFail }[] = []
+    for (const [out, rules] of by) {
+        const st = outs[out]
+        if (!st || st.kind === 'direct' || st.probe?.state === 'probing') continue
+        const down = st.group ? !st.group.selected : st.up === false || outDown(st) !== null
+        if (down) res.push({ out, rules, onFail: st.on_fail || 'drop' })
+    }
+    return res
+}
+
+const HOW: Record<OnFail, string> = {
+    drop: S.home.kakOstanovlen,
+    direct: S.home.kakNapryamuyu,
+    zapret: S.home.kakCherezObhod,
+}
+
 function verdict(live: Live): Verdict {
     /* Советы (note) в цвет не идут: они верны всегда, и красить ими состояние значило бы
      * держать роутер вечно нездоровым. Полный перечень остаётся в диагностике. */
     const notes = (live.diag?.checks || []).filter((c) => c.verdict === 'note')
     if (live.error) return { text: S.home.yadroNeOtvechaet, tone: 'bad', why: live.error, notes }
     if (live.diag?.fail)
-        return { text: S.home.estPolomki, tone: 'bad', why: S.home.proverokSOtkazom(live.diag.fail), notes }
+        return {
+            text: S.home.estPolomki, tone: 'bad', why: S.home.proverokSOtkazom(live.diag.fail), notes,
+            finding: { go: 'diag', bad: true },
+        }
+    /* Выход правила не отвечает. on_fail: drop — трафик правила стоит, это поломка; direct и
+     * zapret — трафик идёт мимо туннеля, это предупреждение. Раньше проверок-предупреждений: у
+     * них своя строка в «Диагностике», а остановленный трафик — первое, что надо знать. */
+    const down = downOutputs(live)
+    if (down.length) {
+        const bad = down.some((d) => d.onFail === 'drop')
+        return {
+            text: down.length > 1 ? S.home.vyhodyNeOtvechayut : S.home.vyhodNeOtvechaet,
+            tone: bad ? 'bad' : 'warn',
+            why: down.map((d) => S.home.trafikPravil(d.out, d.rules, HOW[d.onFail] || HOW.drop)).join('; '),
+            notes,
+            finding: { go: 'vpn', bad },
+        }
+    }
     if (live.diag?.warn)
         return {
             text: S.home.marshrutizatsiyaRabotaet,
             tone: 'warn',
             why: S.home.proverokSPreduprezhdeniem(live.diag.warn),
             notes,
+            finding: { go: 'diag', bad: false },
         }
     if (!live.status) return { text: S.home.zagruzka, tone: 'idle', why: '', notes }
     return {
@@ -299,24 +355,26 @@ export default function Home({
                     он принадлежит движку и живёт в диагностике целиком. */}
                 {/* `> 0`, а не просто `&&`: нуль в JSX печатается как «0», и на исправном роутере
                     под вердиктом висела одинокая цифра — поймано на снимке живого роутера. */}
-                {!live.phase && ((live.diag?.fail ?? 0) > 0 || (live.diag?.warn ?? 0) > 0) && (
+                {/* Неотвечающий выход правила — той же строкой, но с дорогой к выходам: чинят его там. */}
+                {!live.phase && v.finding && (
                     <button
                         type="button"
-                        onClick={() => onSection('diag')}
+                        onClick={() => onSection(v.finding!.go)}
                         className={[
                             'flex w-full items-center gap-2 rounded-xl border p-3 text-left text-[13px] transition-colors',
-                            live.diag?.fail
+                            v.finding.bad
                                 ? 'border-destructive/40 bg-destructive/10'
                                 : 'border-warning/40 bg-warning/10',
                         ].join(' ')}
                     >
                         <TriangleAlert
-                            className={`h-4 w-4 shrink-0 ${live.diag?.fail ? 'text-destructive' : 'text-warning-fg'}`}
+                            className={`h-4 w-4 shrink-0 ${v.finding.bad ? 'text-destructive' : 'text-warning-fg'}`}
                             aria-hidden="true"
                         />
                         <span className="min-w-0 flex-1">{v.why}</span>
                         <span className="flex shrink-0 items-center gap-1 text-muted-foreground">
-                            {S.home.diagnostika}<ArrowRight className="h-3.5 w-3.5" aria-hidden="true" />
+                            {v.finding.go === 'vpn' ? S.home.kVyhodam : S.home.diagnostika}
+                            <ArrowRight className="h-3.5 w-3.5" aria-hidden="true" />
                         </span>
                     </button>
                 )}
