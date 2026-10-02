@@ -4,7 +4,7 @@
  *  ленивых кусков, rollup выносил в отдельный `splify-RuleEditor.js` без пина версии, и
  *  scripts/check-dist.mjs валил сборку. В src/lib они уезжают в общий кусок. */
 import { rpc } from '@/lib/rpc'
-import { type Channel, type ServiceEntry } from '@/lib/model'
+import { type Channel, type Narrow, type ServiceEntry } from '@/lib/model'
 
 /** Путь, по которому движок будет искать список. Повторяет путь у издателя, а не берёт от него
  *  одно имя файла: иначе адресный `hodca.lst` и доменный `domains/hodca.lst` становятся одним
@@ -49,14 +49,30 @@ export function onRouter(sv: ServiceEntry, local: Record<string, unknown>): bool
  *  разобрав набор, то есть скачав его (`list_fetch` отвечает полем `srs`); лежащее на роутере
  *  отвечает без сети. Не вышло спросить — списками: сохранение доскачает их само. */
 export async function srsOf(sv: ServiceEntry, local: Record<string, unknown>): Promise<string | undefined> {
-    if (!sv.srs) return undefined
+    return (await srsProbe(sv, local)).set
+}
+
+/** То же, что srsOf, и заодно сужение подсетей из того же ответа роутера (`list_fetch` отдаёт
+ *  `narrow` у набора, где подсети ограничены протоколом и портами, — Discord). `asked` — роутер
+ *  отвечал про подсети: тогда отсутствие `narrow` и есть ответ «подсети не сужены», и второй
+ *  раз набор качать незачем. */
+export async function srsProbe(sv: ServiceEntry, local: Record<string, unknown>): Promise<{ set?: string; narrow?: Narrow; asked: boolean }> {
+    if (!sv.srs) return { asked: false }
     const set = srsPathFor(sv.prefixes[0] ?? sv.domains[0])
-    if (local[relOf(set)]) return set
-    if (sv.parts.every((p) => local[relOf(p.file)])) return undefined
+    if (local[relOf(set)]) return { set, asked: false }
+    if (sv.parts.every((p) => local[relOf(p.file)])) return { asked: false }
     const part = sv.parts.find((p) => p.kind === 'prefixes') ?? sv.parts[0]
     const r = await rpc.listFetch(part.id, part.kind).catch(() => null)
-    return r?.ok && r.srs ? r.srs : undefined
+    if (!r?.ok) return { asked: false }
+    if (r.srs) return { set: r.srs, asked: false }
+    const onlyPart = sv.parts.filter((p) => p.kind === 'prefixes').length === 1
+    return { narrow: r.narrow, asked: part.kind === 'prefixes' && onlyPart }
 }
+
+/** Можно ли у записи каталога вообще ждать сужения подсетей: оно приходит только из набора
+ *  sing-box — у второго издателя (`publisher`) и у записей каталога в формате .srs. Обычный
+ *  список подсетей его не несёт, и спрашивать про него — зря качать список заново. */
+export const mayNarrow = (sv: ServiceEntry) => !!(sv.publisher || sv.srs) && sv.prefixes.length > 0
 
 
 

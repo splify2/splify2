@@ -14,6 +14,7 @@ import {
     isPart,
     routedOutputs,
     type Channel,
+    type Narrow,
     type OutputStatus,
     type ServiceEntry,
     type Spec,
@@ -22,7 +23,7 @@ import { type Live } from '@/lib/live'
 import { Hint } from '@/components/ui/hint'
 import { Block, Group } from '@/components/ui/layout'
 import RuleEditor from '@/components/tabs/RuleEditor'
-import { pathFor, ruleFiles, selectedIds, srsOf } from '@/lib/rulefiles'
+import { pathFor, ruleFiles, selectedIds, srsProbe } from '@/lib/rulefiles'
 
 import { S } from '@/copy'
 /** Правила: единственное место, где что-то назначается.
@@ -173,7 +174,7 @@ export default function RulesTab({
         }
         /* Набор каталога встаёт списками или файлом — как в редакторе (srsOf); пока роутер
          * отвечает, человек мог поправить спеку, поэтому дописываем к сохранённой. */
-        const create = (cur: Spec, set?: string) => {
+        const create = (cur: Spec, set?: string, nw: Narrow | undefined = wanted.narrow) => {
             const used = new Set(cur.channels.map((c) => c.name))
             let name = wanted.name
             let n = 2
@@ -191,11 +192,15 @@ export default function RulesTab({
                               ? { domains_files: wanted.domains.map(pathFor), mode: 'fakeip' as const }
                               : {}),
                       },
+                /* Сужение подсетей, если оно уже известно (у издателя или из ответа роутера, I-421). */
+                ...(!set && nw && wanted.prefixes.length
+                    ? { narrow: Object.fromEntries(wanted.prefixes.map((f) => [pathFor(f), nw])) }
+                    : {}),
             }
             edit({ ...cur, channels: [...cur.channels, ch] })
             setOpen(cur.channels.length)
         }
-        if (wanted.srs) void srsOf(wanted, local).then((set) => create(pending.saved ?? spec, set))
+        if (wanted.srs) void srsProbe(wanted, local).then((r) => create(pending.saved ?? spec, r.set, wanted.narrow ?? (r.asked ? r.narrow : undefined)))
         else create(spec)
         // eslint-disable-next-line react-hooks/exhaustive-deps
     }, [wanted, spec])

@@ -28,7 +28,7 @@ const MAC = /^([0-9a-f]{2}:){5}[0-9a-f]{2}$/i
 const OWN_DNS = ' own'
 
 export { pathFor, srsPathFor, ruleFiles, onRouter, srsOf, selectedIds, isDomains } from '@/lib/rulefiles'
-import { pathFor, srsPathFor, ruleFiles, onRouter, srsOf, selectedIds, isDomains, serviceFiles, overridePortOf, withOverridePort } from '@/lib/rulefiles'
+import { pathFor, srsPathFor, ruleFiles, onRouter, srsProbe, mayNarrow, selectedIds, isDomains, serviceFiles, overridePortOf, withOverridePort } from '@/lib/rulefiles'
 
 
 import { S } from '@/copy'
@@ -126,9 +126,9 @@ export default function RuleEditor({
         if (!on && sv.srs) {
             if (probing.has(sv.id)) return
             setProbing((b) => new Set(b).add(sv.id))
-            void srsOf(sv, local).then((set) => {
+            void srsProbe(sv, local).then((r) => {
                 setProbing((b) => { const n = new Set(b); n.delete(sv.id); return n })
-                put(latest.current, sv, false, set)
+                put(latest.current, sv, false, r.set, r.asked ? { narrow: r.narrow } : undefined)
             })
             return
         }
@@ -136,8 +136,9 @@ export default function RuleEditor({
     }
 
     /** Поставить (`on` — снять) сервис в правило `ch`: списками или, если задан `set`, файлом
-     *  набора. Снимается сервис в обоих видах — каким бы его ни поставили. */
-    function put(ch: Channel, entry: ServiceEntry, on: boolean, set?: string) {
+     *  набора. Снимается сервис в обоих видах — каким бы его ни поставили. `known` — роутер уже
+     *  ответил про сужение подсетей (srsProbe): `narrow` пусто — подсети не сужены. */
+    function put(ch: Channel, entry: ServiceEntry, on: boolean, set?: string, known?: { narrow?: Narrow }) {
         const pref = new Set(ch.match.prefixes_files || [])
         const doms = new Set(ch.match.domains_files || [])
         const srs = new Set(ch.match.srs_files || [])
@@ -149,9 +150,10 @@ export default function RuleEditor({
          * спрашиваем у list_fetch ниже. Без сужения подсети Cloudflare уехали бы в туннель
          * целиком (steer, srs.c). В спеку это уходит каналом-спутником, см. model.ts. */
         const narrow: Record<string, Narrow> = { ...(ch.narrow || {}) }
+        const nw = sv.narrow ?? known?.narrow
         for (const f of sv.prefixes) {
             if (on) { pref.delete(pathFor(f)); delete narrow[pathFor(f)] }
-            else { pref.add(pathFor(f)); if (sv.narrow) narrow[pathFor(f)] = sv.narrow }
+            else { pref.add(pathFor(f)); if (nw) narrow[pathFor(f)] = nw }
         }
         for (const f of sv.domains) {
             if (on) doms.delete(pathFor(f)); else doms.add(pathFor(f))
@@ -175,19 +177,21 @@ export default function RuleEditor({
         if (set) return
         /* Сужение неизвестно (набор ещё не разбирали) — узнать сейчас, а не при следующем
          * открытии каталога: list_fetch разбирает набор и отдаёт `narrow` тем же ответом.
-         * Ответ без сужения — тоже ответ: подсети не ограничены. */
-        if (!on && sv.publisher && sv.prefixes.length && sv.narrow === undefined) {
-            void rpc.listFetch(sv.id, 'prefixes')
-                .then((r) => {
-                    if (!r.ok || !r.narrow) return
-                    const cur = latest.current
-                    if (!sv.prefixes.every((f) => cur.match.prefixes_files?.includes(pathFor(f)))) return
-                    onChange({
-                        ...cur,
-                        narrow: { ...(cur.narrow || {}), ...Object.fromEntries(sv.prefixes.map((f) => [pathFor(f), r.narrow!])) },
+         * Ответ без сужения — тоже ответ: подсети не ограничены. Спрашивается по КАЖДОЙ части
+         * подсетей её id: у записи каталога id записи — склейка частей, и роутер его не знает
+         * (I-421); у второго издателя id части и записи совпадают. */
+        if (!on && !known && mayNarrow(sv) && sv.narrow === undefined) {
+            for (const part of sv.parts.filter((p) => p.kind === 'prefixes')) {
+                const file = pathFor(part.file)
+                void rpc.listFetch(part.id, 'prefixes')
+                    .then((r) => {
+                        if (!r.ok || !r.narrow) return
+                        const cur = latest.current
+                        if (!cur.match.prefixes_files?.includes(file)) return
+                        onChange({ ...cur, narrow: { ...(cur.narrow || {}), [file]: r.narrow } })
                     })
-                })
-                .catch(() => undefined)
+                    .catch(() => undefined)
+            }
         }
     }
 
