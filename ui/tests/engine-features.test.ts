@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { poolsSupported } from '@/lib/engine'
+import { excludeSupported, poolsSupported } from '@/lib/engine'
 import type { Status } from '@/lib/model'
 
 // Откуда интерфейс знает, что установленный движок понимает смешанный пул.
@@ -60,5 +60,17 @@ describe('poolsSupported: поколение движка', () => {
             ),
         ).toBe(false)
         expect(poolsSupported(null)).toBe(false)
+    })
+})
+
+describe('excludeSupported: исключение узлов туннеля', () => {
+    // Ядро без умения спеку с `exclude` отвергает целиком, поэтому выбор показывается только там,
+    // где ядро называет умение; перечня нет — не умеет.
+    it('умение exclude в перечне — умеет, нет в перечне или перечня нет — не умеет', () => {
+        expect(excludeSupported(st({ features: ['pool', 'groups', 'balance_by', 'exclude'] }))).toBe(true)
+        expect(excludeSupported(st({ features: ['pool', 'groups', 'balance_by'] }))).toBe(false)
+        expect(excludeSupported(st({}))).toBe(false)
+        expect(excludeSupported(null)).toBe(false)
+        expect(excludeSupported(undefined)).toBe(false)
     })
 })

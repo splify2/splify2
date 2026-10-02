@@ -2,14 +2,14 @@ import { useEffect, useMemo, useState } from 'react'
 import { ArrowDown, ArrowUp, Check, Gauge, GripVertical, LoaderCircle, Search, Trash2, X } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Block, CardHead, DangerButton, FieldRow, Group, ScreenHeader } from '@/components/ui/layout'
-import { Field, inputCls } from '@/components/formbits'
+import { Chip, Field, inputCls } from '@/components/formbits'
 import { notify } from '@/lib/notify'
 import { rpc, type VlessNodesReply } from '@/lib/rpc'
 import { subsRemember, subsRemembered } from '@/lib/subs'
 import Flag from '@/components/Flag'
 import { country } from '@/lib/geo'
 import { ccFromName, plainName } from '@/lib/nodename'
-import { poolsSupported } from '@/lib/engine'
+import { excludeSupported, poolsSupported } from '@/lib/engine'
 import { latencyTone, probeKey, probeMs, useNodeProbe } from '@/lib/probe'
 import {
     devList, insecureApplies, isPart, isProxyKind, isTunnelKind, ON_FAIL_TEXT, PROXY_KINDS, TUNNEL_LABEL, type OnFail, type Output, type ProxyKind,
@@ -196,6 +196,13 @@ export default function PoolEditor({
     const [rows, setRows] = useState<Row[]>(() => rowsOf(spec, name))
     const [onFail, setOnFail] = useState<OnFail>(existing?.on_fail || 'drop')
     const [adv, setAdv] = useState<Adv>(() => advFrom(spec, name))
+    /** Исключение узлов (ключи `exclude`, `exclude_name`): выбор есть, когда ядро называет умение
+     *  `exclude`, — ядро без него спеку с этими ключами отвергает целиком. Уже записанное видно и
+     *  без умения: иначе его нельзя было бы снять. */
+    const [exclWritten] = useState(() => adv.exclude.length > 0 || adv.exclude_name.length > 0)
+    const exclOn = excludeSupported(live?.status) || exclWritten
+    /** Поле «не брать со словом в имени» — как его набирает человек; в настройки уходит списком. */
+    const [exclText, setExclText] = useState(() => adv.exclude_name.join(', '))
     const [tunnels, setTunnels] = useState<{ name: string; up: boolean; kind: string }[]>([])
     /* Перечень подписок начинается с запомненного: пока `sub_list` идёт, список говорил
      * «подписок нет» — утверждение, а не ожидание, и человек успевал ему поверить. */
@@ -335,6 +342,47 @@ export default function PoolEditor({
         isProxyKind(proto)
             ? (pxBySub[sub] || []).filter((x) => x.proto === proto).map((x) => x.nd)
             : (proto === 'hysteria2' ? hyBySub[sub] : nodesBySub[sub]) || []
+    /** Страна узла: как её называет ядро (поле `cc`), у ядра постарше — по флагу в имени. */
+    const ccOf = (nd: VlessNode | undefined) => (nd ? nd.cc || ccFromName(nd.name) : undefined)
+    /** Не возьмёт ли ядро узел из-за исключения выхода: страна отмечена либо в имени есть
+     *  отмеченный кусок (без учёта регистра — так сравнивает ядро). Исключение — свойство узла, а
+     *  не номер: так же ядро поступит и с новыми узлами этой страны после обновления подписки. */
+    const exclWords = adv.exclude_name.map((w) => w.toLowerCase())
+    const excluded = (nd: VlessNode | undefined): boolean => {
+        if (!nd || !exclOn) return false
+        const cc = ccOf(nd)
+        if (cc && adv.exclude.includes(cc)) return true
+        const n = (nd.name || '').toLowerCase()
+        return exclWords.some((w) => n.includes(w))
+    }
+    /** «Любая рабочая» возьмёт только неисключённые узлы протокола; исключены все — туннель не
+     *  поднимется. */
+    const allExcluded = (sub: string, proto: Proto) => {
+        const list = nodesFor(sub, proto)
+        return list.length > 0 && list.every(excluded)
+    }
+    /** Страны узлов всех подписок — то, из чего выбирают «не брать»; отмеченные, которых в
+     *  подписках сейчас нет, тоже остаются в перечне: их можно снять. По названию страны. */
+    const countries = (() => {
+        const set = new Set<string>(adv.exclude)
+        for (const s of subs) {
+            for (const nd of [...(nodesBySub[s.path] || []), ...(hyBySub[s.path] || []), ...(pxBySub[s.path] || []).map((x) => x.nd)]) {
+                const cc = ccOf(nd)
+                if (cc) set.add(cc)
+            }
+        }
+        return [...set].sort((a, b) => (country(a) || a).localeCompare(country(b) || b))
+    })()
+    const toggleCountry = (cc: string) =>
+        setAdv({ ...adv, exclude: adv.exclude.includes(cc) ? adv.exclude.filter((x) => x !== cc) : [...adv.exclude, cc] })
+    const setExclWords = (text: string) => {
+        setExclText(text)
+        const words: string[] = []
+        for (const w of text.split(',').map((x) => x.trim()).filter(Boolean)) {
+            if (!words.some((x) => x.toLowerCase() === w.toLowerCase())) words.push(w)
+        }
+        setAdv({ ...adv, exclude_name: words })
+    }
     /** Бейджи строки состава: у локации — её узла, у «любой рабочей» — общие у всех узлов этого
      *  протокола в подписке (то, что правда про любой, который возьмёт ядро), у своего туннеля —
      *  протокол по виду устройства. */
@@ -346,7 +394,9 @@ export default function PoolEditor({
             const nd = nodeOf(r.sub, r.idx, r.proto)
             return nd ? nodeBadges(nd, r.proto, { insecure: insecureOf(r.proto) }) : protoOnly(r.proto)
         }
-        const list = nodesFor(r.sub, r.proto)
+        /* «Любая рабочая» — общие у узлов, которые ядро может взять: исключённые не в счёт. */
+        const all = nodesFor(r.sub, r.proto)
+        const list = all.some((n) => !excluded(n)) ? all.filter((n) => !excluded(n)) : all
         return list.length
             ? commonBadges(list.map((n) => nodeBadges(n, r.proto, { insecure: insecureOf(r.proto) })))
             : protoOnly(r.proto)
@@ -649,6 +699,41 @@ export default function PoolEditor({
                             )}
                         </label>
                     </Block>
+                    {exclOn && subs.some((s) => s.present) && (
+                        /* Какие узлы не брать: страны (флажки по странам узлов подписок) и куски
+                           имени. Пишется всем туннелям выхода по подписке; ядро отбирает по
+                           свойству узла, поэтому новые узлы отмеченной страны после обновления
+                           подписки тоже не берутся. */
+                        <Block>
+                            <CardHead
+                                title={S.poolEditor.neBrat}
+                                meta={adv.exclude.length + adv.exclude_name.length ? S.poolEditor.neBratCount(adv.exclude.length + adv.exclude_name.length) : undefined}
+                            />
+                            {countries.length > 0 ? (
+                                <div className="flex flex-wrap gap-2" role="group" aria-label={S.poolEditor.neBratStrany}>
+                                    {countries.map((cc) => (
+                                        <Chip key={cc} on={adv.exclude.includes(cc)} onClick={() => toggleCountry(cc)}>
+                                            <span className="flex items-center gap-1.5">
+                                                <Flag cc={cc} />
+                                                {country(cc) || cc}
+                                            </span>
+                                        </Chip>
+                                    ))}
+                                </div>
+                            ) : (
+                                <p className="text-xs text-muted-foreground">{S.poolEditor.uUzlovNetStran}</p>
+                            )}
+                            <Field label={S.poolEditor.neBratSoSlovom}>
+                                <input
+                                    value={exclText}
+                                    onChange={(e) => setExclWords(e.currentTarget.value)}
+                                    placeholder={S.poolEditor.neBratSoSlovomPrimer}
+                                    aria-label={S.poolEditor.neBratSoSlovom}
+                                    className={`${inputCls} w-full`}
+                                />
+                            </Field>
+                        </Block>
+                    )}
                         {subs.length === 0 && (
                             <Group head={<CardHead title={S.poolEditor.podpiski} />}>
                                 <p className="py-3 text-xs text-muted-foreground">
@@ -690,7 +775,7 @@ export default function PoolEditor({
                             const q = query.trim().toLowerCase()
                             const all = tagged || []
                             const hit = ({ nd }: N) => {
-                                const cc = ccFromName(nd.name)
+                                const cc = ccOf(nd)
                                 return `${plainName(nd.name)} ${country(cc)} ${cc || ''}`.toLowerCase().includes(q)
                             }
                             const pickKey = (proto: Proto, idx: number) => `${proto}:${idx}`
@@ -769,6 +854,7 @@ export default function PoolEditor({
                                                 disabled={!s.present}
                                                 title={S.poolEditor.lyubayaRabochaya}
                                                 badges={s.present && nodes && all.length ? confOf({ kind: 'any', sub: s.path, proto: anyProto }) : undefined}
+                                                mark={s.present && allExcluded(s.path, anyProto) ? S.poolEditor.vseIsklyucheny : undefined}
                                                 /* Узел не закреплён: движок проверяет их при
                                                  * подъёме и берёт первый ответивший. Для человека
                                                  * важно следствие — такой выход переживает смену
@@ -802,6 +888,7 @@ export default function PoolEditor({
                                                     onClick={() => anyOf(s.path, p)}
                                                     title={S.poolEditor.lyubayaRabochayaOf(PROTO_LABEL[p])}
                                                     badges={confOf({ kind: 'any', sub: s.path, proto: p })}
+                                                    mark={allExcluded(s.path, p) ? S.poolEditor.vseIsklyucheny : undefined}
                                                 />
                                             </li>
                                         ))}
@@ -816,8 +903,12 @@ export default function PoolEditor({
                                             <li className="px-2.5 py-2.5 text-xs text-muted-foreground">{S.poolEditor.nichegoNeNashlos}</li>
                                         )}
                                         {shown.map(({ nd, proto }) => {
-                                            const cc = ccFromName(nd.name);
+                                            const cc = ccOf(nd)
                                             const on = picked.has(pickKey(proto, nd.index))
+                                            /* Исключённый узел виден приглушённо и с пометкой: ядро
+                                               его не возьмёт ни «любой рабочей», ни выбранным.
+                                               Взять его заново нельзя, снять уже взятый — можно. */
+                                            const ex = excluded(nd)
                                             /* Страна справа — только когда её нет в самом названии:
                                                «Германия №2 … Германия» повторяло слово дважды. */
                                             const cName = country(cc)
@@ -843,6 +934,9 @@ export default function PoolEditor({
                                                            этом сама (см. pool-one-location). */
                                                         round={!pools}
                                                         onClick={() => toggleNode(s.path, nd.index, proto)}
+                                                        disabled={ex && !on}
+                                                        muted={ex}
+                                                        mark={ex ? S.poolEditor.neBeretsya : undefined}
                                                         flag={cc}
                                                         title={label}
                                                         hint={hint}
@@ -983,7 +1077,12 @@ export default function PoolEditor({
                                 <ol aria-label={S.poolEditor.poryadokPredpochteniya2}>
                                     {rows.map((r, i) => {
                                         const nd = r.kind === 'node' ? nodeOf(r.sub, r.idx, r.proto) : undefined
-                                        const cc = r.kind === 'node' ? ccFromName(nd?.name) : undefined
+                                        const cc = r.kind === 'node' ? ccOf(nd) : undefined
+                                        /* Строка, которую ядро не возьмёт из-за исключения, — с той же
+                                           пометкой, что в перечне слева. */
+                                        const mark = r.kind === 'node' && excluded(nd)
+                                            ? S.poolEditor.neBeretsya
+                                            : r.kind === 'any' && allExcluded(r.sub, r.proto) ? S.poolEditor.vseIsklyucheny : undefined
                                         const label =
                                             r.kind === 'dev'
                                                 ? r.dev
@@ -1046,10 +1145,11 @@ export default function PoolEditor({
                                                     {i + 1}
                                                 </span>
                                                 {r.kind === 'node' && <Flag cc={cc} />}
-                                                <span className="min-w-0 flex-1">
+                                                <span className={`min-w-0 flex-1 ${mark ? 'opacity-60' : ''}`}>
                                                     <span className="block truncate text-[13px] font-medium">{label}</span>
                                                     <ConfBadges list={conf} className="mt-0.5" />
                                                 </span>
+                                                {mark && <span className="shrink-0 text-[11px] text-warning-fg">{mark}</span>}
                                                 {/* Подпись подписки — ТОЛЬКО НА ПЕРВОЙ строке блока.
                                                     Соседние строки одной подписки и так слиты в один
                                                     блок без зазора, и повторять на каждой «Riot VPN
@@ -1138,7 +1238,7 @@ function devBadges(kind: string | undefined): ConfBadge[] {
 
 /** Строка выбора: квадратная отметка — набор, круглая (`round`) — одно из нескольких. */
 function Choice({
-    on, onClick, disabled, title, hint, flag, dot, round, trail, badges,
+    on, onClick, disabled, title, hint, flag, dot, round, trail, badges, muted, mark,
 }: {
     on: boolean
     onClick: () => void
@@ -1154,6 +1254,10 @@ function Choice({
     trail?: React.ReactNode
     /** Бейджи конфигурации узла — второй строкой под именем, с переносом. */
     badges?: ConfBadge[]
+    /** Приглушить строку: ядро этот узел не возьмёт. */
+    muted?: boolean
+    /** Пометка состояния у названия — видна и на узком экране, в отличие от подсказки. */
+    mark?: string
 }) {
     return (
         <button
@@ -1162,7 +1266,7 @@ function Choice({
             onClick={onClick}
             className={`flex w-full items-center gap-2.5 select-none rounded-lg bg-transparent min-h-[40px] px-2.5 py-1.5 text-left text-[13px] focus:outline-none focus:shadow-none focus-visible:ring-2 focus-visible:ring-primary disabled:opacity-50 ${
                 on ? 'bg-primary/10 text-primary' : 'hover:bg-accent'
-            }`}
+            } ${muted ? 'opacity-60' : ''}`}
         >
             {round ? (
                 <span
@@ -1199,6 +1303,7 @@ function Choice({
             {/* Подсказка справа на узком экране прячется: она отъедала место у названия, и
                 «любая рабочая» обрезалось до «любая р…». */}
             {hint && <span className="hidden shrink-0 text-[11px] text-muted-foreground sm:inline">{hint}</span>}
+            {mark && <span className="shrink-0 text-[11px] text-warning-fg">{mark}</span>}
             {trail && <span className="shrink-0 text-[11px] tabular-nums">{trail}</span>}
         </button>
     )

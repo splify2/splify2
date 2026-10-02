@@ -252,6 +252,37 @@ describe('чтение v2 и круг', () => {
         expect(v.outputs.v.insecure).toBe(true)
     })
 
+    it('exclude и exclude_name туннеля — поля модели, а не extra, у всех протоколов', () => {
+        const outs = (d: Record<string, unknown>) => d.outputs as Record<string, Record<string, unknown>>
+        for (const protocol of ['vless', 'hysteria2', 'trojan', 'shadowsocks', 'socks', 'http', 'vmess', 'будущий']) {
+            /* Одно значение — то же, что список из одного (spec-v2.md, «Общие правила разбора»). */
+            const s = decodeSpec({ version: 2, outputs: { p: {
+                kind: 'tunnel', protocol, subscription: '/s.txt', nodes: [2], exclude: 'RU', exclude_name: ['Мобильный', 'LTE'],
+            } } })
+            expect(s.outputs.p.exclude).toEqual(['RU'])
+            expect(s.outputs.p.exclude_name).toEqual(['Мобильный', 'LTE'])
+            expect(s.outputs.p.extra).toBeUndefined()
+            expect(outs(encodeSpec(s)).p).toEqual({
+                kind: 'tunnel', protocol, subscription: '/s.txt', nodes: [2], exclude: ['RU'], exclude_name: ['Мобильный', 'LTE'],
+            })
+        }
+        /* Пусто — ключа нет; повтор и пустую строку ядро отвергает целиком — модель их не пишет. */
+        const s = decodeSpec({ version: 2, outputs: { p: { kind: 'tunnel', protocol: 'vless', subscription: '/s.txt' } } })
+        expect(s.outputs.p.exclude).toBeUndefined()
+        expect(outs(encodeSpec(s)).p).toEqual({ kind: 'tunnel', protocol: 'vless', subscription: '/s.txt' })
+        const doc = encodeSpec({ ...s, outputs: { ...s.outputs, p: {
+            ...s.outputs.p, exclude: ['US', 'US', '', 'NL'], exclude_name: [' LTE ', 'lte', '', 'Мобильный', 'МОБИЛЬНЫЙ'],
+        } } })
+        expect(outs(doc).p.exclude).toEqual(['US', 'NL'])
+        expect(outs(doc).p.exclude_name).toEqual(['LTE', 'Мобильный'])
+        const none = encodeSpec({ ...s, outputs: { ...s.outputs, p: { ...s.outputs.p, exclude: [], exclude_name: [' '] } } })
+        expect('exclude' in outs(none).p || 'exclude_name' in outs(none).p).toBe(false)
+        /* У выхода не-туннеля ключа нет: ядро его отвергает («ключ у другого вида»). */
+        const w = decodeSpec({ version: 2, outputs: { w: { kind: 'interface', device: 'wg0' } } })
+        const wd = encodeSpec({ ...w, outputs: { ...w.outputs, w: { ...w.outputs.w, exclude: ['RU'] } } })
+        expect(outs(wd).w).toEqual({ kind: 'interface', device: 'wg0' })
+    })
+
     it('часть пула на подписке прокси узнаётся частью, как у vless', () => {
         const doc = {
             version: 2,

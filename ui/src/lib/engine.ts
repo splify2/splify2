@@ -164,6 +164,13 @@ export function balanceBySupported(status: Status | null | undefined): boolean {
     return Array.isArray(status?.features) && status.features.includes('balance_by')
 }
 
+/** Умеет ли установленное ядро исключать узлы туннеля по стране и куску имени (ключи `exclude` и
+ *  `exclude_name` спеки v2, умение `exclude`). Спрашивается у состояния, как `balanceBySupported`:
+ *  ядро без умения спеку с этими ключами отвергает целиком. */
+export function excludeSupported(status: Status | null | undefined): boolean {
+    return Array.isArray(status?.features) && status.features.includes('exclude')
+}
+
 /** Модули ядра 2.0 (пакеты steer-<модуль>) в порядке показа — тот же, что у бэкенда
  *  (m-engine.sh, STEER_MODULES). */
 export const STEER_MODULES = ['vless', 'hysteria2', 'proxy', 'xsteer', 'obfs', 'tgws']

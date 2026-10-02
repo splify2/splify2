@@ -31,6 +31,11 @@ export interface Adv {
     url?: string
     /** «Самый быстрый»: сколько секунд без трафика не мерить (`idle_timeout`). */
     idle_timeout?: number
+    /** Туннели по подписке: страны, узлы которых не брать (`exclude`), и куски имени (`exclude_name`).
+     *  Правятся в редакторе состава (там видны страны подписок), пишутся здесь — каждому туннелю
+     *  выхода, одиночному и частям пула. */
+    exclude: string[]
+    exclude_name: string[]
 }
 
 const TRANSPORTS = ['tcp', 'ws', 'httpupgrade', 'grpc', 'xhttp']
@@ -40,6 +45,10 @@ export function advFrom(spec: Spec, name?: string): Adv {
     const o = name ? spec.outputs[name] : undefined
     const part = name ? Object.values(spec.outputs).find((p) => p.part_of === name) : undefined
     const tun = o && isTunnelKind(o.kind) ? o : part
+    /* Исключение редактор пишет всем туннелям выхода одинаково; записанное руками по-разному —
+     * объединением, чтобы ни одно не потерялось молча. */
+    const tuns = o && isTunnelKind(o.kind) ? [o] : Object.values(spec.outputs).filter((p) => p.part_of === name)
+    const union = (k: 'exclude' | 'exclude_name') => [...new Set(tuns.flatMap((t) => t[k] || []))]
     return {
         over: tun?.over || o?.over || '',
         transport: tun?.transport || [],
@@ -51,6 +60,8 @@ export function advFrom(spec: Spec, name?: string): Adv {
         interval: o?.interval,
         url: o?.url,
         idle_timeout: o?.idle_timeout,
+        exclude: union('exclude'),
+        exclude_name: union('exclude_name'),
     }
 }
 
@@ -66,6 +77,11 @@ export function advApply(o: Output, adv: Adv, role: 'top' | 'tunnel'): Output {
         /* Только у видов с TLS: у hysteria2, shadowsocks и socks ключа нет, ядро его отвергает. */
         if (adv.insecure && insecureApplies(o.kind)) out.insecure = true
         else delete out.insecure
+        /* Исключение — у всех протоколов туннеля. */
+        if (adv.exclude.length) out.exclude = adv.exclude
+        else delete out.exclude
+        if (adv.exclude_name.length) out.exclude_name = adv.exclude_name
+        else delete out.exclude_name
     }
     if (role === 'top' && o.kind === 'interface') {
         const pool = (o.devices?.length ?? 0) > 1

@@ -172,6 +172,11 @@ function decodeOutput(name: string, o: J): Output {
             used.add('nodes')
             if (o.nodes.length) out.nodes = o.nodes as number[]
         }
+        /* Какие узлы не брать — у всех протоколов туннеля (spec-v2.md, «exclude и exclude_name»). */
+        const ex = arr(take('exclude'))
+        if (ex.length) out.exclude = ex
+        const exn = arr(take('exclude_name'))
+        if (exn.length) out.exclude_name = exn
     }
     /* insecure — только у видов с TLS; у остальных ядро ключ отвергает, и такой (чужой) ключ
      * уезжает в extra и обратно как есть, а не исчезает молча. */
@@ -495,6 +500,27 @@ function makeNamer(prefix: string) {
     }
 }
 
+/** `exclude` и `exclude_name` туннеля к записи: без пустых и повторов — их ядро отвергает
+ *  целиком («указан дважды», пустая строка). Коды стран — заглавными, куски имени сравниваются
+ *  без учёта регистра, как их сравнивает ядро. Пусто — ключа нет. */
+function putExclude(out: J, o: Output) {
+    const uniq = (list: string[] | undefined, norm: (s: string) => string, key: (s: string) => string) => {
+        const seen = new Set<string>()
+        const res: string[] = []
+        for (const raw of list || []) {
+            const v = norm(raw)
+            if (!v || seen.has(key(v))) continue
+            seen.add(key(v))
+            res.push(v)
+        }
+        return res
+    }
+    const cc = uniq(o.exclude, (s) => s.trim().toUpperCase(), (s) => s)
+    const nm = uniq(o.exclude_name, (s) => s.trim(), (s) => s.toLowerCase())
+    if (cc.length) out.exclude = cc
+    if (nm.length) out.exclude_name = nm
+}
+
 const narrowKey = (n?: Narrow) => (n && (n.proto || n.ports?.length) ? `${n.proto || ''}|${(n.ports || []).join(',')}` : '')
 
 function encodeOutput(o: Output): J {
@@ -530,6 +556,7 @@ function encodeOutput(o: Output): J {
             put('device', o.device)
             if (o.kind === 'vless' && o.transport?.length) put('transport', o.transport.length === 1 ? o.transport[0] : o.transport)
             if (o.insecure && insecureApplies(o.kind)) out.insecure = true
+            putExclude(out, o)
             break
         }
         case 'tunnel':
@@ -540,6 +567,7 @@ function encodeOutput(o: Output): J {
             put('subscription', o.sub_file)
             put('nodes', o.nodes)
             put('device', o.device)
+            putExclude(out, o)
             break
         case 'xsteer':
             out.kind = 'xsteer'

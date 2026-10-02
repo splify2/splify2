@@ -255,6 +255,60 @@ describe.skipIf(!HAVE)('кодек v2 против движка: свой сер
     })
 })
 
+/* Туннели по подписке разбирает только сборка с видами модулей: базовая (build/steer) без
+ * steer-vless отвергает `protocol: vless` целиком. Рядом с ядром для стендов лежит build/steer-xk —
+ * демон базовой сборки с видами vless, hysteria2 и прокси (steer/Makefile); его и спрашиваем. Ядро
+ * без умения `exclude` ключ отвергает — тогда стенд пропускается вслух, а не краснеет на чужом. */
+const XK = path.join(path.dirname(STEER), 'steer-xk')
+function xkConvert(doc: unknown, name: string): string {
+    const f = path.join(dir, name)
+    writeFileSync(f, JSON.stringify(doc))
+    return execFileSync(XK, ['spec', 'convert', '--spec', f], { encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'] })
+}
+const HAVE_XK_EXCL = (() => {
+    if (!existsSync(XK)) return false
+    try {
+        xkConvert({ version: 2, outputs: { t: { kind: 'tunnel', protocol: 'vless', subscription: '/s.txt', exclude: ['RU'] } } }, 'xk-probe.json')
+        return true
+    } catch {
+        return false
+    }
+})()
+
+describe.skipIf(!HAVE_XK_EXCL)('кодек v2 против ядра: исключение узлов туннеля', () => {
+    it('exclude и exclude_name выхода и частей пула ядро принимает и читает как записано', () => {
+        const sub = path.join(dir, 'sub.txt')
+        writeFileSync(sub, '')
+        const ui = decodeSpec({ version: 2, outputs: { wg0: { kind: 'interface', device: 'wg0' } } })
+        const doc = encodeSpec({
+            ...ui,
+            outputs: {
+                ...ui.outputs,
+                nl: { name: 'nl', kind: 'vless', sub_file: sub, nodes: [3], exclude: ['RU', 'US'], exclude_name: ['Мобильный', 'LTE'] },
+                'vpn-1': { name: 'vpn-1', kind: 'trojan', sub_file: sub, part_of: 'vpn', exclude: ['RU', 'US'] },
+                'vpn-2': { name: 'vpn-2', kind: 'hysteria2', sub_file: sub, part_of: 'vpn', exclude_name: ['LTE'] },
+                vpn: { name: 'vpn', kind: 'interface', devices: ['vpn-1', 'vpn-2', 'wg0'], device: 'vpn-1' },
+            },
+            channels: [
+                { name: 'a', out: 'nl', match: { domains_files: [dom] } },
+                { name: 'b', out: 'vpn', match: { domains_files: [dom2] } },
+            ],
+        })
+        const conv = xkConvert(doc, 'excl.json')
+        expect(conv).toMatch(/nl:.*nodes: \[3\].*exclude: \[RU, US\], exclude_name: \["Мобильный", LTE\]/)
+        expect(conv).toMatch(/vpn-1:.*protocol: trojan.*exclude: \[RU, US\]/)
+        expect(conv).toMatch(/vpn-2:.*protocol: hysteria2.*exclude_name: \[LTE\]/)
+        /* И круг через кодек ничего не меняет: прочитанное снова пишется тем же. */
+        expect(xkConvert(encodeSpec(decodeSpec(doc)), 'excl-2.json')).toBe(conv)
+    })
+})
+
+describe.skipIf(HAVE_XK_EXCL)('кодек v2 против ядра: исключение узлов — ПРОПУЩЕН', () => {
+    it('нет steer-xk с умением exclude рядом с ядром (make -C ../steer build/steer-xk)', () => {
+        expect(HAVE_XK_EXCL).toBe(false)
+    })
+})
+
 describe.skipIf(HAVE)('кодек v2 против движка — ПРОПУЩЕН', () => {
     it('нет движка (make -C ../steer all)', () => {
         expect(HAVE).toBe(false)
