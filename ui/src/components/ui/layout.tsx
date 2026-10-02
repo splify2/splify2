@@ -79,7 +79,7 @@ export function Group({ head, children }: { head?: ReactNode; children: ReactNod
 
 /** Строка-переход: значок, название, состояние под ним, правый край, шеврон. */
 export function TapRow({
-    icon: Icon, title, subtitle, right, onClick, alarm, dot,
+    icon: Icon, title, subtitle, right, onClick, alarm, dot, badges,
 }: {
     icon?: typeof ChevronRight
     title: ReactNode
@@ -90,6 +90,8 @@ export function TapRow({
     alarm?: boolean
     /** Точка состояния вместо значка: ok / warn / bad / idle. */
     dot?: 'ok' | 'warn' | 'bad' | 'idle'
+    /** Бейджи конфигурации (components/ConfBadges) — строкой под подписью, с переносом. */
+    badges?: ReactNode
 }) {
     const DOT = { ok: 'bg-success', warn: 'bg-warning', bad: 'bg-destructive', idle: 'bg-muted-foreground' }
     const body = (
@@ -108,6 +110,7 @@ export function TapRow({
                         {subtitle}
                     </span>
                 )}
+                {badges}
             </span>
             {right != null && right !== false && (
                 <span className="shrink-0 text-right text-xs text-muted-foreground">{right}</span>

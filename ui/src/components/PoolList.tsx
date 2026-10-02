@@ -11,9 +11,11 @@ import { outDownWord, outExtras } from '@/lib/outstate'
 import { hasHelper, helperWords, useHelpers } from '@/lib/helper'
 import { pending } from '@/lib/pending'
 import { country } from '@/lib/geo'
-import { devList, EMPTY_SPEC, isPart, isTunnelKind, TUNNEL_LABEL, type Spec } from '@/lib/model'
+import { devList, EMPTY_SPEC, isPart, isTunnelKind, type Spec } from '@/lib/model'
 import { subsRemember, subsRemembered, type SubRow } from '@/lib/subs'
 import { type Live } from '@/lib/live'
+import ConfBadges, { OutBadges } from '@/components/ConfBadges'
+import { devKindsOf, poolBadges } from '@/lib/badges'
 
 import { S } from '@/copy'
 /** Выходы: во что правила ведут трафик.
@@ -71,6 +73,15 @@ export default function PoolList({
 
     useEffect(() => {
         pending.load().then(setSpec).catch(() => setSpec(EMPTY_SPEC))
+    }, [])
+    /** Виды туннельных устройств — бейджу протокола своего туннеля (WireGuard, AmneziaWG). */
+    const [devKinds, setDevKinds] = useState<Record<string, string>>({})
+    useEffect(() => {
+        let stop = false
+        rpc.devices()
+            .then((d) => { const m = devKindsOf(d.devices); if (m && !stop) setDevKinds(m) })
+            .catch(() => {})
+        return () => { stop = true }
     }, [])
 
     const names = Object.keys(live.status?.outputs || {}).join(',')
@@ -208,9 +219,8 @@ export default function PoolList({
                                   : [
                                       country(g?.cc),
                                       isTunnelKind(o.kind)
-                                          /* Протокол назван у всего, что не VLESS: «подписка»
-                                             у выхода trojan не говорит, какой клиент его несёт. */
-                                          ? (o.kind === 'vless' ? S.poolList.podpiska : `${TUNNEL_LABEL[o.kind as keyof typeof TUNNEL_LABEL]} · ${S.poolList.podpiska}`)
+                                          /* Протокол — бейджем под строкой (badges ниже). */
+                                          ? S.poolList.podpiska
                                           : devs
                                                 /* Устройство служебной части называется
                                                    подпиской, которой оно принадлежит: имя
@@ -235,7 +245,7 @@ export default function PoolList({
                         const base = o.kind === 'tgws'
                             ? [S.outState.mostTelegram, rules ? S.poolList.pravil(rules) : ''].filter(Boolean).join(' · ')
                             : state
-                        const extra = need ? { words: [], alarm: false } : outExtras(o, st)
+                        const extra = need ? { words: [], alarm: false } : outExtras(o, st, { insecure: false })
                         /* Беда помощника — впереди строки, перезапуски — в конце. */
                         const hw = need ? { words: [], alarm: false, restarts: null } : helperWords(helpers[name] || [])
                         return (
@@ -257,6 +267,15 @@ export default function PoolList({
                                     .filter(Boolean)
                                     .join(' · ')}
                                 alarm={!!need || extra.alarm || hw.alarm || (o.kind !== 'direct' && st?.up === false)}
+                                /* Протокол, транспорт, защита и особенности — бейджами
+                                   (lib/badges.ts); «сертификат не проверяется» — среди них. */
+                                badges={
+                                    isTunnelKind(o.kind) || o.kind === 'xsteer' || o.kind === 'awg' || o.kind === 'tunnel'
+                                        ? <OutBadges name={name} out={o} st={st} className="mt-1" />
+                                        : o.kind === 'interface'
+                                          ? <ConfBadges list={poolBadges(spec, name, devKinds)} className="mt-1" />
+                                          : undefined
+                                }
                                 onClick={() => setEditing(o.kind === 'group' ? `${GROUP_PREFIX}${name}` : name)}
                             />
                         )

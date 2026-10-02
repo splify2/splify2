@@ -45,7 +45,12 @@ export function outDownLine(st: OutputStatus): string {
  *    или выведенный ядром; `null` — не узнать), подменяется ли IPv6 при `nat`, и не действует
  *    ли ключ на этой платформе (`ipv6_applied: false`). Без ключа о IPv6 здесь молчим: подмену
  *    по умолчанию проверяет «Диагностика», и повторять её в каждой строке — шум. */
-export function outExtras(o: Output, st?: OutputStatus | null): { words: string[]; alarm: boolean } {
+export function outExtras(
+    o: Output,
+    st?: OutputStatus | null,
+    /** insecure: false — проверку сертификата показывает бейдж (lib/badges.ts), словом не нужно. */
+    opts: { insecure?: boolean } = {},
+): { words: string[]; alarm: boolean } {
     const words: string[] = []
     let alarm = false
     if (!st) return { words, alarm }
@@ -54,7 +59,7 @@ export function outExtras(o: Output, st?: OutputStatus | null): { words: string[
         alarm = true
     }
     /* У vless признак печатает ядро, у прокси с TLS (trojan, vmess, http) — нет: там он из спеки. */
-    if (st.insecure || (o.insecure && insecureApplies(o.kind))) words.push(S.outState.sertifikatNeProveryaetsya)
+    if (opts.insecure !== false && (st.insecure || (o.insecure && insecureApplies(o.kind)))) words.push(S.outState.sertifikatNeProveryaetsya)
     if (st.ipv6_applied === false) {
         words.push(S.outState.ipv6ZdesNeDeystvuet)
     } else if (o.ipv6 === 'routed') {

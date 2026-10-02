@@ -9,6 +9,7 @@ import { human, type DiagCheck, type Live } from '@/lib/live'
 import { usePending } from '@/lib/pending'
 import { specV2Unsupported } from '@/lib/engine'
 import { ON_FAIL_TEXT, type Channel, type ChannelStatus, type OutputStatus, devList, isPart, isTunnelKind } from '@/lib/model'
+import { devKindsOf } from '@/lib/badges'
 import { country } from '@/lib/geo'
 import { outDownWord } from '@/lib/outstate'
 import Flag from '@/components/Flag'
@@ -661,6 +662,19 @@ function OutputsColumn({
             .catch(() => { if (!stop) { setSubs(null); subsRemember([]) } }), 500)
         return () => { stop = true; clearTimeout(t) }
     }, [])
+    /** Виды туннельных устройств (WireGuard, AmneziaWG) — бейджам своих туннелей. Тем же
+     *  отложенным заходом, что перечень подписок: первый вердикт страницы его не ждёт. */
+    const [devKinds, setDevKinds] = useState<Record<string, string>>({})
+    useEffect(() => {
+        let stop = false
+        const t = setTimeout(() => rpc.devices()
+            .then((d) => {
+                const m = devKindsOf(d.devices)
+                if (m && !stop) setDevKinds(m)
+            })
+            .catch(() => {}), 500)
+        return () => { stop = true; clearTimeout(t) }
+    }, [])
 
     /* Ни подписки, ни туннеля — столбца нет вовсе. Пустой столбец с заголовком «Выходы»
      * занимал бы место ради строки «ничего нет», а про отсутствие выходов уже сказано над
@@ -700,7 +714,7 @@ function OutputsColumn({
                     две панели смешал бы их числа. Локации — строками внутри своей подписки. */}
                 {subs === null
                     ? vless.length > 0 && (
-                          <SubBlock outs={vless.map(([name, st]) => ({ name, st, facts: facts[name], phase: live.phase }))} />
+                          <SubBlock outs={vless.map(([name, st]) => ({ name, st, facts: facts[name], phase: live.phase, out: spec?.outputs?.[name] }))} />
                       )
                     : subs.map((s) => (
                           <SubBlock
@@ -710,14 +724,13 @@ function OutputsColumn({
                                   .filter(([n, o]) => (spec?.outputs?.[n]?.sub_file || o.sub_file || '') === s.path)
                                   .map(([name, st]) => ({
                                       name, st, facts: facts[name], phase: live.phase,
+                                      out: spec?.outputs?.[name],
                                       /* Локация, взятая в пул, так и подписана: иначе строка под
                                          подпиской и строка в блоке пула читались как два туннеля.
-                                         Выключенная проверка сертификата — тоже: это решение
-                                         человека, и видно его должно быть там, где выход работает. */
-                                      note: [
-                                          spec?.outputs?.[name]?.part_of ? S.home.vPule(spec.outputs[name].part_of) : '',
-                                          st?.insecure || spec?.outputs?.[name]?.insecure ? S.outState.sertifikatNeProveryaetsya : '',
-                                      ].filter(Boolean).join(' · ') || undefined,
+                                         Выключенная проверка сертификата — бейджем-предупреждением
+                                         среди бейджей конфигурации (OutputCards, lib/badges.ts):
+                                         это решение человека, и видно его там, где выход работает. */
+                                      note: spec?.outputs?.[name]?.part_of ? S.home.vPule(spec.outputs[name].part_of) : undefined,
                                   }))}
                           />
                       ))}
@@ -733,7 +746,12 @@ function OutputsColumn({
                     const o = spec?.outputs?.[name]
                     const devs = devList(o).length ? devList(o) : devList(st)
                     if (devs.length > 0 && devs.every((d) => isPart(spec?.outputs?.[d]))) return null
-                    return <TunnelBlock key={name} name={name} st={st} facts={facts[name]} phase={live.phase} />
+                    return (
+                        <TunnelBlock
+                            key={name} name={name} st={st} facts={facts[name]} phase={live.phase}
+                            out={o} spec={spec} devKinds={devKinds}
+                        />
+                    )
                 })}
             </div>
         </Block>

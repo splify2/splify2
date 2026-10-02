@@ -52,6 +52,16 @@ export const ru = {
         faylSNastroykami: "Файл с настройками",
         vosstanovlenieNichegoNePrimenyaet: "Восстановление ничего не применяет: файл проверяется, настройки сохраняются, маршрутизация меняется только после «Применить».",
     },
+    /** Бейджи конфигурации узла и выхода (lib/badges.ts). Здесь — только слова; имена
+     *  протоколов, транспортов и шифров (VLESS, gRPC, Reality…) — в самой таблице бейджей. */
+    badges: {
+        bezShifrovaniya: "без шифрования",
+        postkvantovoe: "постквантовое",
+        smenaPortov: "смена портов",
+        sertifikatZakreplyon: "сертификат закреплён",
+        sertifikatNeProveryaetsya: "сертификат не проверяется",
+        poddelnyyTcp: "поддельный TCP",
+    },
     catalogTab: {
         spisokNash: "список наш",
         spisokVneshniy: "список внешний",

@@ -16,6 +16,8 @@ import {
     type Spec, type VlessNode,
 } from '@/lib/model'
 import OutputAdvanced, { advFrom, advApply, type Adv } from '@/components/OutputAdvanced'
+import ConfBadges from '@/components/ConfBadges'
+import { commonBadges, devProto, nodeBadges, PROTO_NAME, type ConfBadge } from '@/lib/badges'
 import { type Live } from '@/lib/live'
 
 import { S } from '@/copy'
@@ -328,6 +330,27 @@ export default function PoolEditor({
         isProxyKind(proto)
             ? (pxBySub[sub] || []).find((x) => x.proto === proto && x.nd.index === idx)?.nd
             : ((proto === 'hysteria2' ? hyBySub[sub] : nodesBySub[sub]) || []).find((x) => x.index === idx)
+    /** Узлы подписки одного протокола — для бейджей «любой рабочей». */
+    const nodesFor = (sub: string, proto: Proto): VlessNode[] =>
+        isProxyKind(proto)
+            ? (pxBySub[sub] || []).filter((x) => x.proto === proto).map((x) => x.nd)
+            : (proto === 'hysteria2' ? hyBySub[sub] : nodesBySub[sub]) || []
+    /** Бейджи строки состава: у локации — её узла, у «любой рабочей» — общие у всех узлов этого
+     *  протокола в подписке (то, что правда про любой, который возьмёт ядро), у своего туннеля —
+     *  протокол по виду устройства. */
+    const insecureOf = (proto: Proto) => adv.insecure && insecureApplies(proto)
+    const protoOnly = (proto: Proto): ConfBadge[] => [{ id: `proto:${proto}`, text: PROTO_NAME[proto], group: 'proto', proto }]
+    const confOf = (r: Row): ConfBadge[] => {
+        if (r.kind === 'dev') return devBadges(tunnels.find((t) => t.name === r.dev)?.kind)
+        if (r.kind === 'node') {
+            const nd = nodeOf(r.sub, r.idx, r.proto)
+            return nd ? nodeBadges(nd, r.proto, { insecure: insecureOf(r.proto) }) : protoOnly(r.proto)
+        }
+        const list = nodesFor(r.sub, r.proto)
+        return list.length
+            ? commonBadges(list.map((n) => nodeBadges(n, r.proto, { insecure: insecureOf(r.proto) })))
+            : protoOnly(r.proto)
+    }
 
     /** Устройства, занятые ДРУГИМИ выходами: одно устройство в двух выходах kind=interface —
      *  это две таблицы маршрутизации на один туннель, и вторая молча не работает.
@@ -745,6 +768,7 @@ export default function PoolEditor({
                                                 onClick={() => anyOf(s.path, anyProto)}
                                                 disabled={!s.present}
                                                 title={S.poolEditor.lyubayaRabochaya}
+                                                badges={s.present && nodes && all.length ? confOf({ kind: 'any', sub: s.path, proto: anyProto }) : undefined}
                                                 /* Узел не закреплён: движок проверяет их при
                                                  * подъёме и берёт первый ответивший. Для человека
                                                  * важно следствие — такой выход переживает смену
@@ -777,6 +801,7 @@ export default function PoolEditor({
                                                     round
                                                     onClick={() => anyOf(s.path, p)}
                                                     title={S.poolEditor.lyubayaRabochayaOf(PROTO_LABEL[p])}
+                                                    badges={confOf({ kind: 'any', sub: s.path, proto: p })}
                                                 />
                                             </li>
                                         ))}
@@ -797,10 +822,11 @@ export default function PoolEditor({
                                                «Германия №2 … Германия» повторяло слово дважды. */
                                             const cName = country(cc)
                                             const cHint = cName && !plainName(nd.name).toLowerCase().includes(cName.toLowerCase()) ? cName : undefined
-                                            /* Протокол подписан у узла, когда в подписке есть hysteria2:
-                                               в смешанной без подписи не отличить, какой клиент их
-                                               понесёт. В подписке целиком из VLESS подписи нет. */
-                                            const hint = mixed ? [PROTO_LABEL[proto], cHint].filter(Boolean).join(' · ') : cHint
+                                            /* Протокол, транспорт и защита узла — бейджами под
+                                               именем (lib/badges.ts): по ним и выбирают, какой
+                                               клиент понесёт узел и как. Справа остаётся страна. */
+                                            const hint = cHint
+                                            const conf = nodeBadges(nd, proto, { insecure: insecureOf(proto) })
                                             const key = probeKey(probeSub(s.path, proto), nd.index)
                                             const ph = probe.phase[key]
                                             const err = probe.fails[key]
@@ -820,6 +846,7 @@ export default function PoolEditor({
                                                         flag={cc}
                                                         title={label}
                                                         hint={hint}
+                                                        badges={conf}
                                                         /* Замер — в строке узла, напротив имени: вопрос
                                                            человека «какую взять», и ответ обязан стоять
                                                            там же, где отметка. Пока строка в работе,
@@ -899,7 +926,8 @@ export default function PoolEditor({
                                                 onClick={() => toggleDev(t.name)}
                                                 dot={t.up}
                                                 title={t.name}
-                                                hint={busy && !on ? S.poolEditor.zanyatoDrugimVyhodom : owner ? S.poolEditor.vyhod(owner) : t.kind}
+                                                hint={busy && !on ? S.poolEditor.zanyatoDrugimVyhodom : owner ? S.poolEditor.vyhod(owner) : devProto(t.kind) ? undefined : t.kind}
+                                                badges={devBadges(t.kind)}
                                             />
                                         </li>
                                     )
@@ -964,11 +992,10 @@ export default function PoolEditor({
                                                   : plainName(nd?.name) || S.poolEditor.uzel(r.idx + 1)
                                         /* Протокол назван у строки hysteria2 и у любой строки смешанной
                                            подписки: иначе «узел 3» двух клиентов не отличить. */
-                                        const hint = r.kind === 'dev'
-                                            ? undefined
-                                            : r.proto !== 'vless' || (hyBySub[r.sub]?.length ?? 0) > 0 || (pxBySub[r.sub]?.length ?? 0) > 0
-                                              ? `${subTitle(r.sub)} · ${PROTO_LABEL[r.proto]}`
-                                              : subTitle(r.sub)
+                                        /* Протокол строки — бейджем под названием (confOf), подпись
+                                           справа — только подписка. */
+                                        const hint = r.kind === 'dev' ? undefined : subTitle(r.sub)
+                                        const conf = confOf(r)
                                         /* Соседние локации одной подписки — одна часть пула, и это
                                            видно: между ними нет волосяной линии, а слева их
                                            объединяет общая полоса цвета акцента. Граница блока
@@ -1019,7 +1046,10 @@ export default function PoolEditor({
                                                     {i + 1}
                                                 </span>
                                                 {r.kind === 'node' && <Flag cc={cc} />}
-                                                <span className="min-w-0 flex-1 truncate text-[13px] font-medium">{label}</span>
+                                                <span className="min-w-0 flex-1">
+                                                    <span className="block truncate text-[13px] font-medium">{label}</span>
+                                                    <ConfBadges list={conf} className="mt-0.5" />
+                                                </span>
                                                 {/* Подпись подписки — ТОЛЬКО НА ПЕРВОЙ строке блока.
                                                     Соседние строки одной подписки и так слиты в один
                                                     блок без зазора, и повторять на каждой «Riot VPN
@@ -1099,9 +1129,16 @@ export default function PoolEditor({
         </div>
     )
 }
+/** Бейдж протокола своего туннеля по виду устройства (WireGuard, AmneziaWG); вид неизвестен —
+ *  бейджа нет, а вид остаётся подписью. */
+function devBadges(kind: string | undefined): ConfBadge[] {
+    const p = devProto(kind)
+    return p ? [{ id: `proto:${p}`, text: PROTO_NAME[p], group: 'proto', proto: p }] : []
+}
+
 /** Строка выбора: квадратная отметка — набор, круглая (`round`) — одно из нескольких. */
 function Choice({
-    on, onClick, disabled, title, hint, flag, dot, round, trail,
+    on, onClick, disabled, title, hint, flag, dot, round, trail, badges,
 }: {
     on: boolean
     onClick: () => void
@@ -1115,6 +1152,8 @@ function Choice({
     /** Хвост строки — замер узла или его состояние. Виден и на узком экране: ради этого
      *  числа строку и проверяли. */
     trail?: React.ReactNode
+    /** Бейджи конфигурации узла — второй строкой под именем, с переносом. */
+    badges?: ConfBadge[]
 }) {
     return (
         <button
@@ -1149,7 +1188,14 @@ function Choice({
                     aria-hidden="true"
                 />
             )}
-            <span className="min-w-0 flex-1 truncate font-medium">{title}</span>
+            {badges?.length ? (
+                <span className="min-w-0 flex-1">
+                    <span className="block truncate font-medium">{title}</span>
+                    <ConfBadges list={badges} className="mt-1" />
+                </span>
+            ) : (
+                <span className="min-w-0 flex-1 truncate font-medium">{title}</span>
+            )}
             {/* Подсказка справа на узком экране прячется: она отъедала место у названия, и
                 «любая рабочая» обрезалось до «любая р…». */}
             {hint && <span className="hidden shrink-0 text-[11px] text-muted-foreground sm:inline">{hint}</span>}

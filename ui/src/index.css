@@ -709,3 +709,48 @@
     --sp-accent: var(--an-glass-hover);
   }
 }
+
+/* ---- бейджи конфигурации (lib/badges.ts, components/ConfBadges.tsx) -----------------------
+ * Тонированная плашка поверх вложенного стекла: подложка --an-glass-tint (без стекла — поле),
+ * на ней заливка тоном и светлая кромка сверху, как у стекла внутри стекла (glass.css).
+ *
+ * Тон — только у протокола (data-tone → --an-cat-N), остальные нейтральные, предупреждение —
+ * янтарное. Текст протокола — тон, смешанный с почти чёрным (светлая тема) или с белым
+ * (тёмная): чистый cat-2 (#11cdef) на светлом стекле даёт 2:1. Доли подобраны счётом по WCAG
+ * на худшей подложке — пятне акцента под стеклом и выбранной строке поверх него: в светлой
+ * теме не ниже 4,9:1, в тёмной — 4,7:1 у протоколов, 4,5:1 у нейтральных, 5:1 у предупреждения. */
+.splify-react-root .sp-cb {
+  --cb: var(--an-cat-7);
+  --cb-wash: transparent;
+  background-color: var(--an-glass-tint);
+  background-image: linear-gradient(var(--cb-wash), var(--cb-wash));
+  box-shadow: inset 0 1px 0 var(--an-glass-edge);
+  border-color: var(--an-glass-border);
+  color: var(--an-text-secondary);
+}
+.splify-react-root .sp-cb-proto {
+  --cb-wash: color-mix(in srgb, var(--cb) 12%, transparent);
+  border-color: color-mix(in srgb, var(--cb) 28%, transparent);
+  color: color-mix(in srgb, var(--cb) 45%, #0b0d14);
+}
+.splify-react-root .sp-cb-warn {
+  --cb-wash: var(--an-warn-soft);
+  border-color: var(--an-warn-border);
+  color: var(--an-warn-ink);
+}
+.dark .splify-react-root .sp-cb-proto {
+  --cb-wash: color-mix(in srgb, var(--cb) 16%, transparent);
+  border-color: color-mix(in srgb, var(--cb) 34%, transparent);
+  color: color-mix(in srgb, var(--cb) 40%, #ffffff);
+}
+.dark .splify-react-root .sp-cb-warn {
+  --cb-wash: color-mix(in srgb, var(--an-warn) 12%, transparent);
+  color: color-mix(in srgb, var(--an-warn) 70%, #ffffff);
+}
+.splify-react-root .sp-cb[data-tone="1"] { --cb: var(--an-cat-1); }
+.splify-react-root .sp-cb[data-tone="2"] { --cb: var(--an-cat-2); }
+.splify-react-root .sp-cb[data-tone="3"] { --cb: var(--an-cat-3); }
+.splify-react-root .sp-cb[data-tone="4"] { --cb: var(--an-cat-4); }
+.splify-react-root .sp-cb[data-tone="5"] { --cb: var(--an-cat-5); }
+.splify-react-root .sp-cb[data-tone="6"] { --cb: var(--an-cat-6); }
+.splify-react-root .sp-cb[data-tone="7"] { --cb: var(--an-cat-7); }

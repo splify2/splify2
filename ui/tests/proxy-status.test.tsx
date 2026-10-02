@@ -44,7 +44,7 @@ describe('выход прокси на экранах', () => {
         expect(vn).not.toHaveBeenCalled()
     })
 
-    it('список выходов: у выхода прокси назван протокол, без модуля — нужен пакет steer-proxy', async () => {
+    it('список выходов: у выхода прокси протокол назван бейджем, без модуля — нужен пакет steer-proxy', async () => {
         const spec: Spec = {
             outputs: {
                 tr: { name: 'tr', kind: 'trojan', sub_file: '/etc/steer/sub.txt', on_fail: 'drop' },
@@ -60,8 +60,9 @@ describe('выход прокси на экранах', () => {
         expect(screen.getAllByText('нужен пакет steer-proxy').length).toBe(2)
         document.body.innerHTML = ''
         render(<PoolList live={live({ build: { modules: ['vless', 'proxy'] } })} />)
-        await waitFor(() => expect(screen.getByText(/Trojan · подписка/)).toBeInTheDocument())
-        expect(screen.getByText(/VMess · подписка/)).toBeInTheDocument()
+        /* Протокол — бейджем конфигурации под строкой (lib/badges.ts), подпись — «подписка». */
+        await waitFor(() => expect(screen.getByRole('button', { name: /^tr.*подписка.*Trojan/ })).toBeInTheDocument())
+        expect(screen.getByRole('button', { name: /^vm.*подписка.*VMess/ })).toBeInTheDocument()
     })
 
     it('insecure у trojan (ядро его в status не печатает) — «сертификат не проверяется» по спеке', () => {

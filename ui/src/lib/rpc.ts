@@ -929,6 +929,8 @@ export const rpc = {
      *  узла и ответа — тот же, что у VLESS; поэтому и типы общие. Без модуля движок отвечает
      *  отказом «нужен пакет steer-hysteria2» — он доезжает до экрана как есть. */
     hysteria2NodesOfSub: declare<VlessNodesReply>('hysteria2_nodes', ['sub']),
+    /** Узлы hysteria2 — у ВЫХОДА, как vlessNodes: бейджи конфигурации выхода (components/ConfBadges). */
+    hysteria2Nodes: declare<VlessNodesReply>('hysteria2_nodes', ['output']),
     hysteria2ProbeOfSub: declare<{ output?: string; results?: VlessProbe[]; working?: number; error?: string }>(
         'hysteria2_probe',
         ['sub', 'node'],

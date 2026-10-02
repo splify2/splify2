@@ -1,14 +1,16 @@
-import { useCallback, useEffect, useRef, useState } from 'react'
+import { useCallback, useEffect, useRef, useState, type ReactNode } from 'react'
 import { Eye, EyeOff, Infinity as InfinityIcon, LoaderCircle, RefreshCw } from 'lucide-react'
 import { deadline, rpc, type SubQuota } from '@/lib/rpc'
 import { human } from '@/lib/live'
-import type { OutputStatus } from '@/lib/model'
+import { isTunnelKind, type Output, type OutputStatus, type Spec } from '@/lib/model'
 import { cacheGet, cacheSet } from '@/lib/cache'
 import { country } from '@/lib/geo'
 import { ccFromName, plainName } from '@/lib/nodename'
 import Flag from '@/components/Flag'
 import { daysText, readQuota, resetText } from '@/lib/quota'
 import { outDown, outDownLine } from '@/lib/outstate'
+import ConfBadges, { useOutNodes } from '@/components/ConfBadges'
+import { outNodes, outputBadges, poolBadges } from '@/lib/badges'
 
 import { S } from '@/copy'
 /** Правая колонка главной: по блоку на подписку и по блоку на выходной интерфейс.
@@ -41,6 +43,13 @@ export interface OutRef {
     /** Идёт применение или загрузка (Live.phase): неподнятый выход в это время — не беда, а
      *  подъём, и слово ему «Поднимается…». */
     phase?: 'applying' | 'starting' | null
+    /** Выход в спеке: из него бейджи конфигурации берут то, чего нет в состоянии (фильтр
+     *  транспорта, «не проверять сертификат», состав пула). */
+    out?: Output
+    /** Спека целиком и виды устройств (метод `devices`) — бейджам пула из своих туннелей:
+     *  WireGuard это или AmneziaWG, знает только вид устройства. */
+    spec?: Spec | null
+    devKinds?: Record<string, string>
 }
 
 /** Что блок показывал в прошлый раз. Рисуется сразу при открытии — до первого ответа ubus.
@@ -316,7 +325,7 @@ export function SubBlock({ outs = [], sub }: {
                             <li key={o.name} className="flex items-start gap-3 py-2 last:pb-0">
                                 <StateDot st={o.st} phase={o.phase} />
                                 <div className="min-w-0 flex-1">
-                                    <Location name={o.name} st={o.st} facts={o.facts} note={o.note} />
+                                    <Location name={o.name} st={o.st} facts={o.facts} note={o.note} out={o.out} />
                                 </div>
                             </li>
                         ))}
@@ -332,30 +341,24 @@ export function SubBlock({ outs = [], sub }: {
  *  СВОИМ БЛОКОМ, а не строкой внутри подписки. Локация — это то, чем человек выходит в
  *  интернет прямо сейчас: у неё своё состояние (поднята ли), свой отклик и свой адрес, и
  *  сложенные в один блок три локации читаются как одно целое, которым они не являются. */
-function Location({ name, st, facts, note, phase }: OutRef) {
-    /** Имя узла, выбранного движком, — ЗАПАСНАЯ подпись локации: пока измерение не пришло
-     *  (или устарело), из него берётся хотя бы страна, которую назвал продавец. */
-    const [node, setNode] = useState<string | null>(null)
-    /* Клиенты hysteria2 и прокси сами называют свой узел в `steer status` (объекты hysteria2 и
-     * proxy) — спрашивать список узлов у них незачем, а vless_nodes по такому выходу и вовсе
-     * отвечает отказом: это не выход VLESS. */
+function Location({ name, st, facts, note, phase, out }: OutRef) {
+    /* Узлы выхода — ОДНИМ вопросом на две нужды: имя выбранного узла (запасная подпись локации,
+     * пока измерение не пришло, — из него берётся хотя бы страна, которую назвал продавец) и
+     * бейджи конфигурации. Клиенты hysteria2 и прокси сами называют свой узел в `steer status`
+     * (объекты hysteria2 и proxy) — его и берём; у VLESS — первый выбранный. */
+    const kind = st?.kind || out?.kind || 'vless'
+    const r = useOutNodes(name, isTunnelKind(kind) ? kind : 'vless', st?.device)
     const own = st?.proxy?.node || st?.hysteria2?.node || null
-    const vless = !st?.kind || st.kind === 'vless'
-    useEffect(() => {
-        if (!vless) return
-        let stop = false
-        rpc.vlessNodes(name)
-            .then((r) => {
-                /* Выбранный узел: у списка `chosen` первый, у прежнего поля — `node`. */
-                const want = r.chosen?.length ? r.chosen[0] : r.node
-                const n = (r.nodes || []).find((x) => x.index === want)
-                if (!stop && n?.name) setNode(n.name)
-            })
-            .catch(() => {})
-        return () => { stop = true }
-    }, [name, st?.device, vless])
+    const want = r?.chosen?.length ? r.chosen[0] : r?.node
+    const node = (r?.nodes || []).find((x) => x.index === want)?.name || null
+    const badges = outputBadges({ out, st, nodes: outNodes(r, own) })
 
-    return <Where name={name} st={st} facts={facts} fallback={own || node} note={note} phase={phase} showIp />
+    return (
+        <Where
+            name={name} st={st} facts={facts} fallback={own || node} note={note} phase={phase} showIp
+            extra={<ConfBadges list={badges} className="mt-1" />}
+        />
+    )
 }
 
 /** Блок своего туннеля: WireGuard, AmneziaWG, xsteer.
@@ -364,7 +367,10 @@ function Location({ name, st, facts, note, phase }: OutRef) {
  *  устройства на роутере отвечает на другой вопрос — «сколько прошло с перезагрузки», — и
  *  рядом с остатком подписки читался бы как остаток. Знак бесконечности говорит ровно то,
  *  что есть: ограничения нет. */
-export function TunnelBlock({ name, st, facts, phase }: OutRef) {
+export function TunnelBlock({ name, st, facts, phase, out, spec, devKinds }: OutRef) {
+    /* Свой туннель: протокол — по виду устройства (WireGuard, AmneziaWG), у пула — протоколы
+     * его строк; у выхода, которого нет в спеке, — что скажет состояние. */
+    const badges = spec && out ? poolBadges(spec, name, devKinds) : outputBadges({ out, st })
     /* Bode 26.10: строка перечня «Выходы» — точка состояния, имя, справа «без лимита», под
      * именем то, где выход сейчас. Как строка выхода на главной приложения. */
     return (
@@ -382,7 +388,10 @@ export function TunnelBlock({ name, st, facts, phase }: OutRef) {
                         <span className="sr-only">{S.outputCards.obemNeOgranichen}</span>
                     </span>
                 </div>
-                <Where name={name} st={st} facts={facts} fallback={st?.device || null} phase={phase} />
+                <Where
+                    name={name} st={st} facts={facts} fallback={st?.device || null} phase={phase}
+                    extra={<ConfBadges list={badges} className="mt-1" />}
+                />
             </div>
         </div>
     )
@@ -407,7 +416,7 @@ function StateDot({ st, phase }: { st?: OutputStatus; phase?: OutRef['phase'] })
  *  Пока выход не поднят, локации нет и выдумывать её нечем: показывается беда. Прошлое
  *  измерение рядом со сломанным туннелем читалось бы как «всё в порядке». */
 function Where({
-    name, st, facts, fallback, showIp, note, phase,
+    name, st, facts, fallback, showIp, note, phase, extra,
 }: {
     name: string
     st?: OutputStatus
@@ -416,11 +425,13 @@ function Where({
     showIp?: boolean
     note?: string
     phase?: OutRef['phase']
+    /** Бейджи конфигурации: под строкой места — и у поднятого выхода, и у беды. */
+    extra?: ReactNode
 }) {
     const up = st?.up === true
     /* Узел потерян при живом устройстве — тоже беда, хотя `up` бывает и истинным (сторож ещё
      * не переключил): прошлая страна рядом с ним читалась бы как «всё в порядке». */
-    if (st && (!up || outDown(st))) return <Trouble st={st} name={name} phase={phase} />
+    if (st && (!up || outDown(st))) return <><Trouble st={st} name={name} phase={phase} />{extra}</>
     /* Страна — измеренная, а если её нет, та, что назвал продавец в имени узла. Измерения не
      * бывает не только на сломанном выходе: бэкенд помнит ответ пятнадцать минут, и пустой
      * ответ он помнит так же — до следующей проверки страны не будет вовсе. Подпись продавца
@@ -439,6 +450,7 @@ function Where({
                 </span>
                 <Ping p={facts?.ping} />
             </div>
+            {extra}
             {showIp && <Address ip={facts?.geo?.ip} />}
         </>
     )
