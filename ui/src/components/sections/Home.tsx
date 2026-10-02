@@ -192,7 +192,7 @@ export default function Home({
     live, onSection, onAddRule,
 }: {
     live: Live
-    onSection: (s: SectionId, at?: string) => void
+    onSection: (s: SectionId) => void
     /** «Добавить правило» именно ЗАВОДИТ правило и открывает его — см. Console. */
     onAddRule?: () => void
 }) {
@@ -300,7 +300,7 @@ export default function Home({
                 {!live.phase && ((live.diag?.fail ?? 0) > 0 || (live.diag?.warn ?? 0) > 0) && (
                     <button
                         type="button"
-                        onClick={() => onSection('settings', 'diag')}
+                        onClick={() => onSection('diag')}
                         className={[
                             'flex w-full items-center gap-2 rounded-xl border p-3 text-left text-[13px] transition-colors',
                             live.diag?.fail
@@ -324,7 +324,7 @@ export default function Home({
                 {v.tone === 'good' && v.notes.length > 0 && (
                     <button
                         type="button"
-                        onClick={() => onSection('settings', 'diag')}
+                        onClick={() => onSection('diag')}
                         className="block w-full text-left text-xs text-muted-foreground underline decoration-dotted"
                     >
                         {v.notes.length > 1 ? `${v.why}: ` : S.home.sovet}
@@ -428,7 +428,7 @@ function RulesBoard({
     live: Live
     channels?: Channel[]
     facts: Record<string, Facts>
-    onSection: (s: SectionId, at?: string) => void
+    onSection: (s: SectionId) => void
 }) {
     const sets = live.status?.channels || []
     /* Набор по имени правила: сначала тот, что назвал правило участником, иначе одноимённый —
@@ -514,7 +514,7 @@ function RuleRow({
     phase: Live['phase']
     /** Доля трафика относительно самого нагруженного правила, 0…1. */
     share: number
-    onSection: (s: SectionId, at?: string) => void
+    onSection: (s: SectionId) => void
 }) {
     /* Кандидаты выхода в порядке предпочтения: первый здоровый побеждает, поэтому нынешний —
      * это `device`, поставленный движком, а не первый в списке. */

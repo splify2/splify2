@@ -1,7 +1,6 @@
 import { useEffect, useState } from 'react'
-import { Info, Layers, Library, Network, Sliders, Stethoscope } from 'lucide-react'
+import { Info, Layers, Library, Network, Sliders } from 'lucide-react'
 import { Group, ScreenHeader, TapRow } from '@/components/ui/layout'
-import Diagnostics from '@/components/sections/Diagnostics'
 import CatalogTab from '@/components/tabs/CatalogTab'
 import BackupCard from '@/components/BackupCard'
 import ClientNetsCard from '@/components/ClientNetsCard'
@@ -18,16 +17,15 @@ import { type ServiceEntry, type Spec } from '@/lib/model'
 import { type Live } from '@/lib/live'
 
 import { S } from '@/copy'
-/** Настройки: всё, что не про маршрутизацию, шестью входами.
+/** Настройки: всё, что не про маршрутизацию, пятью входами. Диагностика — свой раздел рельса.
  *
  *  Раздел-склад («Логи steer») в проекте уже был: в него въезжало всё, что не влезло в
  *  остальные вкладки, и найти в нём что-либо можно было только прокруткой. Здесь вместо
  *  склада шесть названных входов, и каждый открывает своё содержимое на месте раздела. */
 
-type Screen = 'root' | 'diag' | 'general' | 'catalog' | 'xsteer' | 'extra' | 'about'
+type Screen = 'root' | 'general' | 'catalog' | 'xsteer' | 'extra' | 'about'
 
 const TITLE: Record<Exclude<Screen, 'root'>, string> = {
-    diag: S.settings.diagnostika,
     general: S.settings.obschee,
     catalog: S.settings.katalog,
     xsteer: 'XSTEER',
@@ -36,16 +34,13 @@ const TITLE: Record<Exclude<Screen, 'root'>, string> = {
 }
 
 export default function Settings({
-    live, onUseInRule, initial,
+    live, onUseInRule,
 }: {
     live: Live
     /** Запись каталога «в правило»: переход между разделами — дело оболочки. */
     onUseInRule: (s: ServiceEntry) => void
-    /** Подпункт, который просили открыть сразу: строка находки на главной ведёт в
-     *  диагностику, а не в перечень входов, где её пришлось бы искать заново. */
-    initial?: Screen
 }) {
-    const [screen, setScreen] = useState<Screen>(initial ?? 'root')
+    const [screen, setScreen] = useState<Screen>('root')
     const { spec } = usePending()
     const [local, setLocal] = useState<Record<string, { count: number; mtime: number }>>({})
     const [editable, setEditable] = useState<Spec | null>(null)
@@ -58,19 +53,12 @@ export default function Settings({
         pending.load().then(setEditable).catch(() => setEditable(null))
     }, [])
 
-    /* Просьба открыть подпункт приходит снаружи и может повториться: человек вернулся на
-     * главную и снова нажал на находку. */
-    useEffect(() => { if (initial) setScreen(initial) }, [initial])
-
-    const warnings = (live.diag?.fail ?? 0) + (live.diag?.warn ?? 0)
-
     if (screen !== 'root') {
         return (
             <div className="space-y-4">
                 {/* Bode: шапка вложенного экрана — стрелка назад и заголовок, как в приложении. */}
                 <ScreenHeader title={TITLE[screen]} back={() => setScreen('root')} backLabel={S.settings.nastroyki} />
                 <>
-                    {screen === 'diag' && <Diagnostics live={live} />}
                     {screen === 'general' && (
                         <div className="space-y-4">
                             <ClientNetsCard
@@ -127,19 +115,6 @@ export default function Settings({
 
     return (
         <Group>
-            <TapRow
-                icon={Stethoscope}
-                title={S.settings.diagnostika}
-                subtitle={
-                    live.diag?.fail
-                        ? S.settings.proverokSOtkazom(live.diag.fail)
-                        : live.diag?.warn
-                          ? S.settings.proverokSPreduprezhdeniem(live.diag.warn)
-                          : S.settings.nahodokNet
-                }
-                alarm={warnings > 0}
-                onClick={() => setScreen('diag')}
-            />
             <TapRow
                 icon={Sliders}
                 title={S.settings.obschee}

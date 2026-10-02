@@ -701,6 +701,7 @@ export const ru = {
     rail: {
         glavnaya: "Главная",
         pravila: "Правила",
+        diagnostika: "Диагностика",
         nastroyki: "Настройки",
         razdely: "Разделы",
     },
@@ -806,6 +807,7 @@ export const ru = {
     sections: {
         glavnaya: "Главная",
         pravila: "Правила",
+        diagnostika: "Диагностика",
         nastroyki: "Настройки",
     },
     selfUpdateCard: {

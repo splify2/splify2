@@ -2,7 +2,7 @@ import { S } from '@/copy'
 /** Разделы пульта. Отдельным файлом, а не в оболочке: тип нужен и рельсу, и каждому разделу,
  *  который умеет отправить человека в соседний («выход собирается во вкладке VPN»), а импорт
  *  из оболочки в её же ребёнка — это круг. */
-export type SectionId = 'home' | 'rules' | 'vpn' | 'dns' | 'settings'
+export type SectionId = 'home' | 'rules' | 'vpn' | 'dns' | 'diag' | 'settings'
 
 /** Заголовки разделов. Здесь, а не в рельсе, потому что раздел печатает своё имя сам —
  *  и оно обязано совпадать с пунктом рельса дословно. */
@@ -11,5 +11,6 @@ export const SECTION_TITLE: Record<SectionId, string> = {
     rules: S.sections.pravila,
     vpn: 'VPN',
     dns: 'DNS',
+    diag: S.sections.diagnostika,
     settings: S.sections.nastroyki,
 }

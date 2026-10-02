@@ -148,13 +148,23 @@
     /* Стекло: карточка и рельс полупрозрачны над подложкой с двумя мягкими пятнами акцента и
      * размывают её. Непрозрачность держит контраст текста: под стеклом светлая подложка, и
      * подписи (--sp-muted-foreground) остаются ≥ 4,5:1. Без backdrop-filter — сплошная карточка. */
-    --sp-glass: rgba(255, 255, 255, 0.5);
-    --sp-glass-rail: rgba(255, 255, 255, 0.38);
-    --sp-glass-edge: rgba(255, 255, 255, 0.9);
+    --sp-glass: rgba(255, 255, 255, 0.4);
+    --sp-glass-rail: rgba(255, 255, 255, 0.3);
+    /* Подложка под стеклом темнее страницы: над почти белым фоном белое стекло не видно. */
+    --sp-glass-base: #e6eaf1;
+    --sp-glass-edge: rgba(255, 255, 255, 0.95);
+    /* Блик стекла: свет падает слева сверху. */
+    --sp-glass-sheen: linear-gradient(140deg, rgba(255, 255, 255, 0.55), rgba(255, 255, 255, 0.06) 62%);
+    /* Поверхности ВНУТРИ стекла — поля, чипы, строки, сегменты, вторичные кнопки: тоже стекло,
+     * чуть плотнее карточки, чтобы отделяться от неё без серой заливки. */
+    --sp-glass-field: rgba(255, 255, 255, 0.5);
+    --sp-glass-tint: rgba(255, 255, 255, 0.42);
+    --sp-glass-hover: rgba(255, 255, 255, 0.68);
+    --sp-glass-spot3: rgba(214, 120, 228, 0.26);
     --sp-glass-border: rgba(140, 157, 175, 0.22);
     --sp-glass-blur: blur(26px) saturate(150%);
-    --sp-glass-spot1: rgba(94, 114, 228, 0.26);
-    --sp-glass-spot2: rgba(17, 205, 239, 0.22);
+    --sp-glass-spot1: rgba(94, 114, 228, 0.42);
+    --sp-glass-spot2: rgba(17, 205, 239, 0.34);
     /* Andromeda: кнопка и поле — 10, вложенный блок — 12 (rounded-xl), карточка — 16
      * (rounded-2xl), бейдж — 6 (rounded-sm). Отсюда считаются только первые и последний:
      * rounded-lg = --radius, rounded-md = −2, rounded-sm = −4 (см. tailwind.config.js).
@@ -198,12 +208,18 @@
     --sp-input: #3a3d47;
     --sp-ring: var(--dark-primary, #5e72e4);
     --sp-card-shadow: 0 0 0.5rem 0 rgba(0, 0, 0, 0.35);
-    --sp-glass: rgba(255, 255, 255, 0.05);
+    --sp-glass: rgba(255, 255, 255, 0.045);
     --sp-glass-rail: rgba(255, 255, 255, 0.03);
-    --sp-glass-edge: rgba(255, 255, 255, 0.08);
+    --sp-glass-edge: rgba(255, 255, 255, 0.1);
+    --sp-glass-sheen: linear-gradient(140deg, rgba(255, 255, 255, 0.07), rgba(255, 255, 255, 0) 60%);
+    --sp-glass-field: rgba(0, 0, 0, 0.2);
+    --sp-glass-tint: rgba(255, 255, 255, 0.06);
+    --sp-glass-hover: rgba(255, 255, 255, 0.1);
+    --sp-glass-spot3: rgba(186, 96, 214, 0.14);
+    --sp-glass-base: #111317;
     --sp-glass-border: rgba(208, 228, 239, 0.12);
-    --sp-glass-spot1: rgba(94, 114, 228, 0.22);
-    --sp-glass-spot2: rgba(17, 205, 239, 0.10);
+    --sp-glass-spot1: rgba(94, 114, 228, 0.28);
+    --sp-glass-spot2: rgba(17, 205, 239, 0.14);
   }
 }
 
@@ -750,26 +766,42 @@
   }
 
 /* ---- стекло ----------------------------------------------------------------------------
+ * !important — не каприз: Tailwind здесь собран с important (у .bg-card, .border-border,
+ * .shadow-card свой !important), и без него стекло проигрывает карточке, хотя селектор
+ * сильнее; при равной важности выигрывает селектор.
  * Подложка пульта — свой фон плюс два мягких пятна акцента (левый верх и правый низ): стекло
  * без того, что под ним, выглядит просто серым. Пятна приколоты к подложке (background-attachment
  * не fixed — в shadow root и на телефоне fixed дорог и дёргается при прокрутке). */
 .splify-react-root .sp-root {
   background:
-    radial-gradient(ellipse at 85% 12%, var(--sp-glass-spot1), transparent 55%),
-    radial-gradient(ellipse at 8% 85%, var(--sp-glass-spot2), transparent 55%),
-    var(--sp-background);
+    radial-gradient(ellipse 70% 55% at 88% 6%, var(--sp-glass-spot1), transparent 72%),
+    radial-gradient(ellipse 60% 55% at 4% 96%, var(--sp-glass-spot2), transparent 72%),
+    radial-gradient(ellipse 55% 45% at 50% 50%, var(--sp-glass-spot3), transparent 72%),
+    var(--sp-glass-base, var(--sp-background));
 }
 @supports ((backdrop-filter: blur(1px)) or (-webkit-backdrop-filter: blur(1px))) {
   .splify-react-root .sp-glass {
-    background-color: var(--sp-glass);
+    background-color: var(--sp-glass) !important;
     -webkit-backdrop-filter: var(--sp-glass-blur);
     backdrop-filter: var(--sp-glass-blur);
-    border-color: var(--sp-glass-border);
-    box-shadow: inset 0 1px 0 var(--sp-glass-edge), var(--sp-card-shadow);
+    background-image: var(--sp-glass-sheen) !important;
+    border-color: var(--sp-glass-border) !important;
+    box-shadow: inset 0 1px 0 var(--sp-glass-edge), var(--sp-card-shadow) !important;
+  }
+  /* Внутри стекла поверхности элементов — тоже стекло: токены переопределяются здесь, и поля
+   * (bg-background), чипы и строки (bg-muted, bg-secondary), наведение (bg-accent) становятся
+   * полупрозрачными без правки экранов. --sp-card не трогается: от него берут фон select и
+   * option, а нативное окно списка прозрачным быть не должно. */
+  .splify-react-root .sp-glass,
+  .splify-react-root .sp-glass-rail {
+    --sp-background: var(--sp-glass-field);
+    --sp-muted: var(--sp-glass-tint);
+    --sp-secondary: var(--sp-glass-tint);
+    --sp-accent: var(--sp-glass-hover);
   }
   .splify-react-root .sp-glass-rail {
-    background-color: var(--sp-glass-rail);
-    border-color: var(--sp-glass-border);
+    background-color: var(--sp-glass-rail) !important;
+    border-color: var(--sp-glass-border) !important;
     -webkit-backdrop-filter: var(--sp-glass-blur);
     backdrop-filter: var(--sp-glass-blur);
   }
@@ -777,10 +809,14 @@
   .splify-react-root .sp-glass .sp-glass {
     -webkit-backdrop-filter: none;
     backdrop-filter: none;
-    background-color: transparent;
+    background-color: var(--sp-glass-tint) !important;
+    background-image: none !important;
+    box-shadow: inset 0 1px 0 var(--sp-glass-edge) !important;
   }
 }
 @media (prefers-reduced-transparency: reduce) {
-  .splify-react-root .sp-glass { background-color: var(--sp-card); backdrop-filter: none; -webkit-backdrop-filter: none; }
-  .splify-react-root .sp-glass-rail { background-color: var(--sp-rail); backdrop-filter: none; -webkit-backdrop-filter: none; }
+  .splify-react-root .sp-glass { background-color: var(--sp-card) !important; background-image: none !important; backdrop-filter: none; -webkit-backdrop-filter: none; }
+  .splify-react-root .sp-glass-rail { background-color: var(--sp-rail) !important; backdrop-filter: none; -webkit-backdrop-filter: none; }
+  :root { --sp-glass-field: #f6f7f9; --sp-glass-tint: #f2f4f7; --sp-glass-hover: #f2f4f7; }
+  .dark { --sp-glass-field: #121317; --sp-glass-tint: #23252b; --sp-glass-hover: #23252b; }
 }

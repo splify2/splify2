@@ -32,6 +32,7 @@ const RulesTab = lazy(() => import('@/components/tabs/RulesTab'))
 const Vpn = lazy(() => import('@/components/sections/Vpn'))
 const Dns = lazy(() => import('@/components/sections/Dns'))
 const Settings = lazy(() => import('@/components/sections/Settings'))
+const Diagnostics = lazy(() => import('@/components/sections/Diagnostics'))
 
 const FALLBACK = <div className="p-5 text-sm text-muted-foreground">{S.console.zagruzka}</div>
 
@@ -48,13 +49,7 @@ export default function Console() {
      *  кнопка стоит в одном разделе, а заводит правило другой. Считывается разделом правил
      *  один раз и сбрасывается — иначе следующий заход в правила снова заводил бы пустое. */
     const [addRule, setAddRule] = useState(false)
-    /** Подпункт, с которого открыть раздел. Строка находки на главной ведёт в диагностику
-     *  внутри настроек, а не в перечень входов. */
-    const [sub, setSub] = useState<string | null>(null)
-    const go = (s: SectionId, at?: string) => {
-        setSection(s)
-        setSub(at ?? null)
-    }
+    const go = (s: SectionId) => setSection(s)
 
     /* Спека нужна рельсу для счётчика правил, а он виден на всех разделах — значит загрузить её
      * обязана оболочка, а не раздел правил. Вызов идемпотентен: кто пришёл раньше, тот и
@@ -87,7 +82,7 @@ export default function Console() {
                   ),
               }
             : undefined,
-        settings: warnings > 0 ? { text: String(warnings), alarm: true } : undefined,
+        diag: warnings > 0 ? { text: String(warnings), alarm: true } : undefined,
     }
 
     return (
@@ -151,10 +146,10 @@ export default function Console() {
                         )}
                         {section === 'vpn' && <Vpn live={live} />}
                         {section === 'dns' && <Dns live={live} />}
+                        {section === 'diag' && <Diagnostics live={live} />}
                         {section === 'settings' && (
                             <Settings
                                 live={live}
-                                initial={sub === 'diag' ? 'diag' : undefined}
                                 onUseInRule={(l) => {
                                     setWanted(l)
                                     go('rules')
