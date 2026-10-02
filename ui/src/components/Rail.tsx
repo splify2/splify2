@@ -139,8 +139,9 @@ export default function Rail({ live, section, onSection, counts }: RailProps) {
                             aria-current={on ? 'page' : undefined}
                             onClick={() => onSection(id)}
                             className={[
-                                'relative flex min-w-0 flex-1 flex-col items-center gap-1 px-0.5 pb-2 pt-2.5',
-                                /* 10px: шесть подписей на 390 пикселях, «Диагностика» без многоточия. */
+                                'relative flex min-w-0 flex-auto flex-col items-center gap-1 px-0.5 pb-2 pt-2.5',
+                                /* Шесть пунктов: ширина по подписи (flex-auto), а не поровну — «Диагностика»
+                                   длиннее «VPN» вчетверо, и поровну ей не хватало буквы даже на 390 px. */
                                 'text-[10px] leading-tight tracking-[-0.01em] transition-colors duration-200',
                                 'focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-primary',
                                 on ? 'font-medium text-primary' : 'text-subtle',
