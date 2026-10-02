@@ -68,6 +68,44 @@ describe('редактор группы', () => {
         expect(g).toMatchObject({ pick: 'balance', members: ['wg0', 'wg1'], weights: [3, 1] })
     })
 
+    it('режим раздачи — только у ядра с умением balance_by', () => {
+        render(<GroupEditor spec={spec} live={{ status: { features: ['groups'], outputs: {} } } as unknown as Live} onSave={() => {}} onCancel={() => {}} />)
+        fireEvent.click(screen.getByText('Поровну по весам'))
+        expect(screen.queryByText(S.groupEditor.byConnection)).toBeNull()
+    })
+
+    it('балансировка: режим раздачи — случайно, по сайту, по сайту и устройству', () => {
+        const onSave = vi.fn()
+        render(<GroupEditor spec={spec} live={{ status: { features: ['groups', 'balance_by'], outputs: {} } } as unknown as Live} onSave={onSave} onCancel={() => {}} />)
+        fireEvent.input(screen.getByLabelText('имя группы'), { target: { value: 'bal' } })
+        expect(screen.queryByText(S.groupEditor.byConnection)).toBeNull()
+        fireEvent.click(screen.getByText('Поровну по весам'))
+        fireEvent.click(screen.getByRole('button', { name: 'wg0' }))
+        fireEvent.click(screen.getByRole('button', { name: 'wg1' }))
+        expect(screen.getByText(S.groupEditor.byConnection)).toBeInTheDocument()
+        fireEvent.click(screen.getByText(S.groupEditor.bySite))
+        fireEvent.click(screen.getByText(/Сохранить группу/))
+        expect((onSave.mock.calls[0][0] as Spec).outputs.bal).toMatchObject({ pick: 'balance', by: 'site' })
+    })
+
+    it('режим раздачи открывается сохранённым; «случайно» в спеку не пишется; у другого способа — нет', () => {
+        const onSave = vi.fn()
+        const s: Spec = { ...spec, outputs: { ...spec.outputs, bal: { name: 'bal', kind: 'group', pick: 'balance', members: ['wg0', 'wg1'], by: 'site_client' } } }
+        const { unmount } = render(<GroupEditor spec={s} name="bal" onSave={onSave} onCancel={() => {}} />)
+        const radio = (t: string) => screen.getByText(t).closest('button') as HTMLElement
+        expect(radio(S.groupEditor.bySiteClient)).toHaveClass('bg-primary/10')
+        fireEvent.click(screen.getByText(S.groupEditor.byConnection))
+        fireEvent.click(screen.getByText(/Сохранить группу/))
+        const g = (onSave.mock.calls[0][0] as Spec).outputs.bal
+        expect(g.by).toBeUndefined()
+        expect((encodeSpec(onSave.mock.calls[0][0] as Spec) as { outputs: Record<string, Record<string, unknown>> }).outputs.bal.by).toBeUndefined()
+        unmount()
+        render(<GroupEditor spec={s} name="bal" onSave={onSave} onCancel={() => {}} />)
+        fireEvent.click(screen.getByText('Первый живой'))
+        fireEvent.click(screen.getByText(/Сохранить группу/))
+        expect((onSave.mock.calls[1][0] as Spec).outputs.bal.by).toBeUndefined()
+    })
+
     it('группу нельзя взять членом самой себя и её потомков', () => {
         const s: Spec = { ...spec, outputs: { ...spec.outputs, g1: { name: 'g1', kind: 'group', pick: 'order', members: ['wg0'] }, g2: { name: 'g2', kind: 'group', pick: 'order', members: ['g1'] } } }
         render(<GroupEditor spec={s} name="g1" onSave={() => {}} onCancel={() => {}} />)

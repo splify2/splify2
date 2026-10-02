@@ -213,6 +213,8 @@ function decodeOutput(name: string, o: J): Output {
         const u = str(take('url'))
         if (u) out.url = u
         if (Array.isArray(take('weights'))) out.weights = (o.weights as unknown[]).map(Number)
+        const by = str(take('by'))
+        if (by) out.by = by as Output['by']
     }
     const extra: Record<string, unknown> = {}
     for (const [k, v] of Object.entries(o)) if (!used.has(k)) extra[k] = v
@@ -573,6 +575,7 @@ function encodeOutput(o: Output): J {
                 put('idle_timeout', o.idle_timeout)
             }
             put('weights', o.pick === 'balance' ? o.weights : undefined)
+            put('by', o.pick === 'balance' && o.by !== 'connection' ? o.by : undefined)
             put('ipv6', o.ipv6 === 'off' ? 'off' : undefined)
             break
     }

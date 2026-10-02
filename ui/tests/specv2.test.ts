@@ -53,6 +53,24 @@ describe('запись v2', () => {
         expect(d.outputs.fast).toEqual({ kind: 'group', pick: 'latency', members: ['a', 'b'], tolerance: 50 })
     })
 
+    it('режим раздачи by — только у balance и только не случайный', () => {
+        const d = encodeSpec(base({
+            outputs: {
+                direct: { name: 'direct', kind: 'direct' },
+                a: { name: 'a', kind: 'interface', device: 'wg0' },
+                b: { name: 'b', kind: 'interface', device: 'wg1' },
+                s: { name: 's', kind: 'group', pick: 'balance', members: ['a', 'b'], by: 'site' },
+                sc: { name: 'sc', kind: 'group', pick: 'balance', members: ['a', 'b'], by: 'site_client', weights: [1, 2] },
+                c: { name: 'c', kind: 'group', pick: 'balance', members: ['a', 'b'], by: 'connection' },
+                o: { name: 'o', kind: 'group', pick: 'order', members: ['a', 'b'], by: 'site' },
+            },
+        })) as { outputs: Record<string, Record<string, unknown>> }
+        expect(d.outputs.s).toEqual({ kind: 'group', pick: 'balance', members: ['a', 'b'], by: 'site' })
+        expect(d.outputs.sc).toEqual({ kind: 'group', pick: 'balance', members: ['a', 'b'], weights: [1, 2], by: 'site_client' })
+        expect('by' in d.outputs.c).toBe(false)
+        expect('by' in d.outputs.o).toBe(false)
+    })
+
     it('IPv6: prefix пишется только вместе с routed', () => {
         const d = encodeSpec(base({
             outputs: {
@@ -177,6 +195,22 @@ describe('чтение v2 и круг', () => {
         expect(f.outputs.vpn).toMatchObject({ kind: 'interface', devices: ['wg0', 'wg1'], up: true })
         expect('group' in f.outputs.vpn).toBe(false)
         expect(f.outputs.eu.kind).toBe('group')
+    })
+
+    it('by группы — поле модели, а не незнакомый ключ', () => {
+        const v2 = {
+            version: 2,
+            outputs: {
+                a: { kind: 'interface', device: 'wg0' },
+                b: { kind: 'interface', device: 'wg1' },
+                s: { kind: 'group', pick: 'balance', members: ['a', 'b'], by: 'site_client' },
+            },
+            rules: [],
+        }
+        const ui = decodeSpec(v2)
+        expect(ui.outputs.s.by).toBe('site_client')
+        expect(ui.outputs.s.extra).toBeUndefined()
+        expect((encodeSpec(ui) as { outputs: Record<string, unknown> }).outputs.s).toEqual(v2.outputs.s)
     })
 
     it('неизвестные ключи выхода доезжают обратно', () => {

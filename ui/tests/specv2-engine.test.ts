@@ -162,6 +162,29 @@ describe.skipIf(!HAVE)('кодек v2 против движка', () => {
     })
 })
 
+describe.skipIf(!HAVE)('кодек v2 против движка: режим раздачи balance', () => {
+    it('by: site и site_client — тот же набор правил после круга, хеш вместо случайного', () => {
+        const v2 = {
+            version: 2,
+            outputs: {
+                wg0: { kind: 'interface', device: 'wg0' },
+                wg1: { kind: 'interface', device: 'wg1' },
+                s: { kind: 'group', pick: 'balance', members: ['wg0', 'wg1'], by: 'site' },
+                sc: { kind: 'group', pick: 'balance', members: ['wg0', 'wg1'], weights: [1, 3], by: 'site_client' },
+            },
+            lists: { a: { domains_file: [dom] }, b: { domains_file: [dom2] } },
+            rules: [{ name: 'a', to: ['a'], out: 's' }, { name: 'b', to: ['b'], out: 'sc' }],
+        }
+        const before = ruleset(v2, 'by-a.json')
+        expect(before).toContain('jhash ip daddr mod 120')
+        expect(before).toContain('jhash ip saddr . ip daddr mod 120')
+        expect(before).not.toContain('numgen')
+        const ui = decodeSpec(v2)
+        expect(ui.outputs.s.by).toBe('site')
+        expect(ruleset(encodeSpec(ui), 'by-b.json')).toBe(before)
+    })
+})
+
 describe.skipIf(!HAVE)('кодек v2 против движка: ключи, которых модель не знает', () => {
     it('override_port списка: тот же набор правил после круга', () => {
         const v2 = {

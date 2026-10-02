@@ -51,6 +51,9 @@ export function insecureApplies(k: string | undefined | null): boolean {
  *  самый быстрый с допуском, `manual` — выбор человека (`steer select`), `balance` — ядро
  *  раскидывает новые соединения по живым членам по весам. */
 export type GroupPick = 'order' | 'latency' | 'manual' | 'balance'
+/** pick=balance: чем раздаются новые соединения (спека v2 `by`): каждое случайно по весам, сайт —
+ *  на одном члене, сайт у одного устройства — на одном члене. */
+export type BalanceBy = 'connection' | 'site' | 'site_client'
 
 /** IPv6 от хоста на том конце туннеля: `routed` — хост маршрутизует префикс, `nat` — один адрес
  *  и masquerade IPv6, `off` — выход IPv6 не несёт. Нет ключа — несёт, если несёт его вид. */
@@ -142,6 +145,8 @@ export interface Output {
     url?: string
     idle_timeout?: number
     weights?: number[]
+    /** pick=balance: режим раздачи; нет — `connection` (умолчание ядра). */
+    by?: BalanceBy
     /** kind=tunnel: протокол туннеля спеки v2, которого модель не знает своим видом (trojan,
      *  shadowsocks, socks, http, vmess из steer-proxy, будущие). vless и hysteria2 — свои виды
      *  выхода, а такой туннель интерфейс не правит: читает и пишет обратно как есть. */

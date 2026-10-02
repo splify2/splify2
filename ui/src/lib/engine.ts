@@ -157,6 +157,13 @@ export function xsLinkSupported(status: Status | null): boolean {
     return Array.isArray(status?.features) && status.features.includes('xslink')
 }
 
+/** Умеет ли установленное ядро режим раздачи у группы «поровну по весам» (ключ `by` спеки v2,
+ *  умение `balance_by`). Спрашивается у состояния, как `xsLinkSupported`: ядро без умения спеку с
+ *  `by` отвергает целиком, и выбор режима, который не применится, лучше не показывать вовсе. */
+export function balanceBySupported(status: Status | null | undefined): boolean {
+    return Array.isArray(status?.features) && status.features.includes('balance_by')
+}
+
 /** Модули ядра 2.0 (пакеты steer-<модуль>) в порядке показа — тот же, что у бэкенда
  *  (m-engine.sh, STEER_MODULES). */
 export const STEER_MODULES = ['vless', 'hysteria2', 'proxy', 'xsteer', 'obfs', 'tgws']

@@ -3,9 +3,10 @@ import { ArrowDown, ArrowUp, Check, Trash2 } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Block, CardHead, DangerButton, FieldRow, ScreenHeader, ToggleRow } from '@/components/ui/layout'
 import { Chip, Field, NumField, Radio, inputCls } from '@/components/formbits'
+import { balanceBySupported } from '@/lib/engine'
 import { notify } from '@/lib/notify'
 import { rpc } from '@/lib/rpc'
-import { ON_FAIL_TEXT, isPart, type GroupPick, type OnFail, type Output, type Spec } from '@/lib/model'
+import { ON_FAIL_TEXT, isPart, type BalanceBy, type GroupPick, type OnFail, type Output, type Spec } from '@/lib/model'
 import { type Live } from '@/lib/live'
 
 import { S } from '@/copy'
@@ -33,6 +34,14 @@ const PICK_TEXT: Record<GroupPick, { title: string; hint: string }> = {
     latency: { title: S.groupEditor.samyyBystryy, hint: S.groupEditor.poZameruZaderzhki },
     manual: { title: S.groupEditor.vyborVruchnuyu, hint: S.groupEditor.chlenVybiraeteVyBez },
     balance: { title: S.groupEditor.porovnuPoVesam, hint: S.groupEditor.novyeSoedineniyaRazdayutsyaPo },
+}
+
+/** Режим раздачи у «поровну по весам» (`by`): каждое соединение случайно, сайт на одном выходе,
+ *  сайт у одного устройства на одном выходе. */
+const BY_TEXT: Record<BalanceBy, string> = {
+    connection: S.groupEditor.byConnection,
+    site: S.groupEditor.bySite,
+    site_client: S.groupEditor.bySiteClient,
 }
 
 /** Группы, в которых `name` лежит членом (прямо или через вложенные): такую группу в члены
@@ -67,8 +76,11 @@ export default function GroupEditor({ spec, name, live, onSave, onCancel }: {
      *  задаются у члена. */
     const [noV6, setNoV6] = useState(existing?.ipv6 === 'off')
     const [weights, setWeights] = useState<number[]>(existing?.weights || [])
+    const [by, setBy] = useState<BalanceBy>(existing?.by || 'connection')
     const [onFail, setOnFail] = useState<OnFail>(existing?.on_fail === 'direct' ? 'direct' : 'drop')
     const st = name ? live?.status?.outputs?.[name] : undefined
+    /* Режим раздачи — когда ядро его умеет; уже записанный в спеку показывается и без умения. */
+    const canBy = balanceBySupported(live?.status) || (!!existing?.by && existing.by !== 'connection')
 
     /* Кого можно взять: выходы с устройством и другие группы. `direct` устройства не имеет,
      * служебные части пулов человеку не показываются. */
@@ -117,6 +129,7 @@ export default function GroupEditor({ spec, name, live, onSave, onCancel }: {
         }
         if (noV6) g.ipv6 = 'off'
         if (pick === 'balance') g.weights = members.map((_, k) => weights[k] ?? 1)
+        if (pick === 'balance' && by !== 'connection') g.by = by
         if (existing?.extra) g.extra = existing.extra
         /* Переименование уводит за собой правила и членство в других группах. */
         const outputs: Record<string, Output> = {}
@@ -222,6 +235,14 @@ export default function GroupEditor({ spec, name, live, onSave, onCancel }: {
                                         />
                                     </Field>
                                 </div>
+                            </div>
+                        )}
+                {pick === 'balance' && canBy && (
+                            <div className="border-t border-border pt-1">
+                                <p className="px-2.5 pt-2 text-xs text-muted-foreground">{S.groupEditor.razdacha}</p>
+                                {(Object.keys(BY_TEXT) as BalanceBy[]).map((b) => (
+                                    <Radio key={b} on={by === b} onClick={() => setBy(b)}>{BY_TEXT[b]}</Radio>
+                                ))}
                             </div>
                         )}
                 </Block>
