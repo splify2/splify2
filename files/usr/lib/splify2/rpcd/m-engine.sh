@@ -856,6 +856,94 @@ case "$2" in
         json_dump
         ;;
 
+    steer_modules)
+        # Модули ядра для карточки «О ПО»: какие стоят (файл модуля рядом с ядром) и какой версии
+        # пакет, какие нужны спеке (такой снять нельзя — ядро её не примет) и каким выходам.
+        # Плюс версия steer-core: модуль ставится той же версией, что ядро, и без steer-core
+        # (ядро 1.x или нет ядра) ставить модули нечему.
+        PKGS="$(pkg_list)"
+        spec_mods
+        have=" $(mods_present) "
+        busy=""; box_busy && busy="$BOX_BY"
+        json_init
+        json_add_string core "$(pkg_in steer-core)"
+        [ -n "$busy" ] && json_add_string busy "$busy"
+        json_add_array modules
+        for m in $STEER_MODULES; do
+            json_add_object ""
+            json_add_string name "$m"
+            case "$have" in *" $m "*) json_add_boolean installed 1 ;; *) json_add_boolean installed 0 ;; esac
+            v="$(pkg_in "steer-$m")"; [ -n "$v" ] && json_add_string version "$v"
+            case " $SPEC_MODS " in
+                *" $m "*) json_add_boolean needed 1; json_add_string outputs "$(spec_mod_outs "$m")" ;;
+                *) json_add_boolean needed 0 ;;
+            esac
+            json_close_object
+        done
+        json_close_array
+        json_dump
+        ;;
+
+    steer_module_add|steer_module_del)
+        # Поставить или снять один модуль ядра 2.0.
+        #
+        # Ставится модуль ТОЙ ЖЕ версии, что стоящий steer-core: модуль зависит от него точной
+        # версией, и другой менеджер не примет. Ядро само его не увидит до перезапуска — его
+        # перезапускает скрипт пакета модуля, если служба включена.
+        #
+        # Снять модуль, который нужен спеке, нельзя: ядро отвергло бы её целиком при следующем
+        # применении, а выход его вида перестал бы работать уже сейчас. Тогда отказ называет
+        # выходы — их сначала убирают или переделывают. Мета-пакет steer-extended (2.0) держит
+        # свои модули зависимостью — он снимается вместе с модулем, сам он ничего не несёт.
+        read -r input
+        m="$(jsonfilter -s "$input" -e '@.module' 2>/dev/null)"
+        case " $STEER_MODULES " in *" $m "*) ;; *) fail "неизвестный модуль: $m" ;; esac
+        [ -n "$m" ] || fail "неизвестный модуль: $m"
+        box_busy && fail "ядро занято: $BOX_BY"
+        PKGS="$(pkg_list)"
+        if [ "$2" = steer_module_del ]; then
+            spec_mods
+            case " $SPEC_MODS " in
+                *" $m "*) fail "модуль нужен выходам: $(spec_mod_outs "$m")" ;;
+            esac
+            pkg_in "steer-extended" >/dev/null && pkg_del steer-extended
+            pkg_del "steer-$m"
+            PKGS="$(pkg_list)"
+            json_init
+            if pkg_in "steer-$m" >/dev/null; then
+                json_add_boolean ok 0
+                json_add_string error "модуль steer-$m не снялся"
+            else
+                json_add_boolean ok 1
+            fi
+            json_dump
+            exit 0
+        fi
+        cver="$(pkg_in steer-core)"
+        [ -n "$cver" ] || fail "нет ядра steer-core"
+        arch="$(pkg_arch)"
+        [ -n "$arch" ] || fail "не определилась архитектура"
+        name="steer-$m-${cver}-1_${arch}.$(pkg_ext)"
+        FETCH_VIA=""
+        steer_fetch "$cver" "$name" || fail "не скачалось: $name (нет такой версии для $arch?)${FETCH_NOTE:+ — $FETCH_NOTE}"
+        PKG_EXTRA=""
+        pkg_install "/tmp/$name"
+        rc=$?
+        out="$PKG_OUT"
+        rm -f "/tmp/$name"
+        json_init
+        if [ "$rc" != 0 ]; then
+            json_add_boolean ok 0
+            json_add_string error "$out"
+            json_dump; exit 0
+        fi
+        json_add_boolean ok 1
+        json_add_string installed "steer-$m $cver"
+        [ -n "$FETCH_VIA" ] && json_add_string via "$FETCH_VIA"
+        [ -n "$out" ] && json_add_string output "$out"
+        json_dump
+        ;;
+
     ui_get|ui_set)
         # Память мастера: какие выходы он создал, как человек их назвал, что в каждом.
         #

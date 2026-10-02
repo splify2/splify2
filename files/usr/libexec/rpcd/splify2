@@ -634,8 +634,12 @@ list)
     json_add_object splify2_install; json_add_string version; json_close_object
     json_add_object steer_versions; json_close_object
     json_add_object steer_install
-        json_add_string version; json_add_boolean extended
+        json_add_string version; json_add_boolean extended; json_add_string modules
     json_close_object
+    # Модули ядра 2.0: перечень с состоянием и установка или снятие одного модуля.
+    json_add_object steer_modules; json_close_object
+    json_add_object steer_module_add; json_add_string module; json_close_object
+    json_add_object steer_module_del; json_add_string module; json_close_object
     json_dump
     ;;
 call)
@@ -647,7 +651,8 @@ call)
         spec_set|apply|group_select) _grp=spec ;;
         lists|list_fetch|lists_update|list_put|list_remove|list_custom|list_get|local_lists|allow_domains|fetch_mode|fetch_mode_set|\
         lists_source|lists_source_set) _grp=lists ;;
-        engine|engine_stop|engine_start|steer_versions|splify2_versions|splify2_install|steer_install|ui_get|ui_set) _grp=engine ;;
+        engine|engine_stop|engine_start|steer_versions|splify2_versions|splify2_install|steer_install|ui_get|ui_set|\
+        steer_modules|steer_module_add|steer_module_del) _grp=engine ;;
         sub_set|sub_info|sub_quota|sub_list|sub_del|sub_auto|sub_refresh) _grp=sub ;;
         backup_get|backup_put) _grp=backup ;;
         xsteer_link|xsteer_link_put) _grp=xsteer ;;

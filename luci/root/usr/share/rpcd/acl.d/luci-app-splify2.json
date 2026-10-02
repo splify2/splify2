@@ -49,7 +49,8 @@
           "xsteer_link",
           "telemetry_state",
           "telemetry_preview",
-          "support_report"
+          "support_report",
+          "steer_modules"
         ]
       }
     },
@@ -81,7 +82,9 @@
           "xsteer_link_put",
           "telemetry_set",
           "sub_auto",
-          "sub_refresh"
+          "sub_refresh",
+          "steer_module_add",
+          "steer_module_del"
         ]
       }
     }

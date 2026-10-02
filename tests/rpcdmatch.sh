@@ -1533,6 +1533,64 @@ mv "$T/bin/opkg.orig" "$T/bin/opkg"; rm -f "$T/opkg.lists" "$T/opkg.log"
 rm -rf "$T/mods"; relclean; reset_logs
 [ -f "$spec_keep" ] && mv "$spec_keep" "$T/etc/spec.json"
 
+# ---- модули ядра 2.0: перечень, установка и снятие одного --------------------------------
+# Карточка модулей в «О ПО»: что стоит и какой версии, что нужно спеке. Модуль ставится той же
+# версией, что steer-core; снять нужный спеке нельзя — отказ называет выходы.
+spec_keep="$T/etc/spec.json.keep3"; cp "$T/etc/spec.json" "$spec_keep" 2>/dev/null || rm -f "$spec_keep"
+mkdir -p "$T/mods"; for m in vless proxy; do printf '#!/bin/sh\n' > "$T/mods/steer-$m"; chmod +x "$T/mods/steer-$m"; done
+printf '{"version":2,"outputs":{"nl":{"kind":"tunnel","protocol":"vless","subscription":"s"},"t":{"kind":"tunnel","protocol":"trojan","subscription":"s"},"t2":{"kind":"tunnel","protocol":"vmess","subscription":"s"}}}\n' > "$T/etc/spec.json"
+out="$(APK_LIST="$CORE_LIST" rpcd steer_modules)"
+mod_field() {  # МОДУЛЬ ПОЛЕ < JSON
+    python3 -c 'import json,sys
+d=json.load(sys.stdin)
+for m in d.get("modules", []):
+    if m.get("name")==sys.argv[1]:
+        v=m.get(sys.argv[2]); print("" if v is None else json.dumps(v, ensure_ascii=False) if isinstance(v,bool) else v)' "$1" "$2"
+}
+check "steer_modules: версия ядра" "2.0.0" "$(printf '%s' "$out" | jget core)"
+check "steer_modules: шесть модулей по порядку" "vless hysteria2 proxy xsteer obfs tgws" \
+      "$(printf '%s' "$out" | python3 -c 'import json,sys; print(" ".join(m["name"] for m in json.load(sys.stdin)["modules"]))')"
+check "  proxy стоит, версия пакета, нужен выходам t и t2" "true;2.0.0;true;t, t2" \
+      "$(printf '%s' "$out" | mod_field proxy installed);$(printf '%s' "$out" | mod_field proxy version);$(printf '%s' "$out" | mod_field proxy needed);$(printf '%s' "$out" | mod_field proxy outputs)"
+check "  hysteria2 не стоит и не нужен" "false;false" \
+      "$(printf '%s' "$out" | mod_field hysteria2 installed);$(printf '%s' "$out" | mod_field hysteria2 needed)"
+
+relclean; reset_logs
+mkrel2 "$T/rel-raw.json" "$(relsum "$T/body-rel")"
+printf 'splify2/releases/releases/download\t%s\n' "$T/body-rel" > "$T/curl.serve"
+out="$(APK_LIST="$CORE_LIST" rpcd steer_module_add '{"module":"hysteria2"}')"
+check "модуль ставится версией стоящего ядра, один файл" "hysteria2" "$(apk_adds)"
+check "  ответ: ok и что встало" "true;steer-hysteria2 2.0.0" \
+      "$(printf '%s' "$out" | jget ok);$(printf '%s' "$out" | jget installed)"
+out="$(APK_LIST="steer-extended-1.5.9-r1 x {steer-extended}" rpcd steer_module_add '{"module":"hysteria2"}')"
+check "без steer-core модуль ставить некуда" "нет ядра steer-core" "$(printf '%s' "$out" | jget error)"
+
+reset_logs
+out="$(APK_LIST="$CORE_LIST" rpcd steer_module_del '{"module":"proxy"}')"
+check "снять модуль, нужный спеке, нельзя — названы выходы" "false;модуль нужен выходам: t, t2" \
+      "$(printf '%s' "$out" | jget ok);$(printf '%s' "$out" | jget error)"
+check "  и пакет не трогали" "0" "$(grep -c '^del' "$T/apk.log")"
+out="$(APK_LIST="$CORE_LIST
+steer-xsteer-2.0.0-r1 x {steer-xsteer}" rpcd steer_module_del '{"module":"hysteria2"}')"
+check "ненужный спеке модуль снимается" "del steer-hysteria2" "$(grep '^del' "$T/apk.log")"
+reset_logs
+out="$(APK_LIST="$CORE_LIST
+steer-extended-2.0.0-r1 x {steer-extended}" rpcd steer_module_del '{"module":"hysteria2"}')"
+check "мета-пакет steer-extended снимается вместе с модулем" "del steer-extended|del steer-hysteria2" \
+      "$(grep '^del' "$T/apk.log" | tr '\n' '|' | sed 's/|$//')"
+out="$(rpcd steer_module_add '{"module":"../x"}')"
+check "незнакомый модуль отвергается" "false" "$(printf '%s' "$out" | jget ok)"
+mkdir -p "$T/box"; printf '# steer-box-connector\n' > "$T/box/sing-box"
+reset_logs
+out="$(SINGBOX_INITD_FIXTURE="$T/box/sing-box" APK_LIST="$CORE_LIST" rpcd steer_module_add '{"module":"hysteria2"}')"
+check "коннектор: модули не трогаются" "false;0" "$(printf '%s' "$out" | jget ok);$(grep -c . "$T/apk.log")"
+rm -rf "$T/box" "$T/mods"; relclean; reset_logs
+rm -f "$T/etc/spec.json"; [ -f "$spec_keep" ] && mv "$spec_keep" "$T/etc/spec.json"
+for m in steer_modules steer_module_add steer_module_del; do
+    check "метод $m в перечне и в ACL" "yes;yes" \
+          "$(rpcd_list | grep -q "\"$m\"" && echo yes || echo no);$(grep -q "\"$m\"" "$ROOT/luci/root/usr/share/rpcd/acl.d/luci-app-splify2.json" && echo yes || echo no)"
+done
+
 # ---- R-037: свои списки доменов и адресов -------------------------------------
 # Вопрос задан снаружи (splicicd#8): маршрутизировать можно только то, что опубликовал
 # издатель. Движок сопоставляет исключительно по файлам, а каталог рисуется из манифеста,
