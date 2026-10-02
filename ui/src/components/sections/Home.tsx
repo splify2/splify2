@@ -711,8 +711,13 @@ function OutputsColumn({
                                   .map(([name, st]) => ({
                                       name, st, facts: facts[name], phase: live.phase,
                                       /* Локация, взятая в пул, так и подписана: иначе строка под
-                                         подпиской и строка в блоке пула читались как два туннеля. */
-                                      note: spec?.outputs?.[name]?.part_of ? S.home.vPule(spec.outputs[name].part_of) : undefined,
+                                         подпиской и строка в блоке пула читались как два туннеля.
+                                         Выключенная проверка сертификата — тоже: это решение
+                                         человека, и видно его должно быть там, где выход работает. */
+                                      note: [
+                                          spec?.outputs?.[name]?.part_of ? S.home.vPule(spec.outputs[name].part_of) : '',
+                                          st?.insecure || spec?.outputs?.[name]?.insecure ? S.outState.sertifikatNeProveryaetsya : '',
+                                      ].filter(Boolean).join(' · ') || undefined,
                                   }))}
                           />
                       ))}

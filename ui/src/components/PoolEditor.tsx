@@ -12,7 +12,7 @@ import { ccFromName, plainName } from '@/lib/nodename'
 import { poolsSupported } from '@/lib/engine'
 import { latencyTone, probeKey, probeMs, useNodeProbe } from '@/lib/probe'
 import {
-    devList, insecureApplies, isPart, isProxyKind, isTunnelKind, ON_FAIL_TEXT, PROXY_KINDS, type OnFail, type Output, type ProxyKind,
+    devList, insecureApplies, isPart, isProxyKind, isTunnelKind, ON_FAIL_TEXT, PROXY_KINDS, TUNNEL_LABEL, type OnFail, type Output, type ProxyKind,
     type Spec, type VlessNode,
 } from '@/lib/model'
 import OutputAdvanced, { advFrom, advApply, type Adv } from '@/components/OutputAdvanced'
@@ -60,10 +60,7 @@ type Row =
     | { kind: 'any'; sub: string; proto: Proto }
     | { kind: 'dev'; dev: string }
 
-const PROTO_LABEL: Record<Proto, string> = {
-    vless: 'VLESS', hysteria2: 'hysteria2',
-    trojan: 'Trojan', shadowsocks: 'Shadowsocks', socks: 'SOCKS', http: 'HTTP', vmess: 'VMess',
-}
+const PROTO_LABEL: Record<Proto, string> = TUNNEL_LABEL
 /** Порядок протоколов в подписке: строки и кнопки проверки идут в нём. */
 const PROTOS: Proto[] = ['vless', 'hysteria2', ...PROXY_KINDS]
 

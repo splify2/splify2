@@ -35,6 +35,12 @@ export function isProxyKind(k: string | undefined | null): k is ProxyKind {
     return (PROXY_KINDS as readonly string[]).includes(k || '')
 }
 
+/** Имя протокола туннеля для человека — так протоколы и называют, не переводя. */
+export const TUNNEL_LABEL: Record<'vless' | 'hysteria2' | ProxyKind, string> = {
+    vless: 'VLESS', hysteria2: 'hysteria2',
+    trojan: 'Trojan', shadowsocks: 'Shadowsocks', socks: 'SOCKS', http: 'HTTP', vmess: 'VMess',
+}
+
 /** Виды, у которых есть ключ `insecure` (не проверять сертификат узлов): у них есть TLS. У
  *  hysteria2 это параметр ссылки узла, у shadowsocks и socks TLS нет — ядро такой ключ отвергает. */
 export function insecureApplies(k: string | undefined | null): boolean {
@@ -292,6 +298,27 @@ export interface OutputStatus extends Output {
     }
     /** Узел за устройством не отвечает — слово клиента под демоном. */
     node_down?: { why: string; since: number }
+    /** Выход прокси steer-proxy, пока его клиент жив (`steer status`, src/kinds/proxy.c): узел,
+     *  который он держит, протокол и поднято ли соединение. Клиента нет — поля нет. */
+    proxy?: { node: string; protocol: string; up: boolean; pid?: number }
+    /** Выход hysteria2, пока его клиент жив (src/proto/hysteria2/hy2main.c): узел, поднято ли
+     *  соединение и измеренное клиентом — рукопожатие и RTT (мс), управление перегрузкой
+     *  (`bbr`/`brutal`), несёт ли узел UDP, обфускация, смена портов, число потоков; `error` —
+     *  причина, пока соединения нет (слова ядра). */
+    hysteria2?: {
+        node: string
+        up: boolean
+        hs_ms?: number
+        cc?: string
+        brutal_bps?: number
+        udp?: boolean
+        obfs?: string
+        hop?: boolean
+        rtt_ms?: number
+        flows?: number
+        error?: string
+        pid?: number
+    }
     /** Отказ сторожа: устройство есть, но не отвечает. */
     failed?: boolean
     on_fail?: OnFail
@@ -304,7 +331,8 @@ export interface OutputStatus extends Output {
  * понятнее, чем рассыпать по длинному объявлению. TypeScript сливает одноимённые интерфейсы. */
 export interface OutputStatus {
     /** kind=vless: проверка сертификата узлов выключена в спеке (`insecure: true`). Поля нет —
-     *  проверяется. */
+     *  проверяется. У прокси (trojan, vmess, http) ядро этого поля не печатает — там признак
+     *  берётся из спеки (`Output.insecure`). */
     insecure?: boolean
     /** Мост tgws (и всякий помощник, который о путях сообщал): пути, которые он отставил и чей
      *  срок не вышел. Пустой массив — отставленных нет. Только у ядра-демона с помощниками. */

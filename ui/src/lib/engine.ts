@@ -1,5 +1,5 @@
 import type { Build } from '@/lib/live'
-import { type Status } from '@/lib/model'
+import { isProxyKind, type Status } from '@/lib/model'
 
 import { S } from '@/copy'
 /** Что можно предложить сделать с движком — в одном месте на весь интерфейс.
@@ -159,7 +159,8 @@ export function xsLinkSupported(status: Status | null): boolean {
 
 /** Какого модуля движка не хватает выходу: имя модуля (пакет `steer-<имя>`) либо null.
  *
- *  Модули движка 2.0 — отдельные пакеты (vless, xsteer, obfs, tgws, hysteria2). Список
+ *  Модули движка 2.0 — отдельные пакеты (vless, xsteer, obfs, tgws, hysteria2, proxy — пять
+ *  протоколов прокси одним модулем). Список
  *  установленных приходит от бэкенда (`engine.modules`); поля нет — бэкенд старее, и тогда
  *  утверждать нечего: null, а не «не хватает». */
 export function missingModule(
@@ -170,9 +171,11 @@ export function missingModule(
     const need =
         o.kind === 'vless' || o.kind === 'hysteria2' || o.kind === 'xsteer' || o.kind === 'tgws'
             ? o.kind
-            : o.kind === 'interface' && o.obfs
-              ? 'obfs'
-              : null
+            : isProxyKind(o.kind)
+              ? 'proxy'
+              : o.kind === 'interface' && o.obfs
+                ? 'obfs'
+                : null
     return need && !modules.includes(need) ? need : null
 }
 

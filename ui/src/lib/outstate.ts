@@ -1,4 +1,4 @@
-import type { Output, OutputStatus } from '@/lib/model'
+import { insecureApplies, type Output, type OutputStatus } from '@/lib/model'
 
 import { S } from '@/copy'
 /** Беда выхода, у которого устройство ЕСТЬ: ядро 2.0 различает её двумя полями status.
@@ -39,7 +39,8 @@ export function outDownLine(st: OutputStatus): string {
  *  «Выходах». `alarm` — среди слов есть беда (строка цветом предупреждения).
  *
  *  - мост tgws: пути, которые помощник отставил (`paths_down`); пустой массив — все пути живы;
- *  - VLESS с `insecure`: сертификат узла не проверяется — решение человека, не беда;
+ *  - VLESS, trojan, vmess, http с `insecure`: сертификат узла не проверяется — решение человека,
+ *    не беда;
  *  - IPv6 от хоста, только у выхода с записанным `ipv6`: какой префикс раздаётся (записанный
  *    или выведенный ядром; `null` — не узнать), подменяется ли IPv6 при `nat`, и не действует
  *    ли ключ на этой платформе (`ipv6_applied: false`). Без ключа о IPv6 здесь молчим: подмену
@@ -52,7 +53,8 @@ export function outExtras(o: Output, st?: OutputStatus | null): { words: string[
         words.push(S.outState.putiNeOtvechayut(st.paths_down.length))
         alarm = true
     }
-    if (st.insecure) words.push(S.outState.sertifikatNeProveryaetsya)
+    /* У vless признак печатает ядро, у прокси с TLS (trojan, vmess, http) — нет: там он из спеки. */
+    if (st.insecure || (o.insecure && insecureApplies(o.kind))) words.push(S.outState.sertifikatNeProveryaetsya)
     if (st.ipv6_applied === false) {
         words.push(S.outState.ipv6ZdesNeDeystvuet)
     } else if (o.ipv6 === 'routed') {

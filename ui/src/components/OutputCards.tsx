@@ -336,7 +336,13 @@ function Location({ name, st, facts, note, phase }: OutRef) {
     /** Имя узла, выбранного движком, — ЗАПАСНАЯ подпись локации: пока измерение не пришло
      *  (или устарело), из него берётся хотя бы страна, которую назвал продавец. */
     const [node, setNode] = useState<string | null>(null)
+    /* Клиенты hysteria2 и прокси сами называют свой узел в `steer status` (объекты hysteria2 и
+     * proxy) — спрашивать список узлов у них незачем, а vless_nodes по такому выходу и вовсе
+     * отвечает отказом: это не выход VLESS. */
+    const own = st?.proxy?.node || st?.hysteria2?.node || null
+    const vless = !st?.kind || st.kind === 'vless'
     useEffect(() => {
+        if (!vless) return
         let stop = false
         rpc.vlessNodes(name)
             .then((r) => {
@@ -347,9 +353,9 @@ function Location({ name, st, facts, note, phase }: OutRef) {
             })
             .catch(() => {})
         return () => { stop = true }
-    }, [name, st?.device])
+    }, [name, st?.device, vless])
 
-    return <Where name={name} st={st} facts={facts} fallback={node} note={note} phase={phase} showIp />
+    return <Where name={name} st={st} facts={facts} fallback={own || node} note={note} phase={phase} showIp />
 }
 
 /** Блок своего туннеля: WireGuard, AmneziaWG, xsteer.

@@ -10,7 +10,7 @@ import { outDownWord, outExtras } from '@/lib/outstate'
 import { hasHelper, helperWords, useHelpers } from '@/lib/helper'
 import { pending } from '@/lib/pending'
 import { country } from '@/lib/geo'
-import { devList, EMPTY_SPEC, isPart, isTunnelKind, type Spec } from '@/lib/model'
+import { devList, EMPTY_SPEC, isPart, isTunnelKind, TUNNEL_LABEL, type Spec } from '@/lib/model'
 import { subsRemember, subsRemembered, type SubRow } from '@/lib/subs'
 import { type Live } from '@/lib/live'
 
@@ -207,7 +207,9 @@ export default function PoolList({
                                   : [
                                       country(g?.cc),
                                       isTunnelKind(o.kind)
-                                          ? S.poolList.podpiska
+                                          /* Протокол назван у всего, что не VLESS: «подписка»
+                                             у выхода trojan не говорит, какой клиент его несёт. */
+                                          ? (o.kind === 'vless' ? S.poolList.podpiska : `${TUNNEL_LABEL[o.kind as keyof typeof TUNNEL_LABEL]} · ${S.poolList.podpiska}`)
                                           : devs
                                                 /* Устройство служебной части называется
                                                    подпиской, которой оно принадлежит: имя
