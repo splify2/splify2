@@ -19,6 +19,7 @@ import {
     type VlessSkip,
 } from './model'
 
+import type { HelperState } from './helper'
 import { S } from '@/copy'
 export { toCatalog }
 
@@ -53,6 +54,16 @@ export interface XsteerTunnel {
         rx_bytes: number
         dropped: number
     } | null
+}
+
+/** Выход спеки kind: xsteer, чей клиент держит демон ядра steer: состояние — у демона
+ *  (`helper`, ответ `steer ctl helper`), файла клиент не пишет. Файл (`state`, `age`) бывает,
+ *  только когда клиент запущен без демона. `helper: null` — демон о нём не знает. Поля `outputs`
+ *  нет вовсе — бэкенд старше. */
+export interface XsteerOut {
+    helper: HelperState | null
+    age?: number
+    state: XsteerTunnel['state']
 }
 
 /** Остаток трафика подписки словами панели: заголовок `subscription-userinfo` её ответа.
@@ -389,7 +400,9 @@ export const rpc = {
      *  «поднят и молчит», и различать их человек сюда и приходит. `age` — возраст файла в
      *  секундах: процесс, которого убили, оставляет файл лежать навсегда, и без возраста его
      *  последнее `up: true` выглядело бы живым. */
-    xsteerState: declare<{ ok: boolean; tunnels: Record<string, XsteerTunnel> }>('xsteer_state'),
+    xsteerState: declare<{ ok: boolean; tunnels: Record<string, XsteerTunnel>; outputs?: Record<string, XsteerOut> }>(
+        'xsteer_state',
+    ),
 
     /** Ссылка xs:// в обе стороны: `{iface}` даёт ссылку на туннель, `{link}` — текст
      *  конфигурации из ссылки. Направление выбирает вход — так же, как у подкоманды движка.

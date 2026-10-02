@@ -4,7 +4,9 @@ import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import { Block, CardHead, KV } from '@/components/ui/layout'
 import { Hint } from '@/components/ui/hint'
-import { rpc, type XsteerTunnel } from '@/lib/rpc'
+import { rpc, type XsteerOut, type XsteerTunnel } from '@/lib/rpc'
+import type { OutputStatus } from '@/lib/model'
+import { helperTrouble, type HelperState } from '@/lib/helper'
 import { human, type Live } from '@/lib/live'
 import { xsLinkSupported } from '@/lib/engine'
 
@@ -79,8 +81,145 @@ function Row({ label, children }: { label: React.ReactNode; children: React.Reac
     return <KV k={label} v={<span className="font-medium">{children}</span>} />
 }
 
+/** Живое состояние клиента из его файла: хаб, рукопожатие, разгрузка, MTU, соединения,
+ *  переподнятия, объём. Общее у туннеля netifd и у выхода, чей клиент запущен без демона. */
+function StateRows({ st }: { st: NonNullable<XsteerTunnel['state']> }) {
+    const off = offloadLabel(st.offload)
+    return (
+        <>
+            <Row label={S.xsteerPanel.hab}>
+                {st.hub}{' '}
+                <span className="font-normal text-subtle">({st.hub_key})</span>
+            </Row>
+            <Row label={S.xsteerPanel.rukopozhatie}>{ago(st.handshake_age)}</Row>
+            <Row
+                label={
+                    <Hint tip={off.tip}>
+                        <span className="border-b border-dotted border-current">
+                            {S.xsteerPanel.razgruzka}</span>
+                    </Hint>
+                }
+            >
+                <Badge variant={off.variant}>{off.text}</Badge>
+            </Row>
+            <Row label="MTU">
+                {st.mtu}
+                {st.mtu_confirmed != null && st.mtu_confirmed !== st.mtu && (
+                    <span className="font-normal text-subtle">
+                        {' '}
+                        {/* mtu_confirmed — размер, подтверждённый пробой
+                          * пути; пока он расходится с mtu, туннель идёт
+                          * на безопасном низу. Человеку важно само число,
+                          * а не то, что проба в этот момент делает. */}
+                        {S.xsteerPanel.podtverzhdeno}{st.mtu_confirmed}
+                    </span>
+                )}
+            </Row>
+            <Row label={S.xsteerPanel.soedineniy}>
+                {st.conns}
+                <span className="font-normal text-subtle">
+                    {' '}
+                    · {st.stream ? S.xsteerPanel.potokTcp : S.xsteerPanel.poddelnyyTcp}
+                </span>
+            </Row>
+            {!!st.resets && (
+                <Row
+                    label={
+                        <Hint tip={S.xsteerPanel.skolkoRazPodnyatoeSoedinenie}>
+                            <span className="border-b border-dotted border-current">
+                                {S.xsteerPanel.perepodnyatiy}</span>
+                        </Hint>
+                    }
+                >
+                    {st.resets}
+                    {st.last_down && (
+                        <span className="font-normal text-subtle">
+                            {' '}
+                            · {st.last_down}
+                        </span>
+                    )}
+                </Row>
+            )}
+            <Row label={S.xsteerPanel.proshlo}>
+                {human(st.rx_bytes)} ← / → {human(st.tx_bytes)}
+                {!!st.dropped && (
+                    <span className="text-destructive">
+                        {' '}
+                        {S.xsteerPanel.otbrosheno}{st.dropped}
+                    </span>
+                )}
+            </Row>
+        </>
+    )
+}
+
+/** Состояние клиента словами — из того, что о нём знает демон (lib/helper.ts). */
+function helperWord(h: HelperState): { text: string; bad: boolean } {
+    const t = helperTrouble(h)
+    if (t) return { text: t, bad: true }
+    return h.up ? { text: S.xsteerOut.podklyuchen, bad: false } : { text: S.xsteerOut.podklyuchaetsya, bad: true }
+}
+
+/** Выход спеки kind: xsteer, чей клиент держит демон ядра steer (B3, ядро 2.0).
+ *
+ *  ОТКУДА СОСТОЯНИЕ. Клиент под демоном файла состояния не пишет: он сообщает демону только
+ *  смену состояния, и всё, что о нём известно, — ответ демона (`helper`): поднят ли и с каких
+ *  пор, сколько раз перезапускали, модуль и его версия. Хаба, рукопожатия и объёма там нет —
+ *  их знает только процесс, и выдумывать их здесь нечем. Клиент, запущенный без демона, пишет
+ *  файл, как туннель netifd, — тогда видны и они.
+ *
+ *  Настройки и ссылки xs:// здесь нет: у такого выхода нет интерфейса сети, его настройка —
+ *  файл, названный в спеке, а правится выход в «Выходах». */
+function OutCard({ name, x, st }: { name: string; x: XsteerOut; st?: OutputStatus }) {
+    const h = x.helper
+    const s = x.state
+    const stale = s != null && (x.age ?? 0) > 15
+    const w = h ? helperWord(h) : null
+    const up = h ? h.running && h.up : !!s?.up && !stale
+    const now = Math.floor(Date.now() / 1000)
+    return (
+        <Block>
+            <CardHead
+                title={
+                    <span className="flex min-w-0 items-center gap-2">
+                        <span className={`h-2 w-2 shrink-0 rounded-full ${up ? 'bg-success' : 'bg-destructive'}`} aria-hidden="true" />
+                        <span className="truncate">{name}</span>
+                        {/* Устройство — только когда оно не повторяет имя выхода. */}
+                        {st?.device && st.device !== name && (
+                            <span className="shrink-0 text-xs font-normal text-subtle">{st.device}</span>
+                        )}
+                    </span>
+                }
+            />
+            <div className="space-y-1.5 text-[13px]">
+                {w && h && (
+                    <Row label={S.xsteerOut.sostoyanie}>
+                        <span className={w.bad ? 'text-destructive' : undefined}>{w.text}</span>
+                        {h.up && h.since > 0 && (
+                            <span className="font-normal text-subtle"> · {ago(Math.max(0, now - h.since))}</span>
+                        )}
+                    </Row>
+                )}
+                {h && h.restarts > 0 && <Row label={S.xsteerOut.perezapuskov}>{h.restarts}</Row>}
+                {s && (
+                    <>
+                        {stale && (
+                            <p className="text-destructive">
+                                {S.xsteerPanel.protsessNeOtvechaet}{x.age} {S.xsteerPanel.sChislaNizhePoslednie}</p>
+                        )}
+                        <StateRows st={s} />
+                    </>
+                )}
+                {!h && !s && <p className="text-subtle">{S.xsteerOut.netSostoyaniya}</p>}
+            </div>
+        </Block>
+    )
+}
+
 export default function XsteerPanel({ live }: { live: Live }) {
     const [tunnels, setTunnels] = useState<Record<string, XsteerTunnel> | null>(null)
+    /** Выходы спеки kind: xsteer под демоном ядра; поля нет у бэкенда постарше — пусто. */
+    const [outs, setOuts] = useState<Record<string, XsteerOut>>({})
     /* Устройства нужны для одного: связать туннель с выходом спеки, в котором он числится.
      * Само наличие туннеля берётся из настройки (xsteer_state), а не из списка устройств, —
      * иначе выключенный интерфейс исчезал бы с экрана вместо того, чтобы показать, что он
@@ -104,7 +243,7 @@ export default function XsteerPanel({ live }: { live: Live }) {
      * переподнятия) необязательны по типу — движок постарше их просто не печатает. */
     const reload = useCallback(() => {
         rpc.xsteerState()
-            .then((r) => { setTunnels(r.tunnels || {}); setDead(false) })
+            .then((r) => { setTunnels(r.tunnels || {}); setOuts(r.outputs || {}); setDead(false) })
             .catch(() => { setTunnels({}); setDead(true) })
     }, [])
 
@@ -118,6 +257,7 @@ export default function XsteerPanel({ live }: { live: Live }) {
 
     const outputs = Object.entries(live.status?.outputs || {})
     const names = Object.keys(tunnels || {}).sort()
+    const outNames = Object.keys(outs).sort()
 
     async function showLink(iface: string) {
         setBusy(iface)
@@ -176,7 +316,7 @@ export default function XsteerPanel({ live }: { live: Live }) {
             </Block>
         )
 
-    if (names.length === 0)
+    if (names.length === 0 && outNames.length === 0)
         return (
             <Block>
                 <CardHead title={S.xsteerPanel.interfeysovXsteerNet} />
@@ -195,6 +335,9 @@ export default function XsteerPanel({ live }: { live: Live }) {
 
     return (
         <div className="space-y-4">
+            {outNames.map((n) => (
+                <OutCard key={`out:${n}`} name={n} x={outs[n]} st={live.status?.outputs?.[n]} />
+            ))}
             {names.map((iface) => {
                 const t = tunnels[iface]
                 const st = t.state
@@ -208,7 +351,6 @@ export default function XsteerPanel({ live }: { live: Live }) {
                  * Порог свой, а не бэкенда: круг опроса знает страница. Пятнадцать секунд —
                  * втрое больше круга, чтобы одна пропущенная запись не поднимала ложную тревогу. */
                 const stale = st != null && (t.age ?? 0) > 15
-                const off = offloadLabel(st?.offload)
                 const n = note[iface]
 
                 return (
@@ -245,68 +387,7 @@ export default function XsteerPanel({ live }: { live: Live }) {
                                         <p className="text-destructive">
                                             {S.xsteerPanel.protsessNeOtvechaet}{t.age} {S.xsteerPanel.sChislaNizhePoslednie}</p>
                                     )}
-                                    <Row label={S.xsteerPanel.hab}>
-                                        {st.hub}{' '}
-                                        <span className="font-normal text-subtle">({st.hub_key})</span>
-                                    </Row>
-                                    <Row label={S.xsteerPanel.rukopozhatie}>{ago(st.handshake_age)}</Row>
-                                    <Row
-                                        label={
-                                            <Hint tip={off.tip}>
-                                                <span className="border-b border-dotted border-current">
-                                                    {S.xsteerPanel.razgruzka}</span>
-                                            </Hint>
-                                        }
-                                    >
-                                        <Badge variant={off.variant}>{off.text}</Badge>
-                                    </Row>
-                                    <Row label="MTU">
-                                        {st.mtu}
-                                        {st.mtu_confirmed != null && st.mtu_confirmed !== st.mtu && (
-                                            <span className="font-normal text-subtle">
-                                                {' '}
-                                                {/* mtu_confirmed — размер, подтверждённый пробой
-                                                  * пути; пока он расходится с mtu, туннель идёт
-                                                  * на безопасном низу. Человеку важно само число,
-                                                  * а не то, что проба в этот момент делает. */}
-                                                {S.xsteerPanel.podtverzhdeno}{st.mtu_confirmed}
-                                            </span>
-                                        )}
-                                    </Row>
-                                    <Row label={S.xsteerPanel.soedineniy}>
-                                        {st.conns}
-                                        <span className="font-normal text-subtle">
-                                            {' '}
-                                            · {st.stream ? S.xsteerPanel.potokTcp : S.xsteerPanel.poddelnyyTcp}
-                                        </span>
-                                    </Row>
-                                    {!!st.resets && (
-                                        <Row
-                                            label={
-                                                <Hint tip={S.xsteerPanel.skolkoRazPodnyatoeSoedinenie}>
-                                                    <span className="border-b border-dotted border-current">
-                                                        {S.xsteerPanel.perepodnyatiy}</span>
-                                                </Hint>
-                                            }
-                                        >
-                                            {st.resets}
-                                            {st.last_down && (
-                                                <span className="font-normal text-subtle">
-                                                    {' '}
-                                                    · {st.last_down}
-                                                </span>
-                                            )}
-                                        </Row>
-                                    )}
-                                    <Row label={S.xsteerPanel.proshlo}>
-                                        {human(st.rx_bytes)} ← / → {human(st.tx_bytes)}
-                                        {!!st.dropped && (
-                                            <span className="text-destructive">
-                                                {' '}
-                                                {S.xsteerPanel.otbrosheno}{st.dropped}
-                                            </span>
-                                        )}
-                                    </Row>
+                                    <StateRows st={st} />
                                 </>
                             )}
                             <Row label={S.xsteerPanel.vVyhode}>{out ? out[0] : '—'}</Row>

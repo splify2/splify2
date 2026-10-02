@@ -228,6 +228,14 @@ export const ru = {
         nuzhenPaket: (m: unknown) => `нужен пакет ${m}`,
         perezapuskov: (n: number) => `перезапусков: ${n}`,
     },
+    /** Выход kind: xsteer под демоном ядра (XsteerPanel, OutCard). */
+    xsteerOut: {
+        sostoyanie: "состояние",
+        podklyuchen: "подключён",
+        podklyuchaetsya: "подключается",
+        perezapuskov: "перезапусков",
+        netSostoyaniya: "Состояния нет: ядро steer этот выход ещё не поднимало.",
+    },
     dns: {
         rabotaet: "работает",
         zhdetVoprosov: "ждёт вопросов",

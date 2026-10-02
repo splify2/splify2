@@ -3340,6 +3340,37 @@ uci "-q" delete "network.home.device_name" 2>/dev/null || :
 grep -v '^network.home.device_name=' "$T/uci.store" > "$T/uci.store.t"; mv "$T/uci.store.t" "$T/uci.store"
 mv "$T/var/lib/steer/xsteer-xs-dom.json" "$T/var/lib/steer/xsteer-xs-home.json"
 
+# ВЫХОД kind: xsteer ПОД ДЕМОНОМ ЯДРА. Его клиент — ребёнок steerd с трубой событий: файла
+# состояния он не пишет, и всё, что о нём известно, — у демона в памяти (`steer ctl helper`).
+# Прежде метод перечислял только туннели netifd, и выход спеки kind: xsteer на экране не
+# появлялся вовсе. Перечень — по спеке (`steer outputs --kind xsteer`), состояние — ответ демона.
+_xs_spec="$(cat "$T/etc/spec.json")"
+printf '{"version":2,"outputs":{"xa":{"kind":"xsteer","conf":"/etc/steer/xsteer/xa.conf"},"wg":{"kind":"interface","device":"wg0"}},"rules":[]}\n' > "$T/etc/spec.json"
+_xs_helper='{"schema":1,"out":"xa","helper":"xsteer","running":true,"up":true,"since":1790000000,"started":1789999990,"restarts":2,"module":"steer-xsteer","module_ver":"2.0.0"}'
+_xs_resp="$(python3 -c 'import json,sys; print(json.dumps({"v":1,"cmd":"helper","code":0,"stdout":sys.argv[1]+"\n","stderr":""}))' "$_xs_helper")"
+out="$(CTL_RESP="$_xs_resp" rpcd xsteer_state)"
+check "xsteer_state: выход kind: xsteer под демоном виден" "xsteer 2 true" \
+      "$(printf '%s' "$out" | python3 -c 'import json,sys; h=json.load(sys.stdin)["outputs"]["xa"]["helper"]; print(h["helper"], h["restarts"], json.dumps(h["up"]))' 2>&1)"
+check "xsteer_state: выход другого вида в перечень xsteer не попал" "xa" \
+      "$(printf '%s' "$out" | python3 -c 'import json,sys; print(",".join(json.load(sys.stdin)["outputs"]))' 2>&1)"
+check "xsteer_state: туннели netifd рядом остались" "xs-home" \
+      "$(printf '%s' "$out" | python3 -c 'import json,sys; print(json.load(sys.stdin)["tunnels"]["home"]["device"])' 2>&1)"
+check "xsteer_state: спросили демона именем выхода" "yes" \
+      "$(grep -q '^ctl helper xa$' "$T/steer.log" && echo yes || echo no)"
+check "xsteer_state: без файла состояния у выхода под демоном — null" "null" \
+      "$(printf '%s' "$out" | python3 -c 'import json,sys; print(json.dumps(json.load(sys.stdin)["outputs"]["xa"]["state"]))' 2>&1)"
+# Демон не запущен или помощника нет — состояния помощника нет (null), а ответ остаётся JSON.
+out="$(CTL_RESP='{"v":1,"cmd":"helper","code":1,"stdout":"","stderr":"нет помощника"}' rpcd xsteer_state)"
+check "xsteer_state: помощника нет — null, ответ остаётся JSON" "null" \
+      "$(printf '%s' "$out" | python3 -c 'import json,sys; print(json.dumps(json.load(sys.stdin)["outputs"]["xa"]["helper"]))' 2>&1)"
+# Клиент без трубы событий (`steer supervise`, ручной запуск) пишет файл под ИМЕНЕМ ВЫХОДА.
+printf '{"schema":1,"out":"xa","up":true,"hub":"198.51.100.7:443","handshake_age":5}\n' > "$T/var/lib/steer/xsteer-xa.json"
+out="$(CTL_RESP='{"v":1,"cmd":"helper","code":1,"stdout":"","stderr":"нет помощника"}' rpcd xsteer_state)"
+check "xsteer_state: файл состояния выхода — под именем выхода" "198.51.100.7:443" \
+      "$(printf '%s' "$out" | python3 -c 'import json,sys; print(json.load(sys.stdin)["outputs"]["xa"]["state"]["hub"])' 2>&1)"
+rm -f "$T/var/lib/steer/xsteer-xa.json"
+printf '%s\n' "$_xs_spec" > "$T/etc/spec.json"
+
 # ---- ссылка наружу ----
 check "xsteer_link: у выключенного интерфейса причина названа, а не пустая ссылка" "yes" \
       "$(rpcd xsteer_link '{"iface":"home"}' | jget error | grep -q 'выключен' && echo yes || echo no)"

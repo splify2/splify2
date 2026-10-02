@@ -731,6 +731,43 @@ case "$2" in
             fi
             printf '}'
         done
+        # ВЫХОДЫ kind: xsteer — клиент, которого держит демон ядра steer (ядро 2.0). Он ребёнок
+        # steerd с трубой событий и файла состояния НЕ пишет: о нём знает только демон, и только
+        # то, что клиент сообщает сменой состояния (поднят ли, перезапуски, причина отказа, модуль
+        # и его версия), — `steer ctl helper <выход>`, steer docs/ctl.md. Счётчиков и рукопожатия
+        # там нет. Клиент без трубы (`steer supervise`, ручной запуск) пишет файл, как туннель
+        # netifd, но под ИМЕНЕМ ВЫХОДА — он читается так же, с возрастом.
+        #
+        # Отдельной картой, а не в `tunnels`: ключ там — секция сети, здесь — имя выхода спеки, и
+        # одинаковые имена у разных вещей не должны затирать друг друга.
+        printf '},"outputs":{'
+        _first=1
+        for _o in $("$STEER" outputs --kind xsteer --spec "$SPEC" 2>/dev/null); do
+            # Имя выхода уходит в командную строку и в путь — проверяется здесь (I-003).
+            case "$_o" in ''|-*|.*|*[!A-Za-z0-9_.-]*) continue ;; esac
+            [ "$_first" = 1 ] || printf ','
+            _first=0
+            printf '"%s":{' "$_o"
+            # Ответ сокета — строка JSON, в её `stdout` — строка JSON помощника. Код не ноль
+            # (помощника нет, демон без --supervise) или демона нет вовсе — null: «не знаем».
+            _xr="$(json_tail "$("$STEER" ctl helper "$_o" 2>/dev/null)")"
+            _xh=""
+            if [ -n "$_xr" ] && [ "$(jsonfilter -s "$_xr" -e '@.code' 2>/dev/null)" = 0 ]; then
+                _xh="$(jsonfilter -s "$_xr" -e '@.stdout' 2>/dev/null | head -n 1)"
+            fi
+            case "$_xh" in '{'*'}') ;; *) _xh=null ;; esac
+            printf '"helper":%s' "$_xh"
+            _f="$XS_STATE_DIR/xsteer-$_o.json"
+            if [ -f "$_f" ]; then
+                _mt=$(date -r "$_f" +%s 2>/dev/null || echo "$_now")
+                _js="$(cat "$_f" 2>/dev/null)"
+                case "$_js" in '{'*'}') ;; *) _js=null ;; esac
+                printf ',"age":%s,"state":%s' "$((_now - _mt))" "$_js"
+            else
+                printf ',"state":null'
+            fi
+            printf '}'
+        done
         printf '}}\n'
         ;;
 

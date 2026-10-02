@@ -61,29 +61,24 @@ export function hasHelper(o: Output): boolean {
     )
 }
 
-/** Слова о помощниках выхода для строки выхода: беды (модуль другой версии, процесс не
- *  запущен) — в `words`, сколько раз его перезапускали — отдельно, в `restarts`: беда читается
- *  первой, счёт — последним. Причину отказа словами процесса («процесс вышел (код 1)»)
- *  экран не пересказывает — это техническое пояснение; её видно в журнале «Диагностики».
- *  Исключение — «нужен пакет steer-…»: это действие, и сказано оно словами для человека. */
+/** Беда помощника словами: модуль другой версии (демон его отверг), нет модуля, процесс не
+ *  запущен; null — беды нет. Причину отказа словами процесса («процесс вышел (код 1)») экран не
+ *  пересказывает — это техническое пояснение; её видно в журнале «Диагностики». Исключение —
+ *  модуля нет: тогда «нужен пакет steer-…», это действие. */
+export function helperTrouble(h: HelperState): string | null {
+    if (h.rejected) return S.helperState.modulDrugoyVersii
+    if (h.running) return null
+    /* Бинарника модуля нет: демон пишет «нужен пакет steer-<имя>» — имя модуля в причине.
+     * Падение процесса называется иначе («процесс вышел…»), и имени модуля в нём нет. */
+    return h.module && h.last_down?.includes(h.module) ? S.helperState.nuzhenPaket(h.module) : S.helperState.neZapushchen
+}
+
+/** Слова о помощниках выхода для строки выхода: беды — в `words`, сколько раз помощников
+ *  перезапускали — отдельно, в `restarts`: беда читается первой, счёт — последним. */
 export function helperWords(hs: HelperState[]): { words: string[]; alarm: boolean; restarts: string | null } {
-    const words: string[] = []
-    let alarm = false
-    for (const h of hs) {
-        if (h.rejected) {
-            words.push(S.helperState.modulDrugoyVersii)
-            alarm = true
-        } else if (!h.running) {
-            /* Бинарника модуля нет: демон пишет «нужен пакет steer-<имя>» — имя модуля в причине.
-             * Падение процесса называется иначе («процесс вышел…»), и имени модуля в нём нет. */
-            words.push(
-                h.module && h.last_down?.includes(h.module) ? S.helperState.nuzhenPaket(h.module) : S.helperState.neZapushchen,
-            )
-            alarm = true
-        }
-    }
+    const words = hs.map(helperTrouble).filter((w): w is string => !!w)
     const n = hs.reduce((k, h) => k + (h.restarts || 0), 0)
-    return { words, alarm, restarts: n > 0 ? S.helperState.perezapuskov(n) : null }
+    return { words, alarm: words.length > 0, restarts: n > 0 ? S.helperState.perezapuskov(n) : null }
 }
 
 /** Помощники выходов, о которых спрашивают: по вызову на выход.

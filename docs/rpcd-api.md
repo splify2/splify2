@@ -1248,6 +1248,21 @@ unmarked/no-tls, счётчики, `last_ok_ago`, последняя ошибк�
 спрашивает: процесс, которого убили, оставляет файл лежать навсегда, и без возраста его последнее
 `up: true` выглядело бы живым.
 
+**Выходы спеки `kind: xsteer`** — отдельной картой `outputs` (ключ — имя выхода, перечень —
+`steer outputs --kind xsteer`). Их клиента держит демон ядра steer, и файла состояния такой клиент
+не пишет: `helper` — строка помощника из ответа `steer ctl helper <выход>` (`running`, `up`,
+`since`, `restarts`, `last_down`, `module`, `module_ver`, `rejected`; см. метод `helper`), `null` —
+демон о нём не знает (не запущен, без `--supervise`). Хаба, рукопожатия и счётчиков у демона нет.
+Клиент, запущенный без демона, пишет файл `xsteer-<выход>.json` — он отдаётся в `state` с `age`, как
+у туннеля netifd; нет файла — `state: null`.
+
+```json
+{ "ok": true, "tunnels": {},
+  "outputs": { "xa": { "helper": { "helper": "xsteer", "running": true, "up": true,
+                                   "since": 1790000000, "restarts": 0, "…": "…" },
+                       "state": null } } }
+```
+
 ### `xsteer_link` (read)
 
 Ссылка `xs://` в обе стороны, и направление выбирает **вход**:
