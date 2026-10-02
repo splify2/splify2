@@ -658,10 +658,13 @@ except Exception:
 for name, o in (d.get('outputs') or {}).items():
     if not isinstance(o, dict):
         continue
+    # Спека v2: туннель — kind tunnel с protocol, и вид у ядра называется протоколом
+    # (`--kind trojan`), как в его `status`.
+    kind = o.get('protocol') if o.get('kind') == 'tunnel' else o.get('kind')
     if os.environ.get('OBFS') == '1':
         if o.get('obfs'):
             print(name)
-    elif not os.environ.get('KIND') or o.get('kind') == os.environ['KIND']:
+    elif not os.environ.get('KIND') or kind == os.environ['KIND']:
         # --devices печатает УСТРОЙСТВО, а не имя выхода: у vless и xsteer оно выводится из
         # имени (не длиннее IFNAMSIZ), но может быть задано в спеке явно. Выход без
         # устройства (kind=direct) движок при этом пропускает.
@@ -4036,6 +4039,55 @@ out="$(printf '%s\n' 'splify2-backup 2' '[spec]' '{"version":2,"dns":{"upstreams
 check "чужая схема в адресе DNS отвергается" "false" "$(printf '%s' "$out" | jget ok)"
 out="$(printf '%s\n' 'splify2-backup 2' '[spec]' '{"version":2,"outputs":{"t":{"kind":"awg","conf":"/etc/shadow"}}}' | backup_put)"
 check "файл настройки вне каталога движка отвергается" "false" "$(printf '%s' "$out" | jget ok)"
+
+
+# ---- туннели ядра без ping: hysteria2 и прокси steer-proxy -----------------------------------
+# Свой TUN у hysteria2 и у прокси (trojan, shadowsocks, socks, http, vmess) поднимает ядро, ICMP
+# через него не ходит. outbound_probe мерил их ping-ом через устройство и всегда отвечал «нет
+# ответа»; перечень устройств их не знал (пул не собрать, пока туннель выключен), а зона фаервола
+# туннелей ядра их не получала — ответы через такой туннель резал fw4 (как I-386).
+cat > "$T/etc/spec.json" <<'EOF2'
+{ "version": 2,
+  "outputs": {
+    "direct": { "kind": "direct" },
+    "tr": { "kind": "tunnel", "protocol": "trojan", "subscription": "/etc/steer/sub.txt" },
+    "ss": { "kind": "tunnel", "protocol": "shadowsocks", "subscription": "/etc/steer/sub.txt", "device": "ss9" },
+    "hy": { "kind": "tunnel", "protocol": "hysteria2", "subscription": "/etc/steer/sub.txt" },
+    "vl": { "kind": "tunnel", "protocol": "vless", "subscription": "/etc/steer/sub.txt" }
+  },
+  "rules": [] }
+EOF2
+: > "$T/steer.log"
+out="$(STEER_JSON='{"output":"tr","results":[{"index":0,"name":"a","type":"trojan","ok":false,"handshake_ms":40,"ttfb_ms":-1,"why":"нет"},{"index":1,"name":"b","type":"trojan","ok":true,"handshake_ms":123,"ttfb_ms":-1,"why":"ok"}],"working":1}' \
+       rpcd outbound_probe '{"output":"tr"}')"
+check "outbound_probe у trojan: меряет ядро командой proxy-probe" "1" "$(grep -c '^proxy-probe tr ' "$T/steer.log")"
+check "и задержка — рукопожатие ответившего узла" "ok;123" "$(printf '%s' "$out" | jget state);$(printf '%s' "$out" | jget ms)"
+: > "$T/steer.log"
+out="$(STEER_JSON='{"output":"hy","results":[{"index":0,"name":"h","type":"hysteria2","ok":true,"handshake_ms":77,"ttfb_ms":-1,"why":"ok"}],"working":0}' \
+       rpcd outbound_probe '{"output":"hy"}')"
+check "outbound_probe у hysteria2: проба hysteria2-probe, а не ping" "1;77" \
+      "$(grep -c '^hysteria2-probe hy ' "$T/steer.log");$(printf '%s' "$out" | jget ms)"
+out="$(STEER_JSON='{"output":"vl","results":[{"index":0,"name":"v","type":"tcp","ok":true,"handshake_ms":50,"ttfb_ms":210,"why":"ok"}],"working":0}' \
+       rpcd outbound_probe '{"output":"vl"}')"
+check "outbound_probe у vless: по-прежнему ответ через туннель (ttfb)" "210" "$(printf '%s' "$out" | jget ms)"
+out="$(STEER_JSON='{"output":"tr","results":[{"index":0,"name":"a","type":"trojan","ok":false,"handshake_ms":40,"ttfb_ms":-1,"why":"нет"}],"working":-1}' STEER_RC=1 \
+       rpcd outbound_probe '{"output":"tr"}')"
+check "узел не ответил — «нет ответа», а не задержка неудачной попытки" "нет ответа;-1" \
+      "$(printf '%s' "$out" | jget state);$(printf '%s' "$out" | jget ms)"
+check "перечень устройств знает туннели hysteria2 и прокси" "yes;yes;yes" \
+      "$(d="$(devs "$(rpcd devices)")"; for x in tr ss9 hy; do case " $d " in *" $x "*) printf yes ;; *) printf no ;; esac; [ "$x" = hy ] || printf ';'; done)"
+rm -f "$T/uci.store" "$T/etc/fw-owned"; : > "$T/uci.store"
+uci_set 'firewall.@zone[0]' zone;  uci_set 'firewall.@zone[0].name' lan; uci_set 'firewall.@zone[0].device' 'br-lan'
+uci_set 'firewall.@zone[1]' zone;  uci_set 'firewall.@zone[1].name' wan; uci_set 'firewall.@zone[1].device' 'eth1'
+out="$(rpcd apply)"
+check "apply со спекой прокси прошёл" "true" "$(printf '%s' "$out" | jget ok)"
+check "устройства hysteria2 и прокси — в зоне туннелей ядра, без NAT" "hy ss9 tr vl;0" \
+      "$(zone_devs steer_vless);$(uci_get "firewall.$(zone_id_by_name steer_vless).masq")"
+check "строка зон purge та же, что у объекта rpcd" \
+      "$(sed -n 's/^FW_ZONES="\(.*\)"$/\1/p' "$SCRIPT")" \
+      "$(sed -n 's/^FW_ZONES=${FW_ZONES:-"\(.*\)"}$/\1/p' "$ROOT/files/usr/sbin/splify2-purge")"
+rm -f "$T/uci.store" "$T/etc/fw-owned"; : > "$T/uci.store"
+printf '{"schema":1,"outputs":{},"channels":[]}\n' > "$T/etc/spec.json"
 
 printf '\n%s\n' "$([ "$fails" -eq 0 ] && echo 'все проверки прошли' || echo "ЕСТЬ ПРОВАЛЫ: $fails")"
 [ "$fails" -eq 0 ]

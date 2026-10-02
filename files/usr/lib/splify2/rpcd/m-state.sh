@@ -212,7 +212,8 @@ case "$2" in
             json_add_string kind "$_kind"
             json_close_object
         done
-        # Устройства выходов, которые поднимает САМ ДВИЖОК (kind=vless, kind=xsteer).
+        # Устройства выходов, которые поднимает САМ ДВИЖОК (vless, hysteria2, прокси steer-proxy,
+        # xsteer).
         #
         # В /sys/class/net они появляются вместе со своим процессом, а не с настройкой,
         # поэтому выключенного сейчас туннеля в перечне не было вовсе — и законную форму
@@ -226,7 +227,7 @@ case "$2" in
         # молча неверный список. Тот же довод, что у fw_devices_of, и та же функция.
         #
         # up здесь всегда 0: устройства нет, и это ровно то, что о нём известно.
-        for n in $(fw_devices_of vless,xsteer); do
+        for n in $(fw_devices_of vless,hysteria2,trojan,shadowsocks,socks,http,vmess,xsteer); do
             case "$_dev_seen" in *" $n "*) continue ;; esac
             _dev_seen="$_dev_seen$n "
             json_add_object ""
@@ -628,9 +629,10 @@ case "$2" in
         # Отклик по ОДНОМУ выходу за вызов — по той же причине, что у vless_probe: проверка
         # упирается в таймаут, и «проверить все» не уложилось бы в срок жизни вызова ubus.
         #
-        # Два разных способа, потому что это два разных вопроса. У vless отклик мерит сам
-        # движок: ICMP через TUN не ходит вовсе, и ping показал бы «нет ответа» у исправного
-        # туннеля. У обычного устройства меряем ping через него.
+        # Два разных способа, потому что это два разных вопроса. У туннеля, который поднимает
+        # само ядро (vless, hysteria2, прокси steer-proxy), отклик мерит ядро: ICMP через их TUN
+        # не ходит вовсе, и ping показал бы «нет ответа» у исправного туннеля — так и было у
+        # hysteria2 и прокси. У обычного устройства меряем ping через него.
         read -r input
         json_load "$input" 2>/dev/null || fail "неразбираемый запрос"
         json_get_var output output
@@ -638,15 +640,30 @@ case "$2" in
         # Состав имени — как у outbound_geo: ниже оно уходит в регулярное выражение sed и в
         # командную строку движка, и «a/b» ломало выражение, а «.*» брало первый попавшийся выход.
         case "$output" in *[!a-zA-Z0-9_.-]*) fail "недопустимое имя выхода" ;; esac
+        # Вид выхода — у ядра (`outputs --kind`), по видам туннелей ядра до первого совпадения.
+        # Команда пробы и поле задержки у каждого клиента свои: VLESS меряет ответ через туннель
+        # (ttfb_ms), hysteria2 и прокси — рукопожатие с запросом (handshake_ms; ttfb_ms у них -1).
         kind=''
-        for o in $("$STEER" outputs --kind vless --spec "$SPEC" 2>/dev/null); do
-            [ "$o" = "$output" ] && kind=vless
+        for _k in vless hysteria2 trojan shadowsocks socks http vmess; do
+            for o in $("$STEER" outputs --kind "$_k" --spec "$SPEC" 2>/dev/null); do
+                [ "$o" = "$output" ] && { kind="$_k"; break; }
+            done
+            [ -n "$kind" ] && break
         done
+        case "$kind" in
+            vless) _pc=vless-probe; _pf=ttfb_ms ;;
+            hysteria2) _pc=hysteria2-probe; _pf=handshake_ms ;;
+            trojan|shadowsocks|socks|http|vmess) _pc=proxy-probe; _pf=handshake_ms ;;
+            *) _pc='' ;;
+        esac
         json_init
         json_add_string output "$output"
-        if [ "$kind" = vless ]; then
-            out="$("$STEER" vless-probe "$output" --node -1 --timeout 6 --spec "$SPEC" 2>/dev/null)"
-            ms="$(printf '%s' "$out" | sed -n 's/.*"ttfb_ms":[ ]*\([0-9]*\).*/\1/p')"
+        if [ -n "$_pc" ]; then
+            out="$("$STEER" "$_pc" "$output" --node -1 --timeout 6 --spec "$SPEC" 2>/dev/null)"
+            # Только у узла, который ответил ("ok":true): у отказа поле задержки бывает и
+            # неотрицательным (рукопожатие прошло, запрос — нет).
+            ms="$(printf '%s' "$out" | sed -n "s/.*\"ok\":true,\"handshake_ms\":\(-*[0-9]*\),\"ttfb_ms\":\(-*[0-9]*\).*/\1 \2/p" | head -1)"
+            case "$_pf" in ttfb_ms) ms="${ms#* }" ;; *) ms="${ms% *}" ;; esac
             case "$ms" in
                 ''|*[!0-9]*) json_add_string state 'нет ответа'; json_add_int ms -1 ;;
                 *) json_add_string state ok; json_add_int ms "$ms" ;;

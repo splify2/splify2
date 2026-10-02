@@ -55,7 +55,7 @@ FW_INITD=${FW_INITD:-/etc/init.d/firewall}
 # «имя:виды:masq». Виды и masq здесь не нужны — удалять зону можно, не зная, чем её наполняли,
 # — но формат оставлен общим нарочно: строку правят в одном месте и переносят сюда как есть,
 # без перевода, на котором и теряются такие правки.
-FW_ZONES=${FW_ZONES:-"steer_clients:clients:0 steer_vless:vless,hysteria2,xsteer:0 steer_iface:interface,awg:1"}
+FW_ZONES=${FW_ZONES:-"steer_clients:clients:0 steer_vless:vless,hysteria2,trojan,shadowsocks,socks,http,vmess,xsteer:0 steer_iface:interface,awg:1"}
 # Таблицы nftables, которые ставим МЫ: правило «DoH через туннель», фикс Zapret Manager и
 # изоляция проверки стратегий. Четвёртая, `inet steer`, принадлежит движку и в обычном порядке
 # уходит сама: её сносит остановка службы, которая идёт первым делом. Она перечислена здесь
