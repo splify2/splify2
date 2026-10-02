@@ -165,10 +165,12 @@ shrank() {  # НОВОЕ_ЧИСЛО ПРЕЖНЕЕ_ЧИСЛО
 
 # Файлы, на которые ссылаются каналы — по виду, потому что подгонять надо только
 # адресные.
-used_files() {  # ip|domains
+used_files() {  # ip|domains|srs
     # Спека v2 (`lists`) и прежняя v1 (`channels`): до первого сохранения интерфейсом на
-    # диске может лежать любая.
-    if [ "$1" = ip ]; then
+    # диске может лежать любая. Наборы файлом (`srs`) — только v2.
+    if [ "$1" = srs ]; then
+        jsonfilter -i "$SPEC" -e '@.lists[*].srs[*]' 2>/dev/null
+    elif [ "$1" = ip ]; then
         jsonfilter -i "$SPEC" -e '@.lists[*].prefixes_file[*]' \
             -e '@.channels[*].match.prefixes_files[*]' 2>/dev/null
     else
@@ -299,13 +301,44 @@ BUDGET="$(budget)"
 changed=0
 failed=0
 
-for kind in ip domains; do
+for kind in ip domains srs; do
     used_files "$kind" | sort -u | while read -r path; do
         [ -n "$path" ] || continue
         # Путь в спеке — это local_path из rpcd, то есть $LISTS плюс путь у издателя.
         # Снимаем префикс и получаем ровно тот ключ, которым карта и построена.
         rel="${path#$LISTS/}"
         name="$(basename "$path")"      # только для сообщений в журнале
+
+        # НАБОР ФАЙЛОМ: запись каталога, которая списком не выразима (list_fetch кладёт сам
+        # набор, путь — ad_srs_rel). Качается как есть и проверяется движком; подгонка и
+        # проверка строк — про текстовые списки, к двоичному набору они не относятся.
+        if [ "$kind" = srs ]; then
+            [ "$AD_ON" = 1 ] || continue
+            url=""
+            for e in $(ad_srs_entries "$rel"); do
+                [ "$(fmt_for "$e")" = srs ] && url="$(url_for "$e")" && break
+            done
+            [ -n "$url" ] || { log "$rel: нет в манифесте, пропущен"; continue; }
+            new="$(mktemp /tmp/splify2-list.XXXXXX)"
+            if ! download "$url" "$new"; then
+                log "$name: не скачался, оставлен прежний${FETCH_NOTE:+ — $FETCH_NOTE}"
+                rm -f "$new"; echo failed >> "$LOCK/flags"; continue
+            fi
+            if ! ad_srs_ok "$new"; then
+                log "$name: скачался испорченный набор — $AD_NOTE; оставлен прежний"
+                rm -f "$new"; echo failed >> "$LOCK/flags"; continue
+            fi
+            if [ -f "$path" ] && cmp -s "$new" "$path"; then rm -f "$new"; continue; fi
+            [ -f "$path" ] && cp "$path" "$path.prev"
+            mkdir -p "$(dirname "$path")"
+            if ! mv "$new" "$path"; then
+                log "$name: не записался в $(dirname "$path") — кончилось место?"
+                rm -f "$new"; echo failed >> "$LOCK/flags"; continue
+            fi
+            log "$name: обновлён"
+            echo changed >> "$LOCK/flags"
+            continue
+        fi
 
         # ЧЕЙ ЭТО ФАЙЛ. Издателей два, и добывают их списки по-разному: наш манифест отдаёт
         # готовый текст по ссылке из карты, а itdoginfo — двоичный набор sing-box, который

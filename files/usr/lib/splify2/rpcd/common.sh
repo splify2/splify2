@@ -219,7 +219,7 @@ manifest_url() {
 # строка в руками написанной спеке здесь не видна, и такой файл доскачать не выйдет.
 spec_list_files() {  # ФАЙЛ_СПЕКИ -> пути по одному в строке
     jsonfilter -i "$1" \
-        -e '@.lists[*].prefixes_file[*]' -e '@.lists[*].domains_file[*]' \
+        -e '@.lists[*].prefixes_file[*]' -e '@.lists[*].domains_file[*]' -e '@.lists[*].srs[*]' \
         -e '@.channels[*].match.prefixes_files[*]' \
         -e '@.channels[*].match.domains_files[*]' 2>/dev/null
 }
@@ -276,6 +276,13 @@ fetch_missing_lists() {  # ПУТЬ_К_СПЕКЕ
             if AD_TMP="$(mktemp -d /tmp/splify2-srs.XXXXXX 2>/dev/null)"; then _ad_ready=1
             else echo "не удалось завести временный каталог — кончилось место?"; _ad_ready=0; fi
         fi
+        # НАБОР ФАЙЛОМ (`srs` списка) — из записи каталога, от которой он выведен (ad_srs_rel).
+        # Набор, которого в каталоге нет, положен руками: скачать его неоткуда, и ядро само
+        # скажет, что файла нет.
+        case "$_rel" in
+            *.srs) [ "$_ad_ready" = 1 ] && [ -s "$MANIFEST" ] && fetch_missing_set "$_rel" "$_dest"
+                   continue ;;
+        esac
         if [ "$_ad_ready" = 1 ] && _ad_pair="$(ad_service_of "$_rel")"; then
             fetch_missing_srs "$_ad_pair" "$_rel" "$_dest"
             continue
@@ -356,6 +363,32 @@ fetch_missing_catalog_srs() {  # ССЫЛКА ОТН_ПУТЬ ПУТЬ_НА_ДИ
         return 0; }
     [ "$_fc_kind" = prefixes ] && ad_meta_install "$3"
     [ -n "$FETCH_NOTE" ] && echo "набор $2: $FETCH_NOTE"
+    return 0
+}
+
+# Доскачать НАБОР, который правило берёт файлом (`srs`): каталог назвал его, а списком он не
+# выразим (см. list_fetch). Кладётся как есть, без разбора на половины, — но только понятый
+# движком: битый файл на месте набора ядро сочло бы пустым.
+fetch_missing_set() {  # ОТН_ПУТЬ ПУТЬ_НА_ДИСКЕ
+    _fset_url=""
+    for _fset_e in $(ad_srs_entries "$1"); do
+        _fset_url="$(manifest_srs_url "$_fset_e")" && break
+    done
+    [ -n "$_fset_url" ] || return 0
+    _fset_tmp="$AD_TMP/set.$$.srs"
+    if ! download "$_fset_url" "$_fset_tmp"; then
+        rm -f "$_fset_tmp"
+        echo "набор $1 не скачался — канал, который на него ссылается, не поднимется${FETCH_NOTE:+ ($FETCH_NOTE)}"
+        return 0
+    fi
+    if ! ad_srs_ok "$_fset_tmp"; then
+        rm -f "$_fset_tmp"
+        echo "скачался испорченный набор $1: $AD_NOTE"
+        return 0
+    fi
+    ad_srs_put "$_fset_tmp" "$2" || echo "набор $1 не записался — кончилось место?"
+    rm -f "$_fset_tmp"
+    [ -n "$FETCH_NOTE" ] && echo "набор $1: $FETCH_NOTE"
     return 0
 }
 

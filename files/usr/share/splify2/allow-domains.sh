@@ -288,26 +288,63 @@ ad_get() {  # СЕРВИС
 # сборкой splify2. Разбор набора при этом тот же самый, и второй его экземпляр здесь
 # означал бы, что коды отказов и их объяснения надо помнить в двух местах.
 #
-# Коды возврата и смысл AD_DOM/AD_PFX/AD_META — как у ad_get.
+# Коды возврата и смысл AD_DOM/AD_PFX/AD_META — как у ad_get. На коде 2 сам набор НЕ
+# выбрасывается: его путь — в AD_SRS, и вызывающий кладёт на роутер его (ad_srs_rel).
 ad_get_url() {  # ССЫЛКА ИМЯ_ДЛЯ_ФАЙЛОВ
     AD_DOM="$AD_TMP/$2.dom"
     AD_PFX="$AD_TMP/$2.pfx"
     AD_META="$AD_TMP/$2.meta"
+    AD_SRS="$AD_TMP/$2.srs"
     AD_NOTE=""
     [ -f "$AD_DOM" ] && [ -f "$AD_PFX" ] && return 0
+    # Память прогона и для невыразимого: вторая половина того же набора не качает его заново.
+    [ -f "$AD_SRS.keep" ] && return 2
     command -v download >/dev/null 2>&1 || return 1
     mkdir -p "$AD_TMP" 2>/dev/null || return 1
     _agu_srs="$AD_TMP/$2.srs"
     download "$1" "$_agu_srs" || { rm -f "$_agu_srs"; return 1; }
     ad_split "$_agu_srs" "$AD_DOM.new" "$AD_PFX.new" "$AD_META.new"
     _agu_rc=$?
-    rm -f "$_agu_srs"
     if [ "$_agu_rc" != 0 ]; then
         rm -f "$AD_DOM.new" "$AD_PFX.new" "$AD_META.new"
-        [ "$_agu_rc" = 2 ] && return 2
+        [ "$_agu_rc" = 2 ] && { : > "$AD_SRS.keep"; return 2; }
+        rm -f "$_agu_srs"
         return 3
     fi
+    rm -f "$_agu_srs"
     mv "$AD_DOM.new" "$AD_DOM" && mv "$AD_PFX.new" "$AD_PFX" && mv "$AD_META.new" "$AD_META"
+}
+
+# НАБОР, КОТОРЫЙ СПИСКОМ НЕ ВЫРАЗИМ (код 2: исключения `@@` фильтра AdGuard, логика «и/не»),
+# ложится на роутер САМ, а правило ссылается на него ключом `srs` списка спеки v2 (решение
+# владельца, splify2-lists#1). Путь — от пути записи каталога без «.lst»:
+# `jinndi/domains/adguard.srs.lst` → `jinndi/domains/adguard.srs`. Тот же вывод у интерфейса
+# (srsPathFor в ui/src/lib/model.ts); разойдясь, они дадут «набор лежит, а правило его не видит».
+ad_srs_rel() {  # ОТН_ПУТЬ_ЗАПИСИ_КАТАЛОГА
+    _asr="${1%.lst}"
+    case "$_asr" in *.srs) ;; *) _asr="$_asr.srs" ;; esac
+    printf '%s' "$_asr"
+}
+
+# Обратно: пути записи каталога, из которых мог выйти путь набора (с «.srs» в имени записи и
+# без). По одному в строке; какой из них есть в каталоге — решает вызывающий.
+ad_srs_entries() {  # ОТН_ПУТЬ_НАБОРА
+    printf '%s.lst\n%s.lst\n' "$1" "${1%.srs}"
+}
+
+# Годится ли файл в наборы: движок его понял (0 — выразим списком, 2 — нет, но понят). Код 1
+# движка — «не набор sing-box или испорчен», и такой файл на место прежнего не ложится.
+ad_srs_ok() {  # ФАЙЛ
+    ad_split "$1" /dev/null /dev/null /dev/null
+    case "$?" in 0|2) return 0 ;; esac
+    return 1
+}
+
+# Положить набор на место рядом-и-переименованием: разбор лежит в /tmp, списки — на overlay,
+# и копия между ФС прямо в цель оставила бы обрубок при обрыве.
+ad_srs_put() {  # ФАЙЛ ПУТЬ_НА_ДИСКЕ
+    mkdir -p "$(dirname "$2")" 2>/dev/null
+    cp "$1" "$2.new.$$" && mv "$2.new.$$" "$2" || { rm -f "$2.new.$$"; return 1; }
 }
 
 # Положить (или убрать) сужение рядом с УСТАНОВЛЕННЫМ списком подсетей: `<список без .lst>.meta`.

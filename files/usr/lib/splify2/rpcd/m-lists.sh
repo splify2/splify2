@@ -205,11 +205,30 @@ case "$2" in
             AD_TMP="$(mktemp -d /tmp/splify2-srs.XXXXXX)" || fail "не удалось завести временный каталог — кончилось место?"
             ad_get_url "$srs_url" set
             ad_rc=$?
+            if [ "$ad_rc" = 2 ]; then
+                # Списком не выразим — на роутер ложится САМ НАБОР, одним файлом на обе
+                # половины: путь — от адресной записи, а нет её — от доменной (ad_srs_rel).
+                # Интерфейс ставит его в правило ключом `srs` (ответ — поле `srs`).
+                sfile="$(manifest_file_by_url "$srs_url" prefixes)"
+                [ -n "$sfile" ] || sfile="$(manifest_file_by_url "$srs_url" domains)"
+                sdest="$(local_path "$(ad_srs_rel "$sfile")")" ||
+                    { rm -rf "$AD_TMP"; fail "издатель прислал недопустимый путь списка: $sfile"; }
+                ad_srs_put "$AD_SRS" "$sdest" ||
+                    { rm -rf "$AD_TMP"; fail "список не записался — кончилось место?"; }
+                rm -rf "$AD_TMP"
+                json_init
+                json_add_boolean ok 1
+                json_add_string path "$sdest"
+                json_add_string srs "$sdest"
+                json_add_string tag "$(manifest_field "$id" "$kind" tag)"
+                [ -n "$FETCH_NOTE" ] && json_add_string via "$FETCH_NOTE"
+                json_dump
+                exit 0
+            fi
             if [ "$ad_rc" != 0 ]; then
                 rm -rf "$AD_TMP"
                 case "$ad_rc" in
                     1) fail "набор не скачался${FETCH_NOTE:+: $FETCH_NOTE}" ;;
-                    2) fail "такой список нам пока не подходит: $AD_NOTE" ;;
                     *) fail "скачался испорченный набор: $AD_NOTE" ;;
                 esac
             fi
@@ -667,10 +686,19 @@ AD_EOF
         # Ищем ПОЛНЫЙ путь, а не имя файла: `hodca.lst` встречается и в адресном канале, и
         # внутри `domains/hodca.lst`, и поиск по имени запрещал бы удаление одного из-за
         # другого.
-        if [ -s "$SPEC" ] && grep -q "$dest" "$SPEC"; then
+        # Набор каталога, лёгший САМ (списком не выразим, см. list_fetch), снимается вместе с
+        # записью: `.lst` у него нет, и без этого удалять было бы нечего. Занятость — по пути
+        # в кавычках: `x.srs` — начало строки `x.srs.lst`.
+        sdest=""
+        if [ "$(manifest_field "$id" "$kind" format)" = srs ] && [ -r "$AD_SH" ]; then
+            . "$AD_SH"
+            sdest="$(local_path "$(ad_srs_rel "$file")")" || sdest=""
+        fi
+        if [ -s "$SPEC" ] && { grep -q "$dest" "$SPEC" ||
+            { [ -n "$sdest" ] && grep -qF "\"$sdest\"" "$SPEC"; }; }; then
             fail "список используется каналом — сначала снимите галочку"
         fi
-        rm -f "$dest"
+        rm -f "$dest" ${sdest:+"$sdest"}
         json_init; json_add_boolean ok 1; json_dump
         ;;
 
@@ -802,7 +830,9 @@ AD_EOF
         # произвольная строка: имена списков чистит list_put, и awk ниже пропускает всё, что
         # не состоит из букв, цифр, точки, дефиса, подчёркивания и косой черты. Файл с
         # кавычкой в имени не наш, и промолчать о нём честнее, чем выдать поломанный JSON.
-        _ll_files="$(find "$LISTS" -name '*.lst' -type f 2>/dev/null)"
+        # Наборы `.srs` — тоже: так лежит набор каталога, который списком не выразим
+        # (list_fetch, ad_srs_rel). Строк у двоичного файла нет — счёт у него 0.
+        _ll_files="$(find "$LISTS" \( -name '*.lst' -o -name '*.srs' \) -type f 2>/dev/null)"
         # Пути подставляются РАЗДЕЛЕНИЕМ СЛОВ, а не через xargs: конвейер с printf и xargs —
         # это ещё четыре запуска процессов, а на 880 МГц каждый стоит около двадцати
         # миллисекунд. Пробелов в наших именах не бывает (см. выше), а сорок шесть путей
@@ -814,7 +844,7 @@ AD_EOF
         _ll_n="$(printf '%s\n' "$_ll_files" | grep -c .)"
         # Только свой файл (own_file): чужой в /tmp уехал бы клиенту дословно.
         if own_file "$_ll_c" && [ -s "$_ll_c" ] && [ "$(cat "$_ll_c.n" 2>/dev/null)" = "$_ll_n" ] &&
-           [ -z "$(find "$LISTS" -name '*.lst' -type f -newer "$_ll_c" 2>/dev/null | head -1)" ]; then
+           [ -z "$(find "$LISTS" \( -name '*.lst' -o -name '*.srs' \) -type f -newer "$_ll_c" 2>/dev/null | head -1)" ]; then
             cat "$_ll_c"
             exit 0
         fi
@@ -837,7 +867,7 @@ AD_EOF
                     if (p == "/dev/null") continue
                     r = p; sub("^" pfx, "", r)
                     if (r !~ /^[A-Za-z0-9._\/-]+$/) continue
-                    printf "%s\"%s\":{\"count\":%d,\"mtime\":%d}", (n++ ? "," : ""), r, c[p], (p in m ? m[p] : 0)
+                    printf "%s\"%s\":{\"count\":%d,\"mtime\":%d}", (n++ ? "," : ""), r, (r ~ /\.srs$/ ? 0 : c[p]), (p in m ? m[p] : 0)
                 }
                 printf "}}\n"
             }' | tee "$_ll_c.tmp"
