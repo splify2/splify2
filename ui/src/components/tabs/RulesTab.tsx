@@ -21,7 +21,7 @@ import {
 import { type Live } from '@/lib/live'
 import { Hint } from '@/components/ui/hint'
 import { Block, Group } from '@/components/ui/layout'
-import RuleEditor, { pathFor, selectedIds } from '@/components/tabs/RuleEditor'
+import RuleEditor, { pathFor, ruleFiles, selectedIds, srsOf } from '@/components/tabs/RuleEditor'
 
 /** Правила: единственное место, где что-то назначается.
  *
@@ -39,7 +39,7 @@ function describe(ch: Channel, services: ServiceEntry[]) {
     const ids = selectedIds(ch, services)
     const entries = services.filter((sv) => ids.includes(sv.id))
     if (!entries.length) {
-        const files = [...(ch.match.prefixes_files || []), ...(ch.match.domains_files || [])]
+        const files = ruleFiles(ch)
         if (ch.match.any) return 'весь трафик'
         if (!files.length) return 'сервис не выбран'
         return `свои списки: ${files.length}`
@@ -81,8 +81,8 @@ function whoTextFor(ch: Channel) {
  *  телефона, и «у меня на телефоне исключение не работает» — это тот же случай, а не другой. */
 function overlaps(a: Channel, b: Channel) {
     if (a.match.any || b.match.any) return true
-    const fa = new Set([...(a.match.prefixes_files || []), ...(a.match.domains_files || [])])
-    return [...(b.match.prefixes_files || []), ...(b.match.domains_files || [])].some((f) => fa.has(f))
+    const fa = new Set(ruleFiles(a))
+    return ruleFiles(b).some((f) => fa.has(f))
 }
 
 interface Props {
@@ -169,24 +169,32 @@ export default function RulesTab({
             notify('Сначала настройте выход VPN — правилу некуда вести', 'warning')
             return
         }
-        const used = new Set(spec.channels.map((c) => c.name))
-        let name = wanted.name
-        let n = 2
-        while (used.has(name)) name = `${wanted.name} ${n++}`
-        const ch: Channel = {
-            name,
-            out,
-            match: {
-                ...(wanted.prefixes.length
-                    ? { prefixes_files: wanted.prefixes.map(pathFor) }
-                    : {}),
-                ...(wanted.domains.length
-                    ? { domains_files: wanted.domains.map(pathFor), mode: 'fakeip' as const }
-                    : {}),
-            },
+        /* Набор каталога встаёт списками или файлом — как в редакторе (srsOf); пока роутер
+         * отвечает, человек мог поправить спеку, поэтому дописываем к сохранённой. */
+        const create = (cur: Spec, set?: string) => {
+            const used = new Set(cur.channels.map((c) => c.name))
+            let name = wanted.name
+            let n = 2
+            while (used.has(name)) name = `${wanted.name} ${n++}`
+            const ch: Channel = {
+                name,
+                out,
+                match: set
+                    ? { srs_files: [set], mode: 'fakeip' as const }
+                    : {
+                          ...(wanted.prefixes.length
+                              ? { prefixes_files: wanted.prefixes.map(pathFor) }
+                              : {}),
+                          ...(wanted.domains.length
+                              ? { domains_files: wanted.domains.map(pathFor), mode: 'fakeip' as const }
+                              : {}),
+                      },
+            }
+            edit({ ...cur, channels: [...cur.channels, ch] })
+            setOpen(cur.channels.length)
         }
-        edit({ ...spec, channels: [...spec.channels, ch] })
-        setOpen(spec.channels.length)
+        if (wanted.srs) void srsOf(wanted, local).then((set) => create(pending.saved ?? spec, set))
+        else create(spec)
         // eslint-disable-next-line react-hooks/exhaustive-deps
     }, [wanted, spec])
 

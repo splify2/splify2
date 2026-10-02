@@ -561,6 +561,8 @@ export interface RawManifest {
         description_ru?: string
         file: string
         count?: number
+        /** `srs` — запись называет набор sing-box своей ссылкой `url`. */
+        format?: string
         default_on?: boolean
         is_geoblock?: boolean
         /** Категории, чей файл адресов совпадает с этим ПОБАЙТОВО (общая автономная
@@ -577,6 +579,7 @@ export interface RawManifest {
         name_ru: string
         file: string
         count?: number
+        format?: string
         default_on?: boolean
         source?: string
         /** Address categories built from the SAME source file — the same target in
@@ -637,6 +640,10 @@ export interface ServiceEntry {
     count: number
     /** Составные части, чтобы каталог мог сказать, из чего сервис собран. */
     parts: { id: string; kind: ListKind; name: string; file: string; count?: number }[]
+    /** Запись каталога — набор sing-box (`format: "srs"`). Такой набор бывает не выразим
+     *  списком (исключения фильтра AdGuard): тогда роутер кладёт его файлом, и правило берёт
+     *  его в `srs_files` (см. srsOf в RuleEditor). */
+    srs?: boolean
     /** Сужение ПОДСЕТЕЙ сервиса по протоколу и портам (см. Channel.narrow). Есть только у
      *  второго издателя и только когда набор уже разобран; `undefined` — не знаем, и правило
      *  спросит у list_fetch в момент выбора. */
@@ -918,6 +925,9 @@ export function toCatalog(m: RawManifest): Catalog {
                 upstream: originOf(g, false),
                 maintained: originOf(g, true),
                 complement: complementOf(g),
+                srs: g.parts.some((p) =>
+                    (p.kind === 'domains' ? doms : cats).some((e) => e.id === p.id && e.format === 'srs'),
+                ) || undefined,
             }
         })
     /* Порядок как у издателя: он ставит вперёд то, что включают чаще, а алфавит перемешал бы

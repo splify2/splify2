@@ -238,7 +238,9 @@ export const rpc = {
          *  дольше прямого пути, и без строки обновление выглядит как беспричинная пауза. */
         /** `narrow` — у подсетей второго издателя, суженных протоколом и портами (Discord):
          *  правило получает их сразу, в момент выбора сервиса (см. Channel.narrow). */
-        { ok: boolean; count?: number; error?: string; via?: string; narrow?: Narrow }
+        /** `srs` — набор каталога списком не выразим, и на роутер лёг он сам: путь, который
+         *  правило берёт в `srs_files`. */
+        { ok: boolean; count?: number; error?: string; via?: string; narrow?: Narrow; srs?: string }
     >('list_fetch', ['id', 'kind']),
 
     /** Каталог ВТОРОГО издателя (itdoginfo/allow-domains) и то, что из него уже лежит

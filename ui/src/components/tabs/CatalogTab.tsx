@@ -5,6 +5,7 @@ import { notify } from '@/lib/notify'
 import { rpc } from '@/lib/rpc'
 import CustomLists from '@/components/CustomLists'
 import { Hint } from '@/components/ui/hint'
+import { ruleFiles, srsPathFor } from '@/components/tabs/RuleEditor'
 import {
     toAllowDomainsServices,
     toCatalog,
@@ -140,7 +141,7 @@ export default function CatalogTab({ onUseInRule }: Props) {
     const used = useMemo(() => {
         const m = new Map<string, string[]>()
         for (const ch of spec?.channels || [])
-            for (const f of [...(ch.match.prefixes_files || []), ...(ch.match.domains_files || [])]) {
+            for (const f of ruleFiles(ch)) {
                 const key = f.replace(/^.*\/etc\/steer\/lists\//, '')
                 m.set(key, [...(m.get(key) || []), ch.name])
             }
@@ -226,7 +227,8 @@ export default function CatalogTab({ onUseInRule }: Props) {
     const rulesFor = (sv: ServiceEntry) => {
         const names = new Set<string>()
         for (const p of sv.parts)
-            for (const r of used.get(p.file.replace(/^\/+/, '')) || []) names.add(r)
+            for (const f of [p.file, ...(sv.srs ? [srsPathFor(p.file)] : [])])
+                for (const r of used.get(f.replace(/^.*\/etc\/steer\/lists\//, '').replace(/^\/+/, '')) || []) names.add(r)
         return [...names]
     }
 
@@ -320,6 +322,10 @@ export default function CatalogTab({ onUseInRule }: Props) {
                             const have = sv.parts.filter((p) => local[p.file.replace(/^\/+/, '')])
                             const localCount = have.reduce(
                                 (n, p) => n + (local[p.file.replace(/^\/+/, '')]?.count || 0), 0)
+                            /* Набор, лёгший файлом (списком не выразим): строк у него нет, есть
+                               только «на роутере». */
+                            const set = sv.srs && sv.parts.some((p) =>
+                                local[srsPathFor(p.file).replace(/^\/etc\/steer\/lists\//, '')])
                             const kinds = [...new Set(sv.parts.map((p) => p.kind))]
                             return (
                                 <tr key={sv.id} className="border-b border-border/50 transition-colors last:border-b-0 hover:bg-muted/40">
@@ -393,7 +399,7 @@ export default function CatalogTab({ onUseInRule }: Props) {
                                             отвечали им неправдой: первая — «всё на месте»,
                                             вторая — «список пуст». */}
                                         {have.length === 0
-                                            ? 'не загружен'
+                                            ? set ? 'загружен' : 'не загружен'
                                             : localCount.toLocaleString('ru-RU')}
                                     </td>
                                     <td className="px-3 py-2">
@@ -411,7 +417,7 @@ export default function CatalogTab({ onUseInRule }: Props) {
                                     </td>
                                     <td className="px-3 py-2">
                                         <div className="flex items-center justify-end gap-1">
-                                            {have.length === 0 ? (
+                                            {have.length === 0 && !set ? (
                                                 /* Не кнопка, а обещание: файл скачает бэкенд в момент
                                                    применения — человеку здесь делать нечего. */
                                                 <Hint tip="Списка ещё нет на роутере. Как только правило на него укажет и вы нажмёте «Применить», роутер скачает его сам.">

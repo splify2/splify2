@@ -28,7 +28,7 @@ import { encodeSpec, wasV1 } from '@/lib/specv2'
 /** Правило без единого сервиса: движку такое не отдаётся. */
 export function isDraft(c: Channel): boolean {
     const m = c.match || {}
-    return !m.any && !(m.prefixes_files?.length) && !(m.domains_files?.length)
+    return !m.any && !(m.prefixes_files?.length) && !(m.domains_files?.length) && !(m.srs_files?.length)
 }
 
 /** Спека без черновиков — то, что едет на роутер. */

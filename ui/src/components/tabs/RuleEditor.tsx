@@ -27,6 +27,48 @@ export function pathFor(file: string) {
     return `/etc/steer/lists/${file.replace(/^\/+/, '')}`
 }
 
+/** Путь набора, который правило берёт ФАЙЛОМ: запись каталога без «.lst»
+ *  (`jinndi/domains/adguard.srs.lst` → `…/adguard.srs`). Так его кладёт бэкенд (`ad_srs_rel`). */
+export function srsPathFor(file: string) {
+    const p = pathFor(file).replace(/\.lst$/, '')
+    return p.endsWith('.srs') ? p : `${p}.srs`
+}
+
+/** Все файлы правила: списки и наборы файлом. */
+export function ruleFiles(ch: Channel): string[] {
+    return [...(ch.match.prefixes_files || []), ...(ch.match.domains_files || []), ...(ch.match.srs_files || [])]
+}
+
+/** Пути сервиса в правиле — списками и, у набора каталога, файлом. */
+function serviceFiles(sv: ServiceEntry): string[] {
+    const files = [...sv.prefixes, ...sv.domains]
+    return [...files.map(pathFor), ...(sv.srs ? files.map(srsPathFor) : [])]
+}
+
+const relOf = (p: string) => p.replace(/^\/etc\/steer\/lists\//, '').replace(/^\/+/, '')
+
+/** Сервис уже лежит на роутере — списками или набором. */
+export function onRouter(sv: ServiceEntry, local: Record<string, unknown>): boolean {
+    const set = sv.srs ? srsPathFor(sv.prefixes[0] ?? sv.domains[0]) : ''
+    return (!!set && !!local[relOf(set)]) || sv.parts.every((p) => local[relOf(p.file)])
+}
+
+/** Как сервис встаёт в правило: путь набора файлом или `undefined` — списками, как всегда.
+ *
+ *  Набор каталога бывает не выразим списком (исключения фильтра AdGuard, splify2-lists#1):
+ *  тогда роутер кладёт его самого, и правило берёт его ключом `srs`. Узнать это можно только
+ *  разобрав набор, то есть скачав его (`list_fetch` отвечает полем `srs`); лежащее на роутере
+ *  отвечает без сети. Не вышло спросить — списками: сохранение доскачает их само. */
+export async function srsOf(sv: ServiceEntry, local: Record<string, unknown>): Promise<string | undefined> {
+    if (!sv.srs) return undefined
+    const set = srsPathFor(sv.prefixes[0] ?? sv.domains[0])
+    if (local[relOf(set)]) return set
+    if (sv.parts.every((p) => local[relOf(p.file)])) return undefined
+    const part = sv.parts.find((p) => p.kind === 'prefixes') ?? sv.parts[0]
+    const r = await rpc.listFetch(part.id, part.kind).catch(() => null)
+    return r?.ok && r.srs ? r.srs : undefined
+}
+
 /** MAC ровно в том виде, в каком его понимает nft: шесть пар шестнадцатеричных цифр через
  *  двоеточие. Своя проверка, а не из `lib/validate.ts`, потому что там валидаторов адресов
  *  сети хватает, а MAC-адрес нигде больше в формах не набирают. Признак «есть двоеточие»
@@ -40,10 +82,8 @@ const MAC = /^([0-9a-f]{2}:){5}[0-9a-f]{2}$/i
  *  Не «все части»: сервис бывает включён наполовину — например, руками правленной спекой, — и
  *  показать его невыбранным значило бы предложить включить то, что уже включено. */
 export function selectedIds(ch: Channel, services: ServiceEntry[]): string[] {
-    const files = new Set([...(ch.match.prefixes_files || []), ...(ch.match.domains_files || [])])
-    return services
-        .filter((sv) => [...sv.prefixes, ...sv.domains].some((f) => files.has(pathFor(f))))
-        .map((sv) => sv.id)
+    const files = new Set(ruleFiles(ch))
+    return services.filter((sv) => serviceFiles(sv).some((f) => files.has(f))).map((sv) => sv.id)
 }
 
 export function isDomains(ch: Channel) {
@@ -75,6 +115,8 @@ export default function RuleEditor({
     ch, index, services, local, outputs, clash, rulesTotal, coveredBy, onChange, onClose, onDelete,
 }: Props) {
     const [q, setQ] = useState('')
+    /** Наборы каталога, о которых сейчас спрашиваем роутер (pick → srsOf). */
+    const [probing, setProbing] = useState<ReadonlySet<string>>(() => new Set())
     /** Правило на момент ответа сети: list_fetch отвечает секунды, и дописывать сужение
      *  надо к тому, что человек успел наредактировать, а не к снимку на момент щелчка. */
     const latest = useRef(ch)
@@ -124,8 +166,29 @@ export default function RuleEditor({
      *  лежат в нём постоянно, домены кладёт резолвер с TTL. Поэтому и выбор стал про сервис. */
     function pick(sv: ServiceEntry) {
         const on = chosen.includes(sv.id)
+        /* Набор каталога: списками или файлом — узнаём до того, как правило уедет на роутер
+         * (см. srsOf). Ответ приходит через секунды, ставим его в правило, каким оно стало. */
+        if (!on && sv.srs) {
+            if (probing.has(sv.id)) return
+            setProbing((b) => new Set(b).add(sv.id))
+            void srsOf(sv, local).then((set) => {
+                setProbing((b) => { const n = new Set(b); n.delete(sv.id); return n })
+                put(latest.current, sv, false, set)
+            })
+            return
+        }
+        put(ch, sv, on)
+    }
+
+    /** Поставить (`on` — снять) сервис в правило `ch`: списками или, если задан `set`, файлом
+     *  набора. Снимается сервис в обоих видах — каким бы его ни поставили. */
+    function put(ch: Channel, entry: ServiceEntry, on: boolean, set?: string) {
         const pref = new Set(ch.match.prefixes_files || [])
         const doms = new Set(ch.match.domains_files || [])
+        const srs = new Set(ch.match.srs_files || [])
+        if (on) for (const f of [...entry.prefixes, ...entry.domains]) srs.delete(srsPathFor(f))
+        else if (set) srs.add(set)
+        const sv = set ? { ...entry, prefixes: [], domains: [] } : entry
         /* Сужение подсетей (Discord: только udp и его порты) — вместе с файлами: снимаем
          * сервис — снимаем и его; ставим — берём известное у каталога, а неизвестное
          * спрашиваем у list_fetch ниже. Без сужения подсети Cloudflare уехали бы в туннель
@@ -147,11 +210,13 @@ export default function RuleEditor({
                 ...ch.match,
                 prefixes_files: pref.size ? [...pref] : undefined,
                 domains_files: doms.size ? [...doms] : undefined,
-                mode: doms.size ? (ch.match.mode ?? 'fakeip') : undefined,
+                srs_files: srs.size ? [...srs] : undefined,
+                mode: doms.size || srs.size ? (ch.match.mode ?? 'fakeip') : undefined,
             },
             narrow: Object.keys(narrow).length ? narrow : undefined,
         }
         onChange(next)
+        if (set) return
         /* Сужение неизвестно (набор ещё не разбирали) — узнать сейчас, а не при следующем
          * открытии каталога: list_fetch разбирает набор и отдаёт `narrow` тем же ответом.
          * Ответ без сужения — тоже ответ: подсети не ограничены. */
@@ -182,15 +247,9 @@ export default function RuleEditor({
      *  Считается по СПЕКЕ, а не по диску: вопрос «что это правило делает», а не «что
      *  скачано». Свои списки исключены — у них своя карточка и свой способ снять. */
     const foreign = useMemo(() => {
-        const known = new Set(
-            services.flatMap((sv) => [...sv.prefixes, ...sv.domains].map((f) => pathFor(f))),
-        )
-        const files: string[] = [
-            ...(ch.match.prefixes_files || []),
-            ...(ch.match.domains_files || []),
-        ]
-        return [...new Set(files)].filter((f) => !known.has(f))
-    }, [services, ch.match.prefixes_files, ch.match.domains_files])
+        const known = new Set(services.flatMap(serviceFiles))
+        return [...new Set(ruleFiles(ch))].filter((f) => !known.has(f))
+    }, [services, ch])
 
     /** Убрать из правила один файл, не трогая остальные.
      *
@@ -200,6 +259,7 @@ export default function RuleEditor({
     function dropFile(file: string) {
         const pref = (ch.match.prefixes_files || []).filter((f) => f !== file)
         const doms = (ch.match.domains_files || []).filter((f) => f !== file)
+        const srs = (ch.match.srs_files || []).filter((f) => f !== file)
         const narrow = ch.narrow ? Object.fromEntries(Object.entries(ch.narrow).filter(([f]) => f !== file)) : undefined
         onChange({
             ...ch,
@@ -208,7 +268,8 @@ export default function RuleEditor({
                 ...ch.match,
                 prefixes_files: pref.length ? pref : undefined,
                 domains_files: doms.length ? doms : undefined,
-                mode: doms.length ? (ch.match.mode ?? 'fakeip') : undefined,
+                srs_files: srs.length ? srs : undefined,
+                mode: doms.length || srs.length ? (ch.match.mode ?? 'fakeip') : undefined,
             },
         })
     }
@@ -410,7 +471,7 @@ export default function RuleEditor({
                             {shown.map((sv) => {
                                 const on = chosen.includes(sv.id)
                                 const kinds = [...new Set(sv.parts.map((p) => p.kind))]
-                                const missing = sv.parts.filter((p) => !local[p.file.replace(/^\/+/, '')]).length
+                                const missing = onRouter(sv, local) ? 0 : 1
                                 return (
                                     <label
                                         key={sv.id}
@@ -421,7 +482,11 @@ export default function RuleEditor({
                                             {/* «Скачается» — под именем, а не в строку справа: там
                                                 оно вклинивалось между именем и видом, и вид с числом
                                                 обрезался как раз у самых длинных названий. */}
-                                            {missing > 0 && (
+                                            {probing.has(sv.id) ? (
+                                                <span className="ml-2 text-xs text-muted-foreground">
+                                                    скачивается
+                                                </span>
+                                            ) : missing > 0 && (
                                                 <span className="ml-2 text-xs text-muted-foreground">
                                                     скачается
                                                 </span>
@@ -438,6 +503,7 @@ export default function RuleEditor({
                                         <input
                                             type="checkbox"
                                             checked={on}
+                                            disabled={probing.has(sv.id)}
                                             onChange={() => pick(sv)}
                                             className="shrink-0"
                                         />

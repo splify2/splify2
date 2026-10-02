@@ -120,6 +120,7 @@ export default function Settings({
         (spec?.channels || []).flatMap((c) => [
             ...(c.match.prefixes_files || []),
             ...(c.match.domains_files || []),
+            ...(c.match.srs_files || []),
         ]),
     ).size
 
