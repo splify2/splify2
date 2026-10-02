@@ -184,17 +184,11 @@ jobs:
           git push -q --force \
             "https://x-access-token:${GH_TOKEN}@github.com/${GITHUB_REPOSITORY}" "$DIST:$DIST"
 
-      - name: Опубликовать релиз
-        uses: softprops/action-gh-release@v2
-        with:
-          tag_name: v${{ env.VERSION }}
-          name: ${{ env.RELEASE_NAME }}
-          prerelease: ${{ inputs.prerelease }}
-          files: |
-            out/luci-app-splify2-${{ env.VERSION }}-1_noarch.apk
-            out/luci-app-splify2-${{ env.VERSION }}-1_all.ipk
-            install.sh
-          body: |
+      - name: Текст выпуска
+        # Один текст на два выпуска: этот файл идёт и в выпуск здесь, и в splify2/releases
+        # (последний шаг). Выражения раскрываются в env, оболочка пишет его как есть.
+        env:
+          NOTES: |
             Интерфейс и управление для [steer](https://github.com/splify2/steer).
 
             Установка одной строкой — она же поставит ядро, если его нет:
@@ -225,3 +219,62 @@ jobs:
             # OpenWrt 23.05 и старше
             opkg install ./luci-app-splify2-${{ env.VERSION }}-1_all.ipk
             ```
+        run: printf '%s' "$NOTES" > "$RUNNER_TEMP/release-notes.md"
+
+      - name: Опубликовать релиз
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: v${{ env.VERSION }}
+          name: ${{ env.RELEASE_NAME }}
+          prerelease: ${{ inputs.prerelease }}
+          files: |
+            out/luci-app-splify2-${{ env.VERSION }}-1_noarch.apk
+            out/luci-app-splify2-${{ env.VERSION }}-1_all.ipk
+            install.sh
+          body_path: ${{ runner.temp }}/release-notes.md
+
+      # splify2/releases — version.json, списки изменений и копии пакетов всех проектов: по нему
+      # установщик, роутер и сайт узнают о выпуске. Шаги последние: выпуск здесь к этому времени
+      # уже вышел. Без секрета RELEASES_TOKEN (токен с правом записи в splify2/releases) они
+      # пропускаются с предупреждением и выпуск не роняют.
+      - name: Доступ к splify2/releases
+        id: releases
+        env:
+          RELEASES_TOKEN: ${{ secrets.RELEASES_TOKEN }}
+        run: |
+          if [ -n "$RELEASES_TOKEN" ]; then
+            echo "ok=1" >> "$GITHUB_OUTPUT"
+          else
+            echo "::warning::нет секрета RELEASES_TOKEN — выпуск не опубликован в splify2/releases"
+          fi
+
+      - name: Клон splify2/releases
+        if: steps.releases.outputs.ok == '1'
+        uses: actions/checkout@v4
+        with:
+          repository: splify2/releases
+          token: ${{ secrets.RELEASES_TOKEN }}
+          path: splify2-releases
+
+      - name: Опубликовать в splify2/releases
+        if: steps.releases.outputs.ok == '1'
+        env:
+          GH_TOKEN: ${{ secrets.RELEASES_TOKEN }}
+          PRERELEASE: ${{ inputs.prerelease }}
+        run: |
+          set -eu
+          # Ровно те файлы, что ушли в выпуск выше, и тот же текст.
+          assets="$RUNNER_TEMP/release-assets"
+          rm -rf "$assets"
+          mkdir -p "$assets"
+          cp "out/luci-app-splify2-${VERSION}-1_noarch.apk" \
+             "out/luci-app-splify2-${VERSION}-1_all.ipk" \
+             install.sh "$assets/"
+          channel=stable
+          [ "$PRERELEASE" = true ] && channel=prerelease
+          cd splify2-releases
+          git config user.name 'github-actions[bot]'
+          git config user.email 'github-actions[bot]@users.noreply.github.com'
+          python3 scripts/publish.py --product splify2 --version "$VERSION" --channel "$channel" \
+            --source-tag "v$VERSION" --changelog "$RUNNER_TEMP/release-notes.md" --assets "$assets" \
+            --mirror "https://github.com/splify2/splify2/releases/download/v$VERSION"
