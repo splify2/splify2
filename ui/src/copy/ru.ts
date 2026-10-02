@@ -61,6 +61,7 @@ export const ru = {
         sertifikatZakreplyon: "сертификат закреплён",
         sertifikatNeProveryaetsya: "сертификат не проверяется",
         poddelnyyTcp: "поддельный TCP",
+        otpechatok: (fp: string) => `отпечаток ${fp}`,
     },
     catalogTab: {
         spisokNash: "список наш",

@@ -68,6 +68,19 @@ describe('редактор выхода: бейджи узлов подписк�
         expect(badgeTexts(screen.getByRole('button', { name: /wg0/ }))).toEqual(['WireGuard'])
     })
 
+    it('поля ядра 2.0 у узла: шифр VMess, сертификат узла не проверяется, отпечаток — подсказкой у TLS', async () => {
+        vi.spyOn(rpc, 'proxyNodesOfSub').mockResolvedValue(reply([
+            { index: 0, name: '🇵🇱 Пэ-2', host: 'd', port: 443, type: 'trojan', security: 'tls', transport: 'tcp', fp: 'chrome', insecure: true },
+            { index: 1, name: '🇸🇪 Вэ-2', host: 'e', port: 443, type: 'vmess', security: 'tls', transport: 'ws', cipher: 'chacha20-poly1305' },
+        ]))
+        render(<PoolEditor spec={{ outputs: {}, channels: [] }} live={withPools} onCancel={() => {}} onSave={() => {}} />)
+        const tr = await screen.findByRole('button', { name: /Пэ-2/ })
+        expect(badgeTexts(tr)).toEqual(['Trojan', 'TCP', 'TLS', 'сертификат не проверяется'])
+        expect(tr.querySelector('.sp-cb-warn')?.textContent).toBe('сертификат не проверяется')
+        expect(Array.from(tr.querySelectorAll('.sp-cb')).find((b) => b.textContent === 'TLS')?.getAttribute('title')).toBe('отпечаток chrome')
+        expect(badgeTexts(screen.getByRole('button', { name: /Вэ-2/ }))).toEqual(['VMess', 'WebSocket', 'TLS', 'ChaCha20-Poly1305'])
+    })
+
     it('«любая рабочая» — общее у всех узлов протокола; в порядке предпочтения — бейджи строки', async () => {
         render(<PoolEditor spec={{ outputs: {}, channels: [] }} live={withPools} onCancel={() => {}} onSave={() => {}} />)
         await screen.findByRole('button', { name: /Дэ-1/ })

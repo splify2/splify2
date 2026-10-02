@@ -20,6 +20,7 @@ export default function ConfBadges({ list, className }: { list: ConfBadge[]; cla
                     key={b.id}
                     variant={b.warn ? 'warn' : b.proto ? 'proto' : 'tag'}
                     data-tone={b.proto ? PROTO_TONE[b.proto] : undefined}
+                    title={b.title}
                 >
                     {b.text}
                 </Badge>

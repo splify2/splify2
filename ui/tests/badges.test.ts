@@ -117,6 +117,32 @@ describe('бейджи узла прокси steer-proxy', () => {
             .toEqual(['HTTP', 'TLS', 'сертификат не проверяется'])
     })
 
+    it('VMess: шифр тела из cipher — названный, auto (выбор клиента) не называется', () => {
+        expect(texts(nodeBadges({ type: 'vmess', security: 'tls', transport: 'ws', cipher: 'aes-128-gcm' })))
+            .toEqual(['VMess', 'WebSocket', 'TLS', 'AES-128-GCM'])
+        expect(texts(nodeBadges({ type: 'vmess', security: 'none', transport: 'tcp', cipher: 'chacha20-poly1305' })))
+            .toEqual(['VMess', 'TCP', 'ChaCha20-Poly1305'])
+        expect(texts(nodeBadges({ type: 'vmess', security: 'none', transport: 'tcp', cipher: 'auto' }))).toEqual(['VMess', 'TCP'])
+        /* У других протоколов поле не читается. */
+        expect(texts(nodeBadges({ type: 'trojan', security: 'tls', transport: 'tcp', cipher: 'aes-128-gcm' }))).toEqual(['Trojan', 'TCP', 'TLS'])
+    })
+
+    it('insecure узла (allowInsecure в ссылке) — предупреждение у Trojan, HTTPS и VLESS, без insecure выхода', () => {
+        expect(texts(nodeBadges({ type: 'trojan', security: 'tls', transport: 'tcp', insecure: true })))
+            .toEqual(['Trojan', 'TCP', 'TLS', 'сертификат не проверяется'])
+        expect(nodeBadges({ type: 'http', security: 'tls', transport: 'tcp', insecure: true }).at(-1)).toMatchObject({ warn: true })
+        expect(nodeBadges({ type: 'tcp', security: 'tls', insecure: true }, 'vless').at(-1)).toMatchObject({ warn: true })
+    })
+
+    it('отпечаток fp — не отдельным бейджем, а подсказкой у TLS и Reality', () => {
+        const l = nodeBadges({ type: 'trojan', security: 'tls', transport: 'tcp', fp: 'chrome' })
+        expect(texts(l)).toEqual(['Trojan', 'TCP', 'TLS'])
+        expect(l.find((b) => b.id === 'security:tls')?.title).toBe('отпечаток chrome')
+        expect(nodeBadges({ type: 'tcp', security: 'reality', fp: 'firefox' }).find((b) => b.id === 'security:reality')?.title)
+            .toBe('отпечаток firefox')
+        expect(nodeBadges({ type: 'tcp', security: 'tls' }).find((b) => b.id === 'security:tls')?.title).toBeUndefined()
+    })
+
     it('протокол вызывающего важнее поля type', () => {
         expect(nodeBadges({ type: 'tcp', security: 'tls' }, 'trojan')[0].proto).toBe('trojan')
         expect(nodeBadges({ type: 'ss' })[0].proto).toBe('shadowsocks')
@@ -148,6 +174,22 @@ describe('общие бейджи и узлы выхода', () => {
         expect(outNodes({ ...r, chosen: [], node: 0 })).toEqual([r.nodes[0]])
         expect(outNodes({ ...r, chosen: [] })).toEqual(r.nodes)
         expect(outNodes(null)).toEqual([])
+    })
+
+    it('outNodes: исключённые выходом (excluded) — не кандидаты', () => {
+        const r = {
+            nodes: [
+                { index: 0, name: 'A', type: 'tcp', excluded: true },
+                { index: 1, name: 'B', type: 'grpc' },
+                { index: 2, name: 'C', type: 'xhttp', excluded: true },
+            ],
+            chosen: [] as number[],
+            node: -1,
+        }
+        expect(outNodes(r)).toEqual([r.nodes[1]])
+        expect(outNodes({ ...r, chosen: [0, 1] })).toEqual([r.nodes[1]])
+        /* Исключены все — сказать о выходе нечего лучше, чем узлы подписки. */
+        expect(outNodes({ ...r, nodes: [r.nodes[0], r.nodes[2]] })).toEqual([r.nodes[0], r.nodes[2]])
     })
 })
 

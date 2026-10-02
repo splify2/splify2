@@ -39,6 +39,9 @@ export interface ConfBadge {
     proto?: ProtoId
     /** Предупреждение (сертификат не проверяется). */
     warn?: boolean
+    /** Подсказка при наведении: подробность, которой отдельный бейдж не заслуживает (отпечаток
+     *  ClientHello у TLS и Reality). */
+    title?: string
 }
 
 /** Имена протоколов — как их называют везде. */
@@ -92,7 +95,7 @@ const XHTTP_MODES = new Set(['packet-up', 'stream-up', 'stream-one'])
 /** Обфускация hysteria2: поле `obfs` узла и состояния. */
 const OBFS_NAME: Record<string, string> = { salamander: 'Salamander', gecko: 'Gecko' }
 
-/** Шифры shadowsocks — поле `method` узла (если ядро его печатает). */
+/** Шифры shadowsocks (поле `method` узла) и VMess (поле `cipher`). */
 const CIPHER_NAME: Record<string, string> = {
     'aes-128-gcm': 'AES-128-GCM',
     'aes-192-gcm': 'AES-192-GCM',
@@ -126,6 +129,13 @@ export interface NodeConf {
     down_bps?: number
     /** shadowsocks: шифр. */
     method?: string
+    /** vmess: шифр тела (`auto`, `aes-128-gcm`, `chacha20-poly1305`). */
+    cipher?: string
+    /** TLS и Reality: отпечаток браузера в ClientHello (`chrome`, `firefox`…). */
+    fp?: string
+    /** Страна по флагу в имени и признак «исключён выходом» (перечень по выходу). */
+    cc?: string
+    excluded?: boolean
 }
 
 function protoOf(p: string | undefined | null): ProtoId | null {
@@ -211,8 +221,12 @@ export function nodeBadges(
     /* Защита. «Без шифрования» — только там, где шифрования действительно нет: у shadowsocks и
      * VMess оно своё и без TLS, у VLESS — при режиме encryption. */
     const pq = !!n.pqv || /^mlkem/i.test(n.encryption || '')
-    if (sec === 'reality') out.push(tag('security', 'reality', 'Reality'))
-    else if (sec === 'tls') out.push(tag('security', 'tls', 'TLS'))
+    /* Отпечаток ClientHello — подсказкой у TLS и Reality, а не бейджем: почти у всех узлов он
+     * один и тот же (chrome), и на каждой строке был бы шумом, а узнать его иногда нужно. */
+    const fp = (n.fp || '').trim()
+    const withFp = (b: ConfBadge): ConfBadge => (fp ? { ...b, title: S.badges.otpechatok(fp) } : b)
+    if (sec === 'reality') out.push(withFp(tag('security', 'reality', 'Reality')))
+    else if (sec === 'tls') out.push(withFp(tag('security', 'tls', 'TLS')))
     else if (
         (sec === 'none' || sec === '') &&
         n.security !== undefined &&
@@ -222,6 +236,11 @@ export function nodeBadges(
     if (n.vision) out.push(tag('feature', 'vision', 'Vision'))
     if (pq) out.push(tag('feature', 'pq', S.badges.postkvantovoe))
     if (p === 'shadowsocks') out.push(...cipherBadges(n.method))
+    /* VMess: шифр тела. `auto` — выбор клиента, о нём молчим, как о режиме xhttp auto. */
+    if (p === 'vmess') {
+        const c = (n.cipher || '').trim().toLowerCase()
+        if (c && c !== 'auto') out.push(tag('feature', `cipher:${c}`, CIPHER_NAME[c] || n.cipher!.trim()))
+    }
     /* Сертификат не проверяется: признак узла (если ядро его печатает) или выхода — и только у
      * узла с TLS: у Reality и у узла без TLS проверять нечего. */
     if (n.insecure || (opts.insecure && sec === 'tls')) out.push(insecureBadge())
@@ -394,10 +413,15 @@ export function outNodes(r: NodesReplyLike | null | undefined, current?: string 
         const n = all.find((x) => x.name === current)
         if (n) return [n]
     }
+    /* Исключённые выходом (`exclude`, `exclude_name`) ядро в кандидаты не берёт — ни выбранными,
+     * ни «любым рабочим». Исключены все — остаются узлы подписки: выход тогда не поднимется, а
+     * сказать о нём больше нечего. */
+    const cand = all.filter((x) => !x.excluded)
+    const pool = cand.length ? cand : all
     const want = r?.chosen?.length ? r.chosen : typeof r?.node === 'number' && r.node >= 0 ? [r.node] : []
     if (want.length) {
-        const picked = all.filter((x) => want.includes(x.index))
+        const picked = pool.filter((x) => want.includes(x.index))
         if (picked.length) return picked
     }
-    return all
+    return pool
 }
