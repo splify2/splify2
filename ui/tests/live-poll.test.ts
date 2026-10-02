@@ -217,7 +217,7 @@ describe('круг опроса: один вызов вместо пяти', () 
         // круге. Снимок из памяти браузера показывался как живое состояние с зелёной точкой.
         window.localStorage.setItem('splify2:live', JSON.stringify({ status: STATUS, diag: DIAG, build: null }))
         vi.spyOn(rpc, 'live').mockRejectedValue(new Error('Method not found'))
-        vi.spyOn(rpc, 'status').mockResolvedValue({ ok: false, error: 'движок не ответил' } as never)
+        vi.spyOn(rpc, 'status').mockResolvedValue({ ok: false, error: 'ядро не ответило' } as never)
         vi.spyOn(rpc, 'devStats').mockResolvedValue({ devices: DEVICES } as never)
         vi.spyOn(rpc, 'netInfo').mockResolvedValue(NET as never)
         vi.spyOn(rpc, 'diag').mockResolvedValue(DIAG as never)
@@ -232,7 +232,7 @@ describe('круг опроса: один вызов вместо пяти', () 
         // Принять его за состояние значит нарисовать «Работает» зелёной точкой на роутере,
         // где движок не отвечает. Когда именно молчание становится приговором — в
         // settling.test.tsx: первый круг им ещё не является.
-        vi.spyOn(rpc, 'live').mockResolvedValue({ ok: false, error: 'движок не ответил' } as never)
+        vi.spyOn(rpc, 'live').mockResolvedValue({ ok: false, error: 'ядро не ответило' } as never)
         const { result } = renderHook(() => useLive())
         await waitFor(() => expect(rpc.live).toHaveBeenCalled())
         expect(result.current.status).toBeNull()

@@ -325,7 +325,7 @@ export default function RuleEditor({
                                     const mixed = macs > 0 && macs !== (ch.from || []).filter(Boolean).length
                                     return mixed ? (
                                         <p className="text-xs text-destructive">
-                                            Здесь и адреса, и MAC — движок такое правило отвергнет.
+                                            Здесь и адреса, и MAC — ядро такое правило отвергнет.
                                         </p>
                                     ) : null
                                 })()}
@@ -345,7 +345,7 @@ export default function RuleEditor({
                                         )
                                     return bad.length ? (
                                         <p className="text-xs text-destructive">
-                                            Не адрес и не MAC: {bad.join(', ')} — такую запись движок
+                                            Не адрес и не MAC: {bad.join(', ')} — такую запись ядро
                                             выбросит молча, и правило накроет не тех.
                                         </p>
                                     ) : null

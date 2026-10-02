@@ -213,7 +213,7 @@ describe('согласие на телеметрию (docs/TELEMETRY.md)', () =>
         })
         vi.spyOn(rpc, 'telemetryPreview').mockResolvedValue({
             ok: false,
-            error: 'пакет не собрался: идентификатор считает движок, а его нет или он не ответил',
+            error: 'пакет не собрался: идентификатор считает ядро, а его нет или оно не ответило',
         })
         render(<TelemetryCard />)
         await waitFor(() => expect(rpc.telemetryState).toHaveBeenCalled())

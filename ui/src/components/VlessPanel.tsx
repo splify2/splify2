@@ -318,13 +318,13 @@ export default function VlessPanel({ name, output, onChange, saved }: Props) {
 
             {!sub?.present && (
                 <p className="text-xs text-warning-fg">
-                    Подписки нет. Без неё выход никуда не ведёт: узлы движок берёт только из файла.
+                    Подписки нет. Без неё выход никуда не ведёт: узлы ядро берёт только из файла.
                 </p>
             )}
 
             {sub?.present && !saved && (
                 <p className="text-xs text-warning-fg">
-                    Сохраните выход — узлы движок покажет для уже сохранённой настройки.
+                    Сохраните выход — узлы ядро покажет для уже сохранённой настройки.
                 </p>
             )}
 

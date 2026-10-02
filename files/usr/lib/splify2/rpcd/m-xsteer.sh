@@ -56,7 +56,7 @@ case "$2" in
         link="$("$STEER" xsteer-link "$conf" --name "$iface" 2>&1)"
         case "$link" in
             xs://*) json_init; json_add_boolean ok 1; json_add_string link "$link"; json_dump ;;
-            *) fail "движок не напечатал ссылку: $link" ;;
+            *) fail "ядро не напечатало ссылку: $link" ;;
         esac
         ;;
 
@@ -99,7 +99,7 @@ case "$2" in
         ep=$(printf '%s\n' "$conf" | sed -n 's/^Endpoint = //p')
         ka=$(printf '%s\n' "$conf" | sed -n 's/^PersistentKeepalive = //p')
         [ -n "$priv" ] && [ -n "$addr" ] && [ -n "$pub" ] && [ -n "$ep" ] || \
-            fail "движок вернул конфигурацию без обязательных полей — это ошибка движка, не ссылки"
+            fail "ядро вернуло конфигурацию без обязательных полей — это ошибка ядра, не ссылки"
         uci -q set "network.$iface.private_key=$priv"
         uci -q delete "network.$iface.addresses"
         uci -q add_list "network.$iface.addresses=$addr"

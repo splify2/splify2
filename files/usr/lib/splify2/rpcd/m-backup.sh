@@ -604,7 +604,7 @@ case "$2" in
             # отличается, что зеркал категорий там ещё нет (в архив они не едут намеренно).
             fetch_warn="$(fetch_missing_lists "$D/spec")"
             if ! err="$("$STEER" apply --dry-run --spec "$D/spec" 2>&1 >/dev/null)"; then
-                backup_giveup "${fetch_warn:+$fetch_warn; }${err:-движок отверг спеку из архива}. Списки и подписка из архива при этом уже восстановлены."
+                backup_giveup "${fetch_warn:+$fetch_warn; }${err:-ядро отвергло спеку из архива}. Списки и подписка из архива при этом уже восстановлены."
             fi
             [ -n "$fetch_warn" ] && warn="$warn$fetch_warn; "
             # Снимок применённого — ДО подмены. Иначе восстановленное выглядело бы

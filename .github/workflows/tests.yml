@@ -39,7 +39,7 @@ jobs:
           npx tsc -b
           npm run check:cn
 
-      - name: Собрать движок для стендов
+      - name: Собрать ядро для стендов
         run: |
           set -eu
           # См. одноимённый шаг в release.yml: telemetrymatch собирает пакет настоящим движком.

@@ -231,7 +231,7 @@ if [ -n "$V1_SIGNS" ]; then
     - выключить первую версию, оставив файлы на месте:
         /etc/init.d/splify stop && /etc/init.d/splify disable
       (то же для splify-agent, если он в списке выше)
-    - проверить, что её правила ушли из ядра:
+    - проверить, что её правила ушли из ядра Linux:
         nft list table inet fw4 | grep splify
     - если возвращаться к ней не собираетесь — снять её пакет тем же менеджером,
       которым он ставился; настройки в /etc пакетный менеджер оставит.
@@ -270,10 +270,10 @@ fi
 # нерабочим выходом vless.
 WANT_EXT=yes
 if [ "$have_steer" = yes ]; then
-    info "движок уже стоит$([ "$have_ext" = yes ] && echo ' (расширенный)' || echo ' (базовый)')"
+    info "ядро уже стоит$([ "$have_ext" = yes ] && echo ' (расширенный)' || echo ' (базовый)')"
 elif [ -t 0 ]; then
     say ""
-    say "Какой движок поставить?"
+    say "Какое ядро поставить?"
     cat <<'TXT'
   1) расширенный — умеет поднимать туннель VLESS/Reality сам: вставили ссылку
      подписки, и всё. На флеше ~500 КБ. Берите этот, если туннеля ещё нет.
@@ -395,17 +395,17 @@ dl_url() {  # РЕПОЗИТОРИЙ ВЕРСИЯ ИМЯ
 # ---- движок -------------------------------------------------------------------
 if [ "$have_steer" = no ]; then
     SV="$(latest "$REPO_STEER")"
-    [ -n "$SV" ] || die "не удалось узнать версию движка: не ответили ни api.github.com, ни raw.githubusercontent.com, ни зеркало на gitlab.com. Пакеты можно поставить руками с https://github.com/$REPO_STEER/releases"
+    [ -n "$SV" ] || die "не удалось узнать версию ядра: не ответили ни api.github.com, ни raw.githubusercontent.com, ни зеркало на gitlab.com. Пакеты можно поставить руками с https://github.com/$REPO_STEER/releases"
     if [ "$WANT_EXT" = yes ]; then
         PKG="steer-extended-${SV}-1_${ARCH}.$(pm_ext)"
     else
         PKG="steer-${SV}-1_${ARCH}.$(pm_ext)"
     fi
     say ""
-    say "Движок steer $SV"
+    say "Ядро steer $SV"
     info "$PKG"
     fetch "$(dl_url "$REPO_STEER" "$SV" "$PKG")" "$TMP/$PKG" "$REPO_STEER" "$PKG"
-    pm_add "$TMP/$PKG" || die "движок не установился"
+    pm_add "$TMP/$PKG" || die "ядро не установилось"
     info "установлен"
 fi
 

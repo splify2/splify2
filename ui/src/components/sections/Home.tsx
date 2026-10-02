@@ -42,7 +42,7 @@ function verdict(live: Live): Verdict {
     /* Советы (note) в цвет не идут: они верны всегда, и красить ими состояние значило бы
      * держать роутер вечно нездоровым. Полный перечень остаётся в диагностике. */
     const notes = (live.diag?.checks || []).filter((c) => c.verdict === 'note')
-    if (live.error) return { text: 'Движок не отвечает', tone: 'bad', why: live.error, notes }
+    if (live.error) return { text: 'Ядро не отвечает', tone: 'bad', why: live.error, notes }
     if (live.diag?.fail)
         return { text: 'Есть поломки', tone: 'bad', why: `проверок с отказом: ${live.diag.fail}`, notes }
     if (live.diag?.warn)
@@ -261,10 +261,10 @@ export default function Home({
         <div className="space-y-4">
             {specV2Unsupported(live.status) && (
                 <Block className="border-destructive">
-                    <CardHead title="Движок не читает новую спеку" />
+                    <CardHead title="Ядро не читает новую спеку" />
                     <p className="text-sm">
-                        Этот интерфейс записывает настройки в формате движка 2.0. Установленный движок старше, и
-                        изменения не применятся. Обновите движок: Настройки → О ПО.
+                        Этот интерфейс записывает настройки в формате ядра 2.0. Установленное ядро старше, и
+                        изменения не применятся. Обновите ядро: Настройки → О ПО.
                     </p>
                 </Block>
             )}
@@ -575,7 +575,7 @@ function RuleRow({
                         )}
                         {/* Пока применяется — набор и должен отсутствовать: таблица пересобирается. */}
                         {row.enabled && set && !set.live && !phase && (
-                            <span className="shrink-0 text-[11px] text-destructive">нет в ядре</span>
+                            <span className="shrink-0 text-[11px] text-destructive">нет в ядре Linux</span>
                         )}
                     </span>
                     {/* Счётчик принадлежит НАБОРУ. Там, где движок свёл несколько правил в один

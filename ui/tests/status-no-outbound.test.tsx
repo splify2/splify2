@@ -159,11 +159,11 @@ describe('«трафику некуда идти»: выходов нет или
     it('движок не отвечает — причина уже названа сверху, второй раз не пишем', () => {
         render(
             <Home
-                live={live({ build: BUILD, status: status({}), devs: devs('br-lan'), error: 'движок не ответил' })}
+                live={live({ build: BUILD, status: status({}), devs: devs('br-lan'), error: 'ядро не ответило' })}
                 onSection={() => {}}
             />,
         )
-        expect(screen.getByText(/движок не ответил/)).toBeInTheDocument()
+        expect(screen.getByText(/ядро не ответило/)).toBeInTheDocument()
         expect(screen.queryByText(/Трафику некуда идти/)).toBeNull()
     })
 })

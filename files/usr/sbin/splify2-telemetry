@@ -209,7 +209,7 @@ url="$(uci -q get splify2.main.telemetry_url 2>/dev/null || true)"
 key="$(uci -q get splify2.main.telemetry_key 2>/dev/null || true)"
 [ -n "$key" ] || key="$TM_KEY_DEF"
 
-pkt="$(tm_build 2>/dev/null)" || { log "пакет не собрался: идентификатор считает движок"; exit 1; }
+pkt="$(tm_build 2>/dev/null)" || { log "пакет не собрался: идентификатор считает ядро"; exit 1; }
 
 if [ "$send" != 1 ]; then
     printf '%s\n' "$pkt"

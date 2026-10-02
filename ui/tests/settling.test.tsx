@@ -20,7 +20,7 @@ import { live } from './fixtures'
 //   3. Служба движка включена, но ещё не работает — это загрузка роутера, слово ей
 //      «Запускается…», а не красный заголовок.
 
-const FAIL = { ok: false, error: 'движок не ответил' }
+const FAIL = { ok: false, error: 'ядро не ответило' }
 
 /** Ещё один круг опроса без ожидания пяти секунд: возврат на вкладку опрашивает сразу. */
 async function poll() {
@@ -47,7 +47,7 @@ describe('переход — не поломка', () => {
         await waitFor(() => expect(call).toHaveBeenCalled())
         expect(result.current.error).toBeNull()
         for (let i = 0; i < 3 && result.current.error === null; i++) await poll()
-        await waitFor(() => expect(result.current.error).toBe('движок не ответил'))
+        await waitFor(() => expect(result.current.error).toBe('ядро не ответило'))
         expect(call.mock.calls.length).toBeGreaterThanOrEqual(3)
         expect(result.current.phase).toBeNull()
     })
@@ -108,7 +108,7 @@ describe('переход — не поломка', () => {
         vi.spyOn(rpc, 'subInfo').mockResolvedValue({ kind: 'none', present: false } as never)
         render(
             <Home
-                live={live({ phase: 'starting', error: 'движок не ответил' })}
+                live={live({ phase: 'starting', error: 'ядро не ответило' })}
                 onSection={() => {}}
                 onAddRule={() => {}}
             />,

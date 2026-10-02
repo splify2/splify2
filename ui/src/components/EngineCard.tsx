@@ -68,14 +68,14 @@ export default function EngineCard({ engine, releases, onInstalled }: Props) {
             // «Движок установлен» — при уже снесённой таблице nft (I-053).
             if (r.restarted === false) {
                 notify(
-                    `${t('Пакет установлен')}: ${r.installed}. ${t('Движок при этом не запустился — маршрутизации сейчас нет. Посмотрите журнал.')}`,
+                    `${t('Пакет установлен')}: ${r.installed}. ${t('Ядро при этом не запустилось — маршрутизации сейчас нет. Посмотрите журнал.')}`,
                     'warning',
                 )
             } else {
                 // via — путь, которым приехал пакет, когда прямая ссылка релиза не
                 // отдала (закрытый githubusercontent, splify2#15). Молчать нельзя:
                 // установка в этом случае идёт заметно дольше.
-                notify(`${t('Движок установлен')}: ${r.installed}${r.via ? ` (${r.via})` : ''}`)
+                notify(`${t('Ядро установлено')}: ${r.installed}${r.via ? ` (${r.via})` : ''}`)
             }
             onInstalled()
         } catch (e) {
@@ -91,12 +91,12 @@ export default function EngineCard({ engine, releases, onInstalled }: Props) {
      *  Устаревший — раньше базового: базовый нужного возраста работает, устаревший
      *  расширенный — нет. */
     const title = !engine?.present
-        ? t('Движок не установлен')
+        ? t('Ядро не установлено')
         : tooOld
-          ? t('Движок устарел')
+          ? t('Ядро устарело')
           : !engine.vless
-            ? t('Установлен базовый движок')
-            : t('Движок')
+            ? t('Установлено базовое ядро')
+            : t('Ядро')
 
     return (
         /* Bode: как экран «Движок» приложения — заголовок, затем факты полосами «подпись —
@@ -135,7 +135,7 @@ export default function EngineCard({ engine, releases, onInstalled }: Props) {
                     // обновил интерфейс ради нового и не тронул движок, иначе узнаёт об этом по
                     // одному отказу за раз («подписка не скачалась» без причины).
                     <p className="text-sm">
-                        {`${t('Этот интерфейс собран под движок')} ${tooOld} ${t('и новее. С установленным не заработают подписка по ссылке, часть списков каталога и отчёт о работе. Обновите движок — версии ниже.')}`}
+                        {`${t('Этот интерфейс собран под ядро')} ${tooOld} ${t('и новее. С установленным не заработают подписка по ссылке, часть списков каталога и отчёт о работе. Обновите ядро — версии ниже.')}`}
                     </p>
                 )}
                 {engine?.present && !engine.vless && (
@@ -202,7 +202,7 @@ export default function EngineCard({ engine, releases, onInstalled }: Props) {
                     <select
                         value={ver}
                         onChange={(e) => setVer(e.target.value)}
-                        aria-label={t('Версия движка')}
+                        aria-label={t('Версия ядра')}
                         className="w-full rounded-lg border border-input bg-transparent px-3 py-2 text-sm focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring"
                     >
                         {versions === null && <option value="">{t('загрузка…')}</option>}

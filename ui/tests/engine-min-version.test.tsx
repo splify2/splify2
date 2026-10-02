@@ -17,31 +17,31 @@ const card = (engine: Parameters<typeof EngineCard>[0]['engine']) => (
 describe('движок старее того, под который собран интерфейс', () => {
     it('младше минимума — заголовок и перечень того, что не заработает, с нужной версией', () => {
         render(card({ present: true, vless: true, version: '1.3.0', min_version: '1.5.3' }))
-        expect(screen.getByText('Движок устарел')).toBeInTheDocument()
-        expect(screen.getByText(/собран под движок 1\.5\.3 и новее/)).toBeInTheDocument()
+        expect(screen.getByText('Ядро устарело')).toBeInTheDocument()
+        expect(screen.getByText(/собран под ядро 1\.5\.3 и новее/)).toBeInTheDocument()
         expect(screen.getByText(/подписка по ссылке/)).toBeInTheDocument()
     })
 
     it('ровно минимум — обычная карточка', () => {
         render(card({ present: true, vless: true, version: '1.5.3', min_version: '1.5.3' }))
-        expect(screen.getByText('Движок')).toBeInTheDocument()
-        expect(screen.queryByText(/собран под движок/)).toBeNull()
+        expect(screen.getByText('Ядро')).toBeInTheDocument()
+        expect(screen.queryByText(/собран под ядро/)).toBeNull()
     })
 
     it('сравнение по числам, а не по строкам: 1.10.0 новее 1.5.3', () => {
         render(card({ present: true, vless: true, version: '1.10.0', min_version: '1.5.3' }))
-        expect(screen.queryByText('Движок устарел')).toBeNull()
+        expect(screen.queryByText('Ядро устарело')).toBeNull()
     })
 
     it('бэкенд старее интерфейса минимума не прислал — карточка ничего не утверждает', () => {
         render(card({ present: true, vless: true, version: '1.3.0' }))
-        expect(screen.queryByText('Движок устарел')).toBeNull()
-        expect(screen.queryByText(/собран под движок/)).toBeNull()
+        expect(screen.queryByText('Ядро устарело')).toBeNull()
+        expect(screen.queryByText(/собран под ядро/)).toBeNull()
     })
 
     it('устаревший важнее базового: базовый нужного возраста работает, устаревший — нет', () => {
         render(card({ present: true, vless: false, version: '1.3.0', min_version: '1.5.3' }))
-        expect(screen.getByText('Движок устарел')).toBeInTheDocument()
-        expect(screen.queryByText('Установлен базовый движок')).toBeNull()
+        expect(screen.getByText('Ядро устарело')).toBeInTheDocument()
+        expect(screen.queryByText('Установлено базовое ядро')).toBeNull()
     })
 })

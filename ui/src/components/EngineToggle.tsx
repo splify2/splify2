@@ -53,7 +53,7 @@ export default function EngineToggle({
             const ok = await ask({
                 title: 'Остановить всё?',
                 body:
-                    'Маршрутизация снимется целиком: движок остановится, правила из ядра уйдут. ' +
+                    'Маршрутизация снимется целиком: ядро steer остановится, правила из ядра Linux уйдут. ' +
                     'Автозапуск тоже снимется, поэтому перезагрузка роутера ничего не вернёт — ' +
                     'включать придётся этой же кнопкой.',
                 confirmLabel: 'Остановить',
@@ -64,7 +64,7 @@ export default function EngineToggle({
         try {
             const r = stopping ? await rpc.engineStop() : await rpc.engineStart()
             notify(
-                stopping ? 'Движок остановлен' : r.running ? 'Движок запущен' : 'Движок включён, но не поднялся',
+                stopping ? 'Ядро остановлено' : r.running ? 'Ядро запущено' : 'Ядро включено, но не поднялось',
                 stopping || r.running ? 'info' : 'warning',
             )
             live.refresh()
@@ -86,14 +86,14 @@ export default function EngineToggle({
                 <div className="rounded-xl border border-border p-2.5">
                     {eng.present ? (
                         <>
-                            <div className="text-[11px] text-muted-foreground">движок</div>
+                            <div className="text-[11px] text-muted-foreground">ядро</div>
                             <div className="truncate text-[13px]">
                                 steer {eng.version || '—'} · {eng.vless ? 'extended' : 'basic'}
                             </div>
                         </>
                     ) : (
                         <div className="text-[13px]">
-                            Движка нет
+                            Ядра нет
                             <div className="text-[11px] text-muted-foreground">
                                 применить настройку нечем
                             </div>
@@ -128,7 +128,7 @@ export default function EngineToggle({
                     </Button>
                     {off && (
                         <p className="mt-1 text-[11px] text-muted-foreground">
-                            автозапуск снят: перезагрузка движок не вернёт
+                            автозапуск снят: перезагрузка ядро не вернёт
                         </p>
                     )}
                     {/* Работает, хотя выключали. Сказать об этом обязаны: молча показывать
@@ -136,7 +136,7 @@ export default function EngineToggle({
                         значит оставить его в уверенности, что маршрутизации нет. */}
                     {eng.enabled === false && eng.running === true && (
                         <p className="mt-1 text-[11px] text-warning-fg">
-                            движок работает, хотя автозапуск снят — остановите ещё раз, если он не нужен
+                            ядро работает, хотя автозапуск снят — остановите ещё раз, если оно не нужно
                         </p>
                     )}
                 </div>

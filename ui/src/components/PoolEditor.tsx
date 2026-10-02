@@ -299,7 +299,7 @@ export default function PoolEditor({
         const subsN = g.filter((x) => x.kind === 'sub').length
         const devsN = g.length - subsN
         if (subsN > 1 || (subsN && devsN)) {
-            notify('Движок этой версии не умеет смешанный пул: либо одна подписка, либо свои туннели. Обновите движок в разделе «Настройки → О ПО».', 'warning')
+            notify('Ядро этой версии не умеет смешанный пул: либо одна подписка, либо свои туннели. Обновите ядро в разделе «Настройки → О ПО».', 'warning')
             return true
         }
         return false
@@ -429,7 +429,7 @@ export default function PoolEditor({
                 devices.push(pn)
             }
             if (devices.length > 16) {
-                notify('В пуле не больше шестнадцати частей — таков предел движка; соседние локации одной подписки считаются одной частью', 'warning')
+                notify('В пуле не больше шестнадцати частей — таков предел ядра; соседние локации одной подписки считаются одной частью', 'warning')
                 return
             }
             outputs[n] = carry(advApply(
@@ -690,8 +690,8 @@ export default function PoolEditor({
                                                         ? 'Узлов нет: для ссылок hysteria2 не установлен пакет steer-hysteria2.'
                                                         : `В подписке ещё ${foreignBySub[s.path]} узлов hysteria2: нужен пакет steer-hysteria2.`)
                                                     : (nodes.length === 0
-                                                        ? 'Узлов нет: движок не принял ссылки этой подписки.'
-                                                        : `Движок не принял ещё ${foreignBySub[s.path]} ссылок этой подписки.`)}
+                                                        ? 'Узлов нет: ядро не приняло ссылки этой подписки.'
+                                                        : `Ядро не приняло ещё ${foreignBySub[s.path]} ссылок этой подписки.`)}
                                             </li>
                                         )}
                                         {s.present && mixed && nodes && nodes.length > 0 && (

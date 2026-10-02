@@ -16,7 +16,7 @@ export default function FirstRun({ live }: { live: Live }) {
         <div className="sp-root text-foreground">
             <div className="mx-auto max-w-2xl space-y-4">
                 <div className="rounded-2xl border border-border bg-card p-5 shadow-card">
-                    <h1 className="sp-title">Движок не установлен</h1>
+                    <h1 className="sp-title">Ядро не установлено</h1>
                     <p className="mt-2 text-sm text-muted-foreground">
                         {/* Разделение ролей (splify2 — интерфейс, steer — маршрутизация) на экран
                           * не выносим: человеку нужно не устройство продукта, а то, что до
@@ -46,7 +46,7 @@ export default function FirstRun({ live }: { live: Live }) {
 
                 <p className="text-xs text-muted-foreground">
                     Пакет можно поставить и руками:{' '}
-                    <code className="font-mono">apk add --allow-untrusted ./steer-extended-*.apk</code>. На роутере с 64 МБ памяти перед установкой остановите движок, если он работает: иначе обновлению
+                    <code className="font-mono">apk add --allow-untrusted ./steer-extended-*.apk</code>. На роутере с 64 МБ памяти перед установкой остановите ядро, если оно работает: иначе обновлению
                     может не хватить памяти.
                 </p>
             </div>

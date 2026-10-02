@@ -225,7 +225,7 @@ export default function Diagnostics({ live }: { live: Live }) {
                         </div>
                     ) : (
                         <p className="py-4 text-center text-sm text-muted-foreground">
-                            Движок ничего не писал в журнал.
+                            Ядро ничего не писало в журнал.
                         </p>
                     )}
                 </div>

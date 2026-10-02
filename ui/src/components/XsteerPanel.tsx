@@ -46,12 +46,12 @@ function ago(sec: number): string {
  *  не дали») скрывать нельзя — он означает, что половина прибавки потеряна, и причина у него
  *  своя (ядро без TUNSETOFFLOAD). Поэтому слов три, а не два. */
 function offloadLabel(o?: { gso: boolean; gro: boolean; rx: boolean }) {
-    if (!o) return { text: 'неизвестно', variant: 'outline' as const, tip: 'Движок не сообщает — сборка старее 1.5.0.' }
+    if (!o) return { text: 'неизвестно', variant: 'outline' as const, tip: 'Ядро не сообщает — сборка старее 1.5.0.' }
     if (!o.gso)
         return {
             text: 'выключена',
             variant: 'destructive' as const,
-            tip: 'Разгрузка не включилась: устройство или ядро её не поддерживают, либо она выключена в настройке интерфейса. Туннель работает, но заметно медленнее.',
+            tip: 'Разгрузка не включилась: устройство или ядро Linux её не поддерживают, либо она выключена в настройке интерфейса. Туннель работает, но заметно медленнее.',
         }
     if (o.gso && o.gro && o.rx)
         return {
@@ -244,7 +244,7 @@ export default function XsteerPanel({ live }: { live: Live }) {
                             {st === null ? (
                                 <p className="text-subtle">
                                     Туннель не поднимался в эту загрузку: интерфейс выключен или
-                                    движок его ещё не запускал. Настройка при этом есть — состояния
+                                    ядро его ещё не запускало. Настройка при этом есть — состояния
                                     нет.
                                 </p>
                             ) : (
@@ -413,7 +413,7 @@ export default function XsteerPanel({ live }: { live: Live }) {
                             {!links && (
                                 <p className="border-t border-border pt-3 text-subtle">
                                     Ссылки <code>xs://</code> понимает steer 1.5.0 и новее — на
-                                    установленном движке этого умения нет.
+                                    установленном ядре этого умения нет.
                                 </p>
                             )}
                             {n && (

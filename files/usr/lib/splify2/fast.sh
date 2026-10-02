@@ -289,7 +289,7 @@ fast_live() {
     fi
     case "$_st" in
         '{'*) ;;
-        *) printf '{"ok":false,"error":"движок не ответил"}\n'; return 0 ;;
+        *) printf '{"ok":false,"error":"ядро не ответило"}\n'; return 0 ;;
     esac
 
     _dev="$(fast_devices)"

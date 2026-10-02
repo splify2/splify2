@@ -127,19 +127,19 @@ describe('кого маршрутизируем (splify2#16)', () => {
         // трафик идёт мимо. Ровно тот вид поломки, из-за которого обращение и написано.
         mount({ ...BASE, lan_devices: ['br-lan', 'tailscale0'] }, OLD_ENGINE)
         await waitFor(() => expect(rpc.clientNets).toHaveBeenCalled())
-        expect(screen.getByText(/движок этой версии/i)).toBeInTheDocument()
+        expect(screen.getByText(/ядро этой версии/i)).toBeInTheDocument()
     })
 
     it('на движке, который перечень понимает, лишнего не говорит', async () => {
         mount({ ...BASE, lan_devices: ['br-lan', 'tailscale0'] }, NEW_ENGINE)
         await waitFor(() => expect(rpc.clientNets).toHaveBeenCalled())
-        expect(screen.queryByText(/движок этой версии/i)).toBeNull()
+        expect(screen.queryByText(/ядро этой версии/i)).toBeNull()
     })
 
     it('на старом движке с умолчанием молчит: жаловаться не на что', async () => {
         mount(BASE, OLD_ENGINE)
         await waitFor(() => expect(rpc.clientNets).toHaveBeenCalled())
-        expect(screen.queryByText(/движок этой версии/i)).toBeNull()
+        expect(screen.queryByText(/ядро этой версии/i)).toBeNull()
     })
 
     it('устройство без адреса отмечается, о пустоте сказано', async () => {
