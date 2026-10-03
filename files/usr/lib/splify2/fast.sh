@@ -66,6 +66,11 @@ spec_ensure() {
     # Рядом лежит spec.yaml — спека ведётся руками; движок при двух файлах отказывается
     # читать обе, и заводить второй нельзя.
     [ -s "${SPEC%/*}/spec.yaml" ] && return 0
+    # Ядро ведёт steer-box-connector (podkop, forkop) — тот же признак, что box_busy в
+    # rpcd/common.sh. Своей спеки тогда не заводим и службу steer не поднимаем: она делила бы с
+    # его steerd таблицы и метки, а сам коннектор при следующем запуске отказался бы работать
+    # рядом со «службой steer со своей спекой» — то есть открытие страницы ломало бы podkop.
+    grep -q steer-box-connector "${SINGBOX_INITD:-/etc/init.d/sing-box}" 2>/dev/null && return 0
     mkdir -p "${SPEC%/*}" 2>/dev/null
     printf '%s\n' "$SPEC_EMPTY" > "$SPEC" 2>/dev/null || return 1
     [ -s "$SPEC" ] || return 1

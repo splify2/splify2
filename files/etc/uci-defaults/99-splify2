@@ -111,8 +111,13 @@ rm -f "$_r/var/lib/splify2/net" "$_r/var/run/splify2-boot-id" "$_r/var/run/splif
 # исключение выражается каналом в этот выход, и пока его в спеке не было, в редакторе правила
 # не было и такой цели. Ту же спеку заводит и оборона в rpcd (fast.sh, spec_ensure) — строка
 # там одна и та же, потому что и смысл один.
+#
+# ЯДРО ВЕДЁТ steer-box-connector (podkop, forkop) — спеку не заводим и службу steer не поднимаем:
+# она делила бы с его steerd таблицы и метки, а коннектор отказывается работать рядом со службой
+# steer, у которой своя спека. Признак тот же, что у box_busy в rpcd.
 SPEC=/etc/steer/spec.json
-if [ ! -s "$SPEC" ] && [ ! -s /etc/steer/spec.yaml ]; then
+if [ ! -s "$SPEC" ] && [ ! -s /etc/steer/spec.yaml ] &&
+   ! grep -q steer-box-connector /etc/init.d/sing-box 2>/dev/null; then
     mkdir -p /etc/steer 2>/dev/null
     printf '{"version":2,"outputs":{"direct":{"kind":"direct"}}}\n' > "$SPEC" 2>/dev/null
     # Движок мог встать раньше нас и уже отказаться стартовать без спеки. Теперь она есть —

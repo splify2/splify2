@@ -811,6 +811,7 @@ rpcd() {  # МЕТОД [JSON_ЗАПРОСА]  — вызов метода; дл�
         SUBS_DIR="$T/etc/subs" \
         MANIFEST="$T/etc/manifest.json" \
         INITD="$T/bin/initd-steer" \
+        STEER_INIT="$T/bin/initd-steer" \
         RPCD_INITD="$T/bin/initd-rpcd" \
         FW_OWNED="$T/etc/fw-owned" \
         OPENWRT_RELEASE="${OPENWRT_RELEASE_FIXTURE:-$T/etc/openwrt_release}" \
@@ -3247,9 +3248,11 @@ check "удаление: файл списка ушёл с диска" "no" "$([
 # ВЫХОД `direct` В НЕЙ ЕСТЬ СРАЗУ: «пустить напрямую» — не настройка, а то, что роутер делает
 # без нас, и правилу-исключению нужен адрес назначения.
 rm -f "$T/etc/spec.json"
+reset_logs
 out="$(rpcd spec_get)"
 check "спеки нет — она заводится чтением" "yes" \
       "$([ -s "$T/etc/spec.json" ] && echo yes || echo no)"
+check "и служба ядра поднята" "start" "$(initd_actions)"
 check "и в ней есть постоянный выход direct" "direct" \
       "$(printf '%s' "$out" | python3 -c 'import json,sys; d=json.load(sys.stdin); print(",".join(k for k,v in d["outputs"].items() if v.get("kind")=="direct"))')"
 check "правил в ней нет — это точная запись того, что есть" "0" \
@@ -3262,6 +3265,22 @@ rm -f "$T/etc/spec.json"
 printf 'version: 2\n' > "$T/etc/spec.yaml"
 rpcd spec_get >/dev/null
 check "при spec.yaml рядом второй файл не заводится" "no" "$([ -s "$T/etc/spec.json" ] && echo yes || echo no)"
+rm -f "$T/etc/spec.yaml"
+# Ядро ведёт steer-box-connector: своя спека не заводится и служба steer не поднимается — иначе
+# открытие страницы ставило бы службу steer со своей спекой рядом с ядром коннектора, а сам
+# коннектор при следующем запуске отказывался бы работать (podkop/forkop без маршрутизации).
+mkdir -p "$T/box"
+printf '#!/bin/sh /etc/rc.common\n# sing-box от steer-box-connector\n' > "$T/box/sing-box"
+reset_logs
+out="$(SINGBOX_INITD_FIXTURE="$T/box/sing-box" rpcd spec_get)"
+check "коннектор: спека чтением не заводится" "no" "$([ -s "$T/etc/spec.json" ] && echo yes || echo no)"
+check "коннектор: служба steer не тронута" "" "$(initd_actions)"
+check "коннектор: чтение отдаёт пустую спеку" "2" \
+      "$(printf '%s' "$out" | python3 -c 'import json,sys; print(json.load(sys.stdin)["version"])')"
+SINGBOX_INITD_FIXTURE="$T/box/sing-box" rpcd live >/dev/null
+check "коннектор: круг опроса спеку не заводит" "no" "$([ -s "$T/etc/spec.json" ] && echo yes || echo no)"
+rm -rf "$T/box"
+printf 'version: 2\n' > "$T/etc/spec.yaml"
 out="$(rpcd spec_set '{"spec":"{\"version\":2}"}')"
 check "запись спеки при двух файлах отвергается" "false" "$(printf '%s' "$out" | jget ok)"
 check "и причина названа" "yes" "$(printf '%s' "$out" | jget error | grep -q 'spec.yaml' && echo yes || echo no)"
