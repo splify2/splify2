@@ -81,6 +81,7 @@ describe('обзор: правила и выходы оформлены один
         render(<Home live={live} onSection={() => undefined} onAddRule={() => undefined} />)
         await waitFor(() => expect(screen.getByText('с загрузки роутера')).toBeInTheDocument())
         const hint = screen.getByText('с загрузки роутера')
-        expect(hint.parentElement).toBe(screen.getByText('Правила').parentElement)
+        // В шапке карточки — правой группой вместе с действием, если оно есть (CardHead).
+        expect(screen.getByText('Правила').parentElement!.contains(hint)).toBe(true)
     })
 })

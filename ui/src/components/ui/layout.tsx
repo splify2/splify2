@@ -54,10 +54,15 @@ export function CardHead({ title, meta, action }: { title: ReactNode; meta?: Rea
     return (
         <div className="flex min-h-[24px] items-center justify-between gap-3">
             <h3 className="sp-sub min-w-0 truncate">{title}</h3>
-            {meta != null && meta !== false && (
-                <span className="shrink-0 text-xs text-muted-foreground">{meta}</span>
-            )}
-            {action}
+            {/* Число и действие — одной группой у правого края. Тремя детьми justify-between
+                ставил число посередине шапки («Соединения через выходы ··· 0 ··· Обновить» на
+                1280 пикселях, снято с QEMU-стенда). */}
+            <div className="flex shrink-0 items-center gap-3">
+                {meta != null && meta !== false && (
+                    <span className="text-xs text-muted-foreground">{meta}</span>
+                )}
+                {action}
+            </div>
         </div>
     )
 }
