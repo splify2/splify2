@@ -103,8 +103,14 @@ function surface(host: HTMLElement): HTMLElement {
   sr.replaceChildren()
   const link = document.querySelector<HTMLLinkElement>('link[id^="splify2-app-css"]')
   if (link) {
-    const copy = link.cloneNode() as HTMLLinkElement
-    copy.removeAttribute('id')
+    /* НОВЫЙ элемент, а не cloneNode(): тема footstrap переселяет любую <link> из <head> в свой слой
+     * (<style>@import … layer(theme)</style> рядом) и выключает оригинал — ставит ему `disabled`
+     * и свои data-fs-*. Клон унаследовал бы эти атрибуты, и стили внутри shadow root не
+     * применялись бы вовсе: пульт открывался голой разметкой без единого правила. Адрес тот же,
+     * файл берётся из памяти браузера. */
+    const copy = document.createElement('link')
+    copy.rel = 'stylesheet'
+    copy.href = link.href
     sr.appendChild(copy)
   } else {
     // Стенд разработчика: vite кладёт стили тегами <style> в <head>.
