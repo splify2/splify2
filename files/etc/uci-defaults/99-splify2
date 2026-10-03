@@ -115,6 +115,31 @@ rm -f "$_r/var/lib/splify2/net" "$_r/var/run/splify2-boot-id" "$_r/var/run/splif
 # ЯДРО ВЕДЁТ steer-box-connector (podkop, forkop) — спеку не заводим и службу steer не поднимаем:
 # она делила бы с его steerd таблицы и метки, а коннектор отказывается работать рядом со службой
 # steer, у которой своя спека. Признак тот же, что у box_busy в rpcd.
+# Следы DoH и обхода DPI (26.9.x). Эти части убраны в 26.10 (6458af4), а их следы при обновлении
+# оставались: ключи в /etc/config/splify2 и то, что живёт в ядре Linux до перезагрузки, — правило
+# «DoH через туннель» (`ip rule pref 29000 uidrange <nobody> lookup 290` и маршрут в таблице 290)
+# и таблицы nft splify2_doh, splify2_zm (фикс Zapret Manager), splify2_ztest. Снято с QEMU-стенда
+# (26.9.2 → 26.10.0): правило и splify2_zm остались, а ставить их заново больше некому, то есть
+# поведение менялось молча на ближайшей перезагрузке. Снимаем сразу; правило — только своё
+# (pref 29000 с таблицей 290), таблицы — только свои имена. Тот же набор снимает splify2-purge.
+# Начало и конец блока размечены для стенда (tests/pkgmatch.sh).
+# >>> следы DoH и zapret
+_old26=""
+for _k in doh_managed doh_out doh_prev_enabled doh_via_tunnel zapret_autoselect zapret_source zm_fix; do
+    uci -q get "splify2.main.$_k" >/dev/null 2>&1 && { uci -q delete "splify2.main.$_k"; _old26=1; }
+done
+[ -n "$_old26" ] && uci -q commit splify2
+_n=0
+while [ "$_n" -lt 32 ] && ip rule show 2>/dev/null | grep -q '^29000:.* lookup 290'; do
+    ip rule del pref 29000 table 290 2>/dev/null || break
+    _n=$((_n + 1))
+done
+[ "$_n" -gt 0 ] && ip route flush table 290 2>/dev/null
+for _t in splify2_doh splify2_zm splify2_ztest; do
+    nft list table inet "$_t" >/dev/null 2>&1 && nft delete table inet "$_t" 2>/dev/null
+done
+# <<< следы DoH и zapret
+
 SPEC=/etc/steer/spec.json
 if [ ! -s "$SPEC" ] && [ ! -s /etc/steer/spec.yaml ] &&
    ! grep -q steer-box-connector /etc/init.d/sing-box 2>/dev/null; then

@@ -482,6 +482,51 @@ check "uci-defaults называет keep.d" "yes" \
 check "и говорит, что соседство в /etc/config ничего не сохраняет" "yes" \
     "$(grep -q 'общего правила' "$UD" 2>/dev/null && echo yes || echo no)"
 
+# Следы DoH и обхода DPI 26.9.x при обновлении (блок «следы DoH и zapret» в uci-defaults):
+# ключи uci, правило «DoH через туннель» (pref 29000, таблица 290) и таблицы nft splify2_*.
+# Гоняется сам блок с подменёнными uci, ip и nft: чужое правило и чужая таблица не трогаются.
+T26="$(mktemp -d)"
+sed -n '/^# >>> следы DoH и zapret/,/^# <<< следы DoH и zapret/p' "$UD" > "$T26/blk.sh"
+mkdir -p "$T26/bin"
+cat > "$T26/bin/uci" <<'STUB'
+#!/bin/sh
+echo "uci $*" >> "$T26LOG"
+case "$*" in "-q get splify2.main.doh_via_tunnel"|"-q get splify2.main.zm_fix") echo 1; exit 0 ;; "-q get "*) exit 1 ;; esac
+exit 0
+STUB
+cat > "$T26/bin/ip" <<'STUB'
+#!/bin/sh
+echo "ip $*" >> "$T26LOG"
+case "$*" in
+    "rule show")
+        printf '0:\tfrom all lookup local\n29000:\tfrom all uidrange 1000-1000 lookup 77\n'
+        [ -f "$T26ST" ] || printf '29000:\tfrom all uidrange 65534-65534 lookup 290\n' ;;
+    "rule del pref 29000 table 290") touch "$T26ST" ;;
+esac
+exit 0
+STUB
+cat > "$T26/bin/nft" <<'STUB'
+#!/bin/sh
+echo "nft $*" >> "$T26LOG"
+case "$*" in "list table inet splify2_zm"|"list table inet splify2_doh") exit 0 ;; "list table"*) exit 1 ;; esac
+exit 0
+STUB
+chmod +x "$T26/bin/"*
+T26LOG="$T26/log" T26ST="$T26/gone" PATH="$T26/bin:$PATH" timeout 20 sh "$T26/blk.sh"
+L26="$(cat "$T26/log" 2>/dev/null)"
+check "обновление снимает ключ doh_via_tunnel" "yes" \
+    "$(echo "$L26" | grep -qx 'uci -q delete splify2.main.doh_via_tunnel' && echo yes || echo no)"
+check "и zm_fix, и сохраняет это" "yes,yes" \
+    "$(echo "$L26" | grep -qx 'uci -q delete splify2.main.zm_fix' && echo yes || echo no),$(echo "$L26" | grep -qx 'uci -q commit splify2' && echo yes || echo no)"
+check "своё правило pref 29000 снимается один раз" "1" \
+    "$(echo "$L26" | grep -cx 'ip rule del pref 29000 table 290')"
+check "таблица 290 вычищается" "1" "$(echo "$L26" | grep -cx 'ip route flush table 290')"
+check "таблицы splify2_doh и splify2_zm снимаются, отсутствующей splify2_ztest — нет" \
+    "nft delete table inet splify2_doh,nft delete table inet splify2_zm" \
+    "$(echo "$L26" | grep '^nft delete' | sort | paste -sd, -)"
+check "чужое правило pref 29000 (таблица 77) не тронуто" "0" "$(echo "$L26" | grep -c 'table 77\|lookup 77')"
+rm -rf "$T26"
+
 printf '\n%d проверок пройдено' "$pass"
 if [ "$fail" -gt 0 ]; then printf ', %d ПРОВАЛЕНО\n' "$fail"; exit 1; fi
 printf '\nвсе проверки прошли\n'
