@@ -1469,13 +1469,14 @@ relclean; reset_logs
 # В 2.0 пакета steer нет: ядро — steer-core, протоколы — модули steer-<модуль>, каждый зависит от
 # steer-core точной версии. Значит, обновление ставит ядро и ВСЕ стоящие модули одной версией и
 # одной `apk add`, добавляя то, что нужно спеке; переход с steer-extended 1.5.9 не теряет вшитое в
-# него (vless, xsteer, obfs, tgws), а прежний пакет снимается в той же транзакции (`!имя`).
+# него (vless, xsteer, obfs, tgws), а прежний пакет заменяется мета-пакетом steer-extended 2.0 в той же
+# транзакции: запись 1.x не остаётся в базе, и её prerm позже не погасит службу (pkg_del).
 mkrel2() {  # ФАЙЛ SHA256
     python3 - "$1" "$2" <<'PY2'
 import json, sys
 out, s = sys.argv[1], sys.argv[2]
 A = "aarch64_cortex-a53"
-mods = ["core", "vless", "hysteria2", "proxy", "xsteer", "obfs", "tgws"]
+mods = ["core", "vless", "hysteria2", "proxy", "xsteer", "obfs", "tgws", "extended"]
 def v(ver):
     tag = f"steer-v{ver}"
     return {"version": ver, "channel": "stable", "tag": tag,
@@ -1494,9 +1495,8 @@ relclean; reset_logs
 mkrel2 "$T/rel-raw.json" "$(relsum "$T/body-rel")"
 printf 'splify2/releases/releases/download\t%s\n' "$T/body-rel" > "$T/curl.serve"
 out="$(APK_LIST="steer-extended-1.5.9-r1 aarch64_cortex-a53 {steer-extended}" rpcd steer_install '{"version":"2.0.1"}')"
-check "1.5.9 extended → 2.0: ядро и вшитые модули одной apk add, прежний снят в ней же" \
-      "core vless xsteer obfs tgws !steer-extended" "$(apk_adds)"
-check "  запрет !steer-extended убран из world после успеха" "del steer-extended" "$(grep '^del' "$T/apk.log")"
+check "1.5.9 extended → 2.0: ядро, вшитые модули и мета-пакет 2.0 одной apk add, без снятия" \
+      "core vless xsteer obfs tgws extended;0" "$(apk_adds);$(grep -c '^del' "$T/apk.log")"
 check "  ответ: ok, ядро, состав модулей" 'true;steer-core 2.0.1;["vless", "xsteer", "obfs", "tgws"]' \
       "$(printf '%s' "$out" | jget ok);$(printf '%s' "$out" | jget installed);$(printf '%s' "$out" | jget modules)"
 
@@ -1528,8 +1528,7 @@ rm -f "$T/curl.fail"
 out="$(rpcd steer_install '{"version":"2.0.1","modules":"vless wireguard"}')"
 check "неизвестный модуль отвергается до скачивания" "неизвестный модуль: wireguard" "$(printf '%s' "$out" | jget error)"
 
-# opkg: транзакций и запретов нет — на конфликте прежний пакет снимается и установка повторяется,
-# но файлы те же и все сразу.
+# opkg: мета-пакет 2.0 с тем же именем обновляет запись 1.x на месте — отдельного снятия нет.
 rm -rf "$T/mods"; rm -f "$T/opkg.log"; : > "$T/opkg.lists"
 cp "$T/bin/opkg" "$T/bin/opkg.orig"
 cat > "$T/bin/opkg" <<'EOF2'
@@ -1537,21 +1536,20 @@ cat > "$T/bin/opkg" <<'EOF2'
 echo "$*" >> "$SANDBOX/opkg.log"
 case "$1" in
     install)
-        if grep -q '^remove steer-extended' "$SANDBOX/opkg.log"; then exit 0; fi
-        echo " * check_conflicts_for: The following packages conflict with steer-core:"
-        echo " * check_conflicts_for:   steer-extended *"
-        exit 1 ;;
+        exit 0 ;;
     list-installed) echo "steer-extended - 1.5.9-1" ;;
 esac
 exit 0
 EOF2
 chmod +x "$T/bin/opkg"
 out="$(PM_FIXTURE=opkg rpcd steer_install '{"version":"2.0.1"}')"
-check "opkg 1.5.9 extended → 2.0: install всех файлов, remove прежнего, install снова" \
-      "install|remove|install" "$(awk '$1 != "list-installed" {print $1}' "$T/opkg.log" | tr '\n' '|' | sed 's/|$//')"
-check "  в установке — ядро и вшитые модули (ipk)" "5" \
+check "opkg 1.5.9 extended → 2.0: один install, прежний не снимается (его prerm гасит службу)" \
+      "install" "$(awk '$1 != "list-installed" {print $1}' "$T/opkg.log" | tr '\n' '|' | sed 's/|$//')"
+check "  в установке — ядро, вшитые модули и мета-пакет steer-extended (ipk)" "6" \
       "$(grep '^install' "$T/opkg.log" | head -1 | tr ' ' '\n' | grep -c '2.0.1-1_aarch64_cortex-a53.ipk')"
 check "  установка удалась" "true" "$(printf '%s' "$out" | jget ok)"
+check "  в установке именно steer-extended 2.0.1" "1" \
+      "$(grep '^install' "$T/opkg.log" | head -1 | tr ' ' '\n' | grep -c '/tmp/steer-extended-2.0.1-1_aarch64_cortex-a53.ipk')"
 mv "$T/bin/opkg.orig" "$T/bin/opkg"; rm -f "$T/opkg.lists" "$T/opkg.log"
 rm -rf "$T/mods"; relclean; reset_logs
 [ -f "$spec_keep" ] && mv "$spec_keep" "$T/etc/spec.json"

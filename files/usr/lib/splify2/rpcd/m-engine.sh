@@ -724,7 +724,13 @@ case "$2" in
                 case " $STEER_MODULES " in *" $m "*) ;; *) fail "неизвестный модуль: $m" ;; esac
             done
             ext_old="$(pkg_in steer-extended)"
-            case "$ext_old" in 0.*|1.*) ext_old="vless xsteer obfs tgws" ;; *) ext_old="" ;; esac
+            # steer-extended 1.x заменяется мета-пакетом steer-extended 2.0 В ТОЙ ЖЕ транзакции
+            # (тот же выпуск). Без него запись 1.x оставалась в базе менеджера, и позднейшее
+            # `pkg_del steer-extended` запускало её prerm: тот гасит службу steer и снимает
+            # автозапуск. Мета-пакет 2.0 заменяет её на месте (одно имя — обновление), а его
+            # зависимости — те же модули, так что ничего лишнего не ставится.
+            meta=""
+            case "$ext_old" in 0.*|1.*) ext_old="vless xsteer obfs tgws"; meta=1 ;; *) ext_old="" ;; esac
             have=" $want $(mods_present) $SPEC_MODS $ext_old "
             have="$(printf '%s' "$have" | tr ',' ' ')"
             mods=""
@@ -734,7 +740,7 @@ case "$2" in
             mods="${mods# }"
 
             FETCH_VIA=""; files=""
-            for p in steer-core $(for m in $mods; do printf 'steer-%s ' "$m"; done); do
+            for p in steer-core $(for m in $mods; do printf 'steer-%s ' "$m"; done) ${meta:+steer-extended}; do
                 name="$p-${ver}-1_${arch}.$(pkg_ext)"
                 if ! steer_fetch "$ver" "$name"; then
                     rm -f $files
@@ -745,6 +751,8 @@ case "$2" in
 
             legacy=""
             for n in steer steer-extended libsteer libsteer-wolfssl; do
+                # steer-extended 1.x в этой транзакции заменяется мета-пакетом 2.0, а не снимается.
+                [ "$n" = steer-extended ] && [ -n "$meta" ] && continue
                 pkg_in "$n" >/dev/null && legacy="$legacy $n"
             done
             PKG_EXTRA=""
