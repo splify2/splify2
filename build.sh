@@ -379,6 +379,13 @@ chmod +x build/scripts/post-install
 # (`dns.upstreams`), и отдельный пакет для этого не нужен. Если он у человека стоит, это его
 # пакет, и мы его не трогаем.
 #
+# curl — объявлен. Страну, внешний адрес и отклик выхода мерит outbound_geo запросом curl через
+# устройство выхода (`--interface`; uclient-fetch к устройству не привязывается). До 26.10 curl
+# приезжал зависимостью https-dns-proxy, и снятие той зависимости его забрало: на OpenWrt 25.12
+# apk при обновлении пакета вычищает и https-dns-proxy, и curl с libcurl как осиротевшие (снято
+# с QEMU-стенда: 26.9.2 → 26.10.0), а на свежей установке curl не появлялся вовсе — обзор писал
+# «Не установлен curl», выходы стояли без страны и отклика (splify2#32).
+#
 # ip-full — объявлен. Скачивание через туннель (fetch.sh) отбирает трафик правилом
 # `ip rule ... uidrange`, а busybox-овский `ip` про uidrange не знает вовсе: без пакета
 # переключатель «скачивать через туннель» встал бы молча (правило не добавилось, ответ «ok»).
@@ -449,7 +456,7 @@ docker run --rm -v "$PWD":/w -w /w alpine:latest sh -c \
     "apk add --no-cache apk-tools >/dev/null 2>&1 && apk mkpkg \
        --info name:luci-app-splify2 --info version:$VERSION-r1 \
        --info description:'splify2: каналы, выходы и списки поверх ядра steer' \
-       --info arch:noarch --info depends:'luci-base ip-full' \
+       --info arch:noarch --info depends:'luci-base ip-full curl' \
        --script post-install:build/scripts/post-install \
        --script post-upgrade:build/scripts/post-install \
        -F $PKG -o $OUT/luci-app-splify2-$VERSION-1_noarch.apk" > "$BUILD_LOG" 2>&1 \
@@ -491,7 +498,7 @@ mkdir -p "$PKG/CONTROL"
 cat > "$PKG/CONTROL/control" <<EOF
 Package: luci-app-splify2
 Version: $VERSION-1
-Depends: luci-base, ip-full
+Depends: luci-base, ip-full, curl
 Architecture: all
 Maintainer: xyzmean
 Section: luci

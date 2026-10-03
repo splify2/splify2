@@ -189,7 +189,7 @@ wget -O /tmp/splify2-install.sh https://gitlab.com/xyzmean/splify2/-/raw/main/in
 2.0 из перечня выпусков, а без него скрипт отказывает словами. При steer-box-connector ядро не
 ставится и служба steer не включается. Пустая спека, если её нет, — формата v2.
 Требования к прошивке и месту — требования пакетов steer и luci-app-splify2 выбранного выпуска.
-Пакет интерфейса зависит от `luci-base` и `ip-full`.
+Пакет интерфейса зависит от `luci-base`, `ip-full` и `curl` (страна, внешний адрес и отклик выходов).
 
 Последние версии и адреса пакетов установщик берёт из перечня выпусков
 [splify2/releases](https://github.com/splify2/releases) (`version.json` с raw.githubusercontent.com,
