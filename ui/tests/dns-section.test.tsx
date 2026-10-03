@@ -123,4 +123,25 @@ describe('раздел DNS', () => {
         await waitFor(() => expect(screen.getByText(/DoH · работает/).textContent).toContain(S.dns.http('h2')))
         expect(screen.getByText(/DoQ · работает/).textContent).toContain(S.dns.early(4, 1))
     })
+
+    it('старая ошибка не висит под работающим сервером: после неё уже были ответы', async () => {
+        vi.mocked(rpc.dnsLog).mockResolvedValue({
+            running: true,
+            upstreams: [{ name: 'google', url: 'https://dns.google/dns-query', proto: 'doh', via: 'wg0', state: 'ready',
+                ok: 5551, error: 'нет ответа за 4000 мс', error_ago: 600, last_ok_ago: 2 }],
+        } as never)
+        render(<Dns />)
+        await waitFor(() => expect(screen.getByText(/DoH · работает/)).toBeInTheDocument())
+        expect(screen.queryByText('нет ответа за 4000 мс')).toBeNull()
+    })
+
+    it('свежая ошибка видна: после неё сервер ещё не отвечал', async () => {
+        vi.mocked(rpc.dnsLog).mockResolvedValue({
+            running: true,
+            upstreams: [{ name: 'google', url: 'https://dns.google/dns-query', proto: 'doh', via: 'wg0', state: 'down',
+                ok: 10, error: 'нет ответа за 4000 мс', error_ago: 3, last_ok_ago: 120 }],
+        } as never)
+        render(<Dns />)
+        expect(await screen.findByText('нет ответа за 4000 мс')).toBeInTheDocument()
+    })
 })

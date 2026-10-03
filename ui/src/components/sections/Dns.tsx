@@ -255,7 +255,11 @@ export default function Dns(_props: { live?: Live }) {
                                             className={`${inputCls} w-full font-mono`}
                                         />
                                     </FieldRow>
-                                    {s?.error && <p className="text-xs text-destructive">{s.error}</p>}
+                                    {/* Ошибка — только если после неё сервер ещё не ответил: ядро держит
+                                        последнюю ошибку и после успешных ответов, и строка «нет
+                                        ответа» стояла под «работает · ответов: 5551». */}
+                                    {s?.error && !(s.last_ok_ago != null && s.error_ago != null && s.last_ok_ago < s.error_ago) &&
+                                        <p className="text-xs text-destructive">{s.error}</p>}
                                 </div>
                             )
                         })}
