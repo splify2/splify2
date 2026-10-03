@@ -425,10 +425,12 @@ export default function Dns({ live }: { live?: Live }) {
                                             className={`${inputCls} w-full font-mono`}
                                         />
                                     </FieldRow>
-                                    {/* Ошибка — только если после неё сервер ещё не ответил: ядро держит
-                                        последнюю ошибку и после успешных ответов, и строка «нет
-                                        ответа» стояла под «работает · ответов: 5551». */}
-                                    {s?.error && !(s.last_ok_ago != null && s.error_ago != null && s.last_ok_ago < s.error_ago) &&
+                                    {/* Ошибка — только когда сервер не отвечает (точка красная): ядро держит
+                                        последнюю ошибку и при работающем сервере — «нет ответа» стояла под
+                                        «работает · ответов: 5551», а «сервер закрыл соединение» (DoH-сервер
+                                        сам закрывает простаивающее соединение) — под «ждёт вопросов». */}
+                                    {s?.error && s.state !== 'ready' && s.state !== 'idle' && s.state !== 'connecting' &&
+                                        !(s.last_ok_ago != null && s.error_ago != null && s.last_ok_ago < s.error_ago) &&
                                         <p className="text-xs text-destructive">{s.error}</p>}
                                 </div>
                             )

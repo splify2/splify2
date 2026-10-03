@@ -135,6 +135,17 @@ describe('раздел DNS', () => {
         expect(screen.queryByText('нет ответа за 4000 мс')).toBeNull()
     })
 
+    it('«сервер закрыл соединение» не висит под «ждёт вопросов»', async () => {
+        vi.mocked(rpc.dnsLog).mockResolvedValue({
+            running: true,
+            upstreams: [{ name: 'google', url: 'https://dns.google/dns-query', proto: 'doh', via: 'wg0', state: 'idle',
+                ok: 595, error: 'сервер закрыл соединение', error_ago: 30, last_ok_ago: 300 }],
+        } as never)
+        render(<Dns />)
+        await waitFor(() => expect(screen.getByText(/DoH · ждёт вопросов/)).toBeInTheDocument())
+        expect(screen.queryByText('сервер закрыл соединение')).toBeNull()
+    })
+
     it('свежая ошибка видна: после неё сервер ещё не отвечал', async () => {
         vi.mocked(rpc.dnsLog).mockResolvedValue({
             running: true,
