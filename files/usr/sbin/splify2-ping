@@ -19,7 +19,7 @@ PING_SH=${PING_SH:-/usr/lib/splify2/ping.sh}
 . "$PING_SH"
 
 # Адрес зашит в команду; `splify2.main.ping_url` его переопределяет (для стендов).
-PING_URL_DEF=${PING_URL_DEF:-https://splify2-telemetry-panel.vercel.app/api/ping}
+PING_URL_DEF=${PING_URL_DEF:-https://dns.yo1nk.app/api/ping}
 # 23 часа — и запас на то, что такт крона плывёт на секунды: без запаса отметка, записанная
 # через несколько секунд после такта, переносила бы отклик на 24-й час.
 PING_EVERY=${PING_EVERY:-82800}

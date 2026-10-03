@@ -25,7 +25,7 @@ mkdir -p "$T/bin" "$T/etc"
 
 ID=sp-0123456789abcdef0123456789abcdef
 ID2=sp-fedcba9876543210fedcba9876543210
-URL_DEF=https://splify2-telemetry-panel.vercel.app/api/ping
+URL_DEF=https://dns.yo1nk.app/api/ping
 
 # ---- песочница ------------------------------------------------------------------------
 cat > "$T/bin/uci" <<EOF
