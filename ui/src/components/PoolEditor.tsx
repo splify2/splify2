@@ -597,6 +597,16 @@ export default function PoolEditor({
         const keep: Partial<Output> = {}
         if (existing?.obfs && next.kind === 'interface') keep.obfs = existing.obfs
         if (existing?.extra) keep.extra = existing.extra
+        /* IPv6 от хоста. Новый выход-интерфейс сразу `ipv6: nat` (причина — у IfacesPanel.turnOn:
+         * созданный нами выход не должен собирать от ядра жалобу «нет masquerade IPv6»). У
+         * прежнего выхода берётся записанное: у пула редактор состава ключ не пишет (advApply
+         * его пропускает), и сохранение стёрло бы выбор человека молча. */
+        if (next.kind === 'interface' && !next.ipv6) {
+            if (existing) {
+                if (existing.ipv6) keep.ipv6 = existing.ipv6
+                if (existing.prefix) keep.prefix = existing.prefix
+            } else keep.ipv6 = 'nat'
+        }
         return { ...next, ...keep }
     }
 

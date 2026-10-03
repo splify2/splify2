@@ -444,11 +444,15 @@ function decodeV2(d: J): Spec {
         const ok = members.every((mn) => {
             const m = outputs[mn]
             return m && m.kind === 'interface' && mn.startsWith(`${gname}.`) && !!m.device &&
-                !m.ipv6 && !m.obfs && !m.over && !m.extra
+                (!m.ipv6 || m.ipv6 === 'nat') && !m.obfs && !m.over && !m.extra
         })
         if (!ok || g.default || g.weights) continue
         const devices = members.map((mn) => outputs[mn].device as string)
         const pool: Output = { name: gname, kind: 'interface', devices, device: devices[0] }
+        /* `ipv6: nat` у ВСЕХ членов — ключ пула; у части членов — не пул, а группа с членами
+         * разной настройки (ok выше пускает и «ни у кого», и «у каждого»). */
+        if (members.every((mn) => outputs[mn].ipv6 === 'nat')) pool.ipv6 = 'nat'
+        else if (members.some((mn) => outputs[mn].ipv6)) continue
         if (g.on_fail) pool.on_fail = g.on_fail
         pool.pick = g.pick
         for (const k of ['tolerance', 'interval', 'idle_timeout', 'url'] as const) {
@@ -741,7 +745,9 @@ export function encodeSpec(spec: Spec): J {
             while (used.has(m)) m = `${name}.${i + 1}_${k++}`
             used.add(m)
             members.push(m)
-            tail.push([m, { kind: 'interface', device: d }])
+            /* Ключ ipv6 берёт ядро у ЧЛЕНА (out_ipv6_mode_dev), а не у группы, где он допустим
+             * только как off: пул с nat пишет его каждому члену. */
+            tail.push([m, { kind: 'interface', device: d, ...(o.ipv6 === 'nat' ? { ipv6: 'nat' } : {}) }])
         })
         const g: J = { kind: 'group', pick: o.pick === 'latency' ? 'latency' : 'order', members }
         if (g.pick === 'latency') {

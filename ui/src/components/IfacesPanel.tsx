@@ -59,7 +59,14 @@ export default function IfacesPanel({ live }: { live: Live }) {
             ...spec!,
             outputs: {
                 ...spec!.outputs,
-                [name]: { name, kind: 'interface', devices: [dev], device: dev, on_fail: 'drop' },
+                /* `ipv6: nat` — с первой минуты, а не «по умолчанию». У туннеля вроде WARP пир один и
+                 * с одним адресом IPv6, клиенты LAN на ULA, и без подмены адреса IPv6 уходит в
+                 * туннель как есть, а ответ не возвращается. Подмену на устройство ставит само
+                 * ядро по этому ключу; masq6 у зоны steer_iface мы не трогаем — зона общая для
+                 * всех выходов, и подмена ВСЕГО её IPv6 сломала бы `ipv6: routed` соседнего
+                 * выхода. Без ключа ядро справедливо жаловалось бы в диагностике на выход,
+                 * который создали мы сами, и просило бы человека чинить это руками. */
+                [name]: { name, kind: 'interface', devices: [dev], device: dev, on_fail: 'drop', ipv6: 'nat' },
             },
         })
     }
