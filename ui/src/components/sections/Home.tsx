@@ -181,7 +181,8 @@ function useFacts(live: Live) {
     /* Мерить нечем: на роутере нет curl. Без этого признака пустые страна и отклик выглядели
      * так же, как молчащий выход (splify2#32). */
     const [noCurl, setNoCurl] = useState(false)
-    const done = useRef('')
+    /** Чем выход был, когда его мерили: имя выхода → отпечаток. */
+    const seen = useRef<Record<string, string>>({})
     /* Состояние читается через ссылку, а не из замыкания: проход по выходам живёт секунды —
      * шесть секунд таймаута на выход, — и за это время успевает приехать новый снимок. Взяв
      * `live` замыканием, проверка «этот выход сейчас перебирает узлы» смотрела бы на снимок
@@ -192,13 +193,26 @@ function useFacts(live: Live) {
     /* direct не меряется: он не уводит трафик никуда, отклик и страна у него — это отклик и
      * страна самого роутера, и ответ на другой вопрос. */
     const names = Object.keys(outputs).filter((n) => outputs[n].kind !== 'direct')
-    /* В ключ входит УСТРОЙСТВО выхода, а не его состояние. При смене узла движок пересоздаёт
-     * устройство туннеля, и прежнее измерение относится уже к другому месту — значит спросить
-     * надо заново (с живого экрана: выбрали польский узел, а на экране осталась Эстония).
+    /* Отпечаток выхода — УСТРОЙСТВО, процесс его клиента и узлы, которые тот держит. Одного имени
+     * устройства мало: у части пула оно прежнее (`vpn-1`), когда клиент перезапущен и взял другой
+     * узел — например, после «Не брать» страну, в которой он стоял. Прежнее измерение тогда
+     * оставалось на экране («Великобритания … 846 мс») при том, что трафик идёт уже в другую
+     * страну. Процесс и узлы в отпечатке это и ловят.
      *
-     * А вот на «упал и поднялся» перемеривать нельзя: мигающий выход менял бы ключ каждые пять
-     * секунд, и проверка запускалась бы по кругу — на экране «меряем…» не гасло вовсе. */
-    const key = names.map((n) => `${n}:${outputs[n].device || ''}`).join(',')
+     * А вот на «упал и поднялся» перемеривать нельзя: мигающий выход менял бы отпечаток каждые
+     * пять секунд, и проверка запускалась бы по кругу — на экране «меряем…» не гасло вовсе.
+     * Поэтому здесь нет ни `up`, ни `probe`: процесс клиента и его узлы от мигания не меняются. */
+    const identOf = (n: string) => {
+        const o = outputs[n]
+        const c = o.vless || o.hysteria2 || o.proxy
+        const held = o.vless?.active?.length
+            ? o.vless.active.map((a) => a.name).join('|')
+            : o.proxy?.active?.length
+              ? o.proxy.active.map((a) => a.name).join('|')
+              : c?.node || ''
+        return `${o.device || ''}#${c?.pid ?? ''}#${held}`
+    }
+    const key = names.map((n) => `${n}:${identOf(n)}`).join(',')
 
     const measure = useCallback(async (list: string[], fresh: boolean) => {
         setBusy(true)
@@ -237,9 +251,32 @@ function useFacts(live: Live) {
     }, [])
 
     useEffect(() => {
-        if (!key || done.current === key) return
-        done.current = key
-        void measure(names, false)
+        if (!key) return
+        /* Мерится то, чей отпечаток другой, чем при прошлом измерении: новый выход — обычным
+         * вопросом, выход с перезапущенным клиентом — свежим (запомненное бэкендом тоже
+         * устарело) и без прежнего ответа на экране: «Великобритания» рядом с узлом, которого в
+         * ней уже нет, хуже пустого места. Выход, который сейчас не поднят или перебирает узлы,
+         * не записывается: он будет спрошен, когда клиент встанет и отпечаток изменится. */
+        const fresh: string[] = []
+        const first: string[] = []
+        for (const n of names) {
+            const id = identOf(n)
+            if (seen.current[n] === id) continue
+            const st = now.current.status?.outputs?.[n]
+            if (st?.probe?.state === 'probing' || st?.up === false) continue
+            if (seen.current[n] === undefined) first.push(n)
+            else fresh.push(n)
+            seen.current[n] = id
+        }
+        if (fresh.length) {
+            setFacts((f) => {
+                const next = { ...f }
+                for (const n of fresh) delete next[n]
+                return next
+            })
+            void measure(fresh, true)
+        }
+        if (first.length) void measure(first, false)
         // eslint-disable-next-line react-hooks/exhaustive-deps
     }, [key, measure])
 
