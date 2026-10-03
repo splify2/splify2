@@ -782,6 +782,8 @@ export const ru = {
         vybranUzelAPrigodnyh: (p0: unknown, p1: unknown) => `выбран узел ${p0}, а пригодных в подписке ${p1}`,
         vybrannogoUzlaVPodpiske: "выбранного узла в подписке нет",
         podpiskaObnovilasIUzlov: ". Подписка обновилась и узлов стало меньше — выберите локацию заново или поставьте «первый рабочий».",
+        vseUzlyIsklyucheny: "Все узлы исключены",
+        izmenitNeBrat: "Уберите часть исключений в «Не брать» или возьмите другую локацию.",
         netSoedineniya: "Нет соединения",
         vPodpiskeNetPrigodnyh: "в подписке нет пригодных узлов",
         niOdinUzelPodpiski: "ни один узел подписки не ответил",
@@ -871,6 +873,7 @@ export const ru = {
         neBratSoSlovomPrimer: "LTE, Мобильный",
         neBeretsya: "не берётся",
         vseIsklyucheny: "все узлы исключены",
+        chastBezUzlov: "Часть пула останется без узлов: все выбранные в ней исключены. Снимите исключение или выберите другие локации.",
         /* Пул узлов туннеля: сколько узлов работают сразу и как делятся соединения. */
         uzlovSrazu: "Сколько узлов работают сразу",
         uzlovSrazuPole: "узлов сразу",

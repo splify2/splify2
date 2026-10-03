@@ -421,6 +421,29 @@ export default function PoolEditor({
         const list = nodesFor(sub, proto)
         return list.length > 0 && list.every(excluded)
     }
+    /** Строки порядка, чья часть пула останется без кандидатов: все выбранные в ней узлы
+     *  исключены. Часть — соседние строки одной подписки и протокола (как groupsOf); ядро такую
+     *  часть не поднимет («все узлы-кандидаты исключены»), и сказать об этом надо до сохранения. */
+    const deadRows = (() => {
+        const dead = new Set<number>()
+        let run: number[] = []
+        const close = () => {
+            const gone = run.every((i) => {
+                const r = rows[i]
+                return r.kind === 'node' && excluded(nodeOf(r.sub, r.idx, r.proto))
+            })
+            if (run.length && gone) run.forEach((i) => dead.add(i))
+            run = []
+        }
+        rows.forEach((r, i) => {
+            const prev = rows[i - 1]
+            if (r.kind !== 'node') { close(); return }
+            if (!(prev && prev.kind === 'node' && prev.sub === r.sub && prev.proto === r.proto)) close()
+            run.push(i)
+        })
+        close()
+        return dead
+    })()
     /** Сколько узлов может работать сразу у группы строк одной подписки: взятых номеров, а у
      *  «любой рабочей» — узлов протокола, которые ядро может взять (не исключённых и, у VLESS, с
      *  транспортом из фильтра). Перечень ещё не пришёл — предела не знаем (null): кандидатов
@@ -1194,7 +1217,7 @@ export default function PoolEditor({
                                         /* Строка, которую ядро не возьмёт из-за исключения, — с той же
                                            пометкой, что в перечне слева. */
                                         const mark = r.kind === 'node' && excluded(nd)
-                                            ? S.poolEditor.neBeretsya
+                                            ? deadRows.has(i) ? S.poolEditor.vseIsklyucheny : S.poolEditor.neBeretsya
                                             : r.kind === 'any' && allExcluded(r.sub, r.proto) ? S.poolEditor.vseIsklyucheny : undefined
                                         const label =
                                             r.kind === 'dev'
@@ -1297,6 +1320,9 @@ export default function PoolEditor({
                                         )
                                     })}
                                 </ol>
+                            )}
+                            {deadRows.size > 0 && (
+                                <p role="alert" className="text-xs text-warning-fg">{S.poolEditor.chastBezUzlov}</p>
                             )}
                             <p className="text-xs text-muted-foreground">
                                 {S.poolEditor.pervayaZhivayaStrokaZabiraet}

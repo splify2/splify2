@@ -100,7 +100,9 @@ describe('исключение локаций в редакторе выхода
         }
         render(<PoolEditor spec={spec} name="v" live={WITH} onCancel={() => {}} onSave={() => {}} />)
         const order = await screen.findByRole('list', { name: /порядок предпочтения/ })
-        await waitFor(() => expect(within(order).getByText('не берётся')).toBeInTheDocument())
+        /* Единственный узел части исключён — части не из чего брать, и это сказано до сохранения. */
+        await waitFor(() => expect(within(order).getByText('все узлы исключены')).toBeInTheDocument())
+        expect(screen.getByRole('alert').textContent).toContain('Часть пула останется без узлов')
         /* Взятый узел можно снять, хоть он и исключён. */
         expect(nodeRow(/Москва/)).not.toBeDisabled()
         /* Отметить все страны — «любая рабочая» говорит, что брать нечего. */
@@ -110,6 +112,26 @@ describe('исключение локаций в редакторе выхода
             await tick()
         }
         expect(nodeRow(/^любая рабочая/).textContent).toContain('все узлы исключены')
+    })
+
+    it('часть пула без кандидатов: пока в ней есть неисключённый узел — только пометка узла', async () => {
+        const spec: Spec = {
+            outputs: {
+                v: { name: 'v', kind: 'vless', sub_file: SUB.path, nodes: [0, 1], exclude: ['RU'], on_fail: 'drop' },
+            },
+            channels: [],
+        }
+        render(<PoolEditor spec={spec} name="v" live={WITH} onCancel={() => {}} onSave={() => {}} />)
+        const order = await screen.findByRole('list', { name: /порядок предпочтения/ })
+        await waitFor(() => expect(within(order).getByText('не берётся')).toBeInTheDocument())
+        expect(within(order).queryByText('все узлы исключены')).toBeNull()
+        expect(screen.queryByRole('alert')).toBeNull()
+        /* США отмечены тоже — у части не осталось ни одного кандидата. */
+        const g = await countries()
+        g.getByRole('button', { name: /США/ }).click()
+        await tick()
+        await waitFor(() => expect(within(order).getAllByText('все узлы исключены')).toHaveLength(2))
+        expect(screen.getByRole('alert')).toBeInTheDocument()
     })
 
     it('пул: исключение пишется каждому туннелю выхода', async () => {

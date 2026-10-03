@@ -608,6 +608,16 @@ function Trouble({ st, name, phase }: { st?: OutputStatus; name: string; phase?:
             </>
         )
     }
+    /* Все кандидаты выхода исключены («Не брать») — своё состояние, не «нет пригодных узлов»: узлы
+     * в подписке есть, их не велено брать. Слово ядра — probe.state `excluded`. */
+    if (st?.probe?.state === 'excluded') {
+        return (
+            <>
+                <div className="text-[13px] font-medium text-destructive">{S.outputCards.vseUzlyIsklyucheny}</div>
+                <p className="mt-0.5 text-xs leading-relaxed text-muted-foreground">{S.outputCards.izmenitNeBrat}</p>
+            </>
+        )
+    }
     /* Устройство есть, а выход не отвечает: сторож поставил on_fail (`failed`) или клиент
      * потерял узел (`node_down`). Прежде сюда доходило «устройства нет» — неправда того же
      * рода, что «нет соединения» во время перебора: человек шёл создавать устройство, которое

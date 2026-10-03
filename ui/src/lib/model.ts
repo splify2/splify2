@@ -296,7 +296,9 @@ export interface OutputStatus extends Output {
          *  Пока движок писал здесь `failed` с `total: 0`, интерфейс говорил «в подписке нет
          *  пригодных узлов» на подписке из двадцати девяти живых узлов, где стояло
          *  `node: 31`. Снято с живого роутера. */
-        state: 'probing' | 'failed' | 'no_such_node'
+        state: 'probing' | 'failed' | 'no_such_node' | 'excluded'
+        /** `excluded` — все кандидаты выхода исключены его `exclude`/`exclude_name` (`total` —
+         *  сколько их было до исключения). Не `failed`: узлы в подписке есть, и чинится это в «Не брать». */
         /** Номер узла: у `probing` — проверяемый (с единицы), у `no_such_node` — тот, что
          *  выбрал человек (как написан в спеке). */
         node?: number
