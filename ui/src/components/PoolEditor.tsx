@@ -1281,11 +1281,21 @@ export default function PoolEditor({
                                                     {i + 1}
                                                 </span>
                                                 {r.kind === 'node' && <Flag cc={cc} />}
-                                                <span className={`min-w-0 flex-1 ${mark ? 'opacity-60' : ''}`}>
-                                                    <span className="block truncate text-[13px] font-medium">{label}</span>
-                                                    <ConfBadges list={conf} className="mt-0.5" />
+                                                {/* Пометка — строкой ПОД названием, а не столбцом справа: столбец
+                                                    без переноса («все узлы исключены» — около ста пикселей)
+                                                    отбирал место у названия, и в колонке на 26rem оно
+                                                    сжималось до нуля, на телефоне — до «London №…». Под
+                                                    названием пометка переносится по словам и названия не
+                                                    трогает. Приглушены название и бейджи, пометка — нет.
+                                                    У помеченной строки название переносится, а не усекается:
+                                                    по нему и узнают, какой узел не берётся, а рядом с
+                                                    подписью подписки в узкой колонке ему остаётся около ста
+                                                    пикселей. */}
+                                                <span className="min-w-0 flex-1">
+                                                    <span className={`block text-[13px] font-medium ${mark ? 'break-words opacity-60' : 'truncate'}`}>{label}</span>
+                                                    {mark && <span className="mt-0.5 block text-[11px] text-warning-fg">{mark}</span>}
+                                                    <ConfBadges list={conf} className={`mt-0.5 ${mark ? 'opacity-60' : ''}`} />
                                                 </span>
-                                                {mark && <span className="shrink-0 text-[11px] text-warning-fg">{mark}</span>}
                                                 {/* Подпись подписки — ТОЛЬКО НА ПЕРВОЙ строке блока.
                                                     Соседние строки одной подписки и так слиты в один
                                                     блок без зазора, и повторять на каждой «Riot VPN
