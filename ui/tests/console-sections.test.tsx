@@ -97,7 +97,7 @@ describe('рельс разделов вместо вкладок (Andromeda 26.
         render(<Console />)
         expect(await screen.findByText(/1,0 КБ/)).toBeInTheDocument()
         nav(/Диагностика/).click()
-        await waitFor(() => expect(screen.queryByText('Логи steer')).toBeInTheDocument())
+        await waitFor(() => expect(screen.queryByText('Журнал ядра steer')).toBeInTheDocument())
         expect(screen.queryByText(/1,0 КБ/)).toBeNull()
     })
 
@@ -105,12 +105,12 @@ describe('рельс разделов вместо вкладок (Andromeda 26.
         render(<Console />)
         await screen.findByRole('heading', { name: 'Маршрутизация работает' })
         nav(/Диагностика/).click()
-        await waitFor(() => expect(screen.queryByText('Логи steer')).toBeInTheDocument())
-        expect(screen.queryByText('Бекап настроек')).toBeNull()
+        await waitFor(() => expect(screen.queryByText('Журнал ядра steer')).toBeInTheDocument())
+        expect(screen.queryByText('Архив настроек')).toBeNull()
 
         nav(/Настройки/).click()
         ;(await screen.findByRole('button', { name: /Дополнительно/ })).click()
-        expect(await screen.findByText('Бекап настроек')).toBeInTheDocument()
+        expect(await screen.findByText('Архив настроек')).toBeInTheDocument()
     })
 
     it('у каждого раздела заголовок ровно как пункт рельса', async () => {

@@ -175,12 +175,12 @@ describe('где живёт карточка архива', () => {
         vi.spyOn(rpc, 'localLists').mockResolvedValue({ files: {} })
         render(<Settings live={live()} onUseInRule={() => {}} />)
         screen.getByRole('button', { name: /Дополнительно/ }).click()
-        expect(await screen.findByText('Бекап настроек')).toBeInTheDocument()
+        expect(await screen.findByText('Архив настроек')).toBeInTheDocument()
     })
 
     it('не под пультом: на главной её нет', async () => {
         const { default: App } = await import('@/App')
         render(<App />)
-        expect(screen.queryByText('Бекап настроек')).toBeNull()
+        expect(screen.queryByText('Архив настроек')).toBeNull()
     })
 })
