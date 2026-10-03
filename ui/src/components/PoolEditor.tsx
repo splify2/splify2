@@ -224,7 +224,7 @@ export default function PoolEditor({
     const poolOn = activeNodesSupported(live?.status) || poolWritten
     /** Поле «не брать со словом в имени» — как его набирает человек; в настройки уходит списком. */
     const [exclText, setExclText] = useState(() => adv.exclude_name.join(', '))
-    const [tunnels, setTunnels] = useState<{ name: string; up: boolean; kind: string }[]>([])
+    const [tunnels, setTunnels] = useState<{ name: string; up: boolean; kind: string; ipv6?: 'nat' | 'off' }[]>([])
     /* Перечень подписок начинается с запомненного: пока `sub_list` идёт, список говорил
      * «подписок нет» — утверждение, а не ожидание, и человек успевал ему поверить. */
     const [subs, setSubs] = useState<Sub[]>(() => subsRemembered() ?? [])
@@ -620,15 +620,23 @@ export default function PoolEditor({
         const keep: Partial<Output> = {}
         if (existing?.obfs && next.kind === 'interface') keep.obfs = existing.obfs
         if (existing?.extra) keep.extra = existing.extra
-        /* IPv6 от хоста. Новый выход-интерфейс сразу `ipv6: nat` (причина — у IfacesPanel.turnOn:
-         * созданный нами выход не должен собирать от ядра жалобу «нет masquerade IPv6»). У
-         * прежнего выхода берётся записанное: у пула редактор состава ключ не пишет (advApply
-         * его пропускает), и сохранение стёрло бы выбор человека молча. */
+        /* IPv6 от хоста. Новый выход-интерфейс сразу с ключом `ipv6` — по адресу IPv6 у его
+         * устройств (причина и правило — у IfacesPanel.turnOn: созданный нами выход не должен
+         * собирать от ядра жалобу «нет masquerade IPv6», а `nat` у туннеля без адреса IPv6 —
+         * отказ ядра). Общая подсказка бэкенда у всех устройств — она и ключ; устройства
+         * разные, о каком-то бэкенд не знает или это часть пула по подписке (устройство
+         * заводит ядро, адреса у него нет) — ключа нет, и по каждому устройству решит
+         * самолечение при apply. У прежнего выхода берётся записанное: у пула редактор состава
+         * ключ не пишет (advApply его пропускает), и сохранение стёрло бы выбор человека
+         * молча. */
         if (next.kind === 'interface' && !next.ipv6) {
             if (existing) {
                 if (existing.ipv6) keep.ipv6 = existing.ipv6
                 if (existing.prefix) keep.prefix = existing.prefix
-            } else keep.ipv6 = 'nat'
+            } else {
+                const hints = devList(next).map((d) => tunnels.find((t) => t.name === d)?.ipv6)
+                if (hints.length > 0 && hints.every((h) => h && h === hints[0])) keep.ipv6 = hints[0]
+            }
         }
         return { ...next, ...keep }
     }

@@ -441,18 +441,33 @@ function decodeV2(d: J): Spec {
         if (g.pick !== 'order' && g.pick !== 'latency') continue
         const members = g.members || []
         if (!members.length) continue
+        /* Устройства частей пула: туннели по подписке (их устройство заводит ядро, адреса IPv6 у
+         * него нет). Ключ `ipv6` их членам не пишется — ни панелью, ни самолечением (оно лечит
+         * только устройства нашей зоны интерфейсов) — и при сборке пула в расчёт не идёт. Прежняя
+         * панель писала `nat` всем членам пула, и таким членам он прощается: пул читается пулом,
+         * а при следующей записи ключ у части уходит. */
+        const partDevs = new Set(
+            Object.values(outputs)
+                .filter((o) => isTunnelKind(o.kind) && !o.part_of && !referenced.has(o.name))
+                .map(deviceOf),
+        )
         const ok = members.every((mn) => {
             const m = outputs[mn]
             return m && m.kind === 'interface' && mn.startsWith(`${gname}.`) && !!m.device &&
-                (!m.ipv6 || m.ipv6 === 'nat') && !m.obfs && !m.over && !m.extra
+                (partDevs.has(m.device) ? !m.ipv6 || m.ipv6 === 'nat' : !m.ipv6 || m.ipv6 === 'nat' || m.ipv6 === 'off') &&
+                !m.obfs && !m.over && !m.extra
         })
         if (!ok || g.default || g.weights) continue
         const devices = members.map((mn) => outputs[mn].device as string)
         const pool: Output = { name: gname, kind: 'interface', devices, device: devices[0] }
-        /* `ipv6: nat` у ВСЕХ членов — ключ пула; у части членов — не пул, а группа с членами
-         * разной настройки (ok выше пускает и «ни у кого», и «у каждого»). */
-        if (members.every((mn) => outputs[mn].ipv6 === 'nat')) pool.ipv6 = 'nat'
-        else if (members.some((mn) => outputs[mn].ipv6)) continue
+        /* `ipv6: nat` либо `off` у ВСЕХ членов-интерфейсов — ключ пула; ни у одного — пул без
+         * ключа; у части членов или разный — не пул, а группа с членами разной настройки (ok
+         * выше пускает и «ни у кого», и «у каждого»). Разный он бывает, когда самолечение при
+         * apply записало каждому члену своё по его устройству (у одного есть адрес IPv6, у
+         * другого нет). */
+        const modes = members.filter((mn) => !partDevs.has(outputs[mn].device as string)).map((mn) => outputs[mn].ipv6)
+        if (!modes.every((v) => v === modes[0])) continue
+        if (modes[0]) pool.ipv6 = modes[0]
         if (g.on_fail) pool.on_fail = g.on_fail
         pool.pick = g.pick
         for (const k of ['tolerance', 'interval', 'idle_timeout', 'url'] as const) {
@@ -746,8 +761,11 @@ export function encodeSpec(spec: Spec): J {
             used.add(m)
             members.push(m)
             /* Ключ ipv6 берёт ядро у ЧЛЕНА (out_ipv6_mode_dev), а не у группы, где он допустим
-             * только как off: пул с nat пишет его каждому члену. */
-            tail.push([m, { kind: 'interface', device: d, ...(o.ipv6 === 'nat' ? { ipv6: 'nat' } : {}) }])
+             * только как off: пул с nat или off пишет его каждому члену-интерфейсу. Член — часть
+             * пула по подписке (устройство заводит ядро, адреса IPv6 у него нет) — без ключа:
+             * `nat` на таком устройстве ядро встретило бы отказом «нет адреса IPv6». */
+            const own = (o.ipv6 === 'nat' || o.ipv6 === 'off') && !parts.some((p) => deviceOf(p) === d)
+            tail.push([m, { kind: 'interface', device: d, ...(own ? { ipv6: o.ipv6 } : {}) }])
         })
         const g: J = { kind: 'group', pick: o.pick === 'latency' ? 'latency' : 'order', members }
         if (g.pick === 'latency') {

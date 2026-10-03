@@ -400,8 +400,14 @@ export const rpc = {
             text?: string
         }>,
 
-    /** Devices that could serve as an interface output — tunnels first. */
-    devices: declare<{ devices: { name: string; up: boolean; kind: string }[] }>('devices'),
+    /** Devices that could serve as an interface output — tunnels first.
+     *
+     *  `ipv6` — что панель пишет в ключ `ipv6` НОВОМУ выходу на этом устройстве: `nat` — у
+     *  устройства есть адрес IPv6 (живой или записанный в настройке интерфейса), `off` — нет
+     *  (клиенты идут по IPv4). Поля нет — бэкенд не знает или решать не ему (задан ip6prefix,
+     *  устройство создаёт ядро): ключ тогда не пишется, и по устройству решит самолечение
+     *  при apply. Бэкенд старше этого поля его просто не присылает — то же «нет ключа». */
+    devices: declare<{ devices: { name: string; up: boolean; kind: string; ipv6?: 'nat' | 'off' }[] }>('devices'),
 
     /** Живое состояние туннелей xsteer: то, что знает только сам процесс пира.
      *

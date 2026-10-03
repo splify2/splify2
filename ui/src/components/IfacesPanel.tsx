@@ -31,7 +31,7 @@ function devList(o: Output): string[] {
 
 export default function IfacesPanel({ live }: { live: Live }) {
     const [spec, setSpec] = useState<Spec | null>(null)
-    const [devices, setDevices] = useState<{ name: string; up: boolean; kind: string }[]>([])
+    const [devices, setDevices] = useState<{ name: string; up: boolean; kind: string; ipv6?: 'nat' | 'off' }[]>([])
 
     useEffect(() => {
         pending.load().then(setSpec).catch(() => setSpec(null))
@@ -55,18 +55,24 @@ export default function IfacesPanel({ live }: { live: Live }) {
         if (!NAME_RE.test(name)) name = 'tunnel'
         let n = 2
         while (spec!.outputs[name]) name = `${dev}${n++}`
+        /* Ключ `ipv6` — с первой минуты, а не «по умолчанию», и по адресу IPv6 у самого устройства
+         * (его называет бэкенд, `devices`). У туннеля вроде WARP пир один и с одним адресом IPv6,
+         * клиенты LAN на ULA, и без подмены адреса IPv6 уходит в туннель как есть, а ответ не
+         * возвращается: тут `nat`, и подмену на устройство ставит само ядро; masq6 у зоны
+         * steer_iface мы не трогаем — зона общая для всех выходов, и подмена ВСЕГО её IPv6 сломала
+         * бы `ipv6: routed` соседнего выхода. У туннеля с одним IPv4 подменять нечем, и `nat`
+         * обернулся бы красным отказом ядра («нет адреса IPv6») вместо жёлтой строки: тут `off`,
+         * клиенты идут по IPv4. Бэкенд о устройстве не знает — ключ не пишем: его допишет
+         * самолечение при apply, по тому же правилу. */
+        const hint = devices.find((d) => d.name === dev)?.ipv6
         edit({
             ...spec!,
             outputs: {
                 ...spec!.outputs,
-                /* `ipv6: nat` — с первой минуты, а не «по умолчанию». У туннеля вроде WARP пир один и
-                 * с одним адресом IPv6, клиенты LAN на ULA, и без подмены адреса IPv6 уходит в
-                 * туннель как есть, а ответ не возвращается. Подмену на устройство ставит само
-                 * ядро по этому ключу; masq6 у зоны steer_iface мы не трогаем — зона общая для
-                 * всех выходов, и подмена ВСЕГО её IPv6 сломала бы `ipv6: routed` соседнего
-                 * выхода. Без ключа ядро справедливо жаловалось бы в диагностике на выход,
-                 * который создали мы сами, и просило бы человека чинить это руками. */
-                [name]: { name, kind: 'interface', devices: [dev], device: dev, on_fail: 'drop', ipv6: 'nat' },
+                [name]: {
+                    name, kind: 'interface', devices: [dev], device: dev, on_fail: 'drop',
+                    ...(hint ? { ipv6: hint } : {}),
+                },
             },
         })
     }
