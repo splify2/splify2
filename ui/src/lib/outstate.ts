@@ -19,8 +19,21 @@ export function outDown(st?: OutputStatus | null): 'node' | 'failed' | null {
     return null
 }
 
-/** Короткое слово для строки выхода («Выходы», правило на главной). null — беды этого рода нет. */
+/** Все кандидаты выхода исключены («Не брать»): слово ядра — probe.state `excluded`. Не отказ
+ *  сторожа и не «не запущен»: узлы в подписке есть, их не велено брать, и чинится это в «Не
+ *  брать», а не перезапуском. Отказ сторожа и остановка помощника при этом — следствия: без
+ *  отдельного слова строка выхода говорила «не отвечает · не запущен · перезапусков: N» и
+ *  отправляла чинить то, что не сломано. */
+export function outExcluded(st?: OutputStatus | null): boolean {
+    return st?.probe?.state === 'excluded'
+}
+
+/** Короткое слово для строки выхода («Выходы», правило на главной). null — беды этого рода нет.
+ *  Исключение всех кандидатов — своё слово, как в блоке выхода (OutputCards): оно называет
+ *  причину, а сторож в этот момент тоже считает выход неработающим, и общее «не отвечает» её
+ *  закрывало бы. */
 export function outDownWord(st?: OutputStatus | null): string | null {
+    if (outExcluded(st)) return S.outputCards.vseUzlyIsklyucheny
     const d = outDown(st)
     return d === 'node' ? S.outState.uzelNeOtvechaet : d === 'failed' ? S.outState.neOtvechaet : null
 }

@@ -8,7 +8,7 @@ import { country } from '@/lib/geo'
 import { ccFromName, plainName } from '@/lib/nodename'
 import Flag from '@/components/Flag'
 import { daysText, readQuota, resetText } from '@/lib/quota'
-import { outDown, outDownLine, poolNow } from '@/lib/outstate'
+import { outDown, outDownLine, outExcluded, poolNow } from '@/lib/outstate'
 import ConfBadges, { useOutNodes } from '@/components/ConfBadges'
 import { outNodes, outputBadges, poolBadges } from '@/lib/badges'
 
@@ -610,7 +610,7 @@ function Trouble({ st, name, phase }: { st?: OutputStatus; name: string; phase?:
     }
     /* Все кандидаты выхода исключены («Не брать») — своё состояние, не «нет пригодных узлов»: узлы
      * в подписке есть, их не велено брать. Слово ядра — probe.state `excluded`. */
-    if (st?.probe?.state === 'excluded') {
+    if (outExcluded(st)) {
         return (
             <>
                 <div className="text-[13px] font-medium text-destructive">{S.outputCards.vseUzlyIsklyucheny}</div>

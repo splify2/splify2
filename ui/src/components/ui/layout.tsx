@@ -84,11 +84,14 @@ export function Group({ head, children }: { head?: ReactNode; children: ReactNod
 
 /** Строка-переход: значок, название, состояние под ним, правый край, шеврон. */
 export function TapRow({
-    icon: Icon, title, subtitle, right, onClick, alarm, dot, badges,
+    icon: Icon, title, subtitle, note, right, onClick, alarm, dot, badges,
 }: {
     icon?: typeof ChevronRight
     title: ReactNode
     subtitle?: ReactNode
+    /** Действие под подписью — с переносом: подпись держится одной усечённой строкой, а совет, что
+     *  делать, многоточием резать нельзя. */
+    note?: ReactNode
     right?: ReactNode
     onClick?: () => void
     /** Внутри есть находка: значок и подпись — цветом предупреждения. */
@@ -115,6 +118,7 @@ export function TapRow({
                         {subtitle}
                     </span>
                 )}
+                {note && <span className="mt-0.5 block text-xs leading-relaxed text-muted-foreground">{note}</span>}
                 {badges}
             </span>
             {right != null && right !== false && (

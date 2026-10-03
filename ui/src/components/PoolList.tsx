@@ -7,7 +7,7 @@ import PoolEditor from '@/components/PoolEditor'
 import ModuleOffer from '@/components/ModuleOffer'
 import { rpc } from '@/lib/rpc'
 import { missingModule } from '@/lib/engine'
-import { outDownWord, outExtras } from '@/lib/outstate'
+import { outDownWord, outExcluded, outExtras } from '@/lib/outstate'
 import { hasHelper, helperWords, useHelpers } from '@/lib/helper'
 import { pending } from '@/lib/pending'
 import { country } from '@/lib/geo'
@@ -186,12 +186,17 @@ export default function PoolList({
                 <Group head={<CardHead title={S.poolList.vyhody} meta={rows.length} />}>
                     {rows.map(([name, o]) => {
                         const st = live.status?.outputs?.[name]
-                        const g = geo[name]
                         const devs = devList(o)
                         const rules = spec.channels.filter((c) => c.out === name).length
                         /* Строка отвечает на «куда ведёт и работает ли»: где выходит сейчас,
                          * из чего собран, сколько правил на нём висит. */
                         const need = missingModule(o, live.build?.modules)
+                        /* Все кандидаты исключены («Не брать») — выход не несёт ничего, и страна с
+                         * откликом, оставшиеся от прежнего узла, рядом с «Все узлы исключены» —
+                         * неправда того же рода, что прежняя локация в блоке выхода на главной
+                         * (там беда стоит ВМЕСТО локации). */
+                        const excl = !need && outExcluded(st)
+                        const g = excl ? undefined : geo[name]
                         const state =
                             need
                                 ? S.poolList.nuzhenPaketSteer(need)
@@ -237,7 +242,8 @@ export default function PoolList({
                                       .join(' · ')
                         /* Устройство есть, а выход не отвечает (сторож или клиент туннеля) —
                          * словом впереди строки: красный значок без слова не говорит, что
-                         * случилось. */
+                         * случилось. Исключены все кандидаты — «Все узлы исключены», как в блоке
+                         * выхода на главной, и ниже то же действие (`note`). */
                         const down = need ? null : outDownWord(st)
                         /* Мост tgws устройства не имеет: «устройство не выбрано» у него было бы
                          * неправдой. И что ещё ядро знает о выходе: пути моста, проверка
@@ -248,9 +254,12 @@ export default function PoolList({
                         /* Части пула — туннели по подписке, из которых он собран: какие их узлы
                          * работают сейчас, говорит строка самого пула. */
                         const parts = devs.filter((d) => spec.outputs[d]?.part_of === name).map((d) => live.status?.outputs?.[d])
-                        const extra = need ? { words: [], alarm: false } : outExtras(o, st, { insecure: false, parts })
+                        /* Слова о пуле, помощнике и перезапусках у выхода без кандидатов — следствия
+                         * исключения («живых нет», «не запущен», «перезапусков: N»): они отправляли бы
+                         * чинить службу, а чинится это в «Не брать». Как и у выхода без модуля. */
+                        const extra = need || excl ? { words: [], alarm: false } : outExtras(o, st, { insecure: false, parts })
                         /* Беда помощника — впереди строки, перезапуски — в конце. */
-                        const hw = need ? { words: [], alarm: false, restarts: null } : helperWords(helpers[name] || [])
+                        const hw = need || excl ? { words: [], alarm: false, restarts: null } : helperWords(helpers[name] || [])
                         return (
                             <TapRow
                                 key={name}
@@ -269,7 +278,8 @@ export default function PoolList({
                                 subtitle={[down, ...hw.words, base, ...extra.words, hw.restarts]
                                     .filter(Boolean)
                                     .join(' · ')}
-                                alarm={!!need || extra.alarm || hw.alarm || (o.kind !== 'direct' && st?.up === false)}
+                                note={excl ? S.outputCards.izmenitNeBrat : undefined}
+                                alarm={!!need || excl || extra.alarm || hw.alarm || (o.kind !== 'direct' && st?.up === false)}
                                 /* Протокол, транспорт, защита и особенности — бейджами
                                    (lib/badges.ts); «сертификат не проверяется» — среди них. */
                                 badges={
