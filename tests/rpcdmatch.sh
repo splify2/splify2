@@ -767,6 +767,8 @@ printf '1\n'     > "$T/outnet/lan1/type";   printf 'up\n'   > "$T/outnet/lan1/op
 # не выдумка стенда, а то, из-за чего перечень обязан показывать ВЫВЕДЕННУЮ сеть.
 cat > "$T/bin/ip" <<'EOF'
 #!/bin/sh
+# IPv6 — из фикстуры песочницы ip6.txt (см. вторую заглушку ниже): файла нет — адресов нет.
+case "${1:-}" in -6) [ -f "$SANDBOX/ip6.txt" ] && cat "$SANDBOX/ip6.txt"; exit 0 ;; esac
 # Адреса: и по одному устройству, и ВСЕ РАЗОМ. Второе — то, как настоящий `ip` отвечает на
 # `ip -4 -o addr show` без имени; перечень сетей клиентов спрашивает именно так, одним
 # запуском вместо запуска на устройство.
@@ -4120,6 +4122,9 @@ uci_set network.dc9.device_name xs-dc9
 # этого раздела ничего не проверяется — иначе её пришлось бы возвращать на место.
 cat > "$T/bin/ip" <<'EOF'
 #!/bin/sh
+# IPv6 — из фикстуры песочницы ip6.txt, строками в форме настоящего `ip -6 -o addr show`: по ним
+# решается, есть ли у устройства выхода адрес IPv6 (v6_mode_of_dev). Файла нет — адресов нет.
+case "${1:-}" in -6) [ -f "$SANDBOX/ip6.txt" ] && cat "$SANDBOX/ip6.txt"; exit 0 ;; esac
 args=" $* "
 case "$args" in
     *" rule "*) exit 0 ;;
@@ -4463,12 +4468,20 @@ check "строка зон purge та же, что у объекта rpcd" \
 rm -f "$T/uci.store" "$T/etc/fw-owned"; : > "$T/uci.store"
 printf '{"schema":1,"outputs":{},"channels":[]}\n' > "$T/etc/spec.json"
 
-# ---- самолечение: выход-интерфейс без ipv6 в нашей зоне получает ipv6: nat -------------------
+# ---- самолечение: ключ ipv6 выходу-интерфейсу без ключа в нашей зоне — по адресу IPv6 --------
 #
 # Обращение: «при добавлении выхода варпа s2 жалуется на созданный им самим интерфейс без
 # параметра IPv6 Masquerading». Зона steer_iface создаётся с masq (IPv4) без masq6, и ядро просит
 # включить masq6 — у зоны, которую завели мы. Подмену IPv6 ставит само ядро по `ipv6: nat`;
-# apply (spec_heal_nat6) дописывает ключ выходам, записанным прежней панелью, архивом или руками.
+# apply (spec_heal_ipv6) дописывает ключ выходам, записанным прежней панелью, архивом или руками.
+#
+# НО `nat` — ТОЛЬКО ГДЕ У УСТРОЙСТВА ЕСТЬ АДРЕС IPv6. У туннеля WireGuard с одним IPv4 подменять
+# нечем, и ядро (diag, ipv6_host) отвечает на выход с nat красным отказом «у X нет адреса IPv6»
+# вместо прежней жёлтой строки — а ULA у LAN есть почти везде, так что «Есть поломки» получил бы
+# почти каждый такой туннель. Адреса нет — пишется `off`: выход IPv6 не несёт, клиенты идут по
+# IPv4. Адрес берётся живой (`ip -6`) или из настройки интерфейса (addresses, ip6addr; у awg — из
+# файла настройки: устройства до apply ещё нет).
+#
 # Трогается ТОЛЬКО то, что описано: без ключа, interface/awg, устройство в нашей зоне без masq6.
 # Зона устройства узнаётся и по `device`, и по `network` (LuCI пишет `list network`): устройство
 # в зоне человека, как бы она его ни называла, — чужая настройка: в нашу зону не добавляется и
@@ -4486,13 +4499,48 @@ in_zone() {  # ЗОНА УСТРОЙСТВО...
         case "$_iz_have" in *" $_iz_d "*) printf '%s ' "$_iz_d" ;; esac
     done | sed 's/ $//'
 }
+# В строке ответа с этим образцом есть все слова — именно как слова (имя выхода «ll» не должно
+# находиться внутри чужого).
+line_has() {  # ТЕКСТ ОБРАЗЕЦ_СТРОКИ СЛОВО...
+    _lh_t="$1"; _lh_p="$2"; shift 2
+    _lh_l="$(printf '%s\n' "$_lh_t" | grep -- "$_lh_p" | head -1)"
+    [ -n "$_lh_l" ] || { echo no; return 0; }
+    for _lh_w in "$@"; do printf '%s\n' "$_lh_l" | grep -qw -- "$_lh_w" || { echo no; return 0; }; done
+    echo yes
+}
+# Устройства стенда: у каких из них есть сам интерфейс в системе (шов OUT_SYSNET: когда
+# о устройстве больше нечего знать, решает его существование) — каталог отдельный, чтобы не
+# менять перечень туннелей, на который смотрят проверки выше.
+OUT_HEAL="$T/outnet-heal"
+rm -rf "$OUT_HEAL"; mkdir -p "$OUT_HEAL"
+for _d in warp wgv4 wgpfx wgll wg_r wg_o wg_n wgp1 wgp2 wgnet wg_d wg_f wg_i; do mkdir -p "$OUT_HEAL/$_d"; done
+heal_apply() { OUT_SYSNET_FIXTURE="$OUT_HEAL" rpcd "$@"; }
+# Живые адреса: warp — один global (ULA), wgll — только link-local (адресом выхода не считается).
+printf '%s\n' \
+    '3: warp    inet6 fd01::5/128 scope global \       valid_lft forever preferred_lft forever' \
+    '3: warp    inet6 fe80::1/64 scope link \       valid_lft forever preferred_lft forever' \
+    '7: wgll    inet6 fe80::2/64 scope link \       valid_lft forever preferred_lft forever' > "$T/ip6.txt"
 # Ответ netifd: интерфейс vpn с протоколом pptp называется устройством pptp-vpn — этого имени
 # в настройке сети нет, его выводит сам netifd.
 printf '%s\n' '{"interface":[{"interface":"lan","up":true,"l3_device":"br-lan","device":"br-lan"},{"interface":"vpn","up":true,"l3_device":"pptp-vpn","device":"eth1"}]}' > "$T/ubus-net.json"
+# Файлы настройки AmneziaWG: у выхода awg устройство заводит ядро при apply (имя выводит само, по
+# имени выхода: явное `device` с именем туннеля ядро отвергает), и лечение идёт до него — адрес
+# смотрится в строках Address.
+mkdir -p "$T/etc/awg"
+printf '[Interface]\nPrivateKey = x\nAddress = 10.7.0.2/32, fd07::2/128\n' > "$T/etc/amn.conf"
+printf '[Interface]\nPrivateKey = x\nAddress = 10.7.1.2/32\n# Address = fd07::9/128\n' > "$T/etc/amn4.conf"
+printf '[Interface]\nPrivateKey = x\nAddress = 10.7.2.2/32\nAddress = fd07::3/128\n' > "$T/etc/awg/amn_def.conf"
 heal_spec() {
-    printf '%s\n' '{"version":2,"outputs":{
+    cat > "$T/etc/spec.json" <<EOF2
+{"version":2,"outputs":{
   "direct":{"kind":"direct"},
   "warp":{"kind":"interface","device":"warp"},
+  "wgv4":{"kind":"interface","device":"wgv4"},
+  "wgcfg":{"kind":"interface","device":"wgcfg"},
+  "wgdown":{"kind":"interface","device":"wgdown"},
+  "ghost":{"kind":"interface","device":"ghost"},
+  "pfx":{"kind":"interface","device":"wgpfx"},
+  "ll":{"kind":"interface","device":"wgll"},
   "keep_routed":{"kind":"interface","device":"wg_r","ipv6":"routed"},
   "keep_off":{"kind":"interface","device":"wg_o","ipv6":"off"},
   "keep_nat":{"kind":"interface","device":"wg_n","ipv6":"nat"},
@@ -4501,95 +4549,172 @@ heal_spec() {
   "foreign_d":{"kind":"interface","device":"wg_d"},
   "foreign_u":{"kind":"interface","device":"pptp-vpn"},
   "foreign_i":{"kind":"interface","device":"wg_i"},
-  "amn":{"kind":"awg","conf":"/etc/amnezia.conf","device":"awg0"},
+  "amn":{"kind":"awg","conf":"$T/etc/amn.conf"},
+  "amn4":{"kind":"awg","conf":"$T/etc/amn4.conf"},
+  "amn_def":{"kind":"awg"},
   "pm.a":{"kind":"interface","device":"wgp1"},
   "pm.b":{"kind":"interface","device":"wgp2"},
   "pm":{"kind":"group","pick":"order","members":["pm.a","pm.b"]},
   "tun":{"kind":"tunnel","protocol":"vless","subscription":"s","obfs":{"ipv6":"x"}}
-},"channels":[]}' > "$T/etc/spec.json"
+},"channels":[]}
+EOF2
+}
+# Настройка сети: wgv4 — только IPv4; wgcfg — IPv6 записан, а устройства сейчас нет (интерфейс
+# опущен); wgdown — IPv4 и интерфейс опущен; wgpfx — человек раздаёт префикс туннеля (ip6prefix);
+# wgll — в настройке только link-local; пул: wgp1 с IPv6, wgp2 без.
+heal_net() {
+    uci_set 'network.wgv4' interface;   uci_set 'network.wgv4.proto' wireguard;   uci_set 'network.wgv4.addresses' '10.9.0.2/24'
+    uci_set 'network.wgcfg' interface;  uci_set 'network.wgcfg.proto' wireguard;  uci_set 'network.wgcfg.addresses' '10.9.1.2/24 fd09::2/64'
+    uci_set 'network.wgdown' interface; uci_set 'network.wgdown.proto' wireguard; uci_set 'network.wgdown.addresses' '10.9.2.2/24'
+    uci_set 'network.wgpfx' interface;  uci_set 'network.wgpfx.proto' wireguard;  uci_set 'network.wgpfx.addresses' '10.9.3.2/24'
+    uci_set 'network.wgpfx.ip6prefix' '2001:db8:1::/56'
+    uci_set 'network.wgll' interface;   uci_set 'network.wgll.proto' wireguard;   uci_set 'network.wgll.addresses' '10.9.4.2/24 fe80::1/64'
+    uci_set 'network.wgp1' interface;   uci_set 'network.wgp1.proto' wireguard;   uci_set 'network.wgp1.addresses' 'fd0a::2/64'
+    uci_set 'network.wgp2' interface;   uci_set 'network.wgp2.proto' wireguard;   uci_set 'network.wgp2.addresses' '10.9.5.2/24'
+    # Интерфейсы в зонах человека: имя устройства = имя интерфейса (WireGuard), устройство опцией
+    # device и имя, которое netifd выводит сам (pptp-vpn).
+    uci_set 'network.wgnet' interface;  uci_set 'network.wgnet.proto' wireguard;  uci_set 'network.wgnet.addresses' '10.9.6.2/24'
+    uci_set 'network.lan_vpn' interface; uci_set 'network.lan_vpn.proto' static;  uci_set 'network.lan_vpn.device' 'wg_d'
+    uci_set 'network.vpn' interface;    uci_set 'network.vpn.proto' pptp
+    # …и прежняя опция ifname (OpenWrt до 21.02 называл так устройство интерфейса).
+    uci_set 'network.old_vpn' interface; uci_set 'network.old_vpn.proto' static; uci_set 'network.old_vpn.ifname' 'wg_i'
 }
 heal_zones() {  # [masq6]
     rm -f "$T/uci.store" "$T/etc/fw-owned"; : > "$T/uci.store"
     uci_set 'firewall.@zone[0]' zone;  uci_set 'firewall.@zone[0].name' lan; uci_set 'firewall.@zone[0].device' 'br-lan'
     uci_set 'firewall.@zone[1]' zone;  uci_set 'firewall.@zone[1].name' wan; uci_set 'firewall.@zone[1].device' 'eth1'
     # Чужие зоны: устройство списком device; интерфейс списком network (WireGuard — по имени,
-    # интерфейс с опцией device, с прежней опцией ifname и с выведенным netifd именем устройства).
+    # интерфейс с опцией device, интерфейс с выведенным netifd именем устройства).
     uci_set 'firewall.vpnz' zone;      uci_set 'firewall.vpnz.name' vpnz;    uci_set 'firewall.vpnz.device' 'wg_f'
     uci_set 'firewall.vpnn' zone;      uci_set 'firewall.vpnn.name' vpnn;    uci_set 'firewall.vpnn.network' 'wgnet'
     uci_set 'firewall.vpnd' zone;      uci_set 'firewall.vpnd.name' vpnd;    uci_set 'firewall.vpnd.network' 'lan_vpn'
     uci_set 'firewall.vpnp' zone;      uci_set 'firewall.vpnp.name' vpnp;    uci_set 'firewall.vpnp.network' 'vpn'
     uci_set 'firewall.vpni' zone;      uci_set 'firewall.vpni.name' vpni;    uci_set 'firewall.vpni.network' 'old_vpn'
-    uci_set 'network.wgnet' interface;  uci_set 'network.wgnet.proto' wireguard
-    uci_set 'network.lan_vpn' interface; uci_set 'network.lan_vpn.proto' static;  uci_set 'network.lan_vpn.device' 'wg_d'
-    uci_set 'network.vpn' interface;    uci_set 'network.vpn.proto' pptp
-    uci_set 'network.old_vpn' interface; uci_set 'network.old_vpn.proto' static;  uci_set 'network.old_vpn.ifname' 'wg_i'
+    heal_net
     if [ -n "${1:-}" ]; then
         uci_set 'firewall.@zone[2]' zone; uci_set 'firewall.@zone[2].name' steer_iface
-        uci_set 'firewall.@zone[2].device' 'warp wg_r wg_o wg_n awg0 wgp1 wgp2'; uci_set 'firewall.@zone[2].masq6' 1
+        uci_set 'firewall.@zone[2].device' 'warp wgv4 wgcfg wgdown ghost wgpfx wgll wg_r wg_o wg_n amn amn4 amn_def wgp1 wgp2'
+        uci_set 'firewall.@zone[2].masq6' 1
     fi
 }
 heal_spec; heal_zones
 cp "$T/etc/spec.json" "$T/spec.before"
-out="$(rpcd apply)"
+out="$(heal_apply apply)"
 check "heal: apply прошёл" "true" "$(printf '%s' "$out" | jget ok)"
-check "heal: выход без ключа в нашей зоне получил nat" "nat" "$(v6of warp)"
-check "heal: awg без ключа — тоже" "nat" "$(v6of amn)"
+# Текст ответа apply — со строками, как его прочтёт человек: в JSON ответа перевод строки
+# экранирован, и построчный поиск по самому JSON видел бы одну длинную строку.
+txt="$(printf '%s' "$out" | jget output)"
+# --- адрес есть -> nat ---
+check "heal: адрес IPv6 у живого устройства (ULA) — nat" "nat" "$(v6of warp)"
+check "heal: адрес только в настройке интерфейса, устройства сейчас нет — nat" "nat" "$(v6of wgcfg)"
+check "heal: awg — адрес в файле настройки из спеки — nat" "nat" "$(v6of amn)"
+check "heal: awg без conf в спеке — адрес в файле по умолчанию — nat" "nat" "$(v6of amn_def)"
+# --- адреса нет -> off ---
+check "heal: туннель только с IPv4 — off, а не nat" "off" "$(v6of wgv4)"
+check "heal: интерфейс опущен, в настройке только IPv4 — off" "off" "$(v6of wgdown)"
+check "heal: у устройства лишь link-local — адресом выхода не считается — off" "off" "$(v6of ll)"
+check "heal: awg, где IPv6 только в закомментированной строке, — off" "off" "$(v6of amn4)"
+# --- решать не нам ---
+check "heal: у интерфейса задан ip6prefix — человек раздаёт префикс, ключ не пишется" "-" "$(v6of pfx)"
+check "heal: устройства нет нигде — ничего не известно, ключ не пишется" "-" "$(v6of ghost)"
+# --- явное остаётся ---
 check "heal: явный routed не тронут" "routed" "$(v6of keep_routed)"
 check "heal: явный off не тронут" "off" "$(v6of keep_off)"
-check "heal: явный nat на месте" "nat" "$(v6of keep_nat)"
-check "heal: устройство в чужой зоне не тронуто" "-" "$(v6of foreign)"
-check "heal: в чужой зоне (list network, имя = имя интерфейса) — тоже не тронуто" "-" "$(v6of foreign_n)"
-check "heal: в чужой зоне (list network, опция device) — тоже" "-" "$(v6of foreign_d)"
-check "heal: в чужой зоне (list network, прежняя опция ifname) — тоже" "-" "$(v6of foreign_i)"
-check "heal: в чужой зоне (list network, имя выводит netifd) — тоже" "-" "$(v6of foreign_u)"
+check "heal: явный nat не тронут (даже у устройства без IPv6 — выбор человека)" "nat" "$(v6of keep_nat)"
+# --- чужие зоны: и device, и network ---
+check "heal: устройство в чужой зоне (list device) не тронуто" "-" "$(v6of foreign)"
+check "heal: устройство в чужой зоне (list network, имя = имя интерфейса) не тронуто" "-" "$(v6of foreign_n)"
+check "heal: устройство в чужой зоне (list network, опция device) не тронуто" "-" "$(v6of foreign_d)"
+check "heal: устройство в чужой зоне (list network, прежняя опция ifname) не тронуто" "-" "$(v6of foreign_i)"
+check "heal: устройство в чужой зоне (list network, имя выводит netifd) не тронуто" "-" "$(v6of foreign_u)"
 check "heal: чужие устройства в нашу зону не добавлены" "" "$(in_zone steer_iface wg_f wgnet wg_d wg_i pptp-vpn)"
 check "heal: и не записаны за нами" "0" "$(grep -c 'dev steer_iface \(wg_f\|wgnet\|wg_d\|wg_i\|pptp-vpn\)$' "$T/etc/fw-owned" 2>/dev/null)"
 check "heal: об оставленных чужих устройствах сказано в ответе apply" "yes" \
-      "$(printf '%s' "$out" | jget output | grep 'уже в своих зонах' | grep -qw 'wgnet' && echo yes || echo no)"
-check "heal: члены пула — оба" "nat nat" "$(v6of pm.a) $(v6of pm.b)"
+      "$(line_has "$txt" 'уже в своих зонах' wg_f wgnet wg_d wg_i pptp-vpn)"
+check "heal: свои устройства в нашей зоне на месте" "warp wgv4 wgcfg wgdown ghost wgpfx wgll wg_r amn amn4 amn_def wgp1 wgp2" \
+      "$(in_zone steer_iface warp wgv4 wgcfg wgdown ghost wgpfx wgll wg_r amn amn4 amn_def wgp1 wgp2)"
+# --- пул: ключ у каждого члена по его устройству ---
+check "heal: члены пула — по устройству каждого" "nat off" "$(v6of pm.a) $(v6of pm.b)"
 check "heal: группа и туннель без изменений" "- -" "$(v6of pm) $(v6of tun)"
 check "heal: obfs.ipv6 внутри туннеля не принят за ключ выхода" "-" "$(v6of tun)"
 check "heal: файл остался JSON" "yes" "$(python3 -c 'import json,sys; json.load(open(sys.argv[1])); print("yes")' "$T/etc/spec.json" 2>/dev/null || echo no)"
 check "heal: кроме вставок, ни один байт не изменился" "yes" \
-      "$(sed 's/"ipv6":"nat",//g' "$T/etc/spec.json" > "$T/spec.stripped"; sed 's/"ipv6":"nat",//g' "$T/spec.before" | cmp -s - "$T/spec.stripped" && echo yes || echo no)"
-check "heal: об исправлении сказано в ответе apply" "yes" \
-      "$(printf '%s' "$out" | grep -q 'ipv6: nat' && echo yes || echo no)"
-check "heal: apply применил уже исправленную спеку (снимок содержит ключ)" "nat" \
-      "$(python3 -c 'import json,sys; print(json.load(open(sys.argv[1]))["outputs"]["warp"].get("ipv6","-"))' "$T/etc/spec.applied.json")"
+      "$(sed -E 's/"ipv6":"(nat|off)",//g' "$T/etc/spec.json" > "$T/spec.stripped"; sed -E 's/"ipv6":"(nat|off)",//g' "$T/spec.before" | cmp -s - "$T/spec.stripped" && echo yes || echo no)"
+# --- ответ apply: какой ключ и каким выходам ---
+check "heal: ответ apply называет nat и его выходы" "yes" \
+      "$(line_has "$txt" 'записан ipv6: nat' warp wgcfg amn amn_def pm.a)"
+check "heal: и в строке nat нет выходов, которым записан off" "nonono" \
+      "$(line_has "$txt" 'записан ipv6: nat' wgv4)$(line_has "$txt" 'записан ipv6: nat' pm.b)$(line_has "$txt" 'записан ipv6: nat' ll)"
+check "heal: ответ apply называет off и его выходы" "yes" \
+      "$(line_has "$txt" 'записан ipv6: off' wgv4 wgdown ll amn4 pm.b)"
+check "heal: apply применил уже исправленную спеку (снимок содержит ключи)" "nat off" \
+      "$(python3 -c 'import json,sys; o=json.load(open(sys.argv[1]))["outputs"]; print(o["warp"].get("ipv6","-"), o["wgv4"].get("ipv6","-"))' "$T/etc/spec.applied.json")"
 sum1="$(cksum < "$T/etc/spec.json")"
-out="$(rpcd apply)"
+out="$(heal_apply apply)"
 check "heal: второй apply спеку не меняет (идемпотентно)" "$sum1" "$(cksum < "$T/etc/spec.json")"
-check "heal: и не сообщает о правке" "no" "$(printf '%s' "$out" | grep -q 'записан ipv6: nat' && echo yes || echo no)"
+check "heal: и не сообщает о правке" "no" "$(printf '%s' "$out" | jget output | grep -q 'записан ipv6' && echo yes || echo no)"
+check "heal: чужие устройства и после второго apply вне нашей зоны" "" "$(in_zone steer_iface wg_f wgnet wg_d wg_i pptp-vpn)"
 # masq6 у зоны уже включён — жалобы нет, спеку не трогаем.
 heal_spec; heal_zones 1
-out="$(rpcd apply)"
+out="$(heal_apply apply)"
 check "heal: у зоны masq6=1 — выход без ключа остаётся без ключа" "-" "$(v6of warp)"
+check "heal: и туннель без IPv6 тоже" "-" "$(v6of wgv4)"
 check "heal: и пул тоже" "- -" "$(v6of pm.a) $(v6of pm.b)"
 # Метод для установки: лечит спеку, а применённую заново применяет; неприменявшуюся не применяет.
 heal_spec; heal_zones
 rm -f "$T/etc/spec.applied.json"; : > "$T/steer.log"
-out="$(rpcd spec_heal)"
+out="$(heal_apply spec_heal)"
 check "spec_heal: без снимка — в зоне ещё пусто, лечить нечего" "false" "$(printf '%s' "$out" | jget healed)"
-rpcd apply >/dev/null
+heal_apply apply >/dev/null
 heal_spec
 : > "$T/steer.log"
-out="$(rpcd spec_heal)"
+out="$(heal_apply spec_heal)"
 check "spec_heal: спека вылечена, ответ — ok и healed" "true;true" "$(printf '%s' "$out" | jget ok);$(printf '%s' "$out" | jget healed)"
-check "spec_heal: названы вылеченные выходы" "yes" \
-      "$(printf '%s' "$out" | jget outputs | grep -q 'warp' && echo yes || echo no)"
+check "spec_heal: названы вылеченные выходы и режим каждого" "yes;yes;yes" \
+      "$(printf '%s' "$out" | jget nat | grep -q 'warp' && echo yes || echo no);$(printf '%s' "$out" | jget off | grep -q 'wgv4' && echo yes || echo no);$(printf '%s' "$out" | jget outputs | grep -q 'warp.*wgv4' && echo yes || echo no)"
+check "spec_heal: nat — только выходы с адресом, off — только без" "yes" \
+      "$(printf '%s' "$out" | jget nat | grep -q 'wgv4' && echo no || echo yes)"
 check "spec_heal: изменённую применявшуюся спеку применили" "yes" \
       "$(grep -q '^apply' "$T/steer.log" && echo yes || echo no)"
 : > "$T/steer.log"
-out="$(rpcd spec_heal)"
+out="$(heal_apply spec_heal)"
 check "spec_heal: повторно — healed=false, apply не зовётся" "false;no" \
       "$(printf '%s' "$out" | jget healed);$(grep -q '^apply --spec' "$T/steer.log" && echo yes || echo no)"
 # Спека v1 и spec.yaml рядом — не трогаем.
 heal_zones; printf '%s\n' '{"schema":1,"outputs":{"warp":{"kind":"interface","device":"warp"}},"channels":[]}' > "$T/etc/spec.json"
-rpcd apply >/dev/null
+heal_apply apply >/dev/null
 check "heal: спека v1 не правится (ключ ей неизвестен)" "-" "$(v6of warp)"
+# Перечень устройств для выхода: панель получает ту же подсказку, что пишет самолечение, и пишет
+# её новому выходу сама — так спека в памяти страницы и на диске не расходится с лечением при
+# apply (иначе первая же правка после apply стирала бы вылеченный ключ).
+rm -rf "$T/outnet-v6"; mkdir -p "$T/outnet-v6"
+for _d in wgA wgB wgC wgD; do
+    mkdir -p "$T/outnet-v6/$_d"
+    printf '65534\n' > "$T/outnet-v6/$_d/type"; printf 'up\n' > "$T/outnet-v6/$_d/operstate"
+    printf 'DEVTYPE=wireguard\n' > "$T/outnet-v6/$_d/uevent"
+done
+printf '%s\n' '5: wgA    inet6 fd00::7/128 scope global \       valid_lft forever preferred_lft forever' > "$T/ip6.txt"
+rm -f "$T/uci.store"; : > "$T/uci.store"
+uci_set 'network.wgB' interface; uci_set 'network.wgB.proto' wireguard; uci_set 'network.wgB.addresses' '10.1.0.2/24'
+uci_set 'network.wgC' interface; uci_set 'network.wgC.proto' wireguard; uci_set 'network.wgC.addresses' '10.2.0.2/24'
+uci_set 'network.wgC.ip6prefix' '2001:db8:2::/56'
+heal_spec
+out="$(OUT_SYSNET_FIXTURE="$T/outnet-v6" rpcd devices)"
+d6of() {  # УСТРОЙСТВО < JSON -> значение ipv6 у устройства ('-' — поля нет)
+    python3 -c 'import json,sys
+for d in json.load(sys.stdin)["devices"]:
+    if d["name"] == sys.argv[1]:
+        print(d.get("ipv6", "-")); break
+else: print("НЕТ УСТРОЙСТВА")' "$1"
+}
+check "devices: у устройства с живым адресом IPv6 подсказка nat" "nat" "$(printf '%s' "$out" | d6of wgA)"
+check "devices: у туннеля с одним IPv4 подсказка off" "off" "$(printf '%s' "$out" | d6of wgB)"
+check "devices: при ip6prefix подсказки нет — решать человеку" "-" "$(printf '%s' "$out" | d6of wgC)"
+check "devices: устройство есть, а адреса нет нигде — off" "off" "$(printf '%s' "$out" | d6of wgD)"
+check "devices: устройству, которое поднимает ядро, подсказка не нужна" "-" "$(printf '%s' "$out" | d6of tun)"
 # Клиенты: интерфейс WireGuard (устройство называется как интерфейс) в зоне человека списком
 # network — не беззонный, своей зоны клиентов ему не заводим; нужен только проброс из его зоны.
-rm -f "$T/uci.store" "$T/etc/fw-owned" "$T/ubus-net.json"; : > "$T/uci.store"
+rm -f "$T/uci.store" "$T/etc/fw-owned" "$T/ip6.txt" "$T/ubus-net.json"; : > "$T/uci.store"
 uci_set 'firewall.@zone[0]' zone;  uci_set 'firewall.@zone[0].name' lan; uci_set 'firewall.@zone[0].device' 'br-lan'
 uci_set 'firewall.@zone[1]' zone;  uci_set 'firewall.@zone[1].name' wan; uci_set 'firewall.@zone[1].device' 'eth1'
 uci_set 'firewall.vpnsrv' zone;    uci_set 'firewall.vpnsrv.name' vpnsrv; uci_set 'firewall.vpnsrv.network' 'wg_srv'
@@ -4598,6 +4723,7 @@ printf '%s\n' '{"version":2,"lan":{"devices":["br-lan","wg_srv"]},"outputs":{"di
 out="$(rpcd apply)"
 check "клиент — интерфейс WireGuard в чужой зоне через network: зоны клиентов не заводим" "" "$(zone_id_by_name steer_clients)"
 check "и ему хватает проброса из его зоны" "lan vpnsrv" "$(fwd_srcs steer_iface)"
+rm -rf "$T/outnet-heal" "$T/outnet-v6" "$T/etc/awg" "$T/etc/amn.conf" "$T/etc/amn4.conf"
 rm -f "$T/uci.store" "$T/etc/fw-owned"; : > "$T/uci.store"
 printf '{"schema":1,"outputs":{},"channels":[]}\n' > "$T/etc/spec.json"
 

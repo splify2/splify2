@@ -439,14 +439,23 @@ fw_sync() {
     fi
 }
 
-# САМОЛЕЧЕНИЕ: выход-интерфейс без ключа `ipv6` в нашей зоне без masq6 получает `ipv6: nat`.
+# САМОЛЕЧЕНИЕ: выходу-интерфейсу без ключа `ipv6` в нашей зоне без masq6 записывается `ipv6: nat`
+# или `ipv6: off` — смотря по тому, есть ли у его устройства адрес IPv6.
 #
 # ЗАЧЕМ. Зона steer_iface заводится с masq (IPv4), а masq6 в ней нет, и ядро steer (diag,
 # output_nat6) пишет про такой выход «нет masquerade IPv6 — включите masq6 у зоны выхода»:
 # человек добавил WARP, а панель жалуется на интерфейс, который создала сама. Подмену IPv6
 # на устройство ставит само ядро по ключу `ipv6: nat` (у пира WARP один адрес, клиенты на ULA),
-# и панель теперь пишет его новым выходам. Эта функция лечит остальные: выходы, записанные
-# прежней панелью, восстановленные из архива или заведённые руками без ключа.
+# и панель пишет его новым выходам. Эта функция лечит остальные: выходы, записанные прежней
+# панелью, восстановленные из архива или заведённые руками без ключа.
+#
+# `nat` ТОЛЬКО ТАМ, ГДЕ У УСТРОЙСТВА ЕСТЬ АДРЕС IPv6. У туннеля с одним IPv4 подменять нечем, и
+# ядро на выход с `nat` отвечает отказом («у X нет адреса IPv6»), а не жёлтой строкой: у LAN почти
+# всегда есть ULA, и «Есть поломки» получил бы каждый такой туннель. Для него пишется `off` —
+# выход IPv6 не несёт, клиенты идут по IPv4. Кто решает, — v6_mode_of_dev (common.sh): адрес
+# живой либо записанный в настройке интерфейса (у выхода awg — в файле настройки, устройства до
+# apply ещё нет); не решает он там, где у интерфейса задан ip6prefix (раздача префикса туннеля —
+# дело человека, ключ ему не пишется) и где устройства нет вовсе.
 #
 # ЧТО ТРОГАЕМ, СТРОГО:
 #   - только выходы kind interface и awg (остальным виды подмену IPv6 не нужны или делают сами);
@@ -461,11 +470,13 @@ fw_sync() {
 # КАК ПРАВИТСЯ ФАЙЛ. Полным разбором и записью jshn спеку не переписать: он теряет порядок
 # ключей и числа с плавающей точкой, а человек читает этот файл глазами. Поэтому вставка
 # текстом: awk идёт по JSON со счётом глубины и строк и после `{` объекта подходящего выхода
-# ставит `"ipv6":"nat",` — больше ни один байт не меняется. Результат до замены проверяет
-# компилятор (engine_check), замена — mv рядом с целевым (атомарно, как в spec_set).
-# Идемпотентна: после правки у выхода ключ есть. Печатает имена вылеченных выходов; код 0 —
-# спека изменена, 1 — менять нечего.
-spec_heal_nat6() {
+# ставит `"ipv6":"nat",` или `"ipv6":"off",` — больше ни один байт не меняется. Проходов два
+# (одна и та же программа, режимы scan и apply): первый называет выходы-кандидаты, оболочка
+# решает по каждому, второй вставляет решённое. Результат до замены проверяет компилятор
+# (engine_check), замена — mv рядом с целевым (атомарно, как в spec_set).
+# Идемпотентна: после правки у выхода ключ есть. Печатает по строке «РЕЖИМ ВЫХОД» на каждый
+# записанный ключ; код 0 — спека изменена, 1 — менять нечего.
+spec_heal_ipv6() {
     [ -s "$SPEC" ] || return 1
     [ -s "${SPEC%/*}/spec.yaml" ] && return 1
     grep -q '"schema"' "$SPEC" 2>/dev/null && return 1
@@ -478,9 +489,7 @@ spec_heal_nat6() {
         _sh_devs="$_sh_devs $_sh_d"
     done
     [ -n "$_sh_devs" ] || return 1
-    _sh_tmp="$SPEC.new.$$"
-    _sh_names="$_sh_tmp.names"
-    awk -v devs="$_sh_devs" -v namesf="$_sh_names" '
+    _sh_awk='
     # Вся спека в одну строку-накопитель: разбор по символам, а не по строкам, потому что
     # выход может лежать и в одной строке с соседями, и растянуться на много.
     { s = s $0 "\n" }
@@ -518,11 +527,11 @@ spec_heal_nat6() {
                     else if (depth == 2 && inouts) { cur = tok; wantobj = 1 }
                     else if (depth == 3 && inobj) {
                         if (tok == "ipv6") has = 1
-                        else if (tok == "kind" || tok == "device") {
+                        else if (tok == "kind" || tok == "device" || tok == "conf") {
                             v = skip_ws(k + 1)
                             if (substr(s, v, 1) == "\"") {
                                 e = str_end(v)
-                                if (tok == "kind") kind = STR; else dev = STR
+                                if (tok == "kind") kind = STR; else if (tok == "device") dev = STR; else conf = STR
                             }
                         }
                     }
@@ -533,7 +542,7 @@ spec_heal_nat6() {
                 depth++
                 if (c == "{" && depth == 2 && wantout) { inouts = 1; wantout = 0 }
                 else if (c == "{" && depth == 3 && inouts && wantobj) {
-                    inobj = 1; wantobj = 0; objpos = i; has = 0; kind = ""; dev = ""
+                    inobj = 1; wantobj = 0; objpos = i; has = 0; kind = ""; dev = ""; conf = ""
                 }
                 i++; continue
             }
@@ -543,7 +552,9 @@ spec_heal_nat6() {
                     if ((kind == "interface" || kind == "awg") && !has) {
                         d = (dev != "") ? dev : cur
                         if (index(" " devs " ", " " d " ")) {
-                            ins_n++; pos[ins_n] = objpos; nm[ins_n] = cur
+                            if (mode == "scan") print cur "|" kind "|" d "|" conf
+                            else if (index(" " nat " ", " " cur " ")) { ins_n++; pos[ins_n] = objpos; nm[ins_n] = cur; md[ins_n] = "nat" }
+                            else if (index(" " off " ", " " cur " ")) { ins_n++; pos[ins_n] = objpos; nm[ins_n] = cur; md[ins_n] = "off" }
                         }
                     }
                 }
@@ -552,15 +563,37 @@ spec_heal_nat6() {
             }
             i++
         }
+        if (mode == "scan") exit 0
         if (!ins_n) exit 1
         out = ""; last = 1
         for (q = 1; q <= ins_n; q++) {
-            out = out substr(s, last, pos[q] - last + 1) "\"ipv6\":\"nat\","
+            out = out substr(s, last, pos[q] - last + 1) "\"ipv6\":\"" md[q] "\","
             last = pos[q] + 1
-            print nm[q] > namesf
+            print md[q], nm[q] > namesf
         }
         printf "%s%s", out, substr(s, last)
-    }' "$SPEC" > "$_sh_tmp" 2>/dev/null || { rm -f "$_sh_tmp" "$_sh_names"; return 1; }
+    }'
+    # Первый проход: выходы-кандидаты — «имя|вид|устройство|файл настройки».
+    _sh_cand="$(awk -v mode=scan -v devs="$_sh_devs" "$_sh_awk" "$SPEC" 2>/dev/null)"
+    [ -n "$_sh_cand" ] || return 1
+    _sh_tbl="$(net_v6_table)"
+    _sh_nat=""; _sh_off=""
+    while IFS='|' read -r _sh_n _sh_k _sh_dv _sh_cf; do
+        [ -n "$_sh_n" ] || continue
+        # Выход awg: файл — из спеки, а без него умолчание ядра `<каталог ядра>/awg/<имя>.conf`.
+        [ "$_sh_k" = awg ] && _sh_cf="${_sh_cf:-${SPEC%/*}/awg/$_sh_n.conf}" || _sh_cf=""
+        case "$(v6_mode_of_dev "$_sh_tbl" "$_sh_dv" "$_sh_cf")" in
+            nat) _sh_nat="$_sh_nat $_sh_n" ;;
+            off) _sh_off="$_sh_off $_sh_n" ;;
+        esac
+    done <<EOF
+$_sh_cand
+EOF
+    [ -n "$_sh_nat$_sh_off" ] || return 1
+    _sh_tmp="$SPEC.new.$$"
+    _sh_names="$_sh_tmp.names"
+    awk -v mode=apply -v devs="$_sh_devs" -v nat="$_sh_nat" -v off="$_sh_off" -v namesf="$_sh_names" \
+        "$_sh_awk" "$SPEC" > "$_sh_tmp" 2>/dev/null || { rm -f "$_sh_tmp" "$_sh_names"; return 1; }
     # Компилятор — судья и здесь: не принял — спека остаётся прежней, жалоба диагностики
     # остаётся жалобой, а не превращается в отказ загрузки.
     if ! engine_check "$_sh_tmp" >/dev/null 2>&1; then
@@ -570,6 +603,23 @@ spec_heal_nat6() {
     mv "$_sh_tmp" "$SPEC" || { rm -f "$_sh_tmp" "$_sh_names"; return 1; }
     cat "$_sh_names" 2>/dev/null
     rm -f "$_sh_names"
+    return 0
+}
+
+# Имена выходов с этим режимом из вывода spec_heal_ipv6, через пробел.
+heal_names() {  # РЕЖИМ ВЫВОД
+    printf '%s\n' "$2" | sed -n "s/^$1 //p" | tr '\n' ' ' | sed 's/ $//'
+}
+
+# Что записало самолечение — строками для ответа apply: КАКОЙ ключ и КАКИМ выходам. Два режима —
+# две строки, каждая только если есть выходы: «что-то подправлено» человеку ничего не говорит.
+heal_report() {  # ВЫВОД spec_heal_ipv6
+    _hr_n="$(heal_names nat "$1")"
+    [ -n "$_hr_n" ] &&
+        printf 'splify2: выходам без ключа ipv6 записан ipv6: nat (у туннеля есть адрес IPv6): %s\n' "$_hr_n"
+    _hr_f="$(heal_names off "$1")"
+    [ -n "$_hr_f" ] &&
+        printf 'splify2: выходам без ключа ipv6 записан ipv6: off (у туннеля нет адреса IPv6, клиенты идут по IPv4): %s\n' "$_hr_f"
     return 0
 }
 
@@ -641,12 +691,13 @@ case "$2" in
         # спрашивается один раз и здесь, до подоболочек fw_sync и лечения (net_dump_load).
         net_dump_load
         zone_msg="$(fw_sync 2>&1)"
-        # Самолечение выходов без ipv6 (spec_heal_nat6, шапка там же): после fw_sync, потому что
+        # Самолечение выходов без ipv6 (spec_heal_ipv6, шапка там же): после fw_sync, потому что
         # устройство попадает в нашу зону именно им, и до `steer apply`, чтобы тот же apply
-        # довёл правку до ядра — отдельной перезагрузки не нужно.
-        if heal_out="$(spec_heal_nat6)"; then
+        # довёл правку до ядра — отдельной перезагрузки не нужно. В ответ apply — что записано и
+        # каким выходам (heal_report).
+        if heal_out="$(spec_heal_ipv6)"; then
             zone_msg="${zone_msg:+$zone_msg
-}splify2: выходам без ключа ipv6 записан ipv6: nat (подмена IPv6 для туннеля): $(printf '%s' "$heal_out" | tr '\n' ' ')"
+}$(heal_report "$heal_out")"
         fi
         # То же доскачивание, что и при сохранении: спеку могли положить на диск в обход
         # интерфейса (splify2 spec_set — не единственный способ), да и файл мог быть удалён
@@ -689,14 +740,14 @@ $out"
 
     spec_heal)
         # Вызов из установки и обновления пакета (uci-defaults) и для рук: вылечить спеку
-        # (spec_heal_nat6) и, только если она изменилась И уже применялась, применить так же, как
+        # (spec_heal_ipv6) и, только если она изменилась И уже применялась, применить так же, как
         # применяет интерфейс. Спеку, которую ни разу не применяли, не применяем: включать
         # маршрутизацию без ведома человека — не наше дело. Сначала зоны (fw_sync в apply), а
         # лечение смотрит на зону, поэтому устройства в нашу зону доводит сам apply, а здесь
         # лечатся только те, что в ней уже стоят.
         box_busy && fail "ядро занято: $BOX_BY"
         net_dump_load
-        if heal_out="$(spec_heal_nat6)"; then
+        if heal_out="$(spec_heal_ipv6)"; then
             healed=1
             if [ -s "$APPLIED" ]; then
                 "$0" call apply </dev/null >/dev/null 2>&1
@@ -705,7 +756,9 @@ $out"
             healed=0
         fi
         json_init; json_add_boolean ok 1; json_add_boolean healed "$healed"
-        json_add_string outputs "$(printf '%s' "${heal_out:-}" | tr '\n' ' ')"
+        json_add_string outputs "$(printf '%s\n' "${heal_out:-}" | sed -n 's/^[a-z]* //p' | tr '\n' ' ' | sed 's/ $//')"
+        json_add_string nat "$(heal_names nat "${heal_out:-}")"
+        json_add_string off "$(heal_names off "${heal_out:-}")"
         json_dump
         ;;
 

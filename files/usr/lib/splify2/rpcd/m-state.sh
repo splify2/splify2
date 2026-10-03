@@ -204,6 +204,10 @@ case "$2" in
         json_init
         json_add_array devices
         _dev_seen=" "
+        # Что панель напишет в ключ `ipv6` новому выходу на этом устройстве (nat — у устройства
+        # есть адрес IPv6, off — нет; поля нет — решать не нам). Решение то же, что у самолечения
+        # спеки при apply (v6_mode_of_dev, common.sh), и таблица одна на весь ответ.
+        _v6t="$(net_v6_table)"
         # Файлы /sys читаются ВСТРОЕННЫМ read, а имя берётся подстановкой параметра.
         # Было четыре запуска процессов на устройство (basename и три cat, у одного из них
         # ещё sed с head в конвейере), устройств на типовой коробке десять — сорок с лишним
@@ -234,6 +238,8 @@ case "$2" in
             json_add_string name "$n"
             json_add_boolean up "$([ "$_op" = down ] && echo 0 || echo 1)"
             json_add_string kind "$_kind"
+            _v6m="$(v6_mode_of_dev "$_v6t" "$n")"
+            [ -n "$_v6m" ] && json_add_string ipv6 "$_v6m"
             json_close_object
         done
         # Устройства выходов, которые поднимает САМ ДВИЖОК (vless, hysteria2, прокси steer-proxy,
