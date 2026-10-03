@@ -69,12 +69,22 @@ fi
 if [ -z "$(uci -q get splify2.main.manifest_url 2>/dev/null)" ]; then
     rm -f /etc/splify2/manifest.json
 fi
-# Ключи прежнего отчёта о работе. Остались согласие (`telemetry`) и идентификатор
+# Ключи прежнего отчёта о работе (до 26.10): адрес и ключ панели, отметка и причина отказа,
+# адрес сервиса города (`geo_city_url`). Остались согласие (`telemetry`) и идентификатор
 # (`telemetry_id`) — их читает отклик для счётчика на сайте (splify2-ping).
+#
+# И его файлы в /var: город и номер сети провайдера, счётчики отвалов, признак
+# загрузки, отметки внеплановых отправок и падений, недоотправленный пакет. Это память, а не
+# флеш, но лежать им до перезагрузки незачем, а город провайдера после «отчёт убран» — тем более.
+# `SPLIFY2_TEST_ROOT` — корень для стенда (tests/telemetrymatch.sh); на роутере пуст.
 _old=""
-for _k in telemetry_url telemetry_key telemetry_at telemetry_error; do
+for _k in telemetry_url telemetry_key telemetry_at telemetry_error geo_city_url; do
     uci -q get "splify2.main.$_k" >/dev/null 2>&1 && { uci -q delete "splify2.main.$_k"; _old=1; }
 done
+_r="${SPLIFY2_TEST_ROOT:-}"
+rm -f "$_r/var/lib/splify2/net" "$_r/var/run/splify2-boot-id" "$_r/var/run/splify2-events" \
+      "$_r/var/run/splify2-crash" "$_r/var/run/splify2-telemetry-now" "$_r"/tmp/splify2-telemetry.* \
+      2>/dev/null
 [ -n "$_old" ] && uci -q commit splify2
 # ПУСТАЯ СПЕКА ПРИ УСТАНОВКЕ — иначе чистый роутер выглядит сломанным.
 #

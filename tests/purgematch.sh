@@ -253,6 +253,7 @@ splify2.main=splify2
 splify2.main.telemetry=0
 splify2.main.telemetry_id=sp-00112233445566778899aabbccddeeff
 splify2.main.ping_url=https://panel.example/api/ping
+splify2.main.telemetry_url=https://old-panel.example/api/report
 EOF
 
     # Расписка: обе зоны и обе устройства заведены нами. Постороннее устройство в первой
@@ -284,9 +285,12 @@ EOF
     } > "$T/etc/config/https-dns-proxy"
     # ДВЕ НАШИХ СТРОКИ, а не одна: отклик для счётчика на сайте живёт своим почасовым
     # заданием. Обе обязаны уйти — забытая строка зовёт каждый час команду, которой уже нет.
-    printf '%s\n%s\n%s\n' '0 3 * * * /usr/bin/чужое-обновление' \
+    # Третья — строка прежнего почасового отчёта (до 26.10): её снимает установка новой
+    # версии, но чистку зовут и на роутере, где обновления не было.
+    printf '%s\n%s\n%s\n%s\n' '0 3 * * * /usr/bin/чужое-обновление' \
         '17 5 * * * /usr/sbin/splify2-update-lists' \
-        '41 * * * * /usr/sbin/splify2-ping' > "$T/etc/crontabs/root"
+        '41 * * * * /usr/sbin/splify2-ping' \
+        '23 * * * * /usr/sbin/splify2-telemetry --scheduled' > "$T/etc/crontabs/root"
     : > "$T/var/run/splify2-vless-dirty"
     printf 'at=1757000000\nok=1757000000\nerr=\n' > "$T/var/run/splify2-ping"
     printf '%s\n%s\n%s\n%s\n' splify2_doh splify2_zm steer fw4 > "$T/nft.tables"
@@ -377,6 +381,8 @@ check "таблица маршрутов очищена" "" "$(cat "$T/ip.routes
 check "наша запись в crontab убрана" "0" "$(grep -c splify2-update-lists "$T/etc/crontabs/root")"
 check "строка отклика убрана тоже" "0" \
     "$(grep -c splify2-ping "$T/etc/crontabs/root")"
+check "строка прежнего отчёта убрана" "0" \
+    "$(grep -c splify2-telemetry "$T/etc/crontabs/root")"
 check "чужая запись в crontab осталась" "1" "$(grep -c 'чужое-обновление' "$T/etc/crontabs/root")"
 check "cron перезапущен" "1" "$(grep -c '^cron restart' "$T/initd.log")"
 check "срок вызова rpcd снят" "no" "$(has 'rpcd.@rpcd[0].timeout=120')"
@@ -451,6 +457,7 @@ setup
 run_purge --yes --keep-config
 check "с --keep-config идентификатор снят" "no" "$(has 'splify2.main.telemetry_id=sp-00112233445566778899aabbccddeeff')"
 check "с --keep-config адрес для стендов снят" "no" "$(has 'splify2.main.ping_url=https://panel.example/api/ping')"
+check "с --keep-config ключ прежнего отчёта снят" "no" "$(has 'splify2.main.telemetry_url=https://old-panel.example/api/report')"
 check "НО ОТКАЗ ЧЕЛОВЕКА ОСТАЛСЯ" "yes" "$(has 'splify2.main.telemetry=0')"
 check "и чужая настройка рядом не пострадала" "yes" "$(has 'zapret.config.run_on_boot=1')"
 check "отметка отклика удалена" "no" "$(exists "$T/var/run/splify2-ping")"

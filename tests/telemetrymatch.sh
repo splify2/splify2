@@ -277,12 +277,23 @@ check "ACL: предпросмотра нет" "0" "$(grep -c telemetry_preview 
 
 # ---- установка: прежние ключи отчёта убираются -----------------------------------------
 reset
-for _k in telemetry_url telemetry_key telemetry_at telemetry_error; do uset "splify2.main.$_k" x; done
+for _k in telemetry_url telemetry_key telemetry_at telemetry_error geo_city_url; do uset "splify2.main.$_k" x; done
 uset splify2.main.telemetry 0; uset splify2.main.telemetry_id "$ID"
+# Файлы прежнего отчёта в /var (26.9.x): город провайдера, счётчики, отметки, пакет в /tmp.
+R="$T/root"
+mkdir -p "$R/var/lib/splify2" "$R/var/run" "$R/tmp"
+OLD_FILES="var/lib/splify2/net var/run/splify2-boot-id var/run/splify2-events var/run/splify2-crash \
+var/run/splify2-telemetry-now tmp/splify2-telemetry.4242"
+for _f in $OLD_FILES; do echo x > "$R/$_f"; done
+# Соседи, которые живы и сейчас: замер внешнего адреса выхода и отметка отклика.
+echo x > "$R/var/lib/splify2/geo-wg0"; echo x > "$R/tmp/splify2-ping"
 sed -n '/^# Ключи прежнего отчёта/,/^\[ -n "\$_old" \]/p' files/etc/uci-defaults/99-splify2 > "$T/olds.sh"
 check "блок чистки прежних ключей найден в uci-defaults" "yes" "$([ -s "$T/olds.sh" ] && echo yes || echo no)"
-PATH="$T/bin:$PATH" sh "$T/olds.sh"
-check "прежние ключи сняты" "" "$(grep -E '^splify2.main.telemetry_(url|key|at|error)=' "$T/uci.db")"
+PATH="$T/bin:$PATH" SPLIFY2_TEST_ROOT="$R" sh "$T/olds.sh"
+check "прежние ключи сняты" "" "$(grep -E '^splify2.main.(telemetry_(url|key|at|error)|geo_city_url)=' "$T/uci.db")"
+for _f in $OLD_FILES; do check "прежний файл /$_f убран" "no" "$([ -e "$R/$_f" ] && echo yes || echo no)"; done
+check "замер внешнего адреса не тронут" "yes" "$([ -e "$R/var/lib/splify2/geo-wg0" ] && echo yes || echo no)"
+check "отметка отклика не тронута" "yes" "$([ -e "$R/tmp/splify2-ping" ] && echo yes || echo no)"
 check "согласие осталось" "0" "$(uget splify2.main.telemetry)"
 check "идентификатор остался" "$ID" "$(uget splify2.main.telemetry_id)"
 

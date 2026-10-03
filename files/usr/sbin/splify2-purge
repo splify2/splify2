@@ -40,13 +40,15 @@ UCI_SPLIFY2=${UCI_SPLIFY2:-/etc/config/splify2}
 DOH_CONF=${DOH_CONF:-/etc/config/https-dns-proxy}
 CRONTAB=${CRONTAB:-/etc/crontabs/root}
 # По этому образцу узнаются НАШИ записи в crontab — ровно те, что ставит скрипт установки
-# пакета: обновление списков, автообновление подписок и отклик для счётчика на сайте.
+# пакета: обновление списков, автообновление подписок и отклик для счётчика на сайте; и строка
+# прежнего почасового отчёта (splify2-telemetry, до 26.10) — её снимает установка новой версии,
+# но чистку зовут и там, где обновления не было.
 #
 # Образец — регулярное выражение (grep -E ниже), а не подстрока: два имени одним `grep -q` и
 # одним `grep -v` иначе не выбрать, а разводить их в два прохода значит завести второе место,
 # где перечислено, что здесь наше. Забытая строка — не мелочь: она зовёт каждый час команду,
 # которой на роутере уже нет.
-CRON_MARK=${CRON_MARK:-splify2-update-lists|splify2-ping|splify2-update-subs}
+CRON_MARK=${CRON_MARK:-splify2-update-lists|splify2-ping|splify2-update-subs|splify2-telemetry}
 CRON_INITD=${CRON_INITD:-/etc/init.d/cron}
 INITD=${INITD:-/etc/init.d/steer}
 FW_INITD=${FW_INITD:-/etc/init.d/firewall}
@@ -77,6 +79,7 @@ STATE_PATHS=${STATE_PATHS:-"/var/lib/splify2 /var/lib/steer /var/run/xsteer \
 /var/run/splify2-vless-dirty /var/run/splify2-obfs-dirty /var/run/splify2-zapret-dirty \
 /var/run/splify2-zapret-autoselect.progress /var/run/splify2-zapret-autoselect.pid \
 /tmp/splify2-ping \
+/var/run/splify2-boot-id /var/run/splify2-events /var/run/splify2-crash /var/run/splify2-telemetry-now \
 /var/lock/splify2-update.lock /var/lock/splify2-zapret-autoselect.lock"}
 
 DO=0     # 0 — только показать; 1 — делать
@@ -339,13 +342,13 @@ purge_doh_conf() {
 #
 # РАБОТАЕТ И ПРИ --keep-config: без него файл настройки уходит целиком и шаг ничего не
 # меняет, а с ним человек просил сохранить СВОИ настройки. Идентификатор и адрес для стендов
-# (`ping_url`) — наше состояние, а не его настройка.
+# (`ping_url`) — наше состояние, а не его настройка. Ключи прежнего отчёта (до 26.10) — тоже.
 #
 # СОГЛАСИЕ (`telemetry`) НЕ ТРОГАЕТСЯ: пустой ключ читается как «включено», и чистка, стерев
 # ноль, сама включила бы отклик человеку, который его выключил.
 purge_telemetry() {
     _tk=""
-    for _k in telemetry_id ping_url; do
+    for _k in telemetry_id ping_url telemetry_url telemetry_key telemetry_at telemetry_error geo_city_url; do
         [ -n "$(uci -q get "splify2.main.$_k" 2>/dev/null || true)" ] || continue
         _tk="$_tk $_k"
     done
