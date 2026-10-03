@@ -25,6 +25,8 @@ const NAME_RE = /^[A-Za-z0-9_.-]{1,31}$/
  * фильтров, Mullvad, DoT у malw.link, DoQ у остальных. «Geo» — сервер помогает с геоблоком: на
  * закрытые для России сервисы (chatgpt.com, gemini.google.com, claude.ai) отвечает адресом своего
  * прокси, а не настоящим. */
+const PRESET_TITLE = new Map(S.dns.presetTitles)
+
 const PRESETS: { name: string; up: Upstream }[] = [
     { name: 'cloudflare', up: { url: 'https://cloudflare-dns.com/dns-query', ips: ['1.1.1.1', '1.0.0.1'] } },
     { name: 'cloudflare-dot', up: { url: 'tls://cloudflare-dns.com', ips: ['1.1.1.1', '1.0.0.1'] } },
@@ -266,7 +268,7 @@ export default function Dns(_props: { live?: Live }) {
                         onChange={(e) => setPreset(e.currentTarget.value)}
                         className={`${inputCls} min-w-0 flex-1`}
                     >
-                        {PRESETS.map((p) => <option key={p.name} value={p.name}>{S.dns.presetTitle[p.name] ?? p.name}</option>)}
+                        {PRESETS.map((p) => <option key={p.name} value={p.name}>{PRESET_TITLE.get(p.name) ?? p.name}</option>)}
                     </select>
                     <Button onClick={addPreset}><Plus className="h-4 w-4" aria-hidden="true" /> {S.dns.dobavit2}</Button>
                     <Button variant="secondary" onClick={addCustom}>{S.dns.svoyAdres}</Button>

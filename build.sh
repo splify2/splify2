@@ -329,6 +329,15 @@ fi
 rm -f /tmp/luci-indexcache.* 2>/dev/null
 rm -rf /tmp/luci-modulecache/ 2>/dev/null
 /etc/init.d/rpcd reload 2>/dev/null
+# Перечитка (SIGHUP) снимает объекты обработчиков и регистрирует их заново вызовом `list`; если
+# в этот момент обработчик не ответил, объекта splify2 нет до следующего перезапуска rpcd, и
+# интерфейс видит «Object not found» на каждом вызове (поймано на роутере 2026-10-03). Поэтому
+# объект проверяется, и при его отсутствии rpcd перезапускается целиком.
+for _i in 1 2 3 4 5 6; do
+    ubus list splify2 >/dev/null 2>&1 && break
+    sleep 1
+done
+ubus list splify2 >/dev/null 2>&1 || /etc/init.d/rpcd restart 2>/dev/null
 
 # Набор опций обработчика протокола netifd читает ОДИН РАЗ, при своём запуске, и всё, чего в
 # наборе нет, молча отбрасывает из настройки интерфейса. Значит опция, приехавшая с новым
