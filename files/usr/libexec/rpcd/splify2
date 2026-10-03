@@ -500,6 +500,7 @@ list)
     json_add_object applied_get; json_close_object
     json_add_object spec_set; json_add_string spec; json_close_object
     json_add_object apply; json_close_object
+    json_add_object spec_heal; json_close_object
     json_add_object explain; json_add_string address; json_close_object
     json_add_object lists; json_close_object
     # kind объявлен обязательно, хотя реализация его читала и раньше: rpcd отсекает
@@ -649,7 +650,7 @@ call)
     # чтения чего бы то ни было.
     case "$2" in
         status|diag|dev_stats|net_info|devices|client_nets|leases|engine_state|outbound_geo|outbound_probe|explain|xsteer_state|vless_nodes|vless_probe|hysteria2_nodes|hysteria2_probe|proxy_nodes|proxy_probe|dns_log|conns|helper|support_report) _grp=state ;;
-        spec_set|apply|group_select) _grp=spec ;;
+        spec_set|apply|group_select|spec_heal) _grp=spec ;;
         lists|list_fetch|lists_update|list_put|list_remove|list_custom|list_get|local_lists|allow_domains|fetch_mode|fetch_mode_set|\
         lists_source|lists_source_set) _grp=lists ;;
         engine|engine_stop|engine_start|steer_versions|splify2_versions|splify2_install|steer_install|ui_get|ui_set|\

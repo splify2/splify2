@@ -4420,5 +4420,96 @@ check "строка зон purge та же, что у объекта rpcd" \
 rm -f "$T/uci.store" "$T/etc/fw-owned"; : > "$T/uci.store"
 printf '{"schema":1,"outputs":{},"channels":[]}\n' > "$T/etc/spec.json"
 
+# ---- самолечение: выход-интерфейс без ipv6 в нашей зоне получает ipv6: nat -------------------
+#
+# Обращение: «при добавлении выхода варпа s2 жалуется на созданный им самим интерфейс без
+# параметра IPv6 Masquerading». Зона steer_iface создаётся с masq (IPv4) без masq6, и ядро просит
+# включить masq6 — у зоны, которую завели мы. Подмену IPv6 ставит само ядро по `ipv6: nat`;
+# apply (spec_heal_nat6) дописывает ключ выходам, записанным прежней панелью, архивом или руками.
+# Трогается ТОЛЬКО то, что описано: без ключа, interface/awg, устройство в нашей зоне без masq6.
+v6of() {  # ВЫХОД -> значение ipv6 из spec.json ('-' если ключа нет)
+    python3 -c 'import json,sys
+o = json.load(open(sys.argv[1]))["outputs"].get(sys.argv[2], {})
+print(o.get("ipv6", "-"))' "$T/etc/spec.json" "$1"
+}
+heal_spec() {
+    printf '%s\n' '{"version":2,"outputs":{
+  "direct":{"kind":"direct"},
+  "warp":{"kind":"interface","device":"warp"},
+  "keep_routed":{"kind":"interface","device":"wg_r","ipv6":"routed"},
+  "keep_off":{"kind":"interface","device":"wg_o","ipv6":"off"},
+  "keep_nat":{"kind":"interface","device":"wg_n","ipv6":"nat"},
+  "foreign":{"kind":"interface","device":"wg_f"},
+  "amn":{"kind":"awg","conf":"/etc/amnezia.conf","device":"awg0"},
+  "pm.a":{"kind":"interface","device":"wgp1"},
+  "pm.b":{"kind":"interface","device":"wgp2"},
+  "pm":{"kind":"group","pick":"order","members":["pm.a","pm.b"]},
+  "tun":{"kind":"tunnel","protocol":"vless","subscription":"s","obfs":{"ipv6":"x"}}
+},"channels":[]}' > "$T/etc/spec.json"
+}
+heal_zones() {  # [masq6]
+    rm -f "$T/uci.store" "$T/etc/fw-owned"; : > "$T/uci.store"
+    uci_set 'firewall.@zone[0]' zone;  uci_set 'firewall.@zone[0].name' lan; uci_set 'firewall.@zone[0].device' 'br-lan'
+    uci_set 'firewall.@zone[1]' zone;  uci_set 'firewall.@zone[1].name' wan; uci_set 'firewall.@zone[1].device' 'eth1'
+    uci_set 'firewall.vpnz' zone;      uci_set 'firewall.vpnz.name' vpnz;    uci_set 'firewall.vpnz.device' 'wg_f'
+    if [ -n "${1:-}" ]; then
+        uci_set 'firewall.@zone[2]' zone; uci_set 'firewall.@zone[2].name' steer_iface
+        uci_set 'firewall.@zone[2].device' 'warp wg_r wg_o wg_n awg0 wgp1 wgp2'; uci_set 'firewall.@zone[2].masq6' 1
+    fi
+}
+heal_spec; heal_zones
+cp "$T/etc/spec.json" "$T/spec.before"
+out="$(rpcd apply)"
+check "heal: apply прошёл" "true" "$(printf '%s' "$out" | jget ok)"
+check "heal: выход без ключа в нашей зоне получил nat" "nat" "$(v6of warp)"
+check "heal: awg без ключа — тоже" "nat" "$(v6of amn)"
+check "heal: явный routed не тронут" "routed" "$(v6of keep_routed)"
+check "heal: явный off не тронут" "off" "$(v6of keep_off)"
+check "heal: явный nat на месте" "nat" "$(v6of keep_nat)"
+check "heal: устройство в чужой зоне не тронуто" "-" "$(v6of foreign)"
+check "heal: члены пула — оба" "nat nat" "$(v6of pm.a) $(v6of pm.b)"
+check "heal: группа и туннель без изменений" "- -" "$(v6of pm) $(v6of tun)"
+check "heal: obfs.ipv6 внутри туннеля не принят за ключ выхода" "-" "$(v6of tun)"
+check "heal: файл остался JSON" "yes" "$(python3 -c 'import json,sys; json.load(open(sys.argv[1])); print("yes")' "$T/etc/spec.json" 2>/dev/null || echo no)"
+check "heal: кроме вставок, ни один байт не изменился" "yes" \
+      "$(sed 's/"ipv6":"nat",//g' "$T/etc/spec.json" > "$T/spec.stripped"; sed 's/"ipv6":"nat",//g' "$T/spec.before" | cmp -s - "$T/spec.stripped" && echo yes || echo no)"
+check "heal: об исправлении сказано в ответе apply" "yes" \
+      "$(printf '%s' "$out" | grep -q 'ipv6: nat' && echo yes || echo no)"
+check "heal: apply применил уже исправленную спеку (снимок содержит ключ)" "nat" \
+      "$(python3 -c 'import json,sys; print(json.load(open(sys.argv[1]))["outputs"]["warp"].get("ipv6","-"))' "$T/etc/spec.applied.json")"
+sum1="$(cksum < "$T/etc/spec.json")"
+out="$(rpcd apply)"
+check "heal: второй apply спеку не меняет (идемпотентно)" "$sum1" "$(cksum < "$T/etc/spec.json")"
+check "heal: и не сообщает о правке" "no" "$(printf '%s' "$out" | grep -q 'записан ipv6: nat' && echo yes || echo no)"
+# masq6 у зоны уже включён — жалобы нет, спеку не трогаем.
+heal_spec; heal_zones 1
+out="$(rpcd apply)"
+check "heal: у зоны masq6=1 — выход без ключа остаётся без ключа" "-" "$(v6of warp)"
+check "heal: и пул тоже" "- -" "$(v6of pm.a) $(v6of pm.b)"
+# Метод для установки: лечит спеку, а применённую заново применяет; неприменявшуюся не применяет.
+heal_spec; heal_zones
+rm -f "$T/etc/spec.applied.json"; : > "$T/steer.log"
+out="$(rpcd spec_heal)"
+check "spec_heal: без снимка — в зоне ещё пусто, лечить нечего" "false" "$(printf '%s' "$out" | jget healed)"
+rpcd apply >/dev/null
+heal_spec
+: > "$T/steer.log"
+out="$(rpcd spec_heal)"
+check "spec_heal: спека вылечена, ответ — ok и healed" "true;true" "$(printf '%s' "$out" | jget ok);$(printf '%s' "$out" | jget healed)"
+check "spec_heal: названы вылеченные выходы" "yes" \
+      "$(printf '%s' "$out" | jget outputs | grep -q 'warp' && echo yes || echo no)"
+check "spec_heal: изменённую применявшуюся спеку применили" "yes" \
+      "$(grep -q '^apply' "$T/steer.log" && echo yes || echo no)"
+: > "$T/steer.log"
+out="$(rpcd spec_heal)"
+check "spec_heal: повторно — healed=false, apply не зовётся" "false;no" \
+      "$(printf '%s' "$out" | jget healed);$(grep -q '^apply --spec' "$T/steer.log" && echo yes || echo no)"
+# Спека v1 и spec.yaml рядом — не трогаем.
+heal_zones; printf '%s\n' '{"schema":1,"outputs":{"warp":{"kind":"interface","device":"warp"}},"channels":[]}' > "$T/etc/spec.json"
+rpcd apply >/dev/null
+check "heal: спека v1 не правится (ключ ей неизвестен)" "-" "$(v6of warp)"
+rm -f "$T/uci.store" "$T/etc/fw-owned"; : > "$T/uci.store"
+printf '{"schema":1,"outputs":{},"channels":[]}\n' > "$T/etc/spec.json"
+
 printf '\n%s\n' "$([ "$fails" -eq 0 ] && echo 'все проверки прошли' || echo "ЕСТЬ ПРОВАЛЫ: $fails")"
 [ "$fails" -eq 0 ]

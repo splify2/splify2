@@ -383,6 +383,139 @@ fw_sync() {
     fi
 }
 
+# САМОЛЕЧЕНИЕ: выход-интерфейс без ключа `ipv6` в нашей зоне без masq6 получает `ipv6: nat`.
+#
+# ЗАЧЕМ. Зона steer_iface заводится с masq (IPv4), а masq6 в ней нет, и ядро steer (diag,
+# output_nat6) пишет про такой выход «нет masquerade IPv6 — включите masq6 у зоны выхода»:
+# человек добавил WARP, а панель жалуется на интерфейс, который создала сама. Подмену IPv6
+# на устройство ставит само ядро по ключу `ipv6: nat` (у пира WARP один адрес, клиенты на ULA),
+# и панель теперь пишет его новым выходам. Эта функция лечит остальные: выходы, записанные
+# прежней панелью, восстановленные из архива или заведённые руками без ключа.
+#
+# ЧТО ТРОГАЕМ, СТРОГО:
+#   - только выходы kind interface и awg (остальным виды подмену IPv6 не нужны или делают сами);
+#   - только без ключа `ipv6` — явные routed / off / nat человека остаются как есть;
+#   - только если устройство лежит в зоне steer_iface, которую ведём мы, и у зоны нет masq6:
+#     устройство в чужой зоне — чужая настройка, а при masq6 у зоны жалобы и нет;
+#   - только спека v2 (v1 ключа не знает) и только когда рядом нет spec.yaml (его ведёт человек).
+# masq6 у зоны мы НЕ включаем: зона общая, и подмена всего её IPv6 сломала бы соседний выход с
+# `ipv6: routed` (diag тогда советует masq6 снять).
+#
+# КАК ПРАВИТСЯ ФАЙЛ. Полным разбором и записью jshn спеку не переписать: он теряет порядок
+# ключей и числа с плавающей точкой, а человек читает этот файл глазами. Поэтому вставка
+# текстом: awk идёт по JSON со счётом глубины и строк и после `{` объекта подходящего выхода
+# ставит `"ipv6":"nat",` — больше ни один байт не меняется. Результат до замены проверяет
+# компилятор (engine_check), замена — mv рядом с целевым (атомарно, как в spec_set).
+# Идемпотентна: после правки у выхода ключ есть. Печатает имена вылеченных выходов; код 0 —
+# спека изменена, 1 — менять нечего.
+spec_heal_nat6() {
+    [ -s "$SPEC" ] || return 1
+    [ -s "${SPEC%/*}/spec.yaml" ] && return 1
+    grep -q '"schema"' "$SPEC" 2>/dev/null && return 1
+    _sh_devs=""
+    for _sh_d in $(fw_devices_of interface,awg); do
+        _sh_z="$(fw_zone_of_device "$_sh_d")"
+        [ -n "$_sh_z" ] || continue
+        [ "$(uci -q get "firewall.$_sh_z.name" 2>/dev/null)" = steer_iface ] || continue
+        [ "$(uci -q get "firewall.$_sh_z.masq6" 2>/dev/null)" = 1 ] && continue
+        _sh_devs="$_sh_devs $_sh_d"
+    done
+    [ -n "$_sh_devs" ] || return 1
+    _sh_tmp="$SPEC.new.$$"
+    _sh_names="$_sh_tmp.names"
+    awk -v devs="$_sh_devs" -v namesf="$_sh_names" '
+    # Вся спека в одну строку-накопитель: разбор по символам, а не по строкам, потому что
+    # выход может лежать и в одной строке с соседями, и растянуться на много.
+    { s = s $0 "\n" }
+    # Строка JSON с позиции i (s[i] == кавычка): возвращает позицию закрывающей кавычки,
+    # само значение — в глобальной STR.
+    function str_end(i,   j, c, v) {
+        v = ""; j = i + 1
+        while (j <= n) {
+            c = substr(s, j, 1)
+            if (c == "\\") { v = v substr(s, j, 2); j += 2; continue }
+            if (c == "\"") break
+            v = v c; j++
+        }
+        STR = v
+        return j
+    }
+    function skip_ws(i,   c) {
+        while (i <= n) {
+            c = substr(s, i, 1)
+            if (c != " " && c != "\t" && c != "\n" && c != "\r") break
+            i++
+        }
+        return i
+    }
+    END {
+        n = length(s); depth = 0; inouts = 0; wantout = 0; wantobj = 0; inobj = 0; ins_n = 0
+        i = 1
+        while (i <= n) {
+            c = substr(s, i, 1)
+            if (c == "\"") {
+                j = str_end(i); tok = STR
+                k = skip_ws(j + 1)
+                if (substr(s, k, 1) == ":") {
+                    if (depth == 1 && tok == "outputs") wantout = 1
+                    else if (depth == 2 && inouts) { cur = tok; wantobj = 1 }
+                    else if (depth == 3 && inobj) {
+                        if (tok == "ipv6") has = 1
+                        else if (tok == "kind" || tok == "device") {
+                            v = skip_ws(k + 1)
+                            if (substr(s, v, 1) == "\"") {
+                                e = str_end(v)
+                                if (tok == "kind") kind = STR; else dev = STR
+                            }
+                        }
+                    }
+                }
+                i = j + 1; continue
+            }
+            if (c == "{" || c == "[") {
+                depth++
+                if (c == "{" && depth == 2 && wantout) { inouts = 1; wantout = 0 }
+                else if (c == "{" && depth == 3 && inouts && wantobj) {
+                    inobj = 1; wantobj = 0; objpos = i; has = 0; kind = ""; dev = ""
+                }
+                i++; continue
+            }
+            if (c == "}" || c == "]") {
+                if (depth == 3 && inobj) {
+                    inobj = 0
+                    if ((kind == "interface" || kind == "awg") && !has) {
+                        d = (dev != "") ? dev : cur
+                        if (index(" " devs " ", " " d " ")) {
+                            ins_n++; pos[ins_n] = objpos; nm[ins_n] = cur
+                        }
+                    }
+                }
+                else if (depth == 2 && inouts) inouts = 0
+                depth--; i++; continue
+            }
+            i++
+        }
+        if (!ins_n) exit 1
+        out = ""; last = 1
+        for (q = 1; q <= ins_n; q++) {
+            out = out substr(s, last, pos[q] - last + 1) "\"ipv6\":\"nat\","
+            last = pos[q] + 1
+            print nm[q] > namesf
+        }
+        printf "%s%s", out, substr(s, last)
+    }' "$SPEC" > "$_sh_tmp" 2>/dev/null || { rm -f "$_sh_tmp" "$_sh_names"; return 1; }
+    # Компилятор — судья и здесь: не принял — спека остаётся прежней, жалоба диагностики
+    # остаётся жалобой, а не превращается в отказ загрузки.
+    if ! engine_check "$_sh_tmp" >/dev/null 2>&1; then
+        rm -f "$_sh_tmp" "$_sh_names"
+        return 1
+    fi
+    mv "$_sh_tmp" "$SPEC" || { rm -f "$_sh_tmp" "$_sh_names"; return 1; }
+    cat "$_sh_names" 2>/dev/null
+    rm -f "$_sh_names"
+    return 0
+}
+
 case "$2" in
 
     spec_set)
@@ -449,6 +582,13 @@ case "$2" in
         # стороны — добавить появившееся и убрать ушедшее вместе с самой зоной, когда
         # туннельных выходов не осталось (см. fw_sync).
         zone_msg="$(fw_sync 2>&1)"
+        # Самолечение выходов без ipv6 (spec_heal_nat6, шапка там же): после fw_sync, потому что
+        # устройство попадает в нашу зону именно им, и до `steer apply`, чтобы тот же apply
+        # довёл правку до ядра — отдельной перезагрузки не нужно.
+        if heal_out="$(spec_heal_nat6)"; then
+            zone_msg="${zone_msg:+$zone_msg
+}splify2: выходам без ключа ipv6 записан ipv6: nat (подмена IPv6 для туннеля): $(printf '%s' "$heal_out" | tr '\n' ' ')"
+        fi
         # То же доскачивание, что и при сохранении: спеку могли положить на диск в обход
         # интерфейса (splify2 spec_set — не единственный способ), да и файл мог быть удалён
         # уборкой между сохранением и применением.
@@ -485,6 +625,27 @@ $out"
         json_init
         json_add_boolean ok $([ $rc -eq 0 ] && echo 1 || echo 0)
         json_add_string output "$out"
+        json_dump
+        ;;
+
+    spec_heal)
+        # Вызов из установки и обновления пакета (uci-defaults) и для рук: вылечить спеку
+        # (spec_heal_nat6) и, только если она изменилась И уже применялась, применить так же, как
+        # применяет интерфейс. Спеку, которую ни разу не применяли, не применяем: включать
+        # маршрутизацию без ведома человека — не наше дело. Сначала зоны (fw_sync в apply), а
+        # лечение смотрит на зону, поэтому устройства в нашу зону доводит сам apply, а здесь
+        # лечатся только те, что в ней уже стоят.
+        box_busy && fail "ядро занято: $BOX_BY"
+        if heal_out="$(spec_heal_nat6)"; then
+            healed=1
+            if [ -s "$APPLIED" ]; then
+                "$0" call apply </dev/null >/dev/null 2>&1
+            fi
+        else
+            healed=0
+        fi
+        json_init; json_add_boolean ok 1; json_add_boolean healed "$healed"
+        json_add_string outputs "$(printf '%s' "${heal_out:-}" | tr '\n' ' ')"
         json_dump
         ;;
 
