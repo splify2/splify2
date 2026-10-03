@@ -144,6 +144,9 @@ export const ru = {
     console: {
         zagruzka: "Загрузка…",
         sohraneno: " Сохранено",
+        specNeZagruzilas: "Настройки не загрузились",
+        specNeZagruzilasPodpis: "На роутере они целы — экран их просто не получил. Ничего не записано.",
+        povtorit: "Повторить",
     },
     customLists: {
         ssylka: (p0: unknown) => `ссылка ${p0}`,
@@ -789,6 +792,8 @@ export const ru = {
         neUdalosSohranit: "не удалось сохранить",
         primeneno: "Применено",
         sboyPrimeneniya: "сбой применения",
+        otvetNeSpeka: "роутер ответил не настройками",
+        specNeZagruzhena: "настройки не загружены — правка не записана",
     },
     poolEditor: {
         pickedCount: (n: number) => ` · взято: ${n}`,

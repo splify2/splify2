@@ -11,7 +11,7 @@ import { outDownWord, outExtras } from '@/lib/outstate'
 import { hasHelper, helperWords, useHelpers } from '@/lib/helper'
 import { pending } from '@/lib/pending'
 import { country } from '@/lib/geo'
-import { devList, EMPTY_SPEC, isPart, isTunnelKind, type Spec } from '@/lib/model'
+import { devList, isPart, isTunnelKind, type Spec } from '@/lib/model'
 import { subsRemember, subsRemembered, type SubRow } from '@/lib/subs'
 import { type Live } from '@/lib/live'
 import ConfBadges, { OutBadges } from '@/components/ConfBadges'
@@ -72,7 +72,7 @@ export default function PoolList({
     }
 
     useEffect(() => {
-        pending.load().then(setSpec).catch(() => setSpec(EMPTY_SPEC))
+        pending.load().then(setSpec).catch(() => setSpec(null))
     }, [])
     /** Виды туннельных устройств — бейджу протокола своего туннеля (WireGuard, AmneziaWG). */
     const [devKinds, setDevKinds] = useState<Record<string, string>>({})

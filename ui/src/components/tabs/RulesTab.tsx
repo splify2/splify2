@@ -9,7 +9,6 @@ import {
     toAllowDomainsServices,
     customServices,
     DIRECT,
-    EMPTY_SPEC,
     toCatalog,
     isPart,
     routedOutputs,
@@ -120,7 +119,7 @@ export default function RulesTab({
         /* Спека приходит из общего хранилища (pending), а не своим запросом: хранилище
          * помнит и несохранённые полсекунды, и снимок применённого — свой specGet здесь
          * вернул бы то, что вкладка Outbounds уже успела поменять. */
-        pending.load().then(setSpec).catch(() => setSpec(EMPTY_SPEC))
+        pending.load().then(setSpec).catch(() => setSpec(null))
         /* Каталог у выбора списков ТОТ ЖЕ, что на вкладке каталога, и это не экономия: два
          * источника означали бы, что человек видит в справке одно, а выбрать может другое.
          * Поэтому и способ добыть его тот же: сначала каталог выбранного источника, и только

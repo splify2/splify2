@@ -69,7 +69,7 @@ unset _fd _fd_wide
 
 case "${1:-}:${2:-}" in
     call:live)        . "${FAST_SH:-/usr/lib/splify2/fast.sh}"; fast_live;        exit 0 ;;
-    call:spec_get)    . "${FAST_SH:-/usr/lib/splify2/fast.sh}"; fast_spec_get;    exit 0 ;;
+    call:spec_get)    . "${FAST_SH:-/usr/lib/splify2/fast.sh}"; fast_spec_get;    exit $? ;;
     call:applied_get) . "${FAST_SH:-/usr/lib/splify2/fast.sh}"; fast_applied_get; exit 0 ;;
 esac
 

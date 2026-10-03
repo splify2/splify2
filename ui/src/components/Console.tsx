@@ -7,6 +7,7 @@ import { SECTION_TITLE, type SectionId } from '@/lib/sections'
 import Rail from '@/components/Rail'
 import FirstRun from '@/components/FirstRun'
 import ApplyPill from '@/components/ApplyPill'
+import { Button } from '@/components/ui/button'
 import Home from '@/components/sections/Home'
 import EngineToggle from '@/components/EngineToggle'
 
@@ -34,12 +35,15 @@ const Dns = lazy(() => import('@/components/sections/Dns'))
 const Settings = lazy(() => import('@/components/sections/Settings'))
 const Diagnostics = lazy(() => import('@/components/sections/Diagnostics'))
 
+/** Разделы, что читают и правят спеку: при отказе загрузки их место занимает «Повторить». */
+const SPEC_SECTIONS: SectionId[] = ['rules', 'vpn', 'dns', 'settings']
+
 const FALLBACK = <div className="p-5 text-sm text-muted-foreground">{S.console.zagruzka}</div>
 
 export default function Console() {
     const [section, setSection] = useState<SectionId>('home')
     const live = useLive()
-    const { spec, savedFlash } = usePending()
+    const { spec, savedFlash, loadFailed, retry } = usePending()
     /** Сервис, который попросили «в правило». Живёт здесь, а не в каталоге, потому что переход
      *  между разделами — дело оболочки; каталог только просит. Считывается разделом правил один
      *  раз и сбрасывается: иначе повторный заход снова открывал бы редактор, которого человек
@@ -54,7 +58,7 @@ export default function Console() {
     /* Спека нужна рельсу для счётчика правил, а он виден на всех разделах — значит загрузить её
      * обязана оболочка, а не раздел правил. Вызов идемпотентен: кто пришёл раньше, тот и
      * загрузил (lib/pending.ts). */
-    useEffect(() => { void pending.load() }, [])
+    useEffect(() => { pending.load().catch(() => {}) }, [])
 
     /* Движка нет — показываем установку ВМЕСТО разделов. Не «рядом»: без движка ни один из них
      * не может подействовать, и открывать их значило бы дать человеку заполнить настройку,
@@ -123,6 +127,15 @@ export default function Console() {
                         <h1 className="sp-title mb-3">{SECTION_TITLE[section]}</h1>
                     )}
 
+                    {/* Спека не загрузилась — разделы, что её правят, не рисуются вовсе: пустой экран
+                        читался бы как «настроек нет», а правка поверх него затёрла бы настоящие. */}
+                    {loadFailed && SPEC_SECTIONS.includes(section) && (
+                        <div role="alert" className="rounded-lg border border-border p-5 text-sm">
+                            <p className="font-medium">{S.console.specNeZagruzilas}</p>
+                            <p className="mt-1 text-muted-foreground">{S.console.specNeZagruzilasPodpis}</p>
+                            <Button className="mt-3" onClick={retry}>{S.console.povtorit}</Button>
+                        </div>
+                    )}
                     <Suspense fallback={FALLBACK}>
                         {section === 'home' && (
                             <Home
@@ -134,7 +147,7 @@ export default function Console() {
                                 }}
                             />
                         )}
-                        {section === 'rules' && (
+                        {section === 'rules' && !loadFailed && (
                             <RulesTab
                                 live={live}
                                 wanted={wanted}
@@ -144,10 +157,10 @@ export default function Console() {
                                 onGoOutbounds={() => go('vpn')}
                             />
                         )}
-                        {section === 'vpn' && <Vpn live={live} />}
-                        {section === 'dns' && <Dns live={live} />}
+                        {section === 'vpn' && !loadFailed && <Vpn live={live} />}
+                        {section === 'dns' && !loadFailed && <Dns live={live} />}
                         {section === 'diag' && <Diagnostics live={live} />}
-                        {section === 'settings' && (
+                        {section === 'settings' && !loadFailed && (
                             <Settings
                                 live={live}
                                 onUseInRule={(l) => {

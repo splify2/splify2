@@ -17,7 +17,7 @@ const SPEC = { ...EMPTY_SPEC, outputs: { wg: { name: 'wg', kind: 'interface' as 
 describe('вспышка «Сохранено» означает запись, а не правку', () => {
     beforeEach(() => {
         vi.restoreAllMocks()
-        pending.saved = null
+        pending.saved = EMPTY_SPEC // спека загружена: правка без загрузки не принимается
         pending.applied = null
         pending.dirty = false
         pending.savedFlash = false

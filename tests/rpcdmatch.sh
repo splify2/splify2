@@ -3263,6 +3263,11 @@ rm -f "$T/etc/spec.json"
 printf 'version: 2\n' > "$T/etc/spec.yaml"
 rpcd spec_get >/dev/null
 check "при spec.yaml рядом второй файл не заводится" "no" "$([ -s "$T/etc/spec.json" ] && echo yes || echo no)"
+# Чтение при одном лишь spec.yaml — отказ, а не пустая заготовка: пустая спека на экране
+# выглядела бы точной записью, и правка поверх неё затёрла бы настоящую.
+out="$(rpcd spec_get 2>/dev/null)"; rc=$?
+check "spec.yaml без spec.json: чтение отказывает" "1" "$rc"
+check "и пустой спеки не отдаёт" "" "$out"
 rm -f "$T/etc/spec.yaml"
 # Ядро ведёт steer-box-connector: своя спека не заводится и служба steer не поднимается — иначе
 # открытие страницы ставило бы службу steer со своей спекой рядом с ядром коннектора, а сам

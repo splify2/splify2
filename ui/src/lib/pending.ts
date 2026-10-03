@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react'
 import { notify } from '@/lib/notify'
 import { rpc } from '@/lib/rpc'
-import { EMPTY_SPEC, type Channel, type Spec } from '@/lib/model'
+import type { Channel, Spec } from '@/lib/model'
 import { encodeSpec, wasV1 } from '@/lib/specv2'
 import { cmpVersion } from '@/lib/engine'
 
@@ -76,15 +76,57 @@ class PendingStore {
     }
     private emit() { for (const fn of this.listeners) fn() }
 
-    /** Первая загрузка. Кто пришёл раньше — тот и загрузил; остальные получают то же. */
-    async load(): Promise<Spec> {
-        if (this.saved) return this.saved
-        const [saved, applied] = await Promise.all([
-            rpc.specGet().catch(() => EMPTY_SPEC),
-            /* Старый бэкенд метода не знает — тогда считаем применённым сохранённое:
-             * счётчик стартует с нуля, что не хуже прежнего поведения. */
-            rpc.appliedGet().catch(() => null),
-        ])
+    /** Спека не загрузилась: роутер не ответил или ответил не спекой. Экран показывает это как
+     *  отказ с кнопкой «Повторить», а НЕ как пустую настройку: пустая спека на экране выглядела
+     *  бы точной записью («выходов нет, правил нет»), и первая же правка записала бы её поверх
+     *  настоящей. Пока признак стоит, `saved` пуст — писать нечего и нечем. */
+    loadFailed = false
+    private loading: Promise<Spec> | null = null
+
+    /** Первая загрузка. Кто пришёл раньше — тот и загрузил; остальные получают то же. Отказ
+     *  отказом и остаётся (после нескольких попыток с паузами: ubus после перезапуска rpcd
+     *  отвечает «объект не найден» секунду-другую, сессия LuCI может истечь) — подменять его
+     *  пустой спекой нельзя. Следующий вызов начнёт загрузку заново. */
+    load(): Promise<Spec> {
+        if (this.saved) return Promise.resolve(this.saved)
+        if (!this.loading) {
+            this.loading = this.fetchSpec().finally(() => { this.loading = null })
+        }
+        return this.loading
+    }
+
+    /** «Повторить» с экрана отказа. */
+    retry() {
+        this.loadFailed = false
+        this.emit()
+        void this.load().catch(() => {})
+    }
+
+    private async fetchSpec(): Promise<Spec> {
+        let saved: Spec | undefined
+        let lastErr: unknown
+        for (let i = 0; i <= LOAD_RETRY_MS.length; i++) {
+            if (i > 0) await new Promise((r) => setTimeout(r, LOAD_RETRY_MS[i - 1]))
+            try {
+                const got = await rpc.specGet()
+                /* Ответ без выходов — не спека: у настоящей `direct` есть всегда (SPEC_EMPTY
+                 * бэкенда, uci-defaults). Пустой ответ rpcd, обрубок, не-объект — отказ. */
+                if (!got || typeof got !== 'object' || !got.outputs || typeof got.outputs !== 'object')
+                    throw new Error(S.pending.otvetNeSpeka)
+                saved = got
+                break
+            } catch (e) {
+                lastErr = e
+            }
+        }
+        if (!saved) {
+            this.loadFailed = true
+            this.emit()
+            throw lastErr instanceof Error ? lastErr : new Error(String(lastErr))
+        }
+        /* Старый бэкенд метода не знает — тогда считаем применённым сохранённое:
+         * счётчик стартует с нуля, что не хуже прежнего поведения. */
+        const applied = await rpc.appliedGet().catch(() => null)
         if (!this.saved) {
             /* Спека прежнего формата (v1) переписывается в v2 сразу, без участия человека:
              * движок 2.0 v1 больше не читает. Смысл правил не меняется, поэтому счётчик
@@ -93,10 +135,11 @@ class PendingStore {
             const migrate = wasV1(saved)
             this.saved = migrate ? { ...saved, schema: undefined } : saved
             this.applied = applied ?? this.saved
+            this.loadFailed = false
             this.emit()
             if (migrate && !(await this.coreTooOld())) this.edit(this.saved)
         }
-        return this.saved
+        return this.saved as Spec
     }
 
     /** Ядро младше минимума (переход с 26.9: интерфейс уже 26.10, ядро ещё 1.5.x) — спеку v2 оно
@@ -114,6 +157,9 @@ class PendingStore {
      *  Дебаунс не косметика: набор имени правила — это десяток onChange, и каждый
      *  spec_set гоняет dry-run компилятора на роутере с 64 МБ. */
     edit(next: Spec) {
+        /* Спека не загружена — писать нечего: запись «поверх» затёрла бы настоящую спеку
+         * тем, что набрано без неё. Экран отказа правок и не предлагает; это страховка. */
+        if (!this.saved) { notify(S.pending.specNeZagruzhena, 'error'); return }
         this.saved = next
         this.dirty = true
         this.emit()
@@ -273,6 +319,10 @@ class PendingStore {
     }
 }
 
+/** Паузы между попытками первой загрузки спеки, мс. Меняется только в стенде. */
+export let LOAD_RETRY_MS: number[] = [700, 2000]
+export function setLoadRetry(ms: number[]) { LOAD_RETRY_MS = ms }
+
 /** Хвост применения: сколько после ответа apply ответы опроса считаются переходными. */
 export const SETTLE_MS = 15000
 
@@ -314,6 +364,8 @@ export function usePending() {
          *  спрашивать её отдельным вызовом значило бы показать в рельсе одно число, а в
          *  разделе рядом другое. null, пока не загружена. */
         spec: pending.saved,
+        loadFailed: pending.loadFailed,
+        retry: () => pending.retry(),
         count: pending.count(),
         applying: pending.applying,
         justApplied: pending.justApplied,

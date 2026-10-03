@@ -5,7 +5,7 @@ import { Empty, Group } from '@/components/ui/layout'
 import { notify } from '@/lib/notify'
 import { rpc } from '@/lib/rpc'
 import { pending } from '@/lib/pending'
-import { EMPTY_SPEC, type Output, type Spec } from '@/lib/model'
+import { type Output, type Spec } from '@/lib/model'
 import { type Live } from '@/lib/live'
 
 import { S } from '@/copy'
@@ -34,7 +34,7 @@ export default function IfacesPanel({ live }: { live: Live }) {
     const [devices, setDevices] = useState<{ name: string; up: boolean; kind: string }[]>([])
 
     useEffect(() => {
-        pending.load().then(setSpec).catch(() => setSpec(EMPTY_SPEC))
+        pending.load().then(setSpec).catch(() => setSpec(null))
         rpc.devices().then((d) => setDevices(d.devices || [])).catch(() => setDevices([]))
     }, [])
 
