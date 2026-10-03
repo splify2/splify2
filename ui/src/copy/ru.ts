@@ -135,7 +135,7 @@ export const ru = {
         adresaPokaNet: "адреса пока нет",
         naruzhu: "наружу",
         ustroystvNeNashlosEsli: "Устройств не нашлось. Если splify2 только что обновился — откройте страницу заново.",
-        yadroEtoyVersiiPerechnya: "Ядро этой версии перечня устройств не понимает и заберёт трафик только с br-lan. Обновите ядро в разделе «Настройки → О ПО» — иначе выбор здесь ничего не изменит.",
+        yadroEtoyVersiiPerechnya: "Ядро этой версии перечня устройств не понимает и заберёт трафик только с br-lan. Обновите ядро в разделе «Настройки → Интерфейс» — иначе выбор здесь ничего не изменит.",
         ustroystvoKotorogoSeychasNet: "Устройство, которого сейчас нет, выбрать можно: правило заработает само, когда оно поднимется.",
         adresPokazanChtobyVy: "Адрес показан, чтобы вы узнали, какое устройство какое. Правилам он не нужен.",
         vybranoToChtoIstochnikom: "Выбрано то, что источником трафика быть не может: ",
@@ -202,7 +202,7 @@ export const ru = {
         proverokSOtkazom: (p0: unknown) => `проверок с отказом: ${p0}`,
         proverokSPreduprezhdeniem: (p0: unknown) => `проверок с предупреждением: ${p0}`,
         vseVPoryadke: "Всё в порядке",
-        obnoviteSteerVRazdele: "Обновите ядро steer в разделе «Настройки → О ПО».",
+        obnoviteSteerVRazdele: "Обновите ядро steer в разделе «Настройки → Интерфейс».",
         logiSteer: "Журнал ядра steer",
         obnovit: "Обновить",
         poiskPoZhurnalu: "Поиск по журналу…",
@@ -573,7 +573,7 @@ export const ru = {
         chMin: (p0: unknown, p1: unknown) => `${p0} ч ${p1} мин`,
         min: (p0: unknown) => `${p0} мин`,
         yadroNeChitaetNovuyu: "Ядро устарело",
-        etotInterfeysZapisyvaetNastroyki: "Изменения не применятся. Обновите ядро: Настройки → О ПО.",
+        etotInterfeysZapisyvaetNastroyki: "Изменения не применятся. Обновите ядро: Настройки → Интерфейс.",
         ustroystvVSeti: "устройств в сети: ",
         vremyaRaboty: " · время работы ",
         diagnostika: "диагностика ",
@@ -658,7 +658,7 @@ export const ru = {
         svoySpisokDomenov: "свой список доменов",
         svoySpisokPodsetey: "свой список подсетей",
     },
-    /** Модули ядра steer 2.0 (пакеты steer-<модуль>): подписи и карточка в «О ПО». */
+    /** Модули ядра steer 2.0 (пакеты steer-<модуль>): подписи и карточка в «Интерфейс». */
     modules: {
         label: {
             vless: "VLESS",
@@ -777,7 +777,7 @@ export const ru = {
     poolEditor: {
         pickedCount: (n: number) => ` · взято: ${n}`,
         pickedAny: " · взята любая",
-        yadroEtoyVersiiNe: "Ядро этой версии не умеет смешанный пул: либо одна подписка, либо свои туннели. Обновите ядро в разделе «Настройки → О ПО».",
+        yadroEtoyVersiiNe: "Ядро этой версии не умеет смешанный пул: либо одна подписка, либо свои туннели. Обновите ядро в разделе «Настройки → Интерфейс».",
         imyaLatinitsaTsifryDefis: "Имя: латиница, цифры, дефис или подчёркивание",
         vyhodUzheEst: (p0: unknown) => `Выход «${p0}» уже есть`,
         vyberiteCherezChtoVyhodit: "Выберите, через что выходить",
@@ -1025,7 +1025,7 @@ export const ru = {
         neUstanovilos: "не установилось",
         interfeysObnovlen: "Интерфейс обновлён",
         perezagruziteStranitsu: "Перезагрузите страницу.",
-        interfeys: "Интерфейс",
+        interfeys: "Обновление интерфейса",
         seychas: "Сейчас",
         posleUstanovkiPerezagruziteStranitsu: "После установки перезагрузите страницу.",
         versiyaInterfeysa: "Версия интерфейса",
@@ -1041,7 +1041,7 @@ export const ru = {
         obschee: "Общее",
         katalog: "Каталог",
         dopolnitelno: "Дополнительно",
-        oPo: "О ПО",
+        oPo: "Интерфейс",
         nastroyki: "Настройки",
         proverokSOtkazom: (p0: unknown) => `проверок с отказом: ${p0}`,
         proverokSPreduprezhdeniem: (p0: unknown) => `проверок с предупреждением: ${p0}`,

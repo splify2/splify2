@@ -35,7 +35,7 @@ log() { logger -t splify2-ping "$*" 2>/dev/null; echo "$*"; return 0; }
 case "${1:-}" in
     -h|--help)
         echo "использование: splify2-ping — отклик для счётчика на splify2.github.io"
-        echo "уходит раз в 23 часа, если не выключен в «Настройки → О ПО»"
+        echo "уходит раз в 23 часа, если не выключен в «Настройки → Интерфейс»"
         exit 0 ;;
 esac
 

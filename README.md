@@ -57,7 +57,7 @@ wget -O /tmp/splify2-install.sh https://gitlab.com/xyzmean/splify2/-/raw/main/in
 > **Счётчик на сайте.** Раз в 23 часа роутер отзывается счётчику сайта splify2.github.io
 > (`splify2-telemetry-panel.vercel.app/api/ping`) и сообщает только свой идентификатор — так сайт
 > считает, на скольких роутерах работает splify2. Включено по умолчанию; выключить: **Настройки →
-> О ПО**, карточка «Счётчик на сайте». Подробно — [docs/TELEMETRY.md](docs/TELEMETRY.md).
+> Интерфейс**, карточка «Счётчик на сайте». Подробно — [docs/TELEMETRY.md](docs/TELEMETRY.md).
 
 ## Документация
 
