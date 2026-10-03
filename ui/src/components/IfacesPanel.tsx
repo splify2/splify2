@@ -5,6 +5,7 @@ import { Empty, Group } from '@/components/ui/layout'
 import { notify } from '@/lib/notify'
 import { rpc } from '@/lib/rpc'
 import { pending } from '@/lib/pending'
+import { useSpecCopy } from '@/lib/speccopy'
 import { type Output, type Spec } from '@/lib/model'
 import { type Live } from '@/lib/live'
 
@@ -30,11 +31,10 @@ function devList(o: Output): string[] {
 }
 
 export default function IfacesPanel({ live }: { live: Live }) {
-    const [spec, setSpec] = useState<Spec | null>(null)
+    const [spec, setSpec] = useSpecCopy()
     const [devices, setDevices] = useState<{ name: string; up: boolean; kind: string; ipv6?: 'nat' | 'off' }[]>([])
 
     useEffect(() => {
-        pending.load().then(setSpec).catch(() => setSpec(null))
         rpc.devices().then((d) => setDevices(d.devices || [])).catch(() => setDevices([]))
     }, [])
 

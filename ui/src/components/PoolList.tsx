@@ -10,6 +10,7 @@ import { missingModule } from '@/lib/engine'
 import { outDownWord, outExcluded, outExtras } from '@/lib/outstate'
 import { hasHelper, helperWords, useHelpers } from '@/lib/helper'
 import { pending } from '@/lib/pending'
+import { useSpecCopy } from '@/lib/speccopy'
 import { country } from '@/lib/geo'
 import { devList, isPart, isTunnelKind, type Spec } from '@/lib/model'
 import { subsRemember, subsRemembered, type SubRow } from '@/lib/subs'
@@ -50,7 +51,7 @@ export default function PoolList({
      *  формы, которой они не являются. */
     onEditingChange?: (on: boolean) => void
 }) {
-    const [spec, setSpec] = useState<Spec | null>(null)
+    const [spec, setSpec] = useSpecCopy()
     /** Что правим: имя выхода, пустая строка — новый, null — список. */
     const [editing, setEditingRaw] = useState<string | null>(null)
     const setEditing = (v: string | null) => {
@@ -71,9 +72,6 @@ export default function PoolList({
         return s?.title || s?.name || S.poolList.podpiska
     }
 
-    useEffect(() => {
-        pending.load().then(setSpec).catch(() => setSpec(null))
-    }, [])
     /** Виды туннельных устройств — бейджу протокола своего туннеля (WireGuard, AmneziaWG). */
     const [devKinds, setDevKinds] = useState<Record<string, string>>({})
     useEffect(() => {

@@ -5,6 +5,7 @@ import { Switch } from '@/components/ui/switch'
 import { notify } from '@/lib/notify'
 import { rpc } from '@/lib/rpc'
 import { pending } from '@/lib/pending'
+import { useSpecCopy } from '@/lib/speccopy'
 import {
     toAllowDomainsServices,
     customServices,
@@ -105,7 +106,11 @@ interface Props {
 export default function RulesTab({
     live, wanted, onWantedUsed, addNow, onAddUsed, onGoOutbounds,
 }: Props) {
-    const [spec, setSpec] = useState<Spec | null>(null)
+    /* Спека приходит из общего хранилища (pending), а не своим запросом: хранилище помнит
+     * и несохранённые полсекунды, и снимок применённого — свой specGet здесь вернул бы то,
+     * что вкладка Outbounds уже успела поменять. Подмену после применения копия получает
+     * оттуда же (useSpecCopy). */
+    const [spec, setSpec] = useSpecCopy()
     const [catalogServices, setServices] = useState<ServiceEntry[]>([])
     const [local, setLocal] = useState<Record<string, { count: number; mtime: number }>>({})
     const services = useMemo(
@@ -116,10 +121,6 @@ export default function RulesTab({
     const [search, setSearch] = useState('')
 
     useEffect(() => {
-        /* Спека приходит из общего хранилища (pending), а не своим запросом: хранилище
-         * помнит и несохранённые полсекунды, и снимок применённого — свой specGet здесь
-         * вернул бы то, что вкладка Outbounds уже успела поменять. */
-        pending.load().then(setSpec).catch(() => setSpec(null))
         /* Каталог у выбора списков ТОТ ЖЕ, что на вкладке каталога, и это не экономия: два
          * источника означали бы, что человек видит в справке одно, а выбрать может другое.
          * Поэтому и способ добыть его тот же: сначала каталог выбранного источника, и только

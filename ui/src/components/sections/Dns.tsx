@@ -5,6 +5,7 @@ import { Block, CardHead, FieldRow, KV, Segmented } from '@/components/ui/layout
 import { inputCls } from '@/components/formbits'
 import { notify } from '@/lib/notify'
 import { pending } from '@/lib/pending'
+import { useSpecCopy } from '@/lib/speccopy'
 import { rpc, type DnsLog } from '@/lib/rpc'
 import { isPart, type DomainMode, type DnsSpec, type Spec, type Upstream, type UpstreamGroup } from '@/lib/model'
 import { type Live } from '@/lib/live'
@@ -218,13 +219,10 @@ function DnsTarget({ spec, dns, which, label, names, canGroup, log, onDns }: {
 }
 
 export default function Dns({ live }: { live?: Live }) {
-    const [spec, setSpec] = useState<Spec | null>(null)
+    const [spec, setSpec] = useSpecCopy()
     const [log, setLog] = useState<DnsLog | null>(null)
     const [preset, setPreset] = useState(PRESETS[0].name)
 
-    useEffect(() => {
-        pending.load().then(setSpec).catch(() => setSpec(null))
-    }, [])
     useEffect(() => {
         let stop = false
         const tick = () => rpc.dnsLog().then((l) => { if (!stop) setLog(l) }).catch(() => { if (!stop) setLog(null) })

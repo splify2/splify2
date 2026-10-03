@@ -25,7 +25,25 @@ import { S } from '@/copy'
  *  уезжает спека без него; как только сервис выбран — правило едет как все. Пока черновик
  *  есть, «Сохранено» не вспыхивает и страховка на выгрузку спрашивает: он действительно не
  *  сохранён, и перезагрузка страницы его потеряет — как теряла и раньше, только теперь об этом
- *  честно сказано, а остальное сохранено. */
+ *  честно сказано, а остальное сохранено.
+ *
+ *  ПОСЛЕ ПРИМЕНЕНИЯ СПЕКА ПЕРЕЧИТЫВАЕТСЯ С РОУТЕРА. apply там не только применяет, но и может
+ *  переписать сам файл: самолечение (spec_heal_ipv6) вставляет `ipv6: nat|off` выходам без ключа.
+ *  Память страницы об этом не знала, и первая же записанная сама правка отправляла на роутер прежнюю
+ *  спеку — вылеченные ключи пропадали до следующего apply, а после перезагрузки страницы пилюля
+ *  «Применить · N» горела от разницы со снимком, которой человек не делал. Теперь после ответа
+ *  apply страница читает spec_get и applied_get и берёт то, что лежит на роутере. Ответ apply спеку
+ *  не несёт нарочно: читать файл отдельным вызовом дешевле, чем вшивать его в ответ оболочкой, а
+ *  судья — диск, и если файл за это время поменял кто-то ещё, верна его версия.
+ *
+ *  ПРАВКИ ЗА ВРЕМЯ ПРИМЕНЕНИЯ НЕ ТЕРЯЮТСЯ И НЕ УЕЗЖАЮТ НАПЕРЁД. Пока apply идёт, спека на роутер не
+ *  пишется (flush ждёт конца; исключение — уход со страницы, после него писать некому): запись
+ *  посреди apply либо стёрла бы вылеченное, либо потерялась бы под самолечением, либо попала бы в
+ *  снимок применённого, хотя ядро этой правки не видело, — и пилюля сказала бы «всё применено» про
+ *  то, чего ядро не исполняет. Правка остаётся в памяти и ложится поверх свежей спеки трёхсторонним
+ *  слиянием (mergeSpec: что роутер хранил до применения, что в памяти сейчас, что на нём лежит
+ *  после), а потом уезжает как обычно и считается неприменённой. Раздел, который держит свою копию
+ *  спеки (speccopy.ts), подмену получает через onReplaced. */
 
 /** Правило без единого сервиса: движку такое не отдаётся. */
 export function isDraft(c: Channel): boolean {
@@ -40,12 +58,38 @@ export function writable(spec: Spec): { spec: Spec; drafts: number } {
     return { spec: kept.length === channels.length ? spec : { ...spec, channels: kept }, drafts: channels.length - kept.length }
 }
 
+/** Строки самолечения в ответе apply: «splify2: выходам без ключа ipv6 записан ipv6: nat (…): wg0».
+ *  Бэкенд пишет их тому, кто смотрит в ssh и журнал (rpcd/m-spec.sh, heal_report), а человеку на
+ *  экране они ни к чему: ключ — внутренность настройки, а как выход ходит в IPv6, видно в самом
+ *  выходе, который после применения перечитан с роутера. Поэтому в тосте их нет. Начало строки то
+ *  же, что в бэкенде; сверка с его исходником — в tests/apply-refetch.test.ts. */
+const HEAL_LINE = /^splify2: выходам без ключа ipv6 записан /
+
+/** Текст тоста по ответу apply: слова ядра и зон фаервола — без строк самолечения. */
+export function applyText(output: string | undefined): string {
+    return (output ?? '')
+        .split('\n')
+        .filter((l) => !HEAL_LINE.test(l))
+        .join('\n')
+        .trim()
+}
+
 type Listener = () => void
 
 class PendingStore {
     saved: Spec | null = null
     applied: Spec | null = null
+    /** Что лежит на роутере, по нашим сведениям: прочитанное при загрузке, записанное последним
+     *  удавшимся spec_set, перечитанное после применения. Без черновиков — они туда не едут.
+     *  Опора трёхстороннего слияния (mergeSpec): по разнице между ним и `saved` видно, что человек
+     *  успел поправить, а по разнице между ним и перечитанным — что сделал за это время роутер. */
+    private written: Spec | null = null
     applying = false
+    /** Закрывается, когда применение кончилось (любым исходом). Записи, пришедшие за время
+     *  применения, ждут его — см. flush. */
+    private applyDone: Promise<void> = Promise.resolve()
+    /** Разделы со своей копией спеки (speccopy.ts): им говорят, что хранилище подменило спеку. */
+    private replaced = new Set<(spec: Spec) => void>()
     /** Полторы секунды зелёной галочки после успешного apply. */
     justApplied = false
     /** Когда закончилось последнее применение (любым исходом). По нему опрос знает, что
@@ -76,6 +120,14 @@ class PendingStore {
     }
     private emit() { for (const fn of this.listeners) fn() }
 
+    /** Хранилище подменило спеку НЕ по правке человека, а по тому, что лежит на роутере (после
+     *  применения). Нужна разделам, которые правят спеку на месте со своей копией в состоянии:
+     *  без подмены их следующая правка выросла бы из прежней копии и записала её поверх свежей. */
+    onReplaced(fn: (spec: Spec) => void) {
+        this.replaced.add(fn)
+        return () => { this.replaced.delete(fn) }
+    }
+
     /** Спека не загрузилась: роутер не ответил или ответил не спекой. Экран показывает это как
      *  отказ с кнопкой «Повторить», а НЕ как пустую настройку: пустая спека на экране выглядела
      *  бы точной записью («выходов нет, правил нет»), и первая же правка записала бы её поверх
@@ -102,27 +154,33 @@ class PendingStore {
         void this.load().catch(() => {})
     }
 
-    private async fetchSpec(): Promise<Spec> {
-        let saved: Spec | undefined
+    /** Прочитать спеку с роутера; `pauses` — паузы между попытками, мс. */
+    private async readSpec(pauses: number[]): Promise<Spec> {
         let lastErr: unknown
-        for (let i = 0; i <= LOAD_RETRY_MS.length; i++) {
-            if (i > 0) await new Promise((r) => setTimeout(r, LOAD_RETRY_MS[i - 1]))
+        for (let i = 0; i <= pauses.length; i++) {
+            if (i > 0) await new Promise((r) => setTimeout(r, pauses[i - 1]))
             try {
                 const got = await rpc.specGet()
                 /* Ответ без выходов — не спека: у настоящей `direct` есть всегда (SPEC_EMPTY
                  * бэкенда, uci-defaults). Пустой ответ rpcd, обрубок, не-объект — отказ. */
                 if (!got || typeof got !== 'object' || !got.outputs || typeof got.outputs !== 'object')
                     throw new Error(S.pending.otvetNeSpeka)
-                saved = got
-                break
+                return got
             } catch (e) {
                 lastErr = e
             }
         }
-        if (!saved) {
+        throw lastErr instanceof Error ? lastErr : new Error(String(lastErr))
+    }
+
+    private async fetchSpec(): Promise<Spec> {
+        let saved: Spec
+        try {
+            saved = await this.readSpec(LOAD_RETRY_MS)
+        } catch (e) {
             this.loadFailed = true
             this.emit()
-            throw lastErr instanceof Error ? lastErr : new Error(String(lastErr))
+            throw e
         }
         /* Старый бэкенд метода не знает — тогда считаем применённым сохранённое:
          * счётчик стартует с нуля, что не хуже прежнего поведения. */
@@ -134,6 +192,7 @@ class PendingStore {
              * бэкенд перед заменой оставляет копию прежнего файла рядом. */
             const migrate = wasV1(saved)
             this.saved = migrate ? { ...saved, schema: undefined } : saved
+            this.written = this.saved
             this.applied = applied ?? this.saved
             this.loadFailed = false
             this.emit()
@@ -163,6 +222,11 @@ class PendingStore {
         this.saved = next
         this.dirty = true
         this.emit()
+        this.arm()
+    }
+
+    /** Взвести отправку: через 500 мс тишины. */
+    private arm() {
         if (this.timer) clearTimeout(this.timer)
         this.timer = setTimeout(() => void this.flush(), 500)
     }
@@ -183,8 +247,19 @@ class PendingStore {
     }
 
     /** Дописать на роутер всё, что ещё не уехало. Последовательно: два spec_set
-     *  вперегонки — это гонка, в которой побеждает случайный. */
-    async flush() {
+     *  вперегонки — это гонка, в которой побеждает случайный.
+     *
+     *  `force` — писать, даже пока идёт применение. Нужен двум: самому apply (он дописывает всё до
+     *  вызова бэкенда) и уходу со страницы (после него писать будет некому). */
+    async flush(force = false) {
+        /* ПОКА ИДЁТ ПРИМЕНЕНИЕ, ЗАПИСЬ ЖДЁТ. Бэкенд в apply сам правит файл спеки (самолечение
+         * ipv6) и в конце снимает с него копию «применённого»; spec_set посреди этого либо стёр бы
+         * вылеченное (замена файла его старой копией), либо попал бы в снимок, хотя ядро спеку уже
+         * прочитало, — и «Применить · N» сказало бы «всё применено» про правку, которой ядро не
+         * исполняет. Правка за это время остаётся в памяти (dirty) и уезжает после ответа, поверх
+         * перечитанной спеки (apply → refresh). Спека к записи берётся ПОСЛЕ ожидания: не та, что
+         * была в момент вызова, а слитая с роутерной. */
+        while (this.applying && !force) await this.applyDone
         /* Писать нечего — но запись, начатая раньше, может ещё лететь: dirty снимается в НАЧАЛЕ
          * записи. Ждём её, иначе apply() шёл в rpc.apply, пока spec_set на роутере ещё
          * проверял спеку, и зона фаервола приводилась к прежней спеке (tests/apply-waits-save). */
@@ -200,6 +275,9 @@ class PendingStore {
                  * интерфейса — иначе счётчик «Применить · N» сравнивал бы разные формы. */
                 const r = await rpc.specSet(JSON.stringify(encodeSpec(spec)))
                     .catch((e) => ({ ok: false, error: String(e instanceof Error ? e.message : e) }))
+                /* Что теперь на роутере — опора слияния после применения. Только при удаче: отказ
+                 * ничего там не поменял. */
+                if (r.ok) this.written = spec
                 if (!r.ok) {
                     /* Отказ dry-run — это не «потеряно»: спека осталась в памяти, человек
                      * видит причину и правит дальше; следующая правка попробует снова. */
@@ -295,16 +373,29 @@ class PendingStore {
     async apply() {
         if (this.applying) return
         this.applying = true
+        let release!: () => void
+        this.applyDone = new Promise<void>((r) => { release = r })
         this.emit()
         try {
-            await this.flush()
-            const r = await rpc.apply()
-            notify(r.output?.trim() || (r.ok ? S.pending.primeneno : S.pending.sboyPrimeneniya), r.ok ? 'info' : 'error')
-            if (r.ok) {
-                /* Применено то, что было записано, — без черновиков: они на роутер не ездили,
-                 * и считать их применёнными значило бы обнулить счётчик на правиле, которого
-                 * движок не видел. */
-                this.applied = this.saved ? writable(this.saved).spec : this.saved
+            /* Всё, что ещё не уехало, — ДО вызова и мимо ожидания записи (оно для чужих правок). */
+            await this.flush(true)
+            /* Опора слияния — что на роутере сейчас. Берётся до вызова: после него правки за время
+             * применения от записанного уже не отличить. Не загруженное через load() (стенд, прямая
+             * подстановка) — то, что в памяти: правки, сделанные позже, всё равно от него отличны. */
+            const base = this.written ?? (this.saved ? writable(this.saved).spec : null)
+            let ok = false
+            try {
+                const r = await rpc.apply()
+                ok = r.ok
+                notify(applyText(r.output) || (r.ok ? S.pending.primeneno : S.pending.sboyPrimeneniya), r.ok ? 'info' : 'error')
+            } catch (e) {
+                notify(String(e instanceof Error ? e.message : e), 'error')
+            }
+            /* Сверка с роутером — при любом исходе вызова, а не только при удаче: apply правит файл
+             * (самолечение) ДО того, как ядро примет или отвергнет спеку, а оборванный ответ (таймаут
+             * ubus при ещё идущем apply) не значит, что на роутере ничего не изменилось. */
+            await this.refresh(base, ok)
+            if (ok) {
                 this.justApplied = true
                 this.emit()
                 setTimeout(() => { this.justApplied = false; this.emit() }, 1800)
@@ -314,8 +405,57 @@ class PendingStore {
         } finally {
             this.applying = false
             this.appliedAt = Date.now()
+            release()
             this.emit()
         }
+    }
+
+    /** Сверить память страницы с роутером после применения.
+     *
+     *  «Применённое» берётся у бэкенда (applied_get) — это снимок, который он снял сам, уже с
+     *  вылеченными ключами. Прежде оно бралось из памяти: `writable(saved)` после ответа, то есть
+     *  вместе с правками, сделанными за время применения, — они выглядели применёнными, хотя ядро
+     *  их не видело. Снимок не отдан, а применение удалось, — это то, что лежит на роутере (снимок
+     *  снимается с того же файла), а если не отдан и он, то то, что мы отправили до вызова.
+     *
+     *  Сохранённое — то, что лежит на роутере, слитое с тем, что человек успел поправить за это
+     *  время (mergeSpec). Ничего не поправлял — просто то, что лежит там. Не ответил — остаётся
+     *  прежняя память: применение удалось, и отказом его делать незачем; хуже от этого только то,
+     *  что вылеченные ключи пропадут при первой правке и вернутся при следующем apply, как и было.
+     *
+     *  Исключений наружу нет: сверка не должна превращать удавшееся применение в красный тост. */
+    private async refresh(base: Spec | null, applied: boolean) {
+        let replaced = false
+        try {
+            /* Своя запись, ещё летящая (уход со страницы пишет мимо ожидания), дописывается до
+             * чтения: иначе прочитанное оказалось бы на её полшага раньше, и сверка пересылала бы то
+             * же второй раз. */
+            await this.writing.catch(() => {})
+            /* Одна повторная попытка, а не все паузы первой загрузки: rpcd apply не перезапускает,
+             * так что отказ здесь — не «объект ещё не поднялся», а роутер, которому не до нас. */
+            const [disk, snap] = await Promise.all([
+                this.readSpec(LOAD_RETRY_MS.slice(0, 1)).catch(() => null),
+                Promise.resolve().then(() => rpc.appliedGet()).catch(() => null),
+            ])
+            /* Спека прежнего формата, не переписанная при загрузке (ядро старше минимума), в памяти
+             * живёт без `schema` — так же, как при первой загрузке. */
+            const fresh = disk && (wasV1(disk) ? { ...disk, schema: undefined } : disk)
+            if (snap) this.applied = snap
+            else if (applied) this.applied = fresh || base || this.applied
+            const mine = this.saved
+            if (fresh && mine) {
+                this.written = fresh
+                const merged = mergeSpec(base ?? writable(mine).spec, mine, fresh)
+                if (!same(merged, mine)) { this.saved = merged; replaced = true }
+                /* Есть то, чего на роутере нет, — правка за время применения. Черновики не в счёт:
+                 * они туда не ездят, и записывать ради них то же самое незачем. */
+                if (!same(writable(merged).spec, fresh)) { this.dirty = true; this.arm() }
+            }
+        } catch {
+            /* см. выше: сверка — не отказ применения */
+        }
+        this.emit()
+        if (replaced && this.saved) for (const fn of this.replaced) fn(this.saved)
     }
 }
 
@@ -340,8 +480,11 @@ export const pending = new PendingStore()
  * Спрашивается только при действительно несохранённом (окно дебаунса или отказ прошлой
  * записи), поэтому в обычной работе диалога не видно. */
 if (typeof window !== 'undefined') {
+    /* Мимо ожидания записи на время применения (flush(true)): после ухода писать будет некому, а
+     * потерять правку хуже, чем разойтись с самолечением бэкенда, которое при следующем apply
+     * вернётся. */
     const flushNow = () => {
-        if (pending.hasUnsaved()) void pending.flush()
+        if (pending.hasUnsaved()) void pending.flush(true)
     }
     document.addEventListener('visibilitychange', () => {
         if (document.visibilityState === 'hidden') flushNow()
@@ -433,4 +576,49 @@ function rest(spec: Spec): Record<string, unknown> {
  *  каналы и выходы сравниваются по одному правилу, и разойтись они не должны. */
 function same(a: unknown, b: unknown): boolean {
     return JSON.stringify(canon(a)) === JSON.stringify(canon(b))
+}
+
+const isPlain = (v: unknown): v is Record<string, unknown> => !!v && typeof v === 'object' && !Array.isArray(v)
+
+/** Трёхстороннее слияние спеки: `base` — что роутер хранил до применения, `mine` — что в памяти
+ *  сейчас (с правками человека за это время), `theirs` — что он хранит после (бэкенд мог дописать
+ *  вылеченные ключи).
+ *
+ *  Правило одно, по каждому месту спеки: человек его не трогал — берётся роутерное; роутер его не
+ *  менял — берётся память; тронули оба — объекты сливаются по ключам вглубь, а на листе и в
+ *  списке побеждает память: правка человека свежее, а у списков (правила, перечни устройств) своей
+ *  правки у бэкенда нет и склеивать их поэлементно было бы гаданием. Порядок ключей — как в
+ *  памяти: порядок выходов человек видит на экране, а спека пишется в нём же.
+ *
+ *  Исключение — когда роутер сменил ВИД записи, которую человек тоже правил (у пула членов с
+ *  разным ipv6 лечение делает из пула группу, а члены становятся выходами): ключи двух видов в
+ *  одну запись не складываются, а осиротевшие соседние записи рассыпали бы пул. Тогда вся спека
+ *  берётся из памяти: лечение вернётся при следующем apply, а правка человека не пропадёт.
+ *
+ *  «Не трогал» — по смыслу (same), а не по тексту: явное умолчание не правка. */
+export function mergeSpec(base: Spec, mine: Spec, theirs: Spec): Spec {
+    try {
+        return merge3(base, mine, theirs) as Spec
+    } catch (e) {
+        if (e instanceof Unmergeable) return mine
+        throw e
+    }
+}
+
+/** Слияние невозможно: роутер сменил вид записи, которую человек правил. */
+class Unmergeable extends Error {}
+
+function merge3(base: unknown, mine: unknown, theirs: unknown): unknown {
+    if (same(mine, base)) return theirs
+    if (same(theirs, base)) return mine
+    if (isPlain(base) && isPlain(mine) && isPlain(theirs)) {
+        if (theirs.kind !== base.kind) throw new Unmergeable()
+        const out: Record<string, unknown> = {}
+        for (const k of new Set([...Object.keys(mine), ...Object.keys(theirs)])) {
+            const v = merge3(base[k], mine[k], theirs[k])
+            if (v !== undefined) out[k] = v
+        }
+        return out
+    }
+    return mine
 }

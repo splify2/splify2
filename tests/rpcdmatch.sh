@@ -4649,6 +4649,17 @@ check "heal: ответ apply называет off и его выходы" "yes"
       "$(line_has "$txt" 'записан ipv6: off' wgv4 wgdown ll amn4 pm.b)"
 check "heal: apply применил уже исправленную спеку (снимок содержит ключи)" "nat off" \
       "$(python3 -c 'import json,sys; o=json.load(open(sys.argv[1]))["outputs"]; print(o["warp"].get("ipv6","-"), o["wgv4"].get("ipv6","-"))' "$T/etc/spec.applied.json")"
+# Интерфейс после apply перечитывает spec_get и applied_get и берёт то, что лежит на роутере
+# (ui/src/lib/pending.ts, refresh): оба обязаны отдавать уже исправленную спеку и одну и ту же —
+# иначе страница после «Применить» горела бы «Применить · N» от разницы, которой человек не делал, а
+# первая правка записала бы поверх роутерной спеку без вылеченных ключей.
+check "heal: spec_get после apply отдаёт исправленную спеку" "nat off" \
+      "$(rpcd spec_get | python3 -c 'import json,sys; o=json.load(sys.stdin)["outputs"]; print(o["warp"].get("ipv6","-"), o["wgv4"].get("ipv6","-"))')"
+check "heal: applied_get после apply отдаёт то же, что spec_get" "$(rpcd spec_get | cksum)" "$(rpcd applied_get | cksum)"
+# Строки самолечения интерфейс в тосте не показывает и узнаёт их по началу (applyText в pending.ts;
+# его проверка читает исходник бэкенда): по две строки, nat и off, обе с этим началом.
+check "heal: обе строки самолечения начинаются так, как их узнаёт интерфейс" "2" \
+      "$(printf '%s\n' "$txt" | grep -c '^splify2: выходам без ключа ipv6 записан ')"
 sum1="$(cksum < "$T/etc/spec.json")"
 out="$(heal_apply apply)"
 check "heal: второй apply спеку не меняет (идемпотентно)" "$sum1" "$(cksum < "$T/etc/spec.json")"
@@ -4686,7 +4697,8 @@ heal_apply apply >/dev/null
 check "heal: спека v1 не правится (ключ ей неизвестен)" "-" "$(v6of warp)"
 # Перечень устройств для выхода: панель получает ту же подсказку, что пишет самолечение, и пишет
 # её новому выходу сама — так спека в памяти страницы и на диске не расходится с лечением при
-# apply (иначе первая же правка после apply стирала бы вылеченный ключ).
+# apply, и лечить такому выходу уже нечего. (Расхождение у выходов без подсказки страница после
+# apply снимает сама, перечитывая спеку: ui/src/lib/pending.ts, refresh.)
 rm -rf "$T/outnet-v6"; mkdir -p "$T/outnet-v6"
 for _d in wgA wgB wgC wgD; do
     mkdir -p "$T/outnet-v6/$_d"

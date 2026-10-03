@@ -25,6 +25,10 @@ describe('применение ждёт летящую запись', () => {
             release = () => { order.push('spec_set записан'); r({ ok: true }) }
         })) as never)
         vi.spyOn(rpc, 'apply').mockImplementation((async () => { order.push('apply'); return { ok: true } }) as never)
+        // После ответа apply страница перечитывает спеку и снимок (apply-refetch.test.ts): здесь
+        // роутер отдаёт то, что на него легло.
+        vi.spyOn(rpc, 'specGet').mockImplementation((async () => structuredClone(pending.saved)) as never)
+        vi.spyOn(rpc, 'appliedGet').mockImplementation((async () => structuredClone(pending.saved)) as never)
         // @ts-expect-error — сброс внутреннего состояния
         pending.saved = SPEC; pending.applied = SPEC; pending.dirty = false; pending.applying = false
 

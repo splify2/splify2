@@ -14,7 +14,8 @@ import TelemetryCard from '@/components/TelemetryCard'
 import XsteerPanel from '@/components/XsteerPanel'
 import { rpc } from '@/lib/rpc'
 import { pending, usePending } from '@/lib/pending'
-import { type ServiceEntry, type Spec } from '@/lib/model'
+import { useSpecCopy } from '@/lib/speccopy'
+import { type ServiceEntry } from '@/lib/model'
 import { type Live } from '@/lib/live'
 
 import { S } from '@/copy'
@@ -44,14 +45,13 @@ export default function Settings({
     const [screen, setScreen] = useState<Screen>('root')
     const { spec } = usePending()
     const [local, setLocal] = useState<Record<string, { count: number; mtime: number }>>({})
-    const [editable, setEditable] = useState<Spec | null>(null)
+    const [editable, setEditable] = useSpecCopy()
 
     const reloadLocal = () =>
         rpc.localLists().then((d) => setLocal(d.files || {})).catch(() => setLocal({}))
 
     useEffect(() => {
         void reloadLocal()
-        pending.load().then(setEditable).catch(() => setEditable(null))
     }, [])
 
     if (screen !== 'root') {

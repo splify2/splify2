@@ -7,7 +7,7 @@ import type { Live } from '@/lib/live'
 const edit = vi.fn()
 let current: Spec
 vi.mock('@/lib/pending', () => ({
-    pending: { load: vi.fn(async () => current), edit: (s: Spec) => edit(s) },
+    pending: { load: vi.fn(async () => current), edit: (s: Spec) => edit(s), onReplaced: () => () => {} },
 }))
 vi.mock('@/lib/rpc', () => ({
     rpc: {
