@@ -145,7 +145,7 @@ export const ru = {
         zagruzka: "Загрузка…",
         sohraneno: " Сохранено",
         specNeZagruzilas: "Настройки не загрузились",
-        specNeZagruzilasPodpis: "На роутере они целы — экран их просто не получил. Ничего не записано.",
+        specNeZagruzilasPodpis: "На роутере ничего не изменилось.",
         povtorit: "Повторить",
     },
     customLists: {
