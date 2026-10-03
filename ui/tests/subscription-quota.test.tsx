@@ -134,6 +134,8 @@ describe('блок «Подписка»: остаток трафика (Andromed
         render(sub())
         expect(await screen.findByText('Панель не сообщает остаток')).toBeInTheDocument()
         expect(screen.queryByText(/осталось/)).toBeNull()
+        // И только раз: строка-повтор «панель не сообщила остаток трафика» под заголовком — шум.
+        expect(screen.queryByText(/не сообщила остаток/)).toBeNull()
     })
 
     it('узлы вставлены ссылками vless:// — остатка не существует, и о нём ни слова', async () => {

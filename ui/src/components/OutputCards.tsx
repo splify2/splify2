@@ -134,7 +134,10 @@ export function SubBlock({ outs = [], sub }: {
             const r = await deadline(rpc.subQuota(sub?.name), 30000, S.outputCards.panelNeOtvetila)
             if (!alive.current) return
             setQuota(r.quota)
-            setWhy(r.quota ? null : r.why || S.outputCards.panelNeSoobschilaOstatok)
+            /* Панель промолчала — это и есть заголовок «Панель не сообщает остаток»; повторять его
+             * строкой ниже («панель не сообщила остаток трафика») незачем — так стояло на стенде
+             * под каждой подпиской. Причина остаётся для отказа вызова (ветка catch). */
+            setWhy(null)
             if (r.kind) setKind(r.kind)
             remember({ quota: r.quota, kind: r.kind })
         } catch (e) {

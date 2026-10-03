@@ -729,7 +729,6 @@ export const ru = {
         netOtveta: "нет ответа",
         ms: (p0: unknown) => `${p0} мс`,
         panelNeOtvetila: "панель не ответила",
-        panelNeSoobschilaOstatok: "панель не сообщила остаток",
         podpiska: "Подписка",
         obnovleno: "обновлено ",
         sprashivaem: "спрашиваем…",
