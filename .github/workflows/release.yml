@@ -79,6 +79,30 @@ jobs:
             echo "RELEASE_NAME=splify2 $VERSION" >> "$GITHUB_ENV"
           fi
 
+      - name: Список изменений
+        env:
+          PRERELEASE: ${{ inputs.prerelease }}
+        run: |
+          set -eu
+          # Что нового — раздел «## <версия>» из CHANGELOG.md (до следующего «## »): он идёт
+          # первым в текст выпуска здесь и в splify2/releases, а оттуда — на страницу выпусков
+          # сайта. Нет раздела — стабильный выпуск не выходит (выпуск без списка изменений
+          # ничего не говорит человеку, который решает, обновляться ли); предварительный
+          # выходит с предупреждением. Шаг стоит до сборки и до записи VERSION и ветки dist:
+          # отказ здесь не оставляет полувыпуска.
+          awk -v v="$VERSION" '
+            /^## / { if (on) exit; split($0, h, " "); if (h[2] == v) { on = 1; next } }
+            on { print }
+          ' CHANGELOG.md > "$RUNNER_TEMP/changes.md"
+          if ! grep -q '[^[:space:]]' "$RUNNER_TEMP/changes.md"; then
+            if [ "$PRERELEASE" = true ]; then
+              echo "::warning::в CHANGELOG.md нет раздела «## $VERSION» — выпуск без списка изменений"
+              : > "$RUNNER_TEMP/changes.md"
+            else
+              echo "::error::в CHANGELOG.md нет раздела «## $VERSION»"; exit 1
+            fi
+          fi
+
       - name: Установить зависимости интерфейса
         working-directory: ui
         run: npm ci
@@ -132,7 +156,7 @@ jobs:
           set -eu
           ls -la out/
           # Оба формата обязательны. Пропустить один легко — сборка от этого не падает,
-          # просто половина роутеров (OpenWrt 23.05 и старше, там opkg) остаётся без
+          # просто половина роутеров (OpenWrt 24.10 и старше, там opkg) остаётся без
           # пакета, и узнаётся это от людей, а не от барьера.
           test -f "out/luci-app-splify2-${VERSION}-1_noarch.apk" || {
             echo "::error::пакет luci-app-splify2-${VERSION}-1_noarch.apk не найден"; exit 1; }
@@ -188,7 +212,8 @@ jobs:
         # (последний шаг). Выражения раскрываются в env, оболочка пишет его как есть.
         env:
           NOTES: |
-            Интерфейс и управление для [steer](https://github.com/splify2/steer).
+            Интерфейс и управление для [ядра steer](https://github.com/splify2/steer). Нужно ядро
+            steer 2.0.0 или новее (`steer-core` и модули протоколов).
 
             Установка одной строкой — она же поставит ядро, если его нет:
 
@@ -208,17 +233,30 @@ jobs:
             и [здесь](https://github.com/splify2/splify2/tree/dist), — и первая команда берёт
             их оттуда сама.
 
+            С ядром 1.x: сначала обновите splify2 (Настройки → О ПО → Интерфейс), затем ядро —
+            там же, в карточке ядра: steer-core и модули ставятся одной транзакцией, спека,
+            списки и подписки остаются на месте.
+
             Пакет один на все роутеры: архитектуры здесь нет, весь бинарный код в ядре steer.
-            Форматов два: `.apk` для OpenWrt 24.10 и новее, `.ipk` для 23.05, 22.03 и
+            Форматов два: `.apk` для OpenWrt 25.12 и новее, `.ipk` для 24.10, 23.05 и
             всего, что осталось на opkg. Содержимое одинаковое.
 
             ```sh
-            # OpenWrt 24.10+
+            # OpenWrt 25.12+
             apk add --allow-untrusted ./luci-app-splify2-${{ env.VERSION }}-1_noarch.apk
-            # OpenWrt 23.05 и старше
+            # OpenWrt 24.10 и старше
             opkg install ./luci-app-splify2-${{ env.VERSION }}-1_all.ipk
             ```
-        run: printf '%s' "$NOTES" > "$RUNNER_TEMP/release-notes.md"
+        run: |
+          set -eu
+          {
+            if [ -s "$RUNNER_TEMP/changes.md" ]; then
+              printf '## Что нового\n'
+              cat "$RUNNER_TEMP/changes.md"
+              printf '\n## Установка\n\n'
+            fi
+            printf '%s' "$NOTES"
+          } > "$RUNNER_TEMP/release-notes.md"
 
       - name: Опубликовать релиз
         uses: softprops/action-gh-release@v2

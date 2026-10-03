@@ -527,6 +527,15 @@ check "таблицы splify2_doh и splify2_zm снимаются, отсутс
 check "чужое правило pref 29000 (таблица 77) не тронуто" "0" "$(echo "$L26" | grep -c 'table 77\|lookup 77')"
 rm -rf "$T26"
 
+# Список изменений: release.yml берёт раздел «## <версия>» из CHANGELOG.md тем же awk и без
+# него стабильный выпуск не выпускает. Раздел для версии в VERSION обязан быть уже в дереве —
+# иначе выпуск падает на сервере, а не здесь.
+CHV="$(cat VERSION)"
+check "в CHANGELOG.md есть раздел версии $CHV" "yes" \
+    "$(awk -v v="$CHV" '/^## / { if (on) exit; split($0, h, " "); if (h[2] == v) { on = 1; next } } on { print }' CHANGELOG.md | grep -q '[^[:space:]]' && echo yes || echo no)"
+check "release.yml разбирает CHANGELOG.md тем же выражением" "1" \
+    "$(grep -c "split(\$0, h, \" \"); if (h\[2\] == v)" .github/workflows/release.yml)"
+
 printf '\n%d проверок пройдено' "$pass"
 if [ "$fail" -gt 0 ]; then printf ', %d ПРОВАЛЕНО\n' "$fail"; exit 1; fi
 printf '\nвсе проверки прошли\n'
