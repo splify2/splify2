@@ -397,6 +397,7 @@ export const ru = {
         versiyaYadra: "Версия ядра",
         zagruzka: "загрузка…",
         relizovNeNaydeno: "релизов не найдено",
+        netVypuska: (p0: unknown) => `выпуска ядра ${p0} или новее ещё нет`,
         svezhaya: "свежая",
         spisokVersiyNePrishel: "Список версий не пришёл — проверьте интернет на роутере. Можно поставить пакет вручную:",
         gitlabComXyzmeanSteer: "gitlab.com/xyzmean/steer (ветка dist)",

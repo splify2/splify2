@@ -30,7 +30,13 @@ function isCore2(engine: Props['engine']): boolean {
 }
 
 export default function EngineCard({ engine, releases, onInstalled }: Props) {
-    const versions = releases?.versions ?? null
+    /* Только выпуски не старше минимума этого интерфейса (min_version от бэкенда). Ядро 1.x
+     * спеку v2 не читает: «steer 1.5.9 — свежая» с кнопкой «Переустановить» при стоящем 2.0
+     * (так было на QEMU-стенде, пока 2.0 не вышло) ставило прежнее ядро, и маршрутизация
+     * вставала. Бэкенд минимума не назвал — список как есть. */
+    const minV = engine?.min_version
+    const all = releases?.versions ?? null
+    const versions = all && minV ? all.filter((v) => cmpVersion(v, minV) >= 0) : all
     const [ver, setVer] = useState('')
     const core2 = isCore2(engine)
     /* Модули к первой установке — от ТОГО, ЧТО СТОИТ: у прежнего ядра с VLESS (steer-extended
@@ -45,6 +51,16 @@ export default function EngineCard({ engine, releases, onInstalled }: Props) {
     }, [engine?.present, engine?.vless, core2])
     const [busy, setBusy] = useState(false)
     const action = engineAction(engine, releases)
+    /* Подпись — то, что сделает кнопка с ВЫБРАННОЙ версией (как у карточки интерфейса):
+     * выбранная старше стоящей — «Установить …», а не «Переустановить». */
+    const cmp = ver && engine?.present && engine.version ? cmpVersion(ver, engine.version) : null
+    const label = cmp === null
+        ? action.label
+        : cmp > 0
+          ? S.engine.obnovitDo(releaseName(ver, releases?.names))
+          : cmp < 0
+            ? `${S.engine.ustanovit} ${releaseName(ver, releases?.names)}`
+            : S.engine.pereustanovit
     // Ядро младше того, под которое собран интерфейс, — см. engineTooOld.
     const tooOld = engineTooOld(engine)
 
@@ -183,7 +199,11 @@ export default function EngineCard({ engine, releases, onInstalled }: Props) {
                         className="w-full rounded-lg border border-input bg-transparent px-3 py-2 text-sm focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring"
                     >
                         {versions === null && <option value="">{S.engineCard.zagruzka}</option>}
-                        {versions?.length === 0 && <option value="">{S.engineCard.relizovNeNaydeno}</option>}
+                        {versions?.length === 0 && (
+                            <option value="">
+                                {all?.length && minV ? S.engineCard.netVypuska(minV) : S.engineCard.relizovNeNaydeno}
+                            </option>
+                        )}
                         {/* Показывается НАЗВАНИЕ выпуска, ставится ВЕРСИЯ: value — то, что
                             уедет в steer_install и попадёт в имя файла пакета, а подпись —
                             то, как выпуск подписан на странице релизов. */}
@@ -196,7 +216,7 @@ export default function EngineCard({ engine, releases, onInstalled }: Props) {
                     </select>
                     <Button onClick={install} disabled={busy || !ver} className="w-full">
                         {busy ? <Loader2 className="h-4 w-4 animate-spin" /> : <Download className="h-4 w-4" />}
-                        {action.label}
+                        {label}
                     </Button>
                 </div>
                 </>)}
@@ -209,7 +229,7 @@ export default function EngineCard({ engine, releases, onInstalled }: Props) {
                     <p className="text-xs text-muted-foreground">{releases.note}</p>
                 )}
 
-                {versions?.length === 0 && (
+                {all?.length === 0 && (
                     <p className="text-xs text-muted-foreground">
                         {S.engineCard.spisokVersiyNePrishel}{' '}
                         {/* Зеркало, а не github.com: у того, кто видит этот текст, закрыт
