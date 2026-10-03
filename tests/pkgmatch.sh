@@ -527,6 +527,74 @@ check "таблицы splify2_doh и splify2_zm снимаются, отсутс
 check "чужое правило pref 29000 (таблица 77) не тронуто" "0" "$(echo "$L26" | grep -c 'table 77\|lookup 77')"
 rm -rf "$T26"
 
+# Заведение спеки и служба ядра (блок «пустая спека и служба ядра» в uci-defaults). Ядро ставят
+# раньше интерфейса, и его демон встаёт без спеки: `start` для РАБОТАЮЩЕЙ службы — пустой вызов
+# (procd видит тот же экземпляр), и без перечитывания `steer status` отвечал бы «cannot open», а
+# пульт — «ядро не ответило», пока человек не нажал «Применить». Работающей службе велено
+# перечитать спеку (reload, а не restart — тот гасит таблицы и помощников), остановленной — start.
+#
+# Гоняется сам блок: корень — SPLIFY2_TEST_ROOT (шов `_r`, как у чистки следов отчёта), init-скрипт
+# — заглушка, которая помнит вызовы и отвечает на `running` по файлу. Перед запуском блок
+# проверяется на пути мимо корня: такой прогон тронул бы настоящий /etc/steer машины, где идёт стенд.
+TSP="$(mktemp -d)"
+sed -n '/^# >>> пустая спека и служба ядра/,/^# <<< пустая спека и служба ядра/p' "$UD" > "$TSP/blk.sh"
+check "блок заведения спеки найден в uci-defaults" "yes" "$([ -s "$TSP/blk.sh" ] && echo yes || echo no)"
+check "блок не ходит в /etc мимо корня стенда" "0" \
+    "$(grep -v '^[[:space:]]*#' "$TSP/blk.sh" | grep '/etc/' | grep -vc '\$_r/etc/')"
+# spec_blk РЕЖИМ... — свежий корень и прогон блока. Режимы: работает — служба работает, без-службы —
+# init-скрипта нет, спека — spec.json уже лежит, yaml — рядом spec.yaml, коннектор — sing-box
+# коннектора. Вызовы init-скрипта (по строке на вызов) — в $TSP/calls.
+spec_blk() {
+    rm -rf "$TSP/root" "$TSP/calls" "$TSP/up"
+    mkdir -p "$TSP/root/etc/init.d" "$TSP/root/etc/steer"
+    cat > "$TSP/root/etc/init.d/steer" <<'STUB'
+#!/bin/sh
+echo "$1" >> "$TSP_CALLS"
+case "$1" in running) [ -f "$TSP_UP" ] ;; esac
+STUB
+    chmod +x "$TSP/root/etc/init.d/steer"
+    for _m in "$@"; do
+        case "$_m" in
+            работает)   : > "$TSP/up" ;;
+            без-службы) rm -f "$TSP/root/etc/init.d/steer" ;;
+            спека)      printf '{"version":2}\n' > "$TSP/root/etc/steer/spec.json" ;;
+            yaml)       printf 'version: 2\n' > "$TSP/root/etc/steer/spec.yaml" ;;
+            коннектор)  printf '# sing-box от steer-box-connector\n' > "$TSP/root/etc/init.d/sing-box" ;;
+        esac
+    done
+    ( _r="$TSP/root"; TSP_CALLS="$TSP/calls"; TSP_UP="$TSP/up"; export TSP_CALLS TSP_UP; . "$TSP/blk.sh" )
+}
+spec_calls() { cat "$TSP/calls" 2>/dev/null | tr '\n' ' ' | sed 's/ $//'; }
+spec_has() { [ -s "$TSP/root/etc/steer/spec.json" ] && echo yes || echo no; }
+
+if [ -s "$TSP/blk.sh" ] && [ "$(grep -v '^[[:space:]]*#' "$TSP/blk.sh" | grep '/etc/' | grep -vc '\$_r/etc/')" = 0 ]; then
+    spec_blk работает
+    check "ядро работает без спеки: спека заведена" "yes" "$(spec_has)"
+    check "  это v2 с постоянным выходом direct" "1" \
+        "$(grep -c '^{"version":2,"outputs":{"direct":{"kind":"direct"}}}$' "$TSP/root/etc/steer/spec.json")"
+    check "  службе велено перечитать её — reload, а не start и не restart" "running reload" "$(spec_calls)"
+
+    spec_blk
+    check "служба остановлена: спека заведена и служба поднята, как прежде" "yes;running start" \
+        "$(spec_has);$(spec_calls)"
+
+    spec_blk без-службы
+    check "службы нет (интерфейс первым): спека заведена, звать некого" "yes;" "$(spec_has);$(spec_calls)"
+
+    spec_blk работает спека
+    check "спека уже есть: файл не тронут" '{"version":2}' "$(cat "$TSP/root/etc/steer/spec.json")"
+    check "  и служба не тронута вовсе" "" "$(spec_calls)"
+
+    spec_blk работает yaml
+    check "рядом spec.yaml: второй файл не заводится" "no" "$(spec_has)"
+    check "  и служба не тронута" "" "$(spec_calls)"
+
+    spec_blk работает коннектор
+    check "ядро ведёт коннектор: спека не заводится" "no" "$(spec_has)"
+    check "  и служба steer не тронута" "" "$(spec_calls)"
+fi
+rm -rf "$TSP"
+
 # Список изменений: release.yml берёт раздел «## <версия>» из CHANGELOG.md тем же awk и без
 # него стабильный выпуск не выпускает. Раздел для версии в VERSION обязан быть уже в дереве —
 # иначе выпуск падает на сервере, а не здесь.

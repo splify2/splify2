@@ -76,7 +76,7 @@ fi
 # И его файлы в /var: город и номер сети провайдера, счётчики отвалов, признак
 # загрузки, отметки внеплановых отправок и падений, недоотправленный пакет. Это память, а не
 # флеш, но лежать им до перезагрузки незачем, а город провайдера после «отчёт убран» — тем более.
-# `SPLIFY2_TEST_ROOT` — корень для стенда (tests/telemetrymatch.sh); на роутере пуст.
+# `SPLIFY2_TEST_ROOT` — корень для стенда (tests/telemetrymatch.sh, tests/pkgmatch.sh); на роутере пуст.
 _old=""
 for _k in telemetry_url telemetry_key telemetry_at telemetry_error geo_city_url; do
     uci -q get "splify2.main.$_k" >/dev/null 2>&1 && { uci -q delete "splify2.main.$_k"; _old=1; }
@@ -140,16 +140,37 @@ for _t in splify2_doh splify2_zm splify2_ztest; do
 done
 # <<< следы DoH и zapret
 
-SPEC=/etc/steer/spec.json
-if [ ! -s "$SPEC" ] && [ ! -s /etc/steer/spec.yaml ] &&
-   ! grep -q steer-box-connector /etc/init.d/sing-box 2>/dev/null; then
-    mkdir -p /etc/steer 2>/dev/null
+# Заведение спеки и служба ядра. Начало и конец блока размечены для стенда (tests/pkgmatch.sh):
+# корень — тот же шов `_r`, что у блока выше, на роутере он пуст.
+# >>> пустая спека и служба ядра
+SPEC="$_r/etc/steer/spec.json"
+if [ ! -s "$SPEC" ] && [ ! -s "$_r/etc/steer/spec.yaml" ] &&
+   ! grep -q steer-box-connector "$_r/etc/init.d/sing-box" 2>/dev/null; then
+    mkdir -p "$_r/etc/steer" 2>/dev/null
     printf '{"version":2,"outputs":{"direct":{"kind":"direct"}}}\n' > "$SPEC" 2>/dev/null
-    # Движок мог встать раньше нас и уже отказаться стартовать без спеки. Теперь она есть —
-    # поднимаем; нет движка (ставят интерфейс первым) — промолчим, его установка поднимет
-    # себя сама.
-    [ -x /etc/init.d/steer ] && /etc/init.d/steer start >/dev/null 2>&1
+    # Ядро ставят раньше интерфейса (так и велит установщик), и его демон встаёт без спеки:
+    # применять нечего, `steer status` и `steer diag` отвечают «cannot open», а пульт —
+    # «ядро не ответило», пока человек не нажал «Применить». `start` для РАБОТАЮЩЕЙ службы —
+    # пустой вызов (procd видит тот же экземпляр и ничего не меняет), поэтому ей велено
+    # перечитать спеку: reload — запрос демону сверить спеку с применённой, а применённого
+    # демон после старта не знает, и первый reload применяет всё, как при старте (steer,
+    # src/daemon/recon.c). Не restart: он гасит демона вместе с таблицами и помощниками, а
+    # перечитывание не трогает ничего, кроме изменившегося. Снято на демоне в своём сетевом
+    # пространстве: поднят без спеки, спека появилась, `status` по-прежнему «cannot open»,
+    # `steer reload` — и таблица steer в ядре, и `status` с выходом direct.
+    # Службы нет или она не работает — поднимаем, как прежде; движка нет (ставят интерфейс
+    # первым) — промолчим, его установка поднимет себя сама. Ту же пару ведёт оборона в rpcd
+    # (fast.sh, spec_ensure).
+    _si="$_r/etc/init.d/steer"
+    if [ -x "$_si" ]; then
+        if "$_si" running >/dev/null 2>&1; then
+            "$_si" reload >/dev/null 2>&1
+        else
+            "$_si" start >/dev/null 2>&1
+        fi
+    fi
 fi
+# <<< пустая спека и служба ядра
 
 
 # САМОЛЕЧЕНИЕ СПЕКИ ПРИ УСТАНОВКЕ И ОБНОВЛЕНИИ (spec_heal_nat6 в rpcd/m-spec.sh). Выходы-интерфейсы

@@ -78,7 +78,8 @@ EOF
 # /etc/init.d/steer: тот же протокол, но с ПАМЯТЬЮ. enable/disable оставляют след на
 # диске, а enabled его читает — иначе «после остановки автозапуск снят» проверялось бы
 # против заглушки, которая всегда отвечает одно и то же, то есть ни против чего.
-# ENGINE_ENABLED задаёт лишь начальное состояние.
+# ENGINE_ENABLED задаёт лишь начальное состояние. `running` отвечает по файлу steer-running:
+# есть — служба работает (код 0), нет — не работает (код 1); без файла служба «остановлена».
 cat > "$T/bin/initd-steer" <<'EOF'
 #!/bin/sh
 echo "$1" >> "$SANDBOX/initd.log"
@@ -86,6 +87,7 @@ case "$1" in
     enable)  rm -f "$SANDBOX/disabled" ;;
     disable) : > "$SANDBOX/disabled" ;;
     enabled) [ -f "$SANDBOX/disabled" ] && exit 1; exit "${ENGINE_ENABLED:-0}" ;;
+    running) [ -f "$SANDBOX/steer-running" ]; exit $? ;;
 esac
 exit 0
 EOF
@@ -920,14 +922,15 @@ for o in (d.get("outputs") or []):
 print("НЕТ ВЫХОДА")' "$1" "$2"
 }
 
-reset_logs() { rm -f "$T/apk.log" "$T/initd.log" "$T/wget.log" "$T/curl.log" "$T/rpcd-initd.log" "$T/disabled"; : > "$T/apk.log"; : > "$T/initd.log"; }
+reset_logs() { rm -f "$T/apk.log" "$T/initd.log" "$T/wget.log" "$T/curl.log" "$T/rpcd-initd.log" "$T/disabled" "$T/steer-running"; : > "$T/apk.log"; : > "$T/initd.log"; }
 
-# Только то, что init.d МЕНЯЕТ. Запросы состояния (enabled) в протоколе тоже есть — их
-# делает сам скрипт, чтобы отчитаться, — но к порядку действий они не относятся.
+# Только то, что init.d МЕНЯЕТ. Запросы состояния (enabled, running) в протоколе тоже есть — их
+# делает сам скрипт, чтобы отчитаться или выбрать между start и reload, — но к порядку действий
+# они не относятся.
 custom_domains_path()  { printf '%s/lists/custom/domains/%s.lst' "$T" "$1"; }
 custom_prefixes_path() { printf '%s/lists/custom/%s.lst' "$T" "$1"; }
 
-initd_actions() { grep -v '^enabled$' "$T/initd.log" | awk '{printf "%s ", $1}' | sed 's/ $//'; }
+initd_actions() { grep -Ev '^(enabled|running)$' "$T/initd.log" | awk '{printf "%s ", $1}' | sed 's/ $//'; }
 
 # ---- сам скрипт вообще запускается --------------------------------------------
 # Первая проверка стенда — про стенд: пока она красная, все остальные бессмысленны.
@@ -3250,7 +3253,9 @@ reset_logs
 out="$(rpcd spec_get)"
 check "спеки нет — она заводится чтением" "yes" \
       "$([ -s "$T/etc/spec.json" ] && echo yes || echo no)"
-check "и служба ядра поднята" "start" "$(initd_actions)"
+check "и остановленная служба ядра поднята" "start" "$(initd_actions)"
+check "  сперва спрошено, работает ли она" "running start" \
+      "$(tr '\n' ' ' < "$T/initd.log" | sed 's/ $//')"
 check "и в ней есть постоянный выход direct" "direct" \
       "$(printf '%s' "$out" | python3 -c 'import json,sys; d=json.load(sys.stdin); print(",".join(k for k,v in d["outputs"].items() if v.get("kind")=="direct"))')"
 check "правил в ней нет — это точная запись того, что есть" "0" \
@@ -3305,6 +3310,32 @@ rm -f "$T/etc/spec.json"
 rpcd live '{"fast":true}' >/dev/null
 check "круг опроса заводит спеку так же" "yes" \
       "$([ -s "$T/etc/spec.json" ] && echo yes || echo no)"
+# Служба УЖЕ работает — ядро ставили раньше интерфейса, и его демон поднят без спеки. `start` для
+# работающей службы пуст (procd видит тот же экземпляр), и без перечитывания `steer status`
+# отвечал бы «cannot open», а пульт — «ядро не ответило», пока человек не нажал «Применить».
+# Работающей службе велено перечитать спеку (reload), а не перезапуститься (restart): перезапуск
+# гасит и таблицы ядра, и помощников, а перечитывание не трогает ничего, кроме изменившегося.
+rm -f "$T/etc/spec.json"
+reset_logs
+: > "$T/steer-running"
+rpcd spec_get >/dev/null
+check "служба работает без спеки: чтение заводит спеку" "yes" \
+      "$([ -s "$T/etc/spec.json" ] && echo yes || echo no)"
+check "  и просит её перечитать — reload, а не start" "reload" "$(initd_actions)"
+check "  не restart: таблицы и помощники не гасятся" "0" "$(grep -c '^restart$' "$T/initd.log")"
+check "  сперва спрошено, работает ли она" "running reload" \
+      "$(tr '\n' ' ' < "$T/initd.log" | sed 's/ $//')"
+rm -f "$T/etc/spec.json"
+reset_logs
+: > "$T/steer-running"
+rpcd live '{"fast":true}' >/dev/null
+check "круг опроса работающей службе — тот же reload" "reload" "$(initd_actions)"
+# Спека уже на месте — службу не трогаем вовсе: круг опроса идёт раз в пять секунд.
+reset_logs
+: > "$T/steer-running"
+rpcd live '{"fast":true}' >/dev/null
+check "спека есть — ни запроса состояния службы, ни reload" "" "$(cat "$T/initd.log")"
+reset_logs
 
 # ---- opkg: пустые списки пакетов не должны валить установку -------------------------
 # С живого роутера: «cannot find dependency ip-full for steer», хотя пакет скачан и лежит
