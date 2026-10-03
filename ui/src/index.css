@@ -416,6 +416,17 @@
     .splify-react-root .sp-stack thead {
       display: none;
     }
+    /* Таблица и тело — тоже блоками. Строки-блоки внутри tbody-таблицы получают безымянную
+     * обёртку-столбец, и её ширина — самое длинное имя записи без переносов (у `truncate` перенос
+     * запрещён): «H.O.D.C.A (Hetzner, OVH, DigitalOcean, Cloudflare…)» раздувал таблицу до 487
+     * пикселей при карточке в 339 на экране 390, и кнопки «обновить» и «удалить» каждой записи
+     * уезжали за край карточки (снято на QEMU-стенде). Блоком ширина — ширина карточки, а
+     * длинное имя обрезается многоточием. */
+    .splify-react-root .sp-stack,
+    .splify-react-root .sp-stack tbody {
+      display: block;
+      width: 100%;
+    }
     .splify-react-root .sp-stack tr {
       display: block;
       padding: 0.5rem 0.875rem;
