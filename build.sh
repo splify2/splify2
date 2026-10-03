@@ -455,7 +455,7 @@ mkdir -p "$OUT"
 docker run --rm -v "$PWD":/w -w /w alpine:latest sh -c \
     "apk add --no-cache apk-tools >/dev/null 2>&1 && apk mkpkg \
        --info name:luci-app-splify2 --info version:$VERSION-r1 \
-       --info description:'splify2: каналы, выходы и списки поверх ядра steer' \
+       --info description:'splify2: правила, выходы и списки поверх ядра steer' \
        --info arch:noarch --info depends:'luci-base ip-full curl' \
        --script post-install:build/scripts/post-install \
        --script post-upgrade:build/scripts/post-install \
@@ -502,7 +502,7 @@ Depends: luci-base, ip-full, curl
 Architecture: all
 Maintainer: xyzmean
 Section: luci
-Description: splify2: каналы, выходы и списки поверх ядра steer
+Description: splify2: правила, выходы и списки поверх ядра steer
 EOF
 cp build/scripts/post-install "$PKG/CONTROL/postinst"
 chmod 0755 "$PKG/CONTROL/postinst"

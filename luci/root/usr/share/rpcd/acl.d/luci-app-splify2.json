@@ -1,6 +1,6 @@
 {
   "luci-app-splify2": {
-    "description": "Управление ядром steer: каналы, выходы, списки, подписка VLESS",
+    "description": "Управление ядром steer: правила, выходы, списки и подписки",
     "read": {
       "uci": [
         "splify2",
