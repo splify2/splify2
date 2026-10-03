@@ -44,11 +44,14 @@ zone_index() {  # ИМЯ_ЗОНЫ -> идентификатор секции
     done
 }
 
-# В какой зоне уже лежит это устройство. Пусто — ни в какой.
+# В какой зоне устройство лежит ПРЯМО, списком `device`. Пусто — ни в какой такой.
 #
 # Нужно потому, что устройство в ДВУХ зонах fw4 не прощает, а устройство выхода kind=interface
 # человек мог назначить в зону сам — страница интерфейса в LuCI это предлагает. Молча добавив
 # его во вторую, мы получили бы отказ перезагрузки правил и неработающий фаервол целиком.
+#
+# ЭТО ТОЛЬКО ПОЛОВИНА ОТВЕТА. LuCI называет в зоне не устройство, а интерфейс (`list network`),
+# и решения о зоне устройства принимает fw_zone_id_of_dev, которая спрашивает и это.
 fw_zone_of_device() {  # ИМЯ_УСТРОЙСТВА -> идентификатор секции зоны
     fw_sections zone | while IFS= read -r _fzd_s; do
         for _fzd_d in $(uci -q get "firewall.$_fzd_s.device" 2>/dev/null); do
@@ -77,24 +80,72 @@ fw_client_devices() {
     printf '%s\n' $_fcd | grep . | sort -u
 }
 
-# Зона устройства — своя или через сетевой интерфейс. Пусто = зоны нет вовсе.
+# Логические интерфейсы netifd, которым принадлежит устройство. По одному в строке.
+#
+# Имя интерфейса и имя устройства — разные вещи, и фаервол называет в зоне то и другое:
+# `list device` — устройство, `list network` — интерфейс. Устройство интерфейса — его опция
+# `device` (прежде `ifname`), а у туннелей WireGuard и AmneziaWG опции нет: устройство называется
+# так же, как интерфейс (`wg0`). Оба случая — из настройки сети (`uci show network`, без процесса
+# на интерфейс). Имя, которое netifd выводит сам и которого в настройке нет (`pptp-vpn`, `6in4-he`),
+# спрашивается у netifd (`ubus call network.interface dump`, NET_DUMP — его ответ, загруженный
+# net_dump_load один раз на запрос), и только если настройка устройство не назвала.
+net_ifaces_of_dev() {  # ИМЯ_УСТРОЙСТВА
+    _nd_r="$(uci -q show network 2>/dev/null | awk -v dev="$1" '
+        {
+            eq = index($0, "=")
+            if (!eq) next
+            key = substr($0, 1, eq - 1); val = substr($0, eq + 1)
+            n = split(key, p, ".")
+            if (p[1] != "network" || p[2] ~ /^@/) next
+            if (n == 2) { if (val == "interface" && !(p[2] in isif)) { isif[p[2]] = 1; sec[++ns] = p[2] } next }
+            if (n != 3 || (p[3] != "device" && p[3] != "ifname")) next
+            gsub("\047", "", val)
+            nt = split(val, t, " ")
+            for (i = 1; i <= nt; i++) { named[p[2]] = 1; if (t[i] == dev) hit[p[2]] = 1 }
+        }
+        END { for (k = 1; k <= ns; k++) if (hit[sec[k]] || (!named[sec[k]] && sec[k] == dev)) print sec[k] }')"
+    if [ -z "$_nd_r" ] && [ -n "${NET_DUMP:-}" ]; then
+        # Имя уходит в запрос jsonfilter, поэтому только то, что устройством быть может.
+        case "$1" in
+            ''|*[!A-Za-z0-9_.:@-]*) ;;
+            *) _nd_r="$(printf '%s' "$NET_DUMP" | jsonfilter -e "@.interface[@.l3_device='$1'].interface" \
+                    -e "@.interface[@.device='$1'].interface" 2>/dev/null)" ;;
+        esac
+    fi
+    printf '%s\n' "$_nd_r" | awk 'NF && !seen[$0]++'
+}
+
+# Ответ netifd о логических интерфейсах — один раз на запрос (apply, spec_heal), ДО подоболочек: то,
+# что загрузила подоболочка, до вызывающего не доезжает. Недоступен netifd — NET_DUMP пуст, и
+# net_ifaces_of_dev обходится настройкой.
+net_dump_load() {
+    NET_DUMP="$(ubus -t 3 call network.interface dump 2>/dev/null)" || NET_DUMP=""
+}
+
+# Зона устройства — своя или через логический интерфейс. Пусто = зоны нет вовсе.
 #
 # ДВА СПОСОБА, А НЕ ОДИН, и второй не для красоты: зона `lan` перечисляет не устройства, а
 # СЕТИ (`list network 'lan'`), поэтому поиск только по `device` объявил бы br-lan беззонным —
-# и мы завели бы ему вторую зону рядом с той, в которой он и так лежит.
-fw_zone_id_of_client() {  # ИМЯ_УСТРОЙСТВА -> идентификатор секции зоны или пусто
+# и мы завели бы ему вторую зону рядом с той, в которой он и так лежит. Так пишет зоны и LuCI
+# («Настройки фаервола» на странице интерфейса — это `list network`), так что то же верно для
+# каждого туннеля, который человек положил в свою зону: прежде выходы (fw_zone_sync, лечение
+# ipv6) спрашивали только `device` и принимали такое устройство за ничьё — добавляли его и во
+# вторую зону, нашу, и писали ему ключ, хотя «чужой пакет — чужая настройка». Спрашивают оба:
+# клиенты и выходы.
+fw_zone_id_of_dev() {  # ИМЯ_УСТРОЙСТВА -> идентификатор секции зоны или пусто
     _fzc_i="$(fw_zone_of_device "$1")"
     if [ -z "$_fzc_i" ]; then
-        _fzc_n="$(uci show network 2>/dev/null |
-                  sed -n "s/^network\.\([^.@][^.]*\)\.device='\{0,1\}$1'\{0,1\}$/\1/p" | head -1)"
-        [ -n "$_fzc_n" ] && _fzc_i="$(fw_zone_of_network "$_fzc_n")"
+        for _fzc_n in $(net_ifaces_of_dev "$1"); do
+            _fzc_i="$(fw_zone_of_network "$_fzc_n")"
+            [ -n "$_fzc_i" ] && break
+        done
     fi
     printf '%s' "$_fzc_i"
 }
 
 fw_client_zones() {
     for _fcz_d in $(fw_client_devices); do
-        _fcz_i="$(fw_zone_id_of_client "$_fcz_d")"
+        _fcz_i="$(fw_zone_id_of_dev "$_fcz_d")"
         [ -n "$_fcz_i" ] && uci -q get "firewall.$_fcz_i.name" 2>/dev/null
     done | grep . | sort -u
 }
@@ -120,7 +171,7 @@ fw_client_zones() {
 # пробросами. Зона моргала бы через раз, а с ней и связность у клиентов. Поймано стендом.
 fw_client_devices_unzoned() {  # ИМЯ_НАШЕЙ_ЗОНЫ
     for _fcu_d in $(fw_client_devices); do
-        _fcu_i="$(fw_zone_id_of_client "$_fcu_d")"
+        _fcu_i="$(fw_zone_id_of_dev "$_fcu_d")"
         [ -n "$_fcu_i" ] || { printf '%s\n' "$_fcu_d"; continue; }
         [ "$(uci -q get "firewall.$_fcu_i.name" 2>/dev/null)" = "$1" ] && printf '%s\n' "$_fcu_d"
     done | grep . | sort -u
@@ -197,10 +248,15 @@ fw_zone_sync() {  # ЗОНА ВИДЫ MASQ
     #
     # Отсев именно тут, а не при добавлении: там мы бы уже создали зону, а отменять
     # созданное — лишний путь, на котором легко оставить половину.
+    #
+    # ЗОНА УСТРОЙСТВА — ПО `device` И ПО `network` (fw_zone_id_of_dev). LuCI кладёт туннель в зону
+    # списком network, и поиск одним `device` считал такое устройство ничьим: мы дописывали его и во
+    # вторую зону, нашу, — устройство в двух зонах fw4 не прощает, — а чужая настройка (зона человека
+    # со своим NAT и пробросами) оказывалась под нашей.
     if [ -n "$want" ]; then
         _keep=""
         for d in $want; do
-            other="$(fw_zone_of_device "$d")"
+            other="$(fw_zone_id_of_dev "$d")"
             if [ -n "$other" ] && { [ -z "$idx" ] || [ "$other" != "$idx" ]; }; then
                 skipped="$skipped $d"
                 continue
@@ -396,7 +452,8 @@ fw_sync() {
 #   - только выходы kind interface и awg (остальным виды подмену IPv6 не нужны или делают сами);
 #   - только без ключа `ipv6` — явные routed / off / nat человека остаются как есть;
 #   - только если устройство лежит в зоне steer_iface, которую ведём мы, и у зоны нет masq6:
-#     устройство в чужой зоне — чужая настройка, а при masq6 у зоны жалобы и нет;
+#     устройство в чужой зоне — чужая настройка (зона узнаётся и по `device`, и по `network`:
+#     fw_zone_id_of_dev), а при masq6 у зоны жалобы и нет;
 #   - только спека v2 (v1 ключа не знает) и только когда рядом нет spec.yaml (его ведёт человек).
 # masq6 у зоны мы НЕ включаем: зона общая, и подмена всего её IPv6 сломала бы соседний выход с
 # `ipv6: routed` (diag тогда советует masq6 снять).
@@ -414,7 +471,7 @@ spec_heal_nat6() {
     grep -q '"schema"' "$SPEC" 2>/dev/null && return 1
     _sh_devs=""
     for _sh_d in $(fw_devices_of interface,awg); do
-        _sh_z="$(fw_zone_of_device "$_sh_d")"
+        _sh_z="$(fw_zone_id_of_dev "$_sh_d")"
         [ -n "$_sh_z" ] || continue
         [ "$(uci -q get "firewall.$_sh_z.name" 2>/dev/null)" = steer_iface ] || continue
         [ "$(uci -q get "firewall.$_sh_z.masq6" 2>/dev/null)" = 1 ] && continue
@@ -580,7 +637,9 @@ case "$2" in
         # Зона туннельных устройств приводится в порядок ДО apply: иначе первый же прогон
         # объявит, что устройство никому не известно, и будет прав. Синхронизация в обе
         # стороны — добавить появившееся и убрать ушедшее вместе с самой зоной, когда
-        # туннельных выходов не осталось (см. fw_sync).
+        # туннельных выходов не осталось (см. fw_sync). Ответ netifd о логических интерфейсах
+        # спрашивается один раз и здесь, до подоболочек fw_sync и лечения (net_dump_load).
+        net_dump_load
         zone_msg="$(fw_sync 2>&1)"
         # Самолечение выходов без ipv6 (spec_heal_nat6, шапка там же): после fw_sync, потому что
         # устройство попадает в нашу зону именно им, и до `steer apply`, чтобы тот же apply
@@ -636,6 +695,7 @@ $out"
         # лечение смотрит на зону, поэтому устройства в нашу зону доводит сам apply, а здесь
         # лечатся только те, что в ней уже стоят.
         box_busy && fail "ядро занято: $BOX_BY"
+        net_dump_load
         if heal_out="$(spec_heal_nat6)"; then
             healed=1
             if [ -s "$APPLIED" ]; then

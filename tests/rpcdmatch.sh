@@ -201,6 +201,14 @@ for expr in os.environ.get('EXPRS', '').splitlines():
             if e.get('id') == m.group(2) and m.group(3) in e:
                 print(e[m.group(3)])
         continue
+    # Фильтр по полю записи любого списка: `@.interface[@.l3_device='pptp-vpn'].interface` — так
+    # из ответа netifd достаётся имя интерфейса по имени его устройства.
+    m = re.match(r"@\.([a-z_]+)\[@\.([a-z_0-9]+)='([^']*)'\]\.([a-z_0-9]+)$", expr)
+    if m and isinstance(d.get(m.group(1)), list):
+        for e in d[m.group(1)]:
+            if isinstance(e, dict) and str(e.get(m.group(2))) == m.group(3) and m.group(4) in e:
+                print(render(e[m.group(4)]))
+        continue
     # Поле записи, найденной ПО ПУТИ СПИСКА: так доскачивание спрашивает ссылку набора —
     # ему известен путь из спеки, а не идентификатор.
     m = re.match(r"@\.(categories|domain_lists)\[@\.file='([^']*)'\]\.([a-z_]+)$", expr)
@@ -397,6 +405,10 @@ EOF
 cat > "$T/bin/ubus" <<'EOF'
 #!/bin/sh
 echo "$*" >> "$SANDBOX/ubus.log"
+# Ответ netifd о логических интерфейсах — из фикстуры песочницы; файла нет — netifd не отвечает.
+case "$*" in
+    *"network.interface dump"*) [ -f "$SANDBOX/ubus-net.json" ] && { cat "$SANDBOX/ubus-net.json"; exit 0; } ;;
+esac
 exit 1
 EOF
 # curl: им ходит download(), то есть и списки издателя, и «свой список по ссылке».
@@ -4458,11 +4470,25 @@ printf '{"schema":1,"outputs":{},"channels":[]}\n' > "$T/etc/spec.json"
 # включить masq6 — у зоны, которую завели мы. Подмену IPv6 ставит само ядро по `ipv6: nat`;
 # apply (spec_heal_nat6) дописывает ключ выходам, записанным прежней панелью, архивом или руками.
 # Трогается ТОЛЬКО то, что описано: без ключа, interface/awg, устройство в нашей зоне без masq6.
+# Зона устройства узнаётся и по `device`, и по `network` (LuCI пишет `list network`): устройство
+# в зоне человека, как бы она его ни называла, — чужая настройка: в нашу зону не добавляется и
+# ключа не получает.
 v6of() {  # ВЫХОД -> значение ipv6 из spec.json ('-' если ключа нет)
     python3 -c 'import json,sys
 o = json.load(open(sys.argv[1]))["outputs"].get(sys.argv[2], {})
 print(o.get("ipv6", "-"))' "$T/etc/spec.json" "$1"
 }
+# Какие из устройств лежат в зоне — по одному слову через пробел, в порядке аргументов.
+in_zone() {  # ЗОНА УСТРОЙСТВО...
+    _iz_z="$1"; shift
+    _iz_have=" $(zone_devs "$_iz_z") "
+    for _iz_d in "$@"; do
+        case "$_iz_have" in *" $_iz_d "*) printf '%s ' "$_iz_d" ;; esac
+    done | sed 's/ $//'
+}
+# Ответ netifd: интерфейс vpn с протоколом pptp называется устройством pptp-vpn — этого имени
+# в настройке сети нет, его выводит сам netifd.
+printf '%s\n' '{"interface":[{"interface":"lan","up":true,"l3_device":"br-lan","device":"br-lan"},{"interface":"vpn","up":true,"l3_device":"pptp-vpn","device":"eth1"}]}' > "$T/ubus-net.json"
 heal_spec() {
     printf '%s\n' '{"version":2,"outputs":{
   "direct":{"kind":"direct"},
@@ -4471,6 +4497,10 @@ heal_spec() {
   "keep_off":{"kind":"interface","device":"wg_o","ipv6":"off"},
   "keep_nat":{"kind":"interface","device":"wg_n","ipv6":"nat"},
   "foreign":{"kind":"interface","device":"wg_f"},
+  "foreign_n":{"kind":"interface","device":"wgnet"},
+  "foreign_d":{"kind":"interface","device":"wg_d"},
+  "foreign_u":{"kind":"interface","device":"pptp-vpn"},
+  "foreign_i":{"kind":"interface","device":"wg_i"},
   "amn":{"kind":"awg","conf":"/etc/amnezia.conf","device":"awg0"},
   "pm.a":{"kind":"interface","device":"wgp1"},
   "pm.b":{"kind":"interface","device":"wgp2"},
@@ -4482,7 +4512,17 @@ heal_zones() {  # [masq6]
     rm -f "$T/uci.store" "$T/etc/fw-owned"; : > "$T/uci.store"
     uci_set 'firewall.@zone[0]' zone;  uci_set 'firewall.@zone[0].name' lan; uci_set 'firewall.@zone[0].device' 'br-lan'
     uci_set 'firewall.@zone[1]' zone;  uci_set 'firewall.@zone[1].name' wan; uci_set 'firewall.@zone[1].device' 'eth1'
+    # Чужие зоны: устройство списком device; интерфейс списком network (WireGuard — по имени,
+    # интерфейс с опцией device, с прежней опцией ifname и с выведенным netifd именем устройства).
     uci_set 'firewall.vpnz' zone;      uci_set 'firewall.vpnz.name' vpnz;    uci_set 'firewall.vpnz.device' 'wg_f'
+    uci_set 'firewall.vpnn' zone;      uci_set 'firewall.vpnn.name' vpnn;    uci_set 'firewall.vpnn.network' 'wgnet'
+    uci_set 'firewall.vpnd' zone;      uci_set 'firewall.vpnd.name' vpnd;    uci_set 'firewall.vpnd.network' 'lan_vpn'
+    uci_set 'firewall.vpnp' zone;      uci_set 'firewall.vpnp.name' vpnp;    uci_set 'firewall.vpnp.network' 'vpn'
+    uci_set 'firewall.vpni' zone;      uci_set 'firewall.vpni.name' vpni;    uci_set 'firewall.vpni.network' 'old_vpn'
+    uci_set 'network.wgnet' interface;  uci_set 'network.wgnet.proto' wireguard
+    uci_set 'network.lan_vpn' interface; uci_set 'network.lan_vpn.proto' static;  uci_set 'network.lan_vpn.device' 'wg_d'
+    uci_set 'network.vpn' interface;    uci_set 'network.vpn.proto' pptp
+    uci_set 'network.old_vpn' interface; uci_set 'network.old_vpn.proto' static;  uci_set 'network.old_vpn.ifname' 'wg_i'
     if [ -n "${1:-}" ]; then
         uci_set 'firewall.@zone[2]' zone; uci_set 'firewall.@zone[2].name' steer_iface
         uci_set 'firewall.@zone[2].device' 'warp wg_r wg_o wg_n awg0 wgp1 wgp2'; uci_set 'firewall.@zone[2].masq6' 1
@@ -4498,6 +4538,14 @@ check "heal: явный routed не тронут" "routed" "$(v6of keep_routed)"
 check "heal: явный off не тронут" "off" "$(v6of keep_off)"
 check "heal: явный nat на месте" "nat" "$(v6of keep_nat)"
 check "heal: устройство в чужой зоне не тронуто" "-" "$(v6of foreign)"
+check "heal: в чужой зоне (list network, имя = имя интерфейса) — тоже не тронуто" "-" "$(v6of foreign_n)"
+check "heal: в чужой зоне (list network, опция device) — тоже" "-" "$(v6of foreign_d)"
+check "heal: в чужой зоне (list network, прежняя опция ifname) — тоже" "-" "$(v6of foreign_i)"
+check "heal: в чужой зоне (list network, имя выводит netifd) — тоже" "-" "$(v6of foreign_u)"
+check "heal: чужие устройства в нашу зону не добавлены" "" "$(in_zone steer_iface wg_f wgnet wg_d wg_i pptp-vpn)"
+check "heal: и не записаны за нами" "0" "$(grep -c 'dev steer_iface \(wg_f\|wgnet\|wg_d\|wg_i\|pptp-vpn\)$' "$T/etc/fw-owned" 2>/dev/null)"
+check "heal: об оставленных чужих устройствах сказано в ответе apply" "yes" \
+      "$(printf '%s' "$out" | jget output | grep 'уже в своих зонах' | grep -qw 'wgnet' && echo yes || echo no)"
 check "heal: члены пула — оба" "nat nat" "$(v6of pm.a) $(v6of pm.b)"
 check "heal: группа и туннель без изменений" "- -" "$(v6of pm) $(v6of tun)"
 check "heal: obfs.ipv6 внутри туннеля не принят за ключ выхода" "-" "$(v6of tun)"
@@ -4539,6 +4587,17 @@ check "spec_heal: повторно — healed=false, apply не зовётся" 
 heal_zones; printf '%s\n' '{"schema":1,"outputs":{"warp":{"kind":"interface","device":"warp"}},"channels":[]}' > "$T/etc/spec.json"
 rpcd apply >/dev/null
 check "heal: спека v1 не правится (ключ ей неизвестен)" "-" "$(v6of warp)"
+# Клиенты: интерфейс WireGuard (устройство называется как интерфейс) в зоне человека списком
+# network — не беззонный, своей зоны клиентов ему не заводим; нужен только проброс из его зоны.
+rm -f "$T/uci.store" "$T/etc/fw-owned" "$T/ubus-net.json"; : > "$T/uci.store"
+uci_set 'firewall.@zone[0]' zone;  uci_set 'firewall.@zone[0].name' lan; uci_set 'firewall.@zone[0].device' 'br-lan'
+uci_set 'firewall.@zone[1]' zone;  uci_set 'firewall.@zone[1].name' wan; uci_set 'firewall.@zone[1].device' 'eth1'
+uci_set 'firewall.vpnsrv' zone;    uci_set 'firewall.vpnsrv.name' vpnsrv; uci_set 'firewall.vpnsrv.network' 'wg_srv'
+uci_set 'network.wg_srv' interface; uci_set 'network.wg_srv.proto' wireguard
+printf '%s\n' '{"version":2,"lan":{"devices":["br-lan","wg_srv"]},"outputs":{"direct":{"kind":"direct"},"vpn":{"kind":"interface","device":"wg0","on_fail":"direct"}},"channels":[]}' > "$T/etc/spec.json"
+out="$(rpcd apply)"
+check "клиент — интерфейс WireGuard в чужой зоне через network: зоны клиентов не заводим" "" "$(zone_id_by_name steer_clients)"
+check "и ему хватает проброса из его зоны" "lan vpnsrv" "$(fwd_srcs steer_iface)"
 rm -f "$T/uci.store" "$T/etc/fw-owned"; : > "$T/uci.store"
 printf '{"schema":1,"outputs":{},"channels":[]}\n' > "$T/etc/spec.json"
 
