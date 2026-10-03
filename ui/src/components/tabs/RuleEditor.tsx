@@ -5,7 +5,7 @@ import { Block, CardHead, FieldRow, ScreenHeader, Segmented } from '@/components
 import { rpc } from '@/lib/rpc'
 import { isClientAddr } from '@/lib/validate'
 import { usePending } from '@/lib/pending'
-import { type Channel, type Narrow, type OutputStatus, type ServiceEntry, type Upstream, devList, isPart, isTunnelKind } from '@/lib/model'
+import { type Channel, type Narrow, type OutputStatus, type ServiceEntry, type Upstream, devList, isPart, isTunnelKind, isUpstreamGroup } from '@/lib/model'
 
 /** Редактор правила — на месте таблицы, а не в модальном окне.
  *
@@ -26,6 +26,8 @@ const MAC = /^([0-9a-f]{2}:){5}[0-9a-f]{2}$/i
 /** Значение пункта «свой адрес» в выборе сервера DNS правила: имя апстрима так не назовёшь
  *  (имена — буквы, цифры, `_ - .`), и с выбранным по имени он не спутается. */
 const OWN_DNS = ' own'
+/** Значение списка для своей группы серверов правила — тоже не имя апстрима. */
+const OWN_GROUP = ' own-group'
 
 export { pathFor, srsPathFor, ruleFiles, onRouter, srsOf, selectedIds, isDomains } from '@/lib/rulefiles'
 import { pathFor, srsPathFor, ruleFiles, onRouter, srsProbe, mayNarrow, selectedIds, isDomains, serviceFiles, overridePortOf, withOverridePort } from '@/lib/rulefiles'
@@ -81,10 +83,15 @@ export default function RuleEditor({
     /* Серверы DNS из раздела «DNS»: правило может выбрать свой вместо общего. */
     const { spec: fullSpec } = usePending()
     const upstreamNames = Object.keys(fullSpec?.dns?.upstreams || {})
+    /** Группы серверов раздела «DNS» — выбираются так же, как сервер. */
+    const groupNames = Object.keys(fullSpec?.dns?.groups || {})
     /** Свой сервер прямо в правиле (`dns: { url, out, ips }` спеки v2): адрес и выход — тем же
      *  набором, что у сервера раздела «DNS». Выходы — с устройством, через которые ядро умеет
      *  направить запрос (как в разделе «DNS»). */
-    const ownDns: Upstream | undefined = ch.dns && typeof ch.dns !== 'string' ? ch.dns : undefined
+    const ownDns: Upstream | undefined = ch.dns && typeof ch.dns !== 'string' && !isUpstreamGroup(ch.dns) ? ch.dns : undefined
+    /** Своя группа серверов прямо в правиле (записана в спеке руками): видна и снимается, правится
+     *  в спеке. */
+    const ownGroup = isUpstreamGroup(ch.dns)
     const dnsOuts = Object.entries(fullSpec?.outputs || {})
         .filter(([, o]) => !isPart(o) && o.kind !== 'direct' && o.kind !== 'zapret' && o.kind !== 'tgws' && o.kind !== 'group')
         .map(([n]) => n)
@@ -619,11 +626,12 @@ export default function RuleEditor({
                             <label className="flex items-center justify-between gap-3 text-xs">
                                 <span className="text-subtle">{S.ruleEditor.serverDns}</span>
                                 <select
-                                    value={typeof ch.dns === 'string' ? ch.dns : ownDns ? OWN_DNS : ''}
+                                    value={typeof ch.dns === 'string' ? ch.dns : ownDns ? OWN_DNS : ownGroup ? OWN_GROUP : ''}
                                     onChange={(e) => {
                                         const v = e.currentTarget.value
                                         const next = { ...ch }
                                         if (v === OWN_DNS) next.dns = ownDns ?? { url: 'https://' }
+                                        else if (v === OWN_GROUP) return
                                         else if (v) next.dns = v
                                         else delete next.dns
                                         onChange(next)
@@ -632,7 +640,12 @@ export default function RuleEditor({
                                 >
                                     <option value="">{S.ruleEditor.poUmolchaniyu}</option>
                                     {upstreamNames.map((n) => <option key={n} value={n}>{n}</option>)}
+                                    {groupNames.map((n) => <option key={n} value={n}>{S.ruleEditor.gruppaDns(n)}</option>)}
+                                    {typeof ch.dns === 'string' && !upstreamNames.includes(ch.dns) && !groupNames.includes(ch.dns) && (
+                                        <option value={ch.dns}>{ch.dns}</option>
+                                    )}
                                     <option value={OWN_DNS}>{S.ruleEditor.svoyAdresDns}</option>
+                                    {ownGroup && <option value={OWN_GROUP}>{S.ruleEditor.svoyaGruppaDns}</option>}
                                 </select>
                             </label>
                         )}

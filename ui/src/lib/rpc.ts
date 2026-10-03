@@ -215,14 +215,20 @@ export interface DnsUpstreamState {
     /** DoQ, только когда 0-RTT был: вопросов до конца рукопожатия и отказов сервера в нём. */
     early?: number
     early_rejected?: number
+    /** Группа серверов (`proto: 'group'`): режим, кого failover спросит первым, члены с паузой. */
+    mode?: 'race' | 'failover' | string
+    active?: string | null
+    servers?: { name: string; pause: number; ok: number; failed: number }[]
 }
 
 export interface DnsLog {
     running: boolean
     size?: number
-    names?: { name: string; channel: string | null; out: string | null; count: number; last: number; ago: number }[]
+    names?: { name: string; channel: string | null; out: string | null; dns?: string | null; count: number; last: number; ago: number }[]
     upstreams?: DnsUpstreamState[]
     cache?: { entries: number; max: number; hits: number; misses: number; stored: number; evicted: number } | null
+    /** Сервер для имён вне правил (`dns.other`): пауза после отказа и сколько вопросов ушло DNS роутера. */
+    other?: { name: string; pause: number; ok: number; failed: number; fallback: number } | null
 }
 
 export const rpc = {

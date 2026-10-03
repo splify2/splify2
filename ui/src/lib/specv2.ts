@@ -58,6 +58,8 @@ import {
     type Spec,
     type Status,
     type Upstream,
+    type UpstreamGroup,
+    isUpstreamGroup,
 } from '@/lib/model'
 
 import { S } from '@/copy'
@@ -89,8 +91,9 @@ const LAN_KEYS = ['devices', 'addr'] as const
 const CLIENT_KEYS = ['addr', 'mac'] as const
 const LIST_KEYS = ['srs', 'prefixes_file', 'domains_file', 'proto', 'ports', 'all'] as const
 const RULE_KEYS = ['name', 'for', 'to', 'out', 'resolve', 'dns', 'enabled', 'scope'] as const
-const DNS_KEYS = ['mode', 'cache', 'cache_ttl', 'upstream', 'upstreams', 'bootstrap', 'traceroute_hops'] as const
+const DNS_KEYS = ['mode', 'cache', 'cache_ttl', 'upstream', 'upstreams', 'other', 'bootstrap', 'traceroute_hops'] as const
 const UPSTREAM_KEYS = ['url', 'out', 'ips', 'bootstrap'] as const
+const GROUP_KEYS = ['servers', 'mode'] as const
 const OBFS_KEYS = ['mode', 'server', 'listen'] as const
 
 const MAC_RE = /^[0-9a-f]{2}(:[0-9a-f]{2}){5}$/i
@@ -252,9 +255,21 @@ function deviceOf(o: Output): string {
     return o.device || o.name.slice(0, 15)
 }
 
-function decodeUpstream(u: unknown): Upstream | string | undefined {
+/** Группа серверов (`{ servers, mode }`); режим, которого модель не знает, остаётся в extra. */
+function decodeGroup(u: J): UpstreamGroup {
+    const out: UpstreamGroup = { servers: arr(u.servers) }
+    const m = str(u.mode)
+    if (m === 'race' || m === 'failover') out.mode = m
+    const x = rest(u, GROUP_KEYS)
+    if (m && !out.mode) (out.extra ??= {}).mode = u.mode
+    if (x) out.extra = { ...(out.extra || {}), ...x }
+    return out
+}
+
+function decodeUpstream(u: unknown): Upstream | UpstreamGroup | string | undefined {
     if (typeof u === 'string') return u
     if (!isObj(u)) return undefined
+    if (Array.isArray(u.servers) && u.url === undefined) return decodeGroup(u)
     const out: Upstream = { url: String(u.url ?? '') }
     const o = str(u.out)
     if (o) out.out = o
@@ -277,15 +292,20 @@ function decodeDns(d: J): DnsSpec | undefined {
     if (isObj(d.cache_ttl)) out.cache_ttl = { ...d.cache_ttl } as DnsSpec['cache_ttl']
     const up = str(d.upstream)
     if (up) out.upstream = up
+    const other = str(d.other)
+    if (other) out.other = other
     const bs = arr(d.bootstrap)
     if (bs.length) out.bootstrap = bs
     if (isObj(d.upstreams)) {
         const ups: Record<string, Upstream> = {}
+        const groups: Record<string, UpstreamGroup> = {}
         for (const [k, v] of Object.entries(d.upstreams)) {
             const u = decodeUpstream(v)
-            if (u && typeof u !== 'string') ups[k] = u
+            if (isUpstreamGroup(u)) groups[k] = u
+            else if (u && typeof u !== 'string') ups[k] = u
         }
         if (Object.keys(ups).length) out.upstreams = ups
+        if (Object.keys(groups).length) out.groups = groups
     }
     const x = rest(d, DNS_KEYS)
     if (x) out.extra = x
@@ -659,7 +679,12 @@ function encodeObfs(o: NonNullable<Output['obfs']>): J {
     return withExtra({ ...known }, extra)
 }
 
-function encodeUpstream(u: Upstream): J {
+function encodeUpstream(u: Upstream | UpstreamGroup): J {
+    if (isUpstreamGroup(u)) {
+        const g: J = { servers: u.servers }
+        if (u.mode) g.mode = u.mode
+        return withExtra(g, u.extra)
+    }
     const out: J = { url: u.url }
     if (u.out) out.out = u.out
     if (u.ips?.length) out.ips = u.ips
@@ -676,11 +701,12 @@ function encodeDns(spec: Spec): J | undefined {
     if (d.cache_ttl && Object.keys(d.cache_ttl).length) out.cache_ttl = d.cache_ttl
     if (d.bootstrap?.length) out.bootstrap = d.bootstrap
     if (d.upstream) out.upstream = d.upstream
-    if (d.upstreams && Object.keys(d.upstreams).length) {
-        const ups: J = {}
-        for (const [k, v] of Object.entries(d.upstreams)) ups[k] = encodeUpstream(v)
-        out.upstreams = ups
-    }
+    if (d.other) out.other = d.other
+    /* Серверы, затем группы — одной записью dns.upstreams (ядру порядок безразличен). */
+    const ups: J = {}
+    for (const [k, v] of Object.entries(d.upstreams || {})) ups[k] = encodeUpstream(v)
+    for (const [k, v] of Object.entries(d.groups || {})) ups[k] = encodeUpstream(v)
+    if (Object.keys(ups).length) out.upstreams = ups
     withExtra(out, d.extra)
     return Object.keys(out).length ? out : undefined
 }

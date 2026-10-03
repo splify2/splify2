@@ -178,6 +178,17 @@ export function activeNodesSupported(status: Status | null | undefined): boolean
     return Array.isArray(status?.features) && status.features.includes('active_nodes')
 }
 
+/** Умеет ли установленное ядро группы серверов DNS (`{ servers, mode }` в `dns.upstreams`, умение
+ *  `dns_groups`). Ядро без умения спеку с группой отвергает целиком. */
+export function dnsGroupsSupported(status: Status | null | undefined): boolean {
+    return Array.isArray(status?.features) && status.features.includes('dns_groups')
+}
+
+/** Умеет ли установленное ядро сервер для имён вне правил (`dns.other`, умение `dns_other`). */
+export function dnsOtherSupported(status: Status | null | undefined): boolean {
+    return Array.isArray(status?.features) && status.features.includes('dns_other')
+}
+
 /** Модули ядра 2.0 (пакеты steer-<модуль>) в порядке показа — тот же, что у бэкенда
  *  (m-engine.sh, STEER_MODULES). */
 export const STEER_MODULES = ['vless', 'hysteria2', 'proxy', 'xsteer', 'obfs', 'tgws']

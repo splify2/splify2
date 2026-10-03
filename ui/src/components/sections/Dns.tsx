@@ -1,13 +1,14 @@
 import { useEffect, useState } from 'react'
-import { Plus, Trash2 } from 'lucide-react'
+import { ArrowDown, ArrowUp, Plus, Trash2, X } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Block, CardHead, FieldRow, KV, Segmented } from '@/components/ui/layout'
 import { inputCls } from '@/components/formbits'
 import { notify } from '@/lib/notify'
 import { pending } from '@/lib/pending'
 import { rpc, type DnsLog } from '@/lib/rpc'
-import { isPart, type DomainMode, type DnsSpec, type Spec, type Upstream } from '@/lib/model'
+import { isPart, type DomainMode, type DnsSpec, type Spec, type Upstream, type UpstreamGroup } from '@/lib/model'
 import { type Live } from '@/lib/live'
+import { dnsGroupsSupported, dnsOtherSupported } from '@/lib/engine'
 
 import { S } from '@/copy'
 /** DNS: какими серверами и через какой выход резолвер движка спрашивает имена под правилами.
@@ -71,7 +72,152 @@ const PROTO_TEXT: Record<string, string> = { udp: 'DNS', tcp: S.dns.dnsPoTcp, do
 
 const listOf = (s: string) => s.split(/[\s,]+/).map((x) => x.trim()).filter(Boolean)
 
-export default function Dns(_props: { live?: Live }) {
+/** Куда уходят вопросы: DNS роутера (ключа нет), один сервер или группа из нескольких. */
+type TargetKind = 'router' | 'single' | 'group'
+
+/** Свободное имя для новой группы: base, base2, … — среди серверов и групп. */
+function freeName(base: string, dns: DnsSpec): string {
+    const taken = (n: string) => !!dns.upstreams?.[n] || !!dns.groups?.[n]
+    let n = base
+    for (let k = 2; taken(n); k++) n = `${base}${k}`
+    return n
+}
+
+/** Ссылается ли на группу что-то, кроме ключа `skip` раздела dns: правила, общий сервер, other. */
+function groupUsed(spec: Spec, dns: DnsSpec, name: string, skip: 'upstream' | 'other'): boolean {
+    if (skip !== 'upstream' && dns.upstream === name) return true
+    if (skip !== 'other' && dns.other === name) return true
+    return spec.channels.some((c) => c.dns === name)
+}
+
+/** Выбор сервера для одного назначения (`dns.upstream` или `dns.other`): DNS роутера, один сервер
+ *  из добавленных или несколько — группа с порядком и режимом «сразу все / по очереди». Группу
+ *  назначение заводит само (имя rules/other) и убирает, когда она больше никому не нужна. */
+function DnsTarget({ spec, dns, which, label, names, canGroup, log, onDns }: {
+    spec: Spec
+    dns: DnsSpec
+    which: 'upstream' | 'other'
+    label: string
+    names: string[]
+    canGroup: boolean
+    log: DnsLog | null
+    onDns: (next: DnsSpec) => void
+}) {
+    const cur = dns[which]
+    const group: UpstreamGroup | undefined = cur ? dns.groups?.[cur] : undefined
+    const kind: TargetKind = !cur ? 'router' : group ? 'group' : 'single'
+
+    /** Назначить target; прежняя группа, если на неё больше никто не ссылается, уходит. */
+    function assign(target: string | undefined, groups?: Record<string, UpstreamGroup>) {
+        const next: DnsSpec = { ...dns, groups: { ...(groups ?? dns.groups ?? {}) }, [which]: target }
+        if (cur && cur !== target && next.groups?.[cur] && !groupUsed(spec, next, cur, which)) delete next.groups[cur]
+        if (next.groups && !Object.keys(next.groups).length) delete next.groups
+        if (!target) delete next[which]
+        onDns(next)
+    }
+    function choose(k: TargetKind) {
+        if (k === kind) return
+        if (k === 'router') return assign(undefined)
+        if (k === 'single') return assign(group?.servers[0] ?? names[0])
+        const gname = freeName(which === 'upstream' ? 'rules' : 'other', dns)
+        const first = cur && !group ? cur : names[0]
+        assign(gname, { ...(dns.groups || {}), [gname]: { servers: first ? [first] : [], mode: 'failover' } })
+    }
+    function setGroup(g: UpstreamGroup) {
+        if (!cur) return
+        onDns({ ...dns, groups: { ...(dns.groups || {}), [cur]: g } })
+    }
+    const st = cur ? log?.upstreams?.find((u) => u.name === cur) : undefined
+    const items: { value: TargetKind; label: string }[] = [
+        { value: 'router', label: S.dns.dnsRoutera },
+        { value: 'single', label: S.dns.odinServer },
+    ]
+    if (canGroup || kind === 'group') items.push({ value: 'group', label: S.dns.neskolkoServerov })
+    const rest = group ? names.filter((n) => !group.servers.includes(n)) : []
+    const move = (i: number, j: number) => {
+        if (!group || j < 0 || j >= group.servers.length) return
+        const sv = [...group.servers]
+        const [x] = sv.splice(i, 1)
+        sv.splice(j, 0, x)
+        setGroup({ ...group, servers: sv })
+    }
+    return (
+        <div className="space-y-2 py-3">
+            <div className="text-sm text-subtle">{label}</div>
+            {names.length > 0 || kind !== 'router' ? (
+                <Segmented label={label} value={kind} onChange={choose} items={items} />
+            ) : (
+                <p className="text-xs text-muted-foreground">{S.dns.dnsRoutera}</p>
+            )}
+            {kind === 'single' && (
+                <select
+                    value={cur}
+                    aria-label={S.dns.serverDlya(label)}
+                    onChange={(e) => assign(e.currentTarget.value || undefined)}
+                    className={`${inputCls} w-full`}
+                >
+                    {cur && !names.includes(cur) && <option value={cur}>{cur}</option>}
+                    {names.map((n) => <option key={n} value={n}>{n}</option>)}
+                </select>
+            )}
+            {kind === 'group' && group && (
+                <div className="space-y-2">
+                    <Segmented
+                        label={S.dns.kakSprashivatGruppu(label)}
+                        value={group.mode === 'race' ? 'race' : 'failover'}
+                        onChange={(v) => setGroup({ ...group, mode: v })}
+                        items={[
+                            { value: 'failover', label: S.dns.poOcheredi },
+                            { value: 'race', label: S.dns.srazuVse },
+                        ]}
+                    />
+                    <ol className="space-y-1">
+                        {group.servers.map((m, i) => {
+                            const ms = st?.servers?.find((x) => x.name === m)
+                            return (
+                                <li key={m} className="flex items-center gap-2 text-sm">
+                                    <span className="w-5 shrink-0 text-right text-xs text-muted-foreground">{i + 1}</span>
+                                    <span className="min-w-0 flex-1 truncate font-mono">{m}</span>
+                                    {ms && ms.pause > 0 && <span className="shrink-0 text-xs text-destructive">{S.dns.pauza(ms.pause)}</span>}
+                                    {group.mode !== 'race' && st?.active === m && <span className="shrink-0 text-xs text-muted-foreground">{S.dns.otvechaetPervym}</span>}
+                                    <button type="button" aria-label={S.dns.vyshe(m)} onClick={() => move(i, i - 1)} disabled={i === 0}
+                                        className="sp-row bg-transparent p-0 text-muted-foreground disabled:opacity-30">
+                                        <ArrowUp className="h-4 w-4" />
+                                    </button>
+                                    <button type="button" aria-label={S.dns.nizhe(m)} onClick={() => move(i, i + 1)} disabled={i === group.servers.length - 1}
+                                        className="sp-row bg-transparent p-0 text-muted-foreground disabled:opacity-30">
+                                        <ArrowDown className="h-4 w-4" />
+                                    </button>
+                                    <button type="button" aria-label={S.dns.ubratIzGruppy(m)} disabled={group.servers.length === 1}
+                                        onClick={() => setGroup({ ...group, servers: group.servers.filter((x) => x !== m) })}
+                                        className="sp-row bg-transparent p-0 text-muted-foreground hover:text-destructive disabled:opacity-30">
+                                        <X className="h-4 w-4" />
+                                    </button>
+                                </li>
+                            )
+                        })}
+                    </ol>
+                    {rest.length > 0 && (
+                        <select
+                            value=""
+                            aria-label={S.dns.dobavitVGruppu(label)}
+                            onChange={(e) => {
+                                const v = e.currentTarget.value
+                                if (v) setGroup({ ...group, servers: [...group.servers, v] })
+                            }}
+                            className={`${inputCls} w-full`}
+                        >
+                            <option value="">{S.dns.dobavitServer}</option>
+                            {rest.map((n) => <option key={n} value={n}>{n}</option>)}
+                        </select>
+                    )}
+                </div>
+            )}
+        </div>
+    )
+}
+
+export default function Dns({ live }: { live?: Live }) {
     const [spec, setSpec] = useState<Spec | null>(null)
     const [log, setLog] = useState<DnsLog | null>(null)
     const [preset, setPreset] = useState(PRESETS[0].name)
@@ -92,6 +238,10 @@ export default function Dns(_props: { live?: Live }) {
     const dns: DnsSpec = spec.dns || {}
     const ups = dns.upstreams || {}
     const names = Object.keys(ups)
+    const groups = dns.groups || {}
+    /* Группы и сервер для остальных — по умению ядра; записанное в спеке видно и снимается и без него. */
+    const canGroup = dnsGroupsSupported(live?.status)
+    const showOther = dnsOtherSupported(live?.status) || !!dns.other
     const outs = Object.entries(spec.outputs)
         .filter(([, o]) => !isPart(o) && o.kind !== 'direct' && o.kind !== 'zapret' && o.kind !== 'tgws' && o.kind !== 'group')
         .map(([n]) => n)
@@ -99,6 +249,9 @@ export default function Dns(_props: { live?: Live }) {
     function setDns(next: DnsSpec) {
         const clean: DnsSpec = { ...next }
         if (clean.upstreams && !Object.keys(clean.upstreams).length) delete clean.upstreams
+        if (clean.groups && !Object.keys(clean.groups).length) delete clean.groups
+        if (!clean.upstream) delete clean.upstream
+        if (!clean.other) delete clean.other
         if (!clean.bootstrap?.length) delete clean.bootstrap
         if (!clean.cache) delete clean.cache
         const out: Spec = { ...spec!, dns: Object.keys(clean).length ? clean : undefined }
@@ -109,12 +262,22 @@ export default function Dns(_props: { live?: Live }) {
         setDns({ ...dns, upstreams: { ...ups, [name]: up } })
     }
     function rename(old: string, nn: string) {
-        if (!NAME_RE.test(nn) || (nn !== old && ups[nn])) return
+        if (!NAME_RE.test(nn) || (nn !== old && (ups[nn] || groups[nn]))) return
         const next: Record<string, Upstream> = {}
         for (const [k, v] of Object.entries(ups)) next[k === old ? nn : k] = v
-        /* Правила и общий сервер ссылаются на имя — уводим их за ним. */
+        /* Правила, общий сервер, сервер остальных и группы ссылаются на имя — уводим их за ним. */
         const channels = spec!.channels.map((c) => (c.dns === old ? { ...c, dns: nn } : c))
-        const d: DnsSpec = { ...dns, upstreams: next, upstream: dns.upstream === old ? nn : dns.upstream }
+        const g: Record<string, UpstreamGroup> = {}
+        for (const [k, v] of Object.entries(groups)) g[k] = { ...v, servers: v.servers.map((m) => (m === old ? nn : m)) }
+        const d: DnsSpec = {
+            ...dns,
+            upstreams: next,
+            groups: Object.keys(g).length ? g : undefined,
+            upstream: dns.upstream === old ? nn : dns.upstream,
+            other: dns.other === old ? nn : dns.other,
+        }
+        if (!d.groups) delete d.groups
+        if (!d.other) delete d.other
         const out: Spec = { ...spec!, channels, dns: d }
         setSpec(out)
         pending.edit(out)
@@ -122,9 +285,16 @@ export default function Dns(_props: { live?: Live }) {
     function remove(name: string) {
         const used = spec!.channels.filter((c) => c.dns === name).map((c) => c.name)
         if (used.length) { notify(S.dns.serverVybranVPravilah(name, used.join(', ')), 'warning'); return }
+        const inGroups = Object.entries(groups).filter(([, g]) => g.servers.includes(name)).map(([k]) => k)
+        if (inGroups.length) { notify(S.dns.serverVGruppe(name), 'warning'); return }
         const rest = { ...ups }
         delete rest[name]
-        setDns({ ...dns, upstreams: rest, upstream: dns.upstream === name ? undefined : dns.upstream })
+        setDns({
+            ...dns,
+            upstreams: rest,
+            upstream: dns.upstream === name ? undefined : dns.upstream,
+            other: dns.other === name ? undefined : dns.other,
+        })
     }
     function addPreset() {
         const p = PRESETS.find((x) => x.name === preset)
@@ -282,16 +452,17 @@ export default function Dns(_props: { live?: Live }) {
             <Block>
                 <CardHead title={S.dns.kakSprashivat} />
                 <div className="divide-y divide-border">
-                    <FieldRow label={S.dns.serverPoUmolchaniyuDlya}>
-                        <select
-                            value={dns.upstream || ''}
-                            onChange={(e) => setDns({ ...dns, upstream: e.currentTarget.value || undefined })}
-                            className={`${inputCls} w-full`}
-                        >
-                            <option value="">{S.dns.sistemnyyDnsRoutera}</option>
-                            {names.map((n) => <option key={n} value={n}>{n}</option>)}
-                        </select>
-                    </FieldRow>
+                    <DnsTarget spec={spec} dns={dns} which="upstream" label={S.dns.dlyaImenPodPravilami}
+                        names={names} canGroup={canGroup} log={log} onDns={setDns} />
+                    {showOther && (
+                        <>
+                            <DnsTarget spec={spec} dns={dns} which="other" label={S.dns.dlyaOstalnyhSaytov}
+                                names={names} canGroup={canGroup} log={log} onDns={setDns} />
+                            {log?.other && log.other.pause > 0 && (
+                                <p className="py-1 text-xs text-destructive">{S.dns.ostalnyeCherezRouter(log.other.pause)}</p>
+                            )}
+                        </>
+                    )}
                     <FieldRow label={S.dns.serveryDlyaRazresheniyaImen}>
                         <input
                             defaultValue={(dns.bootstrap || []).join(', ')}

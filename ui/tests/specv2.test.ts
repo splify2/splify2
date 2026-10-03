@@ -386,6 +386,42 @@ describe('ключи, которых модель не знает, доезжа�
         expect(encodeSpec(back)).toEqual(d)
     })
 
+    it('группы серверов DNS, dns.other и своя группа правила — круг без потерь', () => {
+        const v = {
+            version: 2,
+            outputs: { direct: { kind: 'direct' }, wg0: { kind: 'interface', device: 'wg0' } },
+            lists: { n: { domains_file: ['/l/n.lst'] } },
+            dns: {
+                upstream: 'doh3',
+                other: 'two',
+                upstreams: {
+                    q9: { url: 'https://dns.quad9.net/dns-query', ips: ['9.9.9.9'] },
+                    cf: { url: 'https://cloudflare-dns.com/dns-query', ips: ['1.1.1.1'] },
+                    doh3: { servers: ['q9', 'cf'], mode: 'failover' },
+                    two: { servers: ['cf', 'q9'], mode: 'race', будущее_группы: 1 },
+                    plain: { servers: ['q9'] },
+                },
+            },
+            rules: [{ name: 'n', to: ['n'], out: 'wg0', dns: { servers: ['cf'], mode: 'race' } }],
+        }
+        const ui = decodeSpec(v)
+        expect(Object.keys(ui.dns?.upstreams || {})).toEqual(['q9', 'cf'])
+        expect(ui.dns?.groups?.doh3).toEqual({ servers: ['q9', 'cf'], mode: 'failover' })
+        expect(ui.dns?.groups?.plain).toEqual({ servers: ['q9'] })
+        expect(ui.dns?.other).toBe('two')
+        expect(ui.channels[0].dns).toEqual({ servers: ['cf'], mode: 'race' })
+        expect(encodeSpec(ui)).toEqual(v)
+    })
+
+    it('режим группы, которого модель не знает, доезжает обратно', () => {
+        const v = {
+            version: 2,
+            outputs: { direct: { kind: 'direct' }, wg0: { kind: 'interface', device: 'wg0' } },
+            dns: { upstreams: { a: { url: 'udp://1.1.1.1' }, g: { servers: ['a'], mode: 'будущий' } } },
+        }
+        expect(encodeSpec(decodeSpec(v))).toEqual(v)
+    })
+
     it('сужение у набора .srs не теряется', () => {
         const v = {
             version: 2,

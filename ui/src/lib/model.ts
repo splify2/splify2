@@ -440,9 +440,10 @@ export interface Channel {
     /** Arrays, like the engine: several lists feeding one channel is the normal case,
      *  and the compiler merges channels that agree on output/clients/mode into ONE set
      *  and ONE rule — so a dozen enabled lists cost two rules per packet, not a dozen. */
-    /** Сервер DNS для имён этого правила: имя из `dns.upstreams` либо сразу адрес (спека v2,
-     *  `dns:` у правила). Нет — общий (`dns.upstream`) или прежний путь наверх. */
-    dns?: string | Upstream
+    /** Сервер DNS для имён этого правила: имя из `dns.upstreams` (сервер или группа) либо сразу
+     *  адрес или группа (спека v2, `dns:` у правила). Нет — общий (`dns.upstream`) или прежний
+     *  путь наверх. */
+    dns?: string | Upstream | UpstreamGroup
     match: {
         prefixes_files?: string[]
         domains_files?: string[]
@@ -511,6 +512,21 @@ export interface Upstream {
     extra?: Record<string, unknown>
 }
 
+/** Группа серверов DNS (спека v2, `dns.upstreams.<имя>: { servers, mode }`): несколько серверов
+ *  как один. `race` — вопрос всем сразу, ответ — первый годный; `failover` (умолчание ядра) — по
+ *  очереди, отказавший сервер на время уходит в конец. В модели группы лежат отдельно от серверов
+ *  (`DnsSpec.groups`), в спеке — в той же `dns.upstreams`. */
+export interface UpstreamGroup {
+    servers: string[]
+    mode?: 'race' | 'failover'
+    /** Ключи группы, которых модель не знает: пишутся обратно как есть. */
+    extra?: Record<string, unknown>
+}
+
+export function isUpstreamGroup(u: unknown): u is UpstreamGroup {
+    return !!u && typeof u === 'object' && Array.isArray((u as UpstreamGroup).servers)
+}
+
 /** Раздел `dns` спеки v2. */
 export interface DnsSpec {
     /** Режим доменных правил без своего `resolve`; по умолчанию `fakeip`. */
@@ -518,11 +534,15 @@ export interface DnsSpec {
     /** Записей в кэше ответов; 0 или нет — кэша нет. */
     cache?: number
     cache_ttl?: { min?: number; max?: number; negative?: number }
-    /** Общий сервер для имён под правилами, у которых своего нет. */
+    /** Общий сервер (или группа) для имён под правилами, у которых своего нет. */
     upstream?: string
+    /** Сервер (или группа) для имён вне правил (`dns.other`); нет — DNS роутера. */
+    other?: string
     /** Серверы обычного DNS для разрешения имён серверов DoT/DoH/DoQ. */
     bootstrap?: string[]
     upstreams?: Record<string, Upstream>
+    /** Группы серверов — записи `dns.upstreams` с `servers` (имена в общем пространстве с серверами). */
+    groups?: Record<string, UpstreamGroup>
     /** Ключи раздела `dns`, которых модель не знает: пишутся обратно как есть. */
     extra?: Record<string, unknown>
 }

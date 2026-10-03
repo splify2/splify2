@@ -241,6 +241,35 @@ describe.skipIf(!HAVE)('кодек v2 против движка: «кому» с
 })
 
 describe.skipIf(!HAVE)('кодек v2 против движка: свой сервер DNS у правила', () => {
+    it('группы серверов DNS и dns.other ядро принимает, и круг их не меняет', () => {
+        const v2 = {
+            version: 2,
+            outputs: { direct: { kind: 'direct' }, wg0: { kind: 'interface', device: 'wg0' }, wg1: { kind: 'interface', device: 'wg1' } },
+            lists: { n: { domains_file: [dom] }, m: { domains_file: [dom2] } },
+            dns: {
+                upstream: 'rules',
+                other: 'other',
+                upstreams: {
+                    q9: { url: 'https://dns.quad9.net/dns-query', ips: ['9.9.9.9'], out: 'wg1' },
+                    cf: { url: 'tls://cloudflare-dns.com', ips: ['1.1.1.1'] },
+                    rules: { servers: ['q9', 'cf'], mode: 'failover' },
+                    other: { servers: ['cf'], mode: 'race' },
+                },
+            },
+            rules: [
+                { name: 'n', to: ['n'], out: 'wg0' },
+                { name: 'm', to: ['m'], out: 'wg0', dns: { servers: ['q9'], mode: 'race' } },
+            ],
+        }
+        const before = ruleset(v2, 'dgrp-a.json')
+        const ui = decodeSpec(v2)
+        expect(ui.dns?.groups?.rules?.servers).toEqual(['q9', 'cf'])
+        expect(ruleset(encodeSpec(ui), 'dgrp-b.json')).toBe(before)
+        /* Член группы ходит через выход, которым не пользуется ни одно правило, — страж выхода всё
+         * равно стоит: запрос к серверу не уйдёт мимо устройства. */
+        expect(before).toContain('steer-guard:wg1')
+    })
+
     it('правило с dns-отображением ядро принимает, и круг его не меняет', () => {
         const v2 = {
             version: 2,

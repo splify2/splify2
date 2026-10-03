@@ -66,4 +66,17 @@ describe('свой сервер DNS у правила', () => {
         expect(changes.at(-1)!.dns).toBeUndefined()
         expect(screen.queryByLabelText(S.ruleEditor.adresDns)).toBeNull()
     })
+
+    it('группа серверов из раздела DNS выбирается по имени; своя группа правила видна и снимается', async () => {
+        pending.saved = { ...SPEC, dns: { upstreams: { q9: { url: 'https://dns.quad9.net/dns-query' } }, groups: { rules: { servers: ['q9'] } } } }
+        const changes = mount(base)
+        await userEvent.selectOptions(screen.getByLabelText(S.ruleEditor.serverDns), S.ruleEditor.gruppaDns('rules'))
+        expect(changes.at(-1)!.dns).toBe('rules')
+        const ch2 = mount({ ...base, dns: { servers: ['q9'], mode: 'race' } })
+        const sel = screen.getAllByLabelText(S.ruleEditor.serverDns).at(-1) as HTMLSelectElement
+        expect(sel.selectedOptions[0].textContent).toBe(S.ruleEditor.svoyaGruppaDns)
+        expect(screen.queryAllByLabelText(S.ruleEditor.adresDns)).toHaveLength(0)
+        await userEvent.selectOptions(sel, S.ruleEditor.poUmolchaniyu)
+        expect(ch2.at(-1)!.dns).toBeUndefined()
+    })
 })
