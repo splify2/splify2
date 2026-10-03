@@ -3,6 +3,7 @@ import { notify } from '@/lib/notify'
 import { rpc } from '@/lib/rpc'
 import { EMPTY_SPEC, type Channel, type Spec } from '@/lib/model'
 import { encodeSpec, wasV1 } from '@/lib/specv2'
+import { cmpVersion } from '@/lib/engine'
 
 import { S } from '@/copy'
 /** Автосохранение и счётчик неприменённого — одно место на весь экран.
@@ -93,9 +94,20 @@ class PendingStore {
             this.saved = migrate ? { ...saved, schema: undefined } : saved
             this.applied = applied ?? this.saved
             this.emit()
-            if (migrate) this.edit(this.saved)
+            if (migrate && !(await this.coreTooOld())) this.edit(this.saved)
         }
         return this.saved
+    }
+
+    /** Ядро младше минимума (переход с 26.9: интерфейс уже 26.10, ядро ещё 1.5.x) — спеку v2 оно
+     *  отвергает при проверке, и перенос v1 → v2 на открытии кончался красным тостом с отказом
+     *  ядра и вечной несохранённой правкой. Тогда переноса нет: ядро 1.x работает со своей
+     *  спекой, экран зовёт обновить ядро, а перенос случится на первом открытии после
+     *  обновления. Бэкенд не ответил или минимума не назвал — переносим, как прежде. */
+    private async coreTooOld(): Promise<boolean> {
+        const e = await rpc.engine().catch(() => null)
+        if (!e?.present || !e.version || !e.min_version) return false
+        return cmpVersion(e.version, e.min_version) < 0
     }
 
     /** Правка: сразу в память (и всем подписчикам), на диск — через 500 мс тишины.
