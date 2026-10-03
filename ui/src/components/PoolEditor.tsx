@@ -1448,13 +1448,17 @@ function Choice({
                 <span className="min-w-0 flex-1">
                     <span className="block truncate font-medium">{title}</span>
                     <ConfBadges list={badges} className="mt-1" />
+                    {/* С бейджами подсказка — строкой под ними: справа она забирала у названия и
+                        бейджей половину строки, и в редакторе на 1280 пикселях «любая рабочая»
+                        резалось до «любая рабо…», а бейджи вставали столбиком (QEMU-стенд). */}
+                    {hint && <span className="mt-1 block text-[11px] text-muted-foreground">{hint}</span>}
                 </span>
             ) : (
                 <span className="min-w-0 flex-1 truncate font-medium">{title}</span>
             )}
             {/* Подсказка справа на узком экране прячется: она отъедала место у названия, и
                 «любая рабочая» обрезалось до «любая р…». */}
-            {hint && <span className="hidden shrink-0 text-[11px] text-muted-foreground sm:inline">{hint}</span>}
+            {hint && !badges?.length && <span className="hidden shrink-0 text-[11px] text-muted-foreground sm:inline">{hint}</span>}
             {mark && <span className="shrink-0 text-[11px] text-warning-fg">{mark}</span>}
             {trail && <span className="shrink-0 text-[11px] tabular-nums">{trail}</span>}
         </button>
