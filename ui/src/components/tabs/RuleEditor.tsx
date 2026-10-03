@@ -374,16 +374,21 @@ export default function RuleEditor({
                     <Block>
                         <CardHead
                             title={S.ruleEditor.chtoPerenapravlyaem}
-                            meta={chosen.length ? S.ruleEditor.zapiseyVybrano(chosen.length) : S.ruleEditor.nichegoNeVybrano}
+                            meta={chosen.length
+                                ? S.ruleEditor.zapiseyVybrano(chosen.length)
+                                : ch.match.any ? S.rulesTab.vesTrafik : S.ruleEditor.nichegoNeVybrano}
                         />
                         {/* Счёт сервисов и записей стоял в шапке редактора справа. В шапке
                             экрана по образцу приложения на 390 пикселях он отнимал место у
                             заголовка («Правило 3 из 6» обрезалось), а относится он к этому
                             блоку — сюда и переехал. */}
                         <div className="-mt-2 font-mono text-xs text-muted-foreground">
+                            {/* Правило «весь трафик» (match.any — исключение для устройства) сервисов не
+                                имеет: «ничего не выбрано · сервис не выбран» над ним читалось как
+                                пустое правило (QEMU-стенд, после перехода 26.9.2 → 26.10). */}
                             {chosenEntries.length
                                 ? S.ruleEditor.servisov(chosenEntries.length)
-                                : S.ruleEditor.servisNeVybran}
+                                : ch.match.any ? '' : S.ruleEditor.servisNeVybran}
                             {total ? S.ruleEditor.zapisey(total.toLocaleString('ru-RU')) : ''}
                         </div>
 
