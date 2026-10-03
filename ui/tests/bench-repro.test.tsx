@@ -1,4 +1,4 @@
-import { render, screen } from '@testing-library/preact'
+import { render, screen, waitFor } from '@testing-library/preact'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import Home from '@/components/sections/Home'
 import { rpc } from '@/lib/rpc'
@@ -56,14 +56,17 @@ describe('стенд: две локации одной подписки', () => 
 
     it('обе локации на месте, каждая своей строкой', async () => {
         render(<Home live={live({ status: STATUS, net: { uptime: 60, active_clients: 0 } })} onSection={() => {}} />)
-        await screen.findByText('Нидерланды')
-        await new Promise((r) => setTimeout(r, 300))
-        const col = document.body.textContent || ''
-        console.log('СТОЛБЕЦ:', col.slice(col.indexOf('Выходы')))
         // Страна у каждой своя: у первой измерения нет и она берётся из флага в имени узла,
         // у второй — измеренная. Имя выхода в строку не идёт: в концепте его там нет.
-        expect(screen.getByText('Нидерланды')).toBeInTheDocument()
-        expect(screen.getByText('Россия')).toBeInTheDocument()
-        expect(screen.getByText('94.198.217.66')).toBeInTheDocument()
+        //
+        // Ждётся ВСЁ сразу, а не «нашли — подождали 300 мс — проверили»: когда приходит перечень
+        // подписок, локации переезжают в блок своей подписки, строка монтируется заново и узлы
+        // спрашивает снова. Под нагрузкой (весь набор разом) повторный вопрос не успевал за
+        // 300 мс, и проверка ловила промежуточное «vless» вместо страны.
+        await waitFor(() => {
+            expect(screen.getByText('Нидерланды')).toBeInTheDocument()
+            expect(screen.getByText('Россия')).toBeInTheDocument()
+            expect(screen.getByText('94.198.217.66')).toBeInTheDocument()
+        })
     })
 })
