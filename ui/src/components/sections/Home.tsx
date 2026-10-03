@@ -650,7 +650,11 @@ function RuleRow({
                                   outDownWord(st),
                               ]
                                   .filter(Boolean)
-                                  .join(' · ') || S.home.nePodnyat2}
+                                  .join(' · ') ||
+                              /* Сказать о выходе больше нечего (нет curl — нет страны и отклика,
+                               * устройство зовётся как выход): слово — по `up`, а не «не поднят»
+                               * над работающим туннелем (снято с QEMU-стенда после 26.9 → 26.10). */
+                              (st?.up ? S.home.rabotaet : S.home.nePodnyat2)}
                     </span>
                 </button>
                 <Meter value={share} muted={st?.kind === 'direct'} />

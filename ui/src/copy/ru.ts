@@ -600,6 +600,7 @@ export const ru = {
         ms: (p0: unknown) => `${p0} мс`,
         chlenyNeOtvechayut: "члены не отвечают",
         nePodnyat2: "не поднят",
+        rabotaet: "работает",
         obschiySchetchik: (p0: unknown) => `общий счётчик: ${p0}`,
         schetchikObschiy: "счётчик общий",
         vyhody: "Выходы",
