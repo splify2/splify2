@@ -570,6 +570,7 @@ export const ru = {
     },
     home: {
         yadroNeOtvechaet: "Ядро не отвечает",
+        obnovitePodstranitsu: "Обновите страницу или проверьте, что splify2 установлен",
         estPolomki: "Есть поломки",
         proverokSOtkazom: (p0: unknown) => `проверок с отказом: ${p0}`,
         marshrutizatsiyaRabotaet: "Маршрутизация работает",
@@ -667,6 +668,9 @@ export const ru = {
         kbitS: (p0: unknown) => `${p0} кбит/с`,
         bitS: (p0: unknown) => `${p0} бит/с`,
         routerVernulOshibku: "роутер вернул ошибку",
+        /* Не дошёл сам вызов (у rpcd нет объекта splify2, обрыв, кончился вход в LuCI): состояние
+           словами вместо текста исключения. Действие — S.home.obnovitePodstranitsu. */
+        routerNeOtvetil: "Роутер не ответил",
     },
     model: {
         ostanovitTrafik: "остановить трафик",

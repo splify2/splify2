@@ -72,8 +72,19 @@ export interface Live {
     /** Версии самого интерфейса. Спрашивается там же и так же редко, как releases. */
     selfUpdate: SelfUpdateInfo | null
     /** Ошибка движка. Отдельно от `status === null`, потому что «ещё не пришло» и «не
-     *  отвечает» требуют разного: первое — подождать, второе — показать причину. */
+     *  отвечает» требуют разного: первое — подождать, второе — показать причину.
+     *
+     *  Это текст ДЛЯ ЭКРАНА, и текста исключения в нём нет никогда: либо слова самого ядра (роутер
+     *  ответил, что оно молчит; они уже по-русски), либо — когда до роутера не дошёл сам вызов —
+     *  состояние словами (`S.live.routerNeOtvetil`). Исключение LuCI («RPC call to
+     *  splify2/status failed with error -32000: Object not found at …») — это слова библиотеки и
+     *  стек, человеку из них нечего сделать. */
     error: string | null
+    /** Чья беда. `router` — до роутера не дошёл сам вызов: у rpcd нет объекта splify2 (пакет не
+     *  стоит или rpcd не перечитал объекты), запрос оборван, кончился вход в LuCI. Про ядро при
+     *  этом ничего не известно, и обвинять его нельзя. `core` — роутер ответил, а ядро нет.
+     *  null — беды нет. */
+    errorKind: 'router' | 'core' | null
     /** Показанное — ПРОШЛОЕ: снимок с прошлого открытия страницы, пока не пришёл первый
      *  ответ роутера. Врать этим нельзя, поэтому признак вынесен наружу: интерфейс обязан
      *  показать, что числа ещё не сегодняшние, а не выдавать их за живые.
@@ -159,7 +170,9 @@ export function useLive(): Live {
     const saved = useRef<Snapshot | null>(cacheGet<Snapshot>('live'))
     const [stale, setStale] = useState(!!saved.current)
     const [status, setStatus] = useState<Status | null>(saved.current?.status ?? null)
-    const [error, setError] = useState<string | null>(null)
+    /** Одним значением, а не двумя состояниями: текст и «чья беда» не должны разойтись. */
+    const [fault, setFault] = useState<{ text: string; kind: 'router' | 'core' } | null>(null)
+    const error = fault?.text ?? null
     /** Неудачные круги подряд. В ref, а не в state: сбрасывать его при перезапуске эффекта
      *  (refresh) нельзя — иначе каждое «Применить» обнуляло бы счёт и продлевало молчание. */
     const fails = useRef(0)
@@ -280,13 +293,18 @@ export function useLive(): Live {
                 return typeof o.error === 'string' && o.error ? o.error : S.live.routerVernulOshibku
             return null
         }
+        /** Текст исключения вызова — только чтобы отличить «метода нет» от обрыва (регулярка в
+         *  load). На экран он не попадает: см. `routerSilent`. */
         const asText = (e: unknown): string => String(e instanceof Error ? e.message : e)
 
         /** Движок промолчал. Первые круги — не приговор: см. FAIL_K и pending.settling().
          *  Прежняя картина остаётся на экране как прошлое (`stale`), а не стирается и не
          *  краснеет. Дойдя до порога, спрашиваем сборку заново: если служба включена и не
-         *  работает — это загрузка роутера, и слово ей «Запускается…», а не «не отвечает». */
-        const failed = (why: string) => {
+         *  работает — это загрузка роутера, и слово ей «Запускается…», а не «не отвечает».
+         *
+         *  `kind` — чья беда (см. Live.errorKind): по умолчанию ядра — роутер ответил отказом, и
+         *  `why` — его слова; `router` — не дошёл сам вызов, и `why` — состояние словами. */
+        const failed = (why: string, kind: 'router' | 'core' = 'core') => {
             fails.current++
             if (pending.settling() || fails.current < FAIL_K) {
                 if (fails.current === 1 && statusNow.current) setStale(true)
@@ -295,9 +313,16 @@ export function useLive(): Live {
             rpc.engine()
                 .then((b) => { if (!stop) { setBuild(b); setStarting(!!b.enabled && b.running === false) } })
                 .catch(() => { if (!stop) setStarting(false) })
-            setError(why)
+            setFault({ text: why, kind })
             setStale(false)
         }
+
+        /** Не дошёл сам вызов — отказ промиса (а не ответ `{ok:false}`): у rpcd нет объекта
+         *  splify2, запрос оборван или истёк срок, кончился вход в LuCI. Текст такого исключения
+         *  — «RPC call to splify2/status failed with error -32000: Object not found at
+         *  ClassConstructor.handleCallReply (http://…» — слова библиотеки со стеком, человеку из
+         *  них нечего сделать, и на экран он не идёт: состояние словами, действие — в карточке. */
+        const routerSilent = () => failed(S.live.routerNeOtvetil, 'router')
 
         /** Один круг прежними вызовами — для объекта, который не знает `live`.
          *
@@ -312,8 +337,9 @@ export function useLive(): Live {
                 withDiag ? rpc.diag() : Promise.resolve(null), rpc.netInfo(),
             ])
             if (stop) return
-            if (s.status === 'fulfilled' && !failure(s.value)) { setStatus(foldStatus(s.value)); setError(null); fails.current = 0 }
-            else failed(s.status === 'fulfilled' ? failure(s.value)! : asText(s.reason))
+            if (s.status === 'fulfilled' && !failure(s.value)) { setStatus(foldStatus(s.value)); setFault(null); fails.current = 0 }
+            else if (s.status === 'fulfilled') failed(failure(s.value)!)
+            else routerSilent()
             const devices = d.status === 'fulfilled' && !failure(d.value) ? d.value.devices || {} : null
             if (withDiag) {
                 if (g.status === 'fulfilled' && g.value && !failure(g.value)) {
@@ -448,14 +474,14 @@ export function useLive(): Live {
                             await loadLegacy(withDiag)
                             return
                         }
-                        failed(r)
+                        routerSilent()
                         return
                     }
                     const bad = failure(r)
                     if (bad) { failed(bad); return }
                     r.status = foldStatus(r.status)
                     setStatus(r.status)
-                    setError(null)
+                    setFault(null)
                     setStarting(false)
                     fails.current = 0
                     /* Ответ движка ЗАПОМНЕННЫЙ — значит показанное всё ещё прошлое, и свежий
@@ -588,7 +614,7 @@ export function useLive(): Live {
           : null
 
     return {
-        status, error, diag, diagOld, devs, speed, build, net, releases, selfUpdate, stale, phase,
+        status, error, errorKind: fault?.kind ?? null, diag, diagOld, devs, speed, build, net, releases, selfUpdate, stale, phase,
         refresh: () => setNonce((n) => n + 1),
     }
 }

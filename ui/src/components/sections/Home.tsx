@@ -83,7 +83,13 @@ function verdict(live: Live): Verdict {
     /* Советы (note) в цвет не идут: они верны всегда, и красить ими состояние значило бы
      * держать роутер вечно нездоровым. Полный перечень остаётся в диагностике. */
     const notes = (live.diag?.checks || []).filter((c) => c.verdict === 'note')
-    if (live.error) return { text: S.home.yadroNeOtvechaet, tone: 'bad', why: live.error, notes }
+    if (live.error) {
+        /* До роутера не дошёл сам вызов — ядро тут ни при чём, про него ничего не известно, и
+         * «Ядро не отвечает» было бы неправдой. Заголовок — состояние (`live.error` здесь уже
+         * слова, а не исключение LuCI), под ним — что делать. Слова самого ядра остаются как есть. */
+        if (live.errorKind === 'router') return { text: live.error, tone: 'bad', why: S.home.obnovitePodstranitsu, notes }
+        return { text: S.home.yadroNeOtvechaet, tone: 'bad', why: live.error, notes }
+    }
     if (live.diag?.fail)
         return {
             text: S.home.estPolomki, tone: 'bad', why: S.home.proverokSOtkazom(live.diag.fail), notes,
@@ -429,9 +435,10 @@ export default function Home({
                     </button>
                 )}
 
-                {/* Движок не отвечает — причина названа заголовком выше, второй раз не пишем. */}
+                {/* Движок не отвечает — состояние названо заголовком выше, здесь то, что сказало ядро,
+                    или что делать, когда не отозвался сам роутер. */}
                 {v.tone === 'bad' && live.error && (
-                    <p className="text-[13px] text-destructive">{live.error}</p>
+                    <p className="text-[13px] text-destructive">{v.why}</p>
                 )}
 
                 {/* «Трафику некуда идти» — R-064. Условие узкое нарочно: либо выходов нет вовсе,
