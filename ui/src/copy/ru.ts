@@ -27,6 +27,7 @@ export const ru = {
         primeneno: " Применено",
         primenyaem: " Применяем…",
         primenit: " Применить",
+        neZapisano: " Не записано",
     },
     backupCard: {
         neUdalosSobratArhiv: "не удалось собрать архив",
@@ -808,6 +809,8 @@ export const ru = {
         sboyPrimeneniya: "сбой применения",
         otvetNeSpeka: "роутер ответил не настройками",
         specNeZagruzhena: "настройки не загружены — правка не записана",
+        /** Запись на роутер отказала, и применять нечего: первой строкой состояние и действие, дальше причина. */
+        nastroykiNeZapisany: (why: string) => `Настройки не записаны — исправьте и примените снова\n${why}`,
     },
     poolEditor: {
         pickedCount: (n: number) => ` · взято: ${n}`,
