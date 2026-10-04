@@ -3485,6 +3485,9 @@ print(" ".join(d["name"] for d in json.load(sys.stdin)["devices"]))'; }
 upof() { printf '%s' "$1" | python3 -c 'import json,sys
 n=[d for d in json.load(sys.stdin)["devices"] if d["name"]==sys.argv[1]]
 print(json.dumps(n[0]["up"]) if n else "НЕТ")' "$2"; }
+ownof() { printf '%s' "$1" | python3 -c 'import json,sys
+n=[d for d in json.load(sys.stdin)["devices"] if d["name"]==sys.argv[1]]
+print(n[0].get("owner", "-") if n else "НЕТ")' "$2"; }
 
 check "устройство выключенной локации подписки предлагается (I-161)" "yes" \
       "$(case " $(devs "$out") " in *" nl "*) echo yes ;; *) echo no ;; esac)"
@@ -3494,6 +3497,9 @@ check "выключенное не выдаётся за поднятое" "fals
 check "живой туннель остаётся первым и поднятым" "true" "$(upof "$out" wg0)"
 # Мост и порт по-прежнему не кандидаты: выход в них молча ничего не маршрутизирует.
 check "мост и порт в кандидаты не попадают" "wg0 nl xs0" "$(devs "$out")"
+# Хозяин устройства: у выключенных выходов ядра он назван тоже, у своего туннеля поля нет.
+check "устройства выключенных выходов ядра помечены owner=steer, свой туннель — нет" "steer;steer;-" \
+      "$(ownof "$out" nl);$(ownof "$out" xs0);$(ownof "$out" wg0)"
 # Живое устройство не задваивается: движок называет то же имя, что уже прочитано из /sys.
 cat > "$T/etc/spec.json" <<'EOF'
 { "schema": 1,
@@ -3501,6 +3507,74 @@ cat > "$T/etc/spec.json" <<'EOF'
   "channels": [] }
 EOF
 check "устройство, которое уже есть, не задваивается" "wg0" "$(devs "$(rpcd devices)")"
+printf '{"schema":1,"outputs":{},"channels":[]}\n' > "$T/etc/spec.json"
+
+# ---- устройство выхода ядра помечено хозяином: панель не выдаёт его за свой туннель --------------
+# В /sys устройство выхода, которое заводит САМО ЯДРО (vless, hysteria2, прокси, xsteer под
+# демоном, awg), и свой туннель человека (WireGuard, AmneziaWG, xsteer через netifd) неотличимы:
+# у обоих ARPHRD_NONE. Различает их только спека, и метод `devices` помечает первых
+# `owner: "steer"` — и поднятых, и выключенных. Панель по метке не показывает такие устройства
+# в «Своих туннелях»: переключатель завёл бы второй выход kind=interface поверх туннеля ядра, а
+# выключатель вынимал бы устройство из выходов, которые его называют, — вплоть до удаления самого
+# выхода. Редактор выхода по-прежнему предлагает их локациями пула, и состав перечня метка не меняет.
+rm -rf "$T/outnet-core"; mkdir -p "$T/outnet-core"
+for _d in vpn hy tr ax wg0 awg0 xs-home; do
+    mkdir -p "$T/outnet-core/$_d"
+    printf '65534\n' > "$T/outnet-core/$_d/type"; printf 'up\n' > "$T/outnet-core/$_d/operstate"
+done
+# У TUN, который заводит ядро, DEVTYPE нет; у туннелей wireguard он есть — и у своих, и у ядра.
+for _d in vpn hy tr; do printf 'INTERFACE=%s\nIFINDEX=9\n' "$_d" > "$T/outnet-core/$_d/uevent"; done
+printf 'DEVTYPE=wireguard\n' > "$T/outnet-core/ax/uevent"
+printf 'DEVTYPE=wireguard\n' > "$T/outnet-core/wg0/uevent"
+printf 'DEVTYPE=amneziawg\n' > "$T/outnet-core/awg0/uevent"
+printf 'DEVTYPE=xsteer\n'    > "$T/outnet-core/xs-home/uevent"
+# ax2 — выход awg, устройства которого в /sys ещё нет: в перечне его быть не должно (набор
+# предложений «пока не поднято» этой правкой не менялся), хотя вид awg метка знает. Пул — смешанный:
+# он называет и устройство ядра (vpn), и свои туннели.
+cat > "$T/etc/spec.json" <<'EOF'
+{ "schema": 1,
+  "outputs": {
+    "vpn":  { "kind": "vless", "sub_file": "/etc/steer/sub.txt" },
+    "hy":   { "kind": "hysteria2", "sub_file": "/etc/steer/sub.txt" },
+    "tr":   { "kind": "trojan", "sub_file": "/etc/steer/sub.txt" },
+    "hub":  { "kind": "xsteer", "device": "xs0" },
+    "ax":   { "kind": "awg" },
+    "ax2":  { "kind": "awg" },
+    "own":  { "kind": "interface", "device": "wg0" },
+    "pool": { "kind": "interface", "devices": ["vpn", "wg0", "awg0"] },
+    "direct": { "kind": "direct" }
+  },
+  "channels": [] }
+EOF
+out="$(OUT_SYSNET_FIXTURE="$T/outnet-core" rpcd devices)"
+owned() { printf '%s' "$1" | python3 -c 'import json,sys
+print(" ".join(d["name"] for d in json.load(sys.stdin)["devices"] if d.get("owner") == sys.argv[1]))' "$2"; }
+unowned() { printf '%s' "$1" | python3 -c 'import json,sys
+print(" ".join(d["name"] for d in json.load(sys.stdin)["devices"] if "owner" not in d))'; }
+check "devices: устройства vless, hysteria2, прокси, awg и хаба xsteer — owner=steer" \
+      "ax hy tr vpn xs0" "$(owned "$out" steer)"
+check "devices: свои туннели (WireGuard, AmneziaWG, xsteer через netifd) — без метки" \
+      "awg0 wg0 xs-home" "$(unowned "$out")"
+# Пул kind=interface, назвавший устройство ядра, метку не снимает: хозяин — выход, который
+# устройство завёл, а не тот, кто его использует.
+check "devices: устройство ядра в составе пула остаётся помеченным" "steer;-" \
+      "$(ownof "$out" vpn);$(ownof "$out" awg0)"
+check "devices: метка не меняет ни состав, ни порядок (устройство awg, которого нет, не добавляется)" \
+      "awg0 ax hy tr vpn wg0 xs-home xs0" "$(devs "$out")"
+check "devices: у помеченного устройства прежние поля — up и kind" "true;wireguard;true;" \
+      "$(printf '%s' "$out" | python3 -c 'import json,sys
+n={d["name"]: d for d in json.load(sys.stdin)["devices"]}
+print("%s;%s;%s;%s" % (json.dumps(n["ax"]["up"]), n["ax"]["kind"], json.dumps(n["vpn"]["up"]), n["vpn"]["kind"]))')"
+check "devices: у ещё не поднятого устройства ядра up=false, kind пуст" "false;" \
+      "$(printf '%s' "$out" | python3 -c 'import json,sys
+n={d["name"]: d for d in json.load(sys.stdin)["devices"]}
+print("%s;%s" % (json.dumps(n["xs0"]["up"]), n["xs0"]["kind"]))')"
+# Ядро имён не назвало (спека пуста или не разбирается): меток нет, а перечень остаётся прежним —
+# устройства из /sys, а не пустой ответ и не ошибка. Метка — добавка к ответу, и без неё он прежний.
+: > "$T/etc/spec.json"
+out="$(OUT_SYSNET_FIXTURE="$T/outnet-core" rpcd devices)"
+check "devices: ядро имён не назвало — устройства из /sys на месте, меток нет" "awg0 ax hy tr vpn wg0 xs-home;" \
+      "$(devs "$out");$(owned "$out" steer)"
 printf '{"schema":1,"outputs":{},"channels":[]}\n' > "$T/etc/spec.json"
 
 # ---- перечень своих списков: три процесса на каталог, а не два на файл ---------------

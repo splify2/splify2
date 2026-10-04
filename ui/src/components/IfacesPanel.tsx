@@ -22,7 +22,16 @@ import { S } from '@/copy'
  *  называет. Поэтому тумблер прямо заводит выход с этим устройством и прямо его убирает.
  *
  *  Bode 26.10: устройства — строками одной карточки через волосяную линию, точка состояния
- *  слева, выключатель у правого края строки, как в приложении Splify2. */
+ *  слева, выключатель у правого края строки, как в приложении Splify2.
+ *
+ *  ТОЛЬКО СВОИ. Туннельных устройств у роутера больше, чем своих туннелей: устройство выхода
+ *  vless, hysteria2, прокси, xsteer или awg заводит и держит само ядро (бэкенд помечает такие
+ *  `owner: 'steer'`). Среди своих оно выглядело бы туннелем человека, и переключатель делал бы
+ *  с ним то, чего никто не просил: включение заводит второй выход поверх туннеля ядра, а
+ *  выключение вынимает устройство из выходов, которые его называют, — вплоть до удаления самого
+ *  выхода (локацию смешанного пула оно выбросило бы из пула). Поэтому такие устройства здесь не
+ *  показываются. Выход подписки правится в «Подписках», а в пул устройство ядра кладёт редактор
+ *  выхода — там оно предлагается нарочно, локацией. */
 
 const NAME_RE = /^[A-Za-z0-9_-]{1,24}$/
 
@@ -32,7 +41,9 @@ function devList(o: Output): string[] {
 
 export default function IfacesPanel({ live }: { live: Live }) {
     const [spec, setSpec] = useSpecCopy()
-    const [devices, setDevices] = useState<{ name: string; up: boolean; kind: string; ipv6?: 'nat' | 'off' }[]>([])
+    const [devices, setDevices] = useState<
+        { name: string; up: boolean; kind: string; ipv6?: 'nat' | 'off'; owner?: 'steer' }[]
+    >([])
 
     useEffect(() => {
         rpc.devices().then((d) => setDevices(d.devices || [])).catch(() => setDevices([]))
@@ -94,7 +105,10 @@ export default function IfacesPanel({ live }: { live: Live }) {
         edit({ ...spec!, outputs })
     }
 
-    if (devices.length === 0) {
+    /* Устройства ядра — не свои туннели: см. шапку файла. */
+    const own = devices.filter((d) => d.owner !== 'steer')
+
+    if (own.length === 0) {
         return (
             <Group>
                 <Empty icon={ShieldCheck} text={S.ifacesPanel.tunnelnyhUstroystvNetTunnel} />
@@ -104,7 +118,7 @@ export default function IfacesPanel({ live }: { live: Live }) {
 
     return (
         <Group>
-            {devices.map((d) => {
+            {own.map((d) => {
                 const outs = usedBy(d.name)
                 const on = outs.length > 0
                 const live_ = d.up || d.name in (live.devs || {})

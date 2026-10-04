@@ -41,7 +41,7 @@ export default function Vpn({ live }: { live: Live }) {
      *  относятся к разделу, а не к правимому выходу, и над формой читались как её часть. */
     const [editing, setEditing] = useState(false)
     const { spec } = usePending()
-    const [devices, setDevices] = useState<{ name: string; up: boolean; kind: string }[]>([])
+    const [devices, setDevices] = useState<{ name: string; up: boolean; kind: string; owner?: 'steer' }[]>([])
 
     useEffect(() => {
         rpc.devices().then((d) => setDevices(d.devices || [])).catch(() => setDevices([]))
@@ -66,10 +66,13 @@ export default function Vpn({ live }: { live: Live }) {
      * сколько локаций подписки заведено, какие устройства xsteer есть. Служебные части пулов
      * считаются локациями своей подписки, а их устройства — не «свои туннели». */
     const partNames = new Set(outputs.filter((o) => isPart(o)).map((o) => o.name))
+    /* Устройства выходов, которые заводит само ядро (`owner`), в «Своих туннелях» не показываются
+     * (IfacesPanel): пул, назвавший такое устройство, не делает его «взятым» туннелем. */
+    const coreDevs = new Set(devices.filter((d) => d.owner === 'steer').map((d) => d.name))
     const ifaceDevs = outputs
         .filter((o) => o.kind === 'interface')
         .flatMap((o) => devList(o))
-        .filter((d) => !partNames.has(d))
+        .filter((d) => !partNames.has(d) && !coreDevs.has(d))
     const vless = outputs.filter((o) => isTunnelKind(o.kind))
     const vlessCount = vless.reduce(
         (n, o) => n + Math.max(1, o.nodes?.length || 0),
