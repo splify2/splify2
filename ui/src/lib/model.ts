@@ -122,9 +122,20 @@ export interface Output {
     /** Выход-подложка, через который идёт трафик самого туннеля (спека v2 `over`, в v1 `via`).
      *  Пусто — напрямую. */
     over?: string
-    /** IPv6 от хоста (interface, awg): см. Ipv6Mode. `prefix` — только при `routed`. */
+    /** IPv6 от хоста (interface, awg): см. Ipv6Mode. `prefix` — только при `routed`. У пула — одно
+     *  значение на все его устройства, когда у всех оно одинаково (`nat` или `off`); разное — в
+     *  `ipv6_by_device`. */
     ipv6?: Ipv6Mode
     prefix?: string
+    /** Пул устройств, у которых IPv6 РАЗНЫЙ: режим по устройству. Ядро берёт ключ у члена пула, а не
+     *  у группы (out_ipv6_mode_dev), и самолечение при apply пишет его каждому члену по его
+     *  устройству: у одного есть адрес IPv6 (`nat`), у другого нет (`off`), у третьего решать не ему
+     *  (ключа нет — устройство без записи здесь). Тогда общего `ipv6` у пула нет: он бывает, только
+     *  когда у всех устройств одно и то же (poolIpv6 решает это в одном месте). Части пула по
+     *  подписке (устройство заводит ядро, адреса IPv6 у него нет) сюда не входят; записи об
+     *  устройствах, которых в `devices` уже нет, не читаются и не пишутся. Признак живёт только в
+     *  интерфейсе: в спеке это ключ `ipv6` у каждого члена группы-пула. */
+    ipv6_by_device?: Record<string, 'nat' | 'off'>
     /** kind=vless: фильтр узлов подписки по транспорту (`tcp`, `grpc`, `xhttp`, `ws`,
      *  `httpupgrade`). Фильтр, а не замена: транспорт — свойство входа на сервере, и узлы с
      *  ним приходят из подписки. Пусто — любые. */
@@ -196,6 +207,35 @@ export function isTunnelKind(k: string | undefined | null): boolean {
 export function devList(o: Output | undefined | null): string[] {
     if (!o) return []
     return o.devices?.length ? o.devices : o.device ? [o.device] : []
+}
+
+/** IPv6 устройства выхода: у пула с разным IPv6 — своё у каждого устройства (`ipv6_by_device`),
+ *  у остальных — ключ выхода. Нет записи — нет ключа: по устройству решит самолечение. */
+export function ipv6Of(o: Output | undefined | null, dev?: string): Ipv6Mode | undefined {
+    return (dev ? o?.ipv6_by_device?.[dev] : undefined) ?? o?.ipv6
+}
+
+/** IPv6 пула по его устройствам — полями модели: у всех устройств одно и то же — общий `ipv6` (нет
+ *  ключа ни у одного — нет и его), иначе — `ipv6_by_device` только с теми, у кого ключ есть, и
+ *  общего нет. `devs` — устройства, которым ключ пишется: части пула по подписке сюда не входят.
+ *  `modeOf` отдаёт записанное; значения, кроме `nat` и `off`, в пуле не живут (с `routed` у члена
+ *  читающий код пул не собирает вовсе), и здесь они — «ключа нет».
+ *
+ *  ОДНО МЕСТО, ГДЕ РЕШАЕТСЯ «ОДИНАКОВО ИЛИ НЕТ»: им пользуются и чтение спеки (specv2.ts), и редактор
+ *  выхода. Разойдись они — выход, сохранённый редактором, читался бы с диска другой формой, и
+ *  счётчик «Применить» горел бы от разницы, которой человек не делал. */
+export function poolIpv6(devs: string[], modeOf: (dev: string) => Ipv6Mode | undefined): Pick<Output, 'ipv6' | 'ipv6_by_device'> {
+    const modes = devs.map((d) => {
+        const m = modeOf(d)
+        return m === 'nat' || m === 'off' ? m : undefined
+    })
+    if (modes.every((m) => m === modes[0])) return modes[0] ? { ipv6: modes[0] } : {}
+    const by: Record<string, 'nat' | 'off'> = {}
+    devs.forEach((d, i) => {
+        const m = modes[i]
+        if (m) by[d] = m
+    })
+    return { ipv6_by_device: by }
 }
 
 export interface Obfs {

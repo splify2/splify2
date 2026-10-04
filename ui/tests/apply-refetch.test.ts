@@ -547,8 +547,10 @@ describe('трёхстороннее слияние спеки', () => {
     })
 
     it('роутер сменил вид записи, которую правил человек, — вся спека из памяти, без гибрида', () => {
-        // Пул из двух устройств: лечение пишет каждому члену свой ipv6, и пул с разными ключами
-        // читается уже группой, а члены — выходами. Человек в это время добавил пулу устройство.
+        // Пул из двух устройств стал группой с членами-выходами (файл поправили мимо страницы:
+        // член с `ipv6: routed` пулом не читается). Человек в это время добавил пулу устройство.
+        // Самолечение так не делает — пул с разным ipv6 у членов остаётся пулом
+        // (pool-mixed-ipv6.test.tsx), — но слияние обязано пережить и такую смену вида.
         const pool: Spec = {
             outputs: {
                 direct: { name: 'direct', kind: 'direct' },
@@ -565,7 +567,7 @@ describe('трёхстороннее слияние спеки', () => {
                 vpn: { name: 'vpn', kind: 'group', pick: 'order', members: ['vpn.wg0', 'vpn.wg1'] } as never,
                 warp: { name: 'warp', kind: 'interface', device: 'warp', ipv6: 'nat' },
                 'vpn.wg0': { name: 'vpn.wg0', kind: 'interface', device: 'wg0', ipv6: 'nat' },
-                'vpn.wg1': { name: 'vpn.wg1', kind: 'interface', device: 'wg1', ipv6: 'off' },
+                'vpn.wg1': { name: 'vpn.wg1', kind: 'interface', device: 'wg1', ipv6: 'routed' },
             },
             channels: [],
         }

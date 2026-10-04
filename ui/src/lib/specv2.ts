@@ -26,6 +26,11 @@
 // ключ — отказ разбора), поэтому при чтении часть узнаётся по устройству: туннель, чьё
 // устройство названо членом пула и на который не ссылается ни одно правило.
 //
+// IPv6 ПУЛА. Ключ `ipv6` ядро берёт у члена, а самолечение при apply пишет его каждому члену по его
+// устройству (у одного есть адрес IPv6 — nat, у другого нет — off). Поэтому у пула он один (`ipv6`),
+// пока у всех членов-интерфейсов одинаков, а когда разный или не у всех — по устройствам
+// (`ipv6_by_device`): пул остаётся пулом, а не рассыпается на группу и выходы-члены после «Применить».
+//
 // СУЖЕНИЕ. Правило «подсети с портами» в v2 — отдельное правило со своим списком
 // (`proto`/`ports` — свойство списка). Спутник в модели получает имя «<правило> (порты)»; при
 // чтении правила с таким именем и тем же выходом складываются обратно в родителя.
@@ -45,8 +50,10 @@
 
 import {
     insecureApplies,
+    ipv6Of,
     isTunnelKind,
     normalizeSpec,
+    poolIpv6,
     PROXY_KINDS,
     withDirect,
     type Channel,
@@ -461,13 +468,18 @@ function decodeV2(d: J): Spec {
         const devices = members.map((mn) => outputs[mn].device as string)
         const pool: Output = { name: gname, kind: 'interface', devices, device: devices[0] }
         /* `ipv6: nat` либо `off` у ВСЕХ членов-интерфейсов — ключ пула; ни у одного — пул без
-         * ключа; у части членов или разный — не пул, а группа с членами разной настройки (ok
-         * выше пускает и «ни у кого», и «у каждого»). Разный он бывает, когда самолечение при
-         * apply записало каждому члену своё по его устройству (у одного есть адрес IPv6, у
-         * другого нет). */
-        const modes = members.filter((mn) => !partDevs.has(outputs[mn].device as string)).map((mn) => outputs[mn].ipv6)
-        if (!modes.every((v) => v === modes[0])) continue
-        if (modes[0]) pool.ipv6 = modes[0]
+         * ключа; разный или не у всех — по устройствам (`ipv6_by_device`), и пул остаётся пулом.
+         * Разный он бывает, когда самолечение при apply записало каждому члену своё по его
+         * устройству (у одного есть адрес IPv6, у другого нет), а у кого-то ключа нет вовсе —
+         * решать самолечению было не ему (устройство в чужой зоне, ip6prefix): прежде такой пул
+         * читался группой с членами-выходами, и после «Применить» человек видел, как его пул
+         * меняет форму (из одной строки в «Выходах» — три). */
+        const keyed = new Map<string, Output['ipv6']>()
+        for (const mn of members) {
+            const m = outputs[mn]
+            if (!partDevs.has(m.device as string)) keyed.set(m.device as string, m.ipv6)
+        }
+        Object.assign(pool, poolIpv6([...keyed.keys()], (d) => keyed.get(d)))
         if (g.on_fail) pool.on_fail = g.on_fail
         pool.pick = g.pick
         for (const k of ['tolerance', 'interval', 'idle_timeout', 'url'] as const) {
@@ -761,11 +773,14 @@ export function encodeSpec(spec: Spec): J {
             used.add(m)
             members.push(m)
             /* Ключ ipv6 берёт ядро у ЧЛЕНА (out_ipv6_mode_dev), а не у группы, где он допустим
-             * только как off: пул с nat или off пишет его каждому члену-интерфейсу. Член — часть
-             * пула по подписке (устройство заводит ядро, адреса IPv6 у него нет) — без ключа:
-             * `nat` на таком устройстве ядро встретило бы отказом «нет адреса IPv6». */
-            const own = (o.ipv6 === 'nat' || o.ipv6 === 'off') && !parts.some((p) => deviceOf(p) === d)
-            tail.push([m, { kind: 'interface', device: d, ...(own ? { ipv6: o.ipv6 } : {}) }])
+             * только как off: пул с nat или off пишет его каждому члену-интерфейсу, а пул с
+             * разным ipv6 (`ipv6_by_device`) — каждому своё, как записало самолечение; устройству
+             * без записи ключа нет. Член — часть пула по подписке (устройство заводит ядро,
+             * адреса IPv6 у него нет) — без ключа: `nat` на таком устройстве ядро встретило бы
+             * отказом «нет адреса IPv6». */
+            const v6 = ipv6Of(o, d)
+            const own = (v6 === 'nat' || v6 === 'off') && !parts.some((p) => deviceOf(p) === d)
+            tail.push([m, { kind: 'interface', device: d, ...(own ? { ipv6: v6 } : {}) }])
         })
         const g: J = { kind: 'group', pick: o.pick === 'latency' ? 'latency' : 'order', members }
         if (g.pick === 'latency') {

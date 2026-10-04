@@ -12,7 +12,7 @@ import { ccFromName, plainName } from '@/lib/nodename'
 import { activeNodesSupported, excludeSupported, poolsSupported } from '@/lib/engine'
 import { latencyTone, probeKey, probeMs, useNodeProbe } from '@/lib/probe'
 import {
-    devList, insecureApplies, isPart, isProxyKind, isTunnelKind, ON_FAIL_TEXT, PROXY_KINDS, TUNNEL_LABEL, type BalanceBy, type OnFail, type Output, type ProxyKind,
+    devList, insecureApplies, isPart, isProxyKind, isTunnelKind, ON_FAIL_TEXT, poolIpv6, PROXY_KINDS, TUNNEL_LABEL, type BalanceBy, type OnFail, type Output, type ProxyKind,
     type Spec, type VlessNode,
 } from '@/lib/model'
 import OutputAdvanced, { advFrom, advApply, type Adv } from '@/components/OutputAdvanced'
@@ -628,9 +628,18 @@ export default function PoolEditor({
          * заводит ядро, адреса у него нет) — ключа нет, и по каждому устройству решит
          * самолечение при apply. У прежнего выхода берётся записанное: у пула редактор состава
          * ключ не пишет (advApply его пропускает), и сохранение стёрло бы выбор человека
-         * молча. */
+         * молча.
+         *
+         * Пул с РАЗНЫМ IPv6 у устройств (самолечение записало каждому своё — `ipv6_by_device`) —
+         * по устройствам: что показано и выбрано в «Дополнительно» (`adv.ipv6_by_device`), только
+         * для устройств, что в составе сейчас; ушедшее из состава — уходит, новое — без ключа, по
+         * нему решит самолечение. Стало одинаково у всех — общий ключ, как его читает спека
+         * (poolIpv6 одна на обоих). */
         if (next.kind === 'interface' && !next.ipv6) {
-            if (existing) {
+            if (adv.ipv6_by_device) {
+                const own = rows.flatMap((r) => (r.kind === 'dev' ? [r.dev] : []))
+                Object.assign(keep, poolIpv6(own, (d) => adv.ipv6_by_device?.[d]))
+            } else if (existing) {
                 if (existing.ipv6) keep.ipv6 = existing.ipv6
                 if (existing.prefix) keep.prefix = existing.prefix
             } else {
@@ -1418,6 +1427,7 @@ export default function PoolEditor({
                             vless: rows.some((r) => r.kind !== 'dev' && r.proto === 'vless'),
                             insecure: rows.some((r) => r.kind !== 'dev' && insecureApplies(r.proto)),
                             iface: rows.length === 1 && rows[0].kind === 'dev',
+                            ipv6Devices: adv.ipv6_by_device ? rows.flatMap((r) => (r.kind === 'dev' ? [r.dev] : [])) : undefined,
                             pool: rows.length > 1,
                             watch: poolOn,
                             watchHy2: rows.every((r) => r.kind === 'dev' || r.proto === 'hysteria2'),

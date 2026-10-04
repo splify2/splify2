@@ -1,6 +1,6 @@
 import { Block, CardHead, FieldRow, Segmented, ToggleRow } from '@/components/ui/layout'
 import { Chip, Field, NumField, Radio, inputCls } from '@/components/formbits'
-import { insecureApplies, isPart, isTunnelKind, type BalanceBy, type Ipv6Mode, type Output, type Spec } from '@/lib/model'
+import { devList, insecureApplies, ipv6Of, isPart, isTunnelKind, type BalanceBy, type Ipv6Mode, type Output, type Spec } from '@/lib/model'
 
 import { S } from '@/copy'
 // Дополнительные настройки выхода, которые не зависят от того, из чего он собран: через какой
@@ -23,6 +23,11 @@ export interface Adv {
     /** IPv6 от хоста; пусто — как у вида. */
     ipv6: '' | Ipv6Mode
     prefix: string
+    /** Пул, у устройств которого IPv6 РАЗНЫЙ (`ipv6_by_device` выхода): режим по устройству; устройство
+     *  без записи — без ключа. Поле есть, только пока у пула значения разные (или не у всех) —
+     *  тогда редактор показывает их по устройствам и правит; нет — у пула общий ключ либо его нет
+     *  вовсе, и редактор пула IPv6 не трогает (сохранение берёт записанное: PoolEditor.carry). */
+    ipv6_by_device?: Record<string, 'nat' | 'off'>
     /** Пул: первый живой либо самый быстрый. */
     pick: 'order' | 'latency'
     tolerance?: number
@@ -64,6 +69,7 @@ export function advFrom(spec: Spec, name?: string): Adv {
         insecure: !!tun?.insecure,
         ipv6: o?.ipv6 || '',
         prefix: o?.prefix || '',
+        ipv6_by_device: o?.ipv6_by_device && Object.keys(o.ipv6_by_device).length ? ipv6Devices(o) : undefined,
         pick: o?.pick === 'latency' ? 'latency' : 'order',
         tolerance: o?.tolerance,
         interval: o?.interval,
@@ -78,6 +84,18 @@ export function advFrom(spec: Spec, name?: string): Adv {
         nodeInterval: tuns.find((t) => t.interval !== undefined)?.interval,
         silence: tuns.find((t) => t.silence !== undefined)?.silence,
     }
+}
+
+/** Режимы IPv6 устройств пула, какими их видит ядро: запись устройства, а где её нет, — общий ключ
+ *  (его у пула с записями по устройствам не бывает, но модель, собранная руками, его может нести, и
+ *  терять его при правке нельзя). Только `nat` и `off`: `routed` членам пула не пишется. */
+function ipv6Devices(o: Output): Record<string, 'nat' | 'off'> {
+    const by: Record<string, 'nat' | 'off'> = {}
+    for (const d of devList(o)) {
+        const m = ipv6Of(o, d)
+        if (m === 'nat' || m === 'off') by[d] = m
+    }
+    return by
 }
 
 /** Сколько узлов может работать сразу у туннеля: номеров в `nodes` (ядро отвергает `active`
@@ -155,6 +173,10 @@ export default function OutputAdvanced({ adv, onChange, spec, self, show, classN
         insecure?: boolean
         /** Выход — одно устройство (не пул): к нему применим IPv6 от хоста. */
         iface: boolean
+        /** Пул с РАЗНЫМ IPv6 у устройств (`Adv.ipv6_by_device`): его свои устройства, по порядку — у
+         *  каждого свой выбор. Части пула по подписке сюда не входят: устройство заводит ядро, и
+         *  ключа у него нет. Меньше двух — выбирать не между чем, и блока нет. */
+        ipv6Devices?: string[]
         /** Выход — пул из нескольких строк. */
         pool: boolean
         /** Слежка за узлами туннеля: ядро умеет пул узлов (или слежка уже записана). */
@@ -164,8 +186,18 @@ export default function OutputAdvanced({ adv, onChange, spec, self, show, classN
         watchHy2?: boolean
     }
 }) {
-    if (!show.tunnel && !show.iface && !show.pool) return null
+    const perDevice = (show.ipv6Devices?.length ?? 0) > 1 && !!adv.ipv6_by_device
+    if (!show.tunnel && !show.iface && !show.pool && !perDevice) return null
     const set = (p: Partial<Adv>) => onChange({ ...adv, ...p })
+    /** Режим одного устройства пула: «по умолчанию» — запись снимается, и по устройству решит
+     *  самолечение при применении. Пустой набор остаётся набором: блок не исчезает из-под руки,
+     *  пока человек выбирает; одинаковые значения сворачиваются в общий ключ при сохранении. */
+    const setDeviceV6 = (dev: string, v: string) => {
+        const by = { ...adv.ipv6_by_device }
+        if (v === 'nat' || v === 'off') by[dev] = v
+        else delete by[dev]
+        set({ ipv6_by_device: by })
+    }
     const unders = Object.entries(spec.outputs)
         .filter(([n, o]) => !self.has(n) && !isPart(o) && o.kind !== 'direct' && o.kind !== 'zapret' && o.kind !== 'tgws')
         .map(([n]) => n)
@@ -251,6 +283,24 @@ export default function OutputAdvanced({ adv, onChange, spec, self, show, classN
                                 </Field>
                             </div>
                         )}
+                    </div>
+                )}
+                {perDevice && (
+                    <div className="space-y-1">
+                        <div className="pb-1 text-sm text-subtle">{S.outputAdvanced.ipv6OtHosta}</div>
+                        {show.ipv6Devices!.map((d) => (
+                            <FieldRow key={d} label={d}>
+                                <select
+                                    value={adv.ipv6_by_device?.[d] || ''}
+                                    onChange={(e) => setDeviceV6(d, e.currentTarget.value)}
+                                    className={`${inputCls} w-full`}
+                                >
+                                    <option value="">{S.outputAdvanced.poUmolchaniyu}</option>
+                                    <option value="nat">{S.outputAdvanced.odinAdresHosta}</option>
+                                    <option value="off">{S.outputAdvanced.nePropuskatIpv6}</option>
+                                </select>
+                            </FieldRow>
+                        ))}
                     </div>
                 )}
                 {show.pool && (

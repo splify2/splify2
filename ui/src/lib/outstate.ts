@@ -1,4 +1,4 @@
-import { insecureApplies, type Output, type OutputStatus, type TunnelPoolState } from '@/lib/model'
+import { insecureApplies, ipv6Of, type Output, type OutputStatus, type TunnelPoolState } from '@/lib/model'
 import { plainName } from '@/lib/nodename'
 
 import { S } from '@/copy'
@@ -108,9 +108,12 @@ export function outExtras(
     }
     /* У vless признак печатает ядро, у прокси с TLS (trojan, vmess, http) — нет: там он из спеки. */
     if (opts.insecure !== false && (st.insecure || (o.insecure && insecureApplies(o.kind)))) words.push(S.outState.sertifikatNeProveryaetsya)
+    /* Ключ — у устройства, которое несёт трафик сейчас: у пула с разным IPv6 он у каждого свой, а
+     * `nat6` ядро отдаёт именно по этому устройству (status.c, out_ipv6_mode_dev). */
+    const v6 = ipv6Of(o, st.device)
     if (st.ipv6_applied === false) {
         words.push(S.outState.ipv6ZdesNeDeystvuet)
-    } else if (o.ipv6 === 'routed') {
+    } else if (v6 === 'routed') {
         /* `prefix` в ответе status — у выхода-донора: записанный или выведенный по ядру сейчас,
          * null — не узнать. Поля нет вовсе (ядро старше) — записанный в спеке. */
         const raw = (st as { prefix?: string | null }).prefix
@@ -120,7 +123,7 @@ export function outExtras(
             words.push(S.outState.ipv6PrefiksNeIzvesten)
             alarm = true
         }
-    } else if (o.ipv6 === 'nat' && st.nat6 !== undefined) {
+    } else if (v6 === 'nat' && st.nat6 !== undefined) {
         if (st.nat6) words.push(S.outState.ipv6AdresomHosta)
         else {
             words.push(S.outState.ipv6NePodmenyaetsya)

@@ -50,9 +50,11 @@ describe('ipv6: nat у созданных выходов-интерфейсов'
 // ПУЛ И КЛЮЧ ipv6: ЧЛЕНЫ-ИНТЕРФЕЙСЫ И ЧАСТИ ПО ПОДПИСКЕ. Самолечение при apply (m-spec.sh,
 // spec_heal_ipv6) пишет ключ каждому члену пула по его устройству: nat — у устройства есть адрес
 // IPv6, off — нет. Панель обязана читать это так, чтобы пул не распадался на группу и отдельные
-// выходы, и писать обратно то же самое. Часть пула по подписке (устройство заводит ядро, адреса
-// IPv6 у него нет) ключа не получает ни от панели, ни от самолечения — и в расчёт пула не идёт:
-// `nat` на таком устройстве ядро встретило бы отказом «нет адреса IPv6».
+// выходы, и писать обратно то же самое — и когда у членов один и тот же ключ (он тогда ключ пула),
+// и когда разный (режим по устройствам, `ipv6_by_device`: pool-mixed-ipv6.test.tsx). Часть пула по
+// подписке (устройство заводит ядро, адреса IPv6 у него нет) ключа не получает ни от панели, ни от
+// самолечения — и в расчёт пула не идёт: `nat` на таком устройстве ядро встретило бы отказом «нет
+// адреса IPv6».
 describe('пул: nat и off у членов, части по подписке', () => {
     type Doc = { outputs: Record<string, { ipv6?: string; kind: string; device?: string }> }
 
@@ -73,7 +75,7 @@ describe('пул: nat и off у членов, части по подписке',
         expect(back.outputs.p.ipv6).toBe('off')
     })
 
-    it('у членов разные ключи (у одного адрес IPv6 есть, у другого нет) — группа с членами, а не пул', () => {
+    it('у членов разные ключи (у одного адрес IPv6 есть, у другого нет) — пул, а не группа: ключи по устройствам', () => {
         const back = decodeSpec({
             version: 2,
             outputs: {
@@ -83,12 +85,18 @@ describe('пул: nat и off у членов, части по подписке',
                 'p.wg1': { kind: 'interface', device: 'wg1', ipv6: 'off' },
             },
         })
-        expect(back.outputs.p.kind).toBe('group')
-        expect(back.outputs['p.wg0'].ipv6).toBe('nat')
-        expect(back.outputs['p.wg1'].ipv6).toBe('off')
+        expect(back.outputs.p.kind).toBe('interface')
+        expect(back.outputs.p.devices).toEqual(['wg0', 'wg1'])
+        expect(back.outputs.p.ipv6).toBeUndefined()
+        expect(back.outputs.p.ipv6_by_device).toEqual({ wg0: 'nat', wg1: 'off' })
+        expect(back.outputs['p.wg0']).toBeUndefined()
+        // Разная настройка не теряется: каждому члену пишется его ключ.
+        const doc = encodeSpec(back) as Doc
+        expect(doc.outputs['p.wg0'].ipv6).toBe('nat')
+        expect(doc.outputs['p.wg1'].ipv6).toBe('off')
     })
 
-    it('ключ у одного члена из двух — тоже не пул (разная настройка не теряется молча)', () => {
+    it('ключ у одного члена из двух — тоже пул (разная настройка не теряется молча): ключ только у него', () => {
         const back = decodeSpec({
             version: 2,
             outputs: {
@@ -98,7 +106,11 @@ describe('пул: nat и off у членов, части по подписке',
                 'p.wg1': { kind: 'interface', device: 'wg1' },
             },
         })
-        expect(back.outputs.p.kind).toBe('group')
+        expect(back.outputs.p.kind).toBe('interface')
+        expect(back.outputs.p.ipv6_by_device).toEqual({ wg0: 'off' })
+        const doc = encodeSpec(back) as Doc
+        expect(doc.outputs['p.wg0'].ipv6).toBe('off')
+        expect('ipv6' in doc.outputs['p.wg1']).toBe(false)
     })
 
     const WITH_PART = {
