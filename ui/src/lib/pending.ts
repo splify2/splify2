@@ -4,6 +4,7 @@ import { rpc } from '@/lib/rpc'
 import type { Channel, Spec } from '@/lib/model'
 import { encodeSpec, wasV1 } from '@/lib/specv2'
 import { cmpVersion } from '@/lib/engine'
+import { missingText } from '@/lib/outrefs'
 
 import { S } from '@/copy'
 /** Автосохранение и счётчик неприменённого — одно место на весь экран.
@@ -280,8 +281,12 @@ class PendingStore {
                 if (r.ok) this.written = spec
                 if (!r.ok) {
                     /* Отказ dry-run — это не «потеряно»: спека осталась в памяти, человек
-                     * видит причину и правит дальше; следующая правка попробует снова. */
-                    notify(('error' in r && r.error) || S.pending.neUdalosSohranit, 'error')
+                     * видит причину и правит дальше; следующая правка попробует снова.
+                     *
+                     * Причина — не слова ядра, если дело в выходе, которого нет: «dns.upstreams.cf.out:
+                     * выхода «wg1» нет в outputs» с путём временного файла человеку ничего не говорит.
+                     * Он видит, кто на этот выход ссылается и что с этим делать (lib/outrefs.ts). */
+                    notify(missingText(spec) ?? (('error' in r && r.error) || S.pending.neUdalosSohranit), 'error')
                     this.dirty = true
                     this.emit()
                 } else if (drafts) {

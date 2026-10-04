@@ -53,6 +53,20 @@ check "и его слова доехали до человека" "yes" \
       "$(printf '%s' "$out" | jget error | grep -q 'опечатка' && echo yes || echo no)"
 check "прежняя спека при отказе цела" "$GOOD" "$(cat "$T/etc/spec.json")"
 
+# Выход, через который ходит DNS, убран из спеки, а сервер DNS на него ссылается. Именно такую спеку
+# панель оставляла в памяти после удаления выхода: ядро отвергает её целиком («настройки не
+# применяются, если через выход идёт DNS»), на этой правке и на всех следующих. Панель теперь такой
+# выход не удаляет (ui/tests/output-delete.test.tsx), а при отказе ядра называет сервер сама.
+DNSVIA='{"version":2,"outputs":{"direct":{"kind":"direct"},"wg0":{"kind":"interface","device":"wg0"},"wg1":{"kind":"interface","device":"wg1"}},"dns":{"upstreams":{"cf":{"url":"https://cloudflare-dns.com/dns-query","ips":["1.1.1.1"],"out":"wg1"}}}}'
+out="$(rpcd spec_set "$(req "$DNSVIA")")"
+check "сервер DNS через существующий выход проходит разбор" "true" "$(printf '%s' "$out" | jget ok)"
+DNSGONE='{"version":2,"outputs":{"direct":{"kind":"direct"},"wg0":{"kind":"interface","device":"wg0"}},"dns":{"upstreams":{"cf":{"url":"https://cloudflare-dns.com/dns-query","ips":["1.1.1.1"],"out":"wg1"}}}}'
+out="$(rpcd spec_set "$(req "$DNSGONE")")"
+check "выход сервера DNS убран — отказ ядра" "false" "$(printf '%s' "$out" | jget ok)"
+check "и его слова называют сервер и выход" "yes" \
+      "$(printf '%s' "$out" | jget error | grep -q 'dns.upstreams.cf.out: выхода «wg1» нет в outputs' && echo yes || echo no)"
+check "прежняя спека при отказе цела (DNS через wg1)" "$DNSVIA" "$(cat "$T/etc/spec.json")"
+
 NOMOD='{"version":2,"outputs":{"direct":{"kind":"direct"},"nl":{"kind":"tunnel","protocol":"hysteria2","subscription":"'"$T"'/etc/sub.txt"}}}'
 printf 'hy2://x@h:443#n\n' > "$T/etc/sub.txt"
 out="$(rpcd spec_set "$(req "$NOMOD")")"

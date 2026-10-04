@@ -4,6 +4,7 @@ import { Button } from '@/components/ui/button'
 import { Block, CardHead, DangerButton, FieldRow, Group, ScreenHeader } from '@/components/ui/layout'
 import { Chip, Field, Radio, inputCls } from '@/components/formbits'
 import { notify } from '@/lib/notify'
+import { outputBusy, renameRefs } from '@/lib/outrefs'
 import { rpc, type VlessNodesReply } from '@/lib/rpc'
 import { subsRemember, subsRemembered } from '@/lib/subs'
 import Flag from '@/components/Flag'
@@ -728,21 +729,21 @@ export default function PoolEditor({
             outputs[n] = carry(advApply(
                 { name: n, kind: 'interface', devices, device: devices[0], on_fail: onFail }, adv, 'top'))
         }
-        /* Переименование уводит за собой правила: канал ведёт в ИМЯ выхода, и оставить их
-         * указывать на прежнее значит осиротить каждое. */
-        const channels =
-            name && n !== name
-                ? spec.channels.map((c) => (c.out === name ? { ...c, out: n } : c))
-                : spec.channels
-        onSave({ ...spec, outputs, channels })
+        /* Переименование уводит за собой всё, что называет выход по имени: правила, серверы DNS (через
+         * выход), туннели поверх него (`over`), группы, где он член. Оставить их указывать на прежнее
+         * значит осиротить каждое, и ядро отвергнет спеку целиком (lib/outrefs.ts). */
+        const next = { ...spec, outputs }
+        onSave(name && n !== name ? renameRefs(next, name, n) : next)
     }
 
     function remove() {
         if (!name) return
         const mine = new Set([name, ...partsOf(spec, name).map(([k]) => k)])
-        const used = spec.channels.filter((c) => mine.has(c.out)).map((c) => c.name)
-        if (used.length) {
-            notify(S.poolEditor.vyhodZanyatPravilami(name, used.join(', ')), 'warning')
+        /* Занятый выход не убирается: правила, серверы DNS через него, туннели поверх него, группы —
+         * иначе спека осталась бы со ссылкой на выход, которого нет, и не сохранялась бы вовсе. */
+        const busy = outputBusy(spec, name, mine)
+        if (busy) {
+            notify(busy, 'warning')
             return
         }
         const outputs: Record<string, Output> = {}

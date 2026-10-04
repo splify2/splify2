@@ -5,6 +5,7 @@ import { Block, CardHead, DangerButton, FieldRow, ScreenHeader, ToggleRow } from
 import { Chip, Field, NumField, Radio, inputCls } from '@/components/formbits'
 import { balanceBySupported } from '@/lib/engine'
 import { notify } from '@/lib/notify'
+import { outputBusy, renameRefs } from '@/lib/outrefs'
 import { rpc } from '@/lib/rpc'
 import { ON_FAIL_TEXT, isPart, type BalanceBy, type GroupPick, type OnFail, type Output, type Spec } from '@/lib/model'
 import { type Live } from '@/lib/live'
@@ -131,25 +132,20 @@ export default function GroupEditor({ spec, name, live, onSave, onCancel }: {
         if (pick === 'balance') g.weights = members.map((_, k) => weights[k] ?? 1)
         if (pick === 'balance' && by !== 'connection') g.by = by
         if (existing?.extra) g.extra = existing.extra
-        /* Переименование уводит за собой правила и членство в других группах. */
         const outputs: Record<string, Output> = {}
-        for (const [k, v] of Object.entries(spec.outputs)) {
-            if (k === name) continue
-            outputs[k] = name && n !== name && v.kind === 'group'
-                ? { ...v, members: (v.members || []).map((m) => (m === name ? n : m)) }
-                : v
-        }
+        for (const [k, v] of Object.entries(spec.outputs)) if (k !== name) outputs[k] = v
         outputs[n] = g
-        const channels = name && n !== name ? spec.channels.map((c) => (c.out === name ? { ...c, out: n } : c)) : spec.channels
-        onSave({ ...spec, outputs, channels })
+        /* Переименование уводит за собой всё, что называет группу по имени: правила, серверы DNS (через
+         * выход), туннели поверх неё (`over`), другие группы, где она член (lib/outrefs.ts). */
+        const next = { ...spec, outputs }
+        onSave(name && n !== name ? renameRefs(next, name, n) : next)
     }
 
     function remove() {
         if (!name) return
-        const used = spec.channels.filter((c) => c.out === name).map((c) => c.name)
-        if (used.length) { notify(S.groupEditor.vyhodZanyatPravilami(name, used.join(', ')), 'warning'); return }
-        const holders = Object.entries(spec.outputs).filter(([, o]) => o.kind === 'group' && o.members?.includes(name)).map(([k]) => k)
-        if (holders.length) { notify(S.groupEditor.vyhodVhoditVGruppy(name, holders.join(', ')), 'warning'); return }
+        /* Занятая группа не убирается: правила, серверы DNS через неё, туннели поверх неё, другие группы. */
+        const busy = outputBusy(spec, name)
+        if (busy) { notify(busy, 'warning'); return }
         const outputs = { ...spec.outputs }
         delete outputs[name]
         onSave({ ...spec, outputs })

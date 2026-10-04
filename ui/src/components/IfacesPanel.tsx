@@ -3,6 +3,7 @@ import { ShieldCheck } from 'lucide-react'
 import { Switch } from '@/components/ui/switch'
 import { Empty, Group } from '@/components/ui/layout'
 import { notify } from '@/lib/notify'
+import { outputBusy } from '@/lib/outrefs'
 import { rpc } from '@/lib/rpc'
 import { pending } from '@/lib/pending'
 import { useSpecCopy } from '@/lib/speccopy'
@@ -89,17 +90,23 @@ export default function IfacesPanel({ live }: { live: Live }) {
     }
 
     function turnOff(dev: string) {
+        /* Выходы, у которых это устройство единственное: они уходят из спеки целиком. */
+        const gone = Object.entries(spec!.outputs)
+            .filter(([, o]) => devList(o).includes(dev) && devList(o).every((d) => d === dev))
+            .map(([n]) => n)
+        /* Занятый выход не убирается: правила, серверы DNS через него, туннели поверх него, группы —
+         * иначе спека осталась бы со ссылкой на выход, которого нет, и не сохранялась бы вовсе. */
+        for (const n of gone) {
+            const busy = outputBusy(spec!, n, gone)
+            if (busy) {
+                notify(busy, 'warning')
+                return
+            }
+        }
         const outputs: Record<string, Output> = {}
         for (const [n, o] of Object.entries(spec!.outputs)) {
+            if (gone.includes(n)) continue
             const rest = devList(o).filter((d) => d !== dev)
-            if (devList(o).includes(dev) && rest.length === 0) {
-                const used = spec!.channels.filter((c) => c.out === n).map((c) => c.name)
-                if (used.length) {
-                    notify(S.ifacesPanel.vyhodZanyatPravilami(n, used.join(', ')), 'warning')
-                    return
-                }
-                continue
-            }
             outputs[n] = devList(o).includes(dev) ? { ...o, devices: rest, device: rest[0] } : o
         }
         edit({ ...spec!, outputs })

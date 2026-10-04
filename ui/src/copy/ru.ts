@@ -538,8 +538,6 @@ export const ru = {
         imyaLatinitsaTsifryDefis: "Имя: латиница, цифры, дефис или подчёркивание",
         vyhodUzheEst: (p0: unknown) => `Выход «${p0}» уже есть`,
         vyberiteHotyaByOdin: "Выберите хотя бы один выход",
-        vyhodZanyatPravilami: (p0: unknown, p1: unknown) => `Выход «${p0}» занят правилами: ${p1}`,
-        vyhodVhoditVGruppy: (p0: unknown, p1: unknown) => `Выход «${p0}» входит в группы: ${p1}`,
         nePoluchilos: "не получилось",
         vybran: (p0: unknown) => `Выбран ${p0}`,
         dobavitGruppu: "Добавить группу",
@@ -638,7 +636,6 @@ export const ru = {
     },
     ifacesPanel: {
         zagruzka: "Загрузка…",
-        vyhodZanyatPravilami: (p0: unknown, p1: unknown) => `Выход «${p0}» занят правилами: ${p1}`,
         tunnelnyhUstroystvNetTunnel: "Туннельных устройств нет. Туннель создаётся в настройках сети роутера.",
         vVyhodah: (p0: unknown) => `в выходах: ${p0}`,
     },
@@ -794,6 +791,17 @@ export const ru = {
         vyhodNePodnyatUstroystva: (p0: unknown) => `выход ${p0} не поднят: устройства нет`,
         pokaEgoNetTrafik: ". Пока его нет, трафик этого выхода никуда не идёт.",
     },
+    /** Кто держит выход: отказ убрать занятый выход и объяснение отказа ядра о выходе, которого нет
+     *  (lib/outrefs.ts). Перечень держателей — «правила — YouTube; серверы DNS — cloudflare». */
+    outputRefs: {
+        ispolzuetsya: (p0: unknown, p1: unknown) => `Выход «${p0}» используется: ${p1}. Сначала уберите его оттуда`,
+        netVyhoda: (p0: unknown, p1: unknown) => `Выхода «${p0}» нет, но он выбран: ${p1}. Выберите там другой выход`,
+        pravila: (p0: unknown) => `правила — ${p0}`,
+        serveryDns: (p0: unknown) => `серверы DNS — ${p0}`,
+        dnsPravil: (p0: unknown) => `свой сервер DNS в правилах — ${p0}`,
+        gruppy: (p0: unknown) => `группы — ${p0}`,
+        tunneli: (p0: unknown) => `туннели через него — ${p0}`,
+    },
     pending: {
         neUdalosSohranit: "не удалось сохранить",
         primeneno: "Применено",
@@ -809,7 +817,6 @@ export const ru = {
         vyhodUzheEst: (p0: unknown) => `Выход «${p0}» уже есть`,
         vyberiteCherezChtoVyhodit: "Выберите, через что выходить",
         imyaVyhodaPodpiskiNe: (p0: unknown) => `Имя выхода подписки — не длиннее ${p0} символов: оно становится именем устройства`,
-        vyhodZanyatPravilami: (p0: unknown, p1: unknown) => `Выход «${p0}» занят правилами: ${p1}`,
         zakryt: "Закрыть",
         sohranitVyhod: " Сохранить выход",
         obhodDpi: "Обход DPI",

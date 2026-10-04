@@ -2368,6 +2368,15 @@ out="$(rpcd sub_del '{"name":"blue"}')"
 check "занятая подписка не удаляется" "false" "$(printf '%s' "$out" | jget ok)"
 check "и сказано, сколькими выходами занята" "yes" \
       "$(printf '%s' "$out" | jget error | grep -q 'занята выходами' && echo yes || echo no)"
+# То же в спеке v2 — той, что пишет панель: файл подписки там ключ `subscription`, а не `sub_file`. Выход
+# убирают в редакторе выходов раньше подписки (занятый DNS, группой или туннелем он не убирается: см.
+# ui/tests/output-delete.test.tsx), и пока выход стоит в спеке, подписка остаётся.
+cat > "$T/etc/spec.json" <<JSON
+{"version":2,"outputs":{"vl":{"kind":"tunnel","protocol":"vless","subscription":"$T/etc/subs/blue.txt"}}}
+JSON
+out="$(rpcd sub_del '{"name":"blue"}')"
+check "занятая подписка не удаляется и в спеке v2" "false" "$(printf '%s' "$out" | jget ok)"
+check "файл подписки на месте" "yes" "$([ -s "$T/etc/subs/blue.txt" ] && echo yes || echo no)"
 printf '%s\n' '{"schema":1,"outputs":{},"channels":[]}' > "$T/etc/spec.json"
 out="$(rpcd sub_del '{"name":"blue"}')"
 check "свободная — удаляется вместе с файлом" "true;no" \
