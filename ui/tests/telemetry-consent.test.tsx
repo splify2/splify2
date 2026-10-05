@@ -90,10 +90,11 @@ describe('счётчик на сайте (docs/TELEMETRY.md)', () => {
         expect(document.body.textContent).not.toContain(code)
     })
 
-    it('сказано, что уходит только номер роутера', async () => {
+    it('сказано, что уходит: номер роутера и внешний адрес, а остаётся только город', async () => {
         vi.spyOn(rpc, 'telemetryState').mockResolvedValue(state())
         render(<TelemetryCard />)
-        await waitFor(() => expect(screen.getByText(/только свой номер/)).toBeInTheDocument())
+        await waitFor(() => expect(screen.getByText(/свой номер и внешний адрес; сайт запоминает только город/))
+            .toBeInTheDocument())
         expect(screen.queryByRole('button', { name: /Показать пакет/ })).toBeNull()
     })
 })

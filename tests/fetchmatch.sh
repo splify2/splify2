@@ -589,5 +589,49 @@ check "raw без пути к файлу не разбирается" "НЕ_РА
       "$(parts https://raw.githubusercontent.com/xyzmean/r/main)"
 check "чужой адрес не разбирается" "НЕ_РАЗОБРАН" "$(parts https://example.org/a.lst)"
 
+# ---- 11. выходы, через которые можно повторить ------------------------------------
+# fetch_outs — общий перечень: скачивание через туннель берёт из него первый выход с таблицей
+# (fetch_out), а отклик для счётчика на сайте (splify2-ping) — выходы с устройством по очереди.
+outs_run() {  # ПОЛЕ [СКОЛЬКО] — печатает перечень и «RC=код»
+    env PATH="$T/bin:$PATH" STATE="$S" FETCH_STEER="$T/bin/steer" FETCH_SPEC="$S/spec.json" \
+        sh -c '. "$1"; shift; fetch_outs "$@"; echo "RC=$?"' _ "$FETCH" "$@"
+}
+out1_run() {
+    env PATH="$T/bin:$PATH" STATE="$S" FETCH_STEER="$T/bin/steer" FETCH_SPEC="$S/spec.json" \
+        sh -c '. "$1"; fetch_out; echo "RC=$?"' _ "$FETCH"
+}
+cat > "$S/status.json" <<'EOF'
+{"schema":1,"outputs":{"direct":{"kind":"direct"},
+ "down1":{"kind":"vless","device":"d1","up":false,"table":300},
+ "vl":{"kind":"vless","device":"vl","up":true,"table":301},
+ "wg-home":{"kind":"interface","device":"wg0","up":true,"table":302},
+ "notable":{"kind":"vless","device":"nt0","up":true},
+ "nodev":{"kind":"vless","up":true,"table":303},
+ "badev":{"kind":"vless","device":"a b","up":true,"table":304},
+ "h2":{"kind":"hysteria2","device":"h2","up":true,"table":305}},"channels":[]}
+EOF
+printf 'direct\ndown1\nvl\nwg-home\nnotable\nnodev\nbadev\nh2\nbad name\n' > "$S/outputs"
+check "fetch_outs: поднятые со своей таблицей, по порядку" "vl 301;wg-home 302;nodev 303;badev 304;h2 305;RC=0" \
+      "$(outs_run table | tr '\n' ';' | sed 's/;$//')"
+check "fetch_outs без поля — таблица, как раньше" "vl 301;wg-home 302;nodev 303;badev 304;h2 305;RC=0" \
+      "$(outs_run | tr '\n' ';' | sed 's/;$//')"
+check "fetch_outs device: поднятые со своим устройством" "vl vl;wg-home wg0;notable nt0;h2 h2;RC=0" \
+      "$(outs_run device | tr '\n' ';' | sed 's/;$//')"
+check "fetch_outs device 2: не больше двух" "vl vl;wg-home wg0;RC=0" \
+      "$(outs_run device 2 | tr '\n' ';' | sed 's/;$//')"
+check "fetch_out — первый с таблицей, как до перечня" "vl 301;RC=0" \
+      "$(out1_run | tr '\n' ';' | sed 's/;$//')"
+check "fetch_outs: неизвестное поле — отказ" "RC=1" "$(outs_run mark | tr '\n' ';' | sed 's/;$//')"
+printf '{"schema":1,"outputs":{"direct":{"kind":"direct"},"d":{"kind":"vless","device":"d","up":false,"table":300}},"channels":[]}\n' > "$S/status.json"
+printf 'direct\nd\n' > "$S/outputs"
+check "fetch_outs: поднятых нет — отказ без строк" "RC=1" "$(outs_run device | tr '\n' ';' | sed 's/;$//')"
+check "fetch_out: поднятых нет — отказ" "RC=1" "$(out1_run | tr '\n' ';' | sed 's/;$//')"
+: > "$S/status.json"
+check "fetch_outs: ядро не отвечает — отказ" "RC=1" "$(outs_run device | tr '\n' ';' | sed 's/;$//')"
+cat > "$S/status.json" <<'EOF'
+{"schema":1,"outputs":{"direct":{"kind":"direct"},"vl":{"kind":"vless","device":"vl","up":true,"mark":"0x00100000","table":300}},"channels":[]}
+EOF
+printf 'direct\nvl\n' > "$S/outputs"
+
 printf '\n%s\n' "$([ "$fails" -eq 0 ] && echo 'все проверки прошли' || echo "ЕСТЬ ПРОВАЛЫ: $fails")"
 [ "$fails" -eq 0 ]

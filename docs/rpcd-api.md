@@ -1053,9 +1053,9 @@ JSON — то есть решение принималось по переска
 `splify2.main.telemetry` нет), `on` (`1`) или `off` (`0` или непонятное значение); `on` —
 уйдёт ли отклик: везде, кроме `off`. `last_at` — когда сайт последний раз принял отклик
 (unix-время, `0` — с загрузки ещё не было), `last_error` — слово причины последнего сбоя или
-пусто: `rejected` (400), `toomany` (429), `unavailable` (5xx и прочие ответы), `network` (нет
-ответа), `noid` (ядро не дало идентификатор), `nosender` (нет ни curl, ни uclient-fetch). Оба
-берутся из `/tmp/splify2-ping`.
+пусто: `rejected` (400), `toomany` (429), `unavailable` (5xx и прочие ответы), `network` (сайт не
+ответил ни по одному пути: напрямую, через выходы ядра и обычным), `noid` (ядро не дало
+идентификатор), `nosender` (нет ни curl, ни uclient-fetch). Оба берутся из `/tmp/splify2-ping`.
 
 `telemetry_set {on}` пишет ключ; выключение вдобавок удаляет `splify2.main.telemetry_id` и
 отметку `/tmp/splify2-ping`. Ответ — `{ok, consent}`.

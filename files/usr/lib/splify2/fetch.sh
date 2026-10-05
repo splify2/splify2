@@ -229,24 +229,36 @@ fetch_github() {  # URL ФАЙЛ
     return 0
 }
 
-# ---- выход, через который можно повторить -------------------------------------------
-# Печатает «ИМЯ ТАБЛИЦА» первого поднятого выхода со своей таблицей маршрутизации.
+# ---- выходы, через которые можно повторить ------------------------------------------
+# Печатает «ИМЯ ЗНАЧЕНИЕ» по строке на каждый ПОДНЯТЫЙ выход, у которого есть нужное поле, в
+# порядке `steer outputs`: `table` (умолчание) — своя таблица маршрутизации, `device` — своё
+# устройство (по нему запрос уходит через выход: `curl --interface`, так же мерит страну выхода
+# outbound_geo). СКОЛЬКО — сколько строк печатать (пусто или 0 — все). Ни одной — код 1.
 # Через `steer outputs`, а не через jshn: этот файл подключает и splify2-update-lists,
 # которому libubox не нужен ни для чего больше.
-fetch_out() {
+fetch_outs() {  # [ПОЛЕ [СКОЛЬКО]]
+    _fo_f="${1:-table}"; _fo_lim="${2:-0}"; _fo_cnt=0
+    case "$_fo_f" in table|device) ;; *) return 1 ;; esac
     _fo_st="$("$FETCH_STEER" status --spec "$FETCH_SPEC" 2>/dev/null)"
     [ -n "$_fo_st" ] || return 1
     for _fo_n in $("$FETCH_STEER" outputs --spec "$FETCH_SPEC" 2>/dev/null); do
         case "$_fo_n" in *[!a-zA-Z0-9_-]*) continue ;; esac
         _fo_up="$(printf '%s' "$_fo_st" | jsonfilter -e "@.outputs['$_fo_n'].up" 2>/dev/null)"
         [ "$_fo_up" = "true" ] || [ "$_fo_up" = "1" ] || continue
-        _fo_t="$(printf '%s' "$_fo_st" | jsonfilter -e "@.outputs['$_fo_n'].table" 2>/dev/null)"
-        case "${_fo_t:-}" in ''|*[!0-9]*) continue ;; esac
+        _fo_t="$(printf '%s' "$_fo_st" | jsonfilter -e "@.outputs['$_fo_n'].$_fo_f" 2>/dev/null)"
+        case "$_fo_f:${_fo_t:-}" in
+            table:|table:*[!0-9]*) continue ;;
+            device:|device:*[!a-zA-Z0-9_.-]*) continue ;;
+        esac
         printf '%s %s\n' "$_fo_n" "$_fo_t"
-        return 0
+        _fo_cnt=$((_fo_cnt + 1))
+        [ "$_fo_lim" -gt 0 ] && [ "$_fo_cnt" -ge "$_fo_lim" ] && return 0
     done
-    return 1
+    [ "$_fo_cnt" -gt 0 ]
 }
+
+# Печатает «ИМЯ ТАБЛИЦА» первого поднятого выхода со своей таблицей маршрутизации.
+fetch_out() { fetch_outs table 1; }
 
 # Адреса, к которым ходит САМ движок этого выхода. Увести их в туннель — это петля: пакет
 # к узлу уйдёт в TUN, движок прочитает его оттуда и откроет к узлу ещё одно соединение, и

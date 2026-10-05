@@ -1,13 +1,32 @@
 #!/bin/sh
 # Отклик для счётчика роутеров на splify2.github.io. Описание — docs/TELEMETRY.md.
 #
-# Тело запроса — ровно `{"v":1,"id":"sp-…"}`, больше ничего. Город сервер берёт сам по
-# соединению; адрес роутера он не хранит.
+# Тело запроса — `{"v":1,"id":"sp-…"}` и, когда адрес известен, `"ip":"<публичный адрес роутера>"`;
+# больше ничего. Город сервер находит по этому адресу, а без него — по адресу соединения. Когда
+# трафик самого роутера идёт через туннель, у соединения адрес выхода, и город по нему был бы
+# чужим; потому роутер называет свой адрес сам. Сервер использует его только для города и не
+# хранит.
+#
+# АДРЕС. Сначала адрес внешнего интерфейса от netifd, если он публичный. Частный или CGNAT
+# (роутер за роутером, оператор с общим адресом) — спрашиваем наш же сервер (`GET /api/ip`) по
+# внешнему устройству. Не вышло ни то ни другое — отклик уходит без адреса.
 #
 # РАСПИСАНИЕ. Крон зовёт команду раз в час в свою минуту (выбрана при установке, чтобы роутеры
 # не стучались в одну секунду). Отклик уходит, только если с прошлой отметки прошло 23 часа:
 # сайт считает роутеры, отозвавшиеся за последние сутки, и час запаса не даёт роутеру выпасть
 # из счёта. Отметка в /tmp — после перезагрузки отклик уходит на ближайшем такте.
+#
+# ПУТИ. Отклик должен дойти ЛЮБЫМ рабочим путём, а не только тем, каким роутер ходит по
+# умолчанию: у одних провайдер закрывает TLS до сайта, у других весь трафик самого роутера идёт
+# в туннель. По очереди, до первого ответа сайта (ответ с любым кодом — уже ответ):
+#   1. напрямую — по внешнему устройству (`curl --interface`), мимо маршрута по умолчанию;
+#   2. через каждый поднятый выход ядра по очереди — по устройству выхода, тем же способом, каким
+#      outbound_geo меряет страну выхода; порядок — как в `steer outputs`;
+#   3. обычным путём, без привязки.
+# Привязаться к устройству умеет только curl; uclient-fetch делает один обычный заход. На каждую
+# попытку — те же таймауты, а новый выход не пробуется, когда с начала прошло PING_BUDGET секунд:
+# прогон ограничен по времени, а не по числу выходов. Переключатель «скачивать через туннель» к
+# отклику не относится — он про списки и пакеты.
 #
 # ОТВЕТЫ. 2xx — принято, отметка. 400 (тело не по контракту) и 429 (слишком часто) — тоже
 # отметка: повтор через час ничего не изменит; причина запоминается для экрана. 5xx, прочие
@@ -25,10 +44,15 @@ PING_URL_DEF=${PING_URL_DEF:-https://dns.yo1nk.app/api/ping}
 PING_EVERY=${PING_EVERY:-82800}
 PING_SLACK=${PING_SLACK:-600}
 PING_TIMEOUT=${PING_TIMEOUT:-20}
+# Сколько секунд с начала прогона можно начинать пробу нового выхода. Раз в сутки, из крона:
+# две минуты на отклик не мешают никому, а бесконечный перебор выходов — мешал бы.
+PING_BUDGET=${PING_BUDGET:-90}
 # Чем отправлять: curl, если стоит, иначе uclient-fetch из базовой системы — в зависимостях
-# пакета curl нет.
-PING_CURL=${PING_CURL:-curl}
+# пакета curl нет. PING_CURL задаёт ping.sh.
 PING_FETCH=${PING_FETCH:-uclient-fetch}
+# Перечень выходов читает fetch.sh — тот же, что у скачивания через туннель; подключается,
+# только когда прямой путь не ответил.
+FETCH_SH=${FETCH_SH:-/usr/lib/splify2/fetch.sh}
 
 log() { logger -t splify2-ping "$*" 2>/dev/null; echo "$*"; return 0; }
 
@@ -56,29 +80,96 @@ fail() {  # ПРИЧИНА СООБЩЕНИЕ — без отметки: пов�
     exit 1
 }
 
+# Был ли ответ сайта: `000` — так curl печатает «ответа не было вовсе».
+answered() { case "${1:-}" in ''|000) return 1 ;; esac; return 0; }
+
+# Один заход. Печатает код ответа сайта; пусто или `000` — ответа не было. Третий аргумент —
+# устройство, к которому привязать запрос (только curl).
+ping_post() {  # URL ТЕЛО [УСТРОЙСТВО]
+    if command -v "$PING_CURL" >/dev/null 2>&1; then
+        "$PING_CURL" -4 -sS -o /dev/null -w '%{http_code}' \
+            ${3:+--interface} ${3:+"$3"} \
+            --connect-timeout 8 --max-time "$PING_TIMEOUT" \
+            -H 'Content-Type: application/json' --data-binary "$2" "$1" 2>/dev/null
+    else
+        # uclient-fetch кода ответа не печатает: 200 и 204 для него успех, остальное — строка
+        # «HTTP error N» в stderr и ненулевой выход. Без ответа строки нет — это сбой сети.
+        if _pp_out="$("$PING_FETCH" -4 -O /dev/null -T "$PING_TIMEOUT" \
+                --header='Content-Type: application/json' --post-data="$2" "$1" 2>&1 >/dev/null)"; then
+            printf '204'
+        else
+            printf '%s\n' "$_pp_out" | sed -n 's/.*HTTP error \([0-9][0-9]*\).*/\1/p' | tail -n1
+        fi
+    fi
+}
+
+# Через выходы ядра по очереди: код ответа — в `code`, имя ответившего выхода — в `via`.
+ping_via_outputs() {  # URL ТЕЛО
+    command -v "$PING_CURL" >/dev/null 2>&1 || return 1
+    [ -r "$FETCH_SH" ] || return 1
+    . "$FETCH_SH"
+    for _vo in $(fetch_outs device | tr ' ' ':'); do
+        [ $(( $(date +%s) - now )) -lt "$PING_BUDGET" ] || break
+        _vo_dev="${_vo#*:}"
+        # Внешнее устройство уже пробовали первым заходом.
+        [ "$_vo_dev" != "$wan_dev" ] || continue
+        code="$(ping_post "$1" "$2" "$_vo_dev")"
+        if answered "$code"; then
+            via="${_vo%%:*}"
+            return 0
+        fi
+    done
+    return 1
+}
+
 id="$(ping_id)" || fail noid "нет идентификатора: ядро steer не ответило"
+
+if ! command -v "$PING_CURL" >/dev/null 2>&1 && ! command -v "$PING_FETCH" >/dev/null 2>&1; then
+    fail nosender "нечем отправить: нет ни curl, ни uclient-fetch"
+fi
 
 url="$(uci -q get splify2.main.ping_url 2>/dev/null || true)"
 [ -n "$url" ] || url="$PING_URL_DEF"
-body="{\"v\":1,\"id\":\"$id\"}"
 
-if command -v "$PING_CURL" >/dev/null 2>&1; then
-    # `000` — curl так печатает «ответа не было вовсе».
-    code="$("$PING_CURL" -4 -sS -o /dev/null -w '%{http_code}' \
-        --connect-timeout 8 --max-time "$PING_TIMEOUT" \
-        -H 'Content-Type: application/json' --data-binary "$body" "$url" 2>/dev/null)"
-elif command -v "$PING_FETCH" >/dev/null 2>&1; then
-    # uclient-fetch кода ответа не печатает: 200 и 204 для него успех, остальное — строка
-    # «HTTP error N» в stderr и ненулевой выход. Без ответа строки нет — это сбой сети.
-    if out="$("$PING_FETCH" -4 -O /dev/null -T "$PING_TIMEOUT" \
-            --header='Content-Type: application/json' --post-data="$body" "$url" 2>&1 >/dev/null)"; then
-        code=204
-    else
-        code="$(printf '%s\n' "$out" | sed -n 's/.*HTTP error \([0-9][0-9]*\).*/\1/p' | tail -n1)"
-    fi
-else
-    fail nosender "нечем отправить: нет ни curl, ни uclient-fetch"
+# ---- публичный адрес роутера ------------------------------------------------------------
+# Адрес для спроса у сервера — тот же сервер, что принимает отклик: `…/api/ping` → `…/api/ip`.
+# Адрес отклика, который так не кончается (чужой стенд), не спрашивается вовсе.
+case "$url" in */ping) echo_url="${url%/ping}/ip" ;; *) echo_url='' ;; esac
+
+wan_dev=''; wan_ip=''
+if _w="$(ping_wan)"; then
+    wan_dev="${_w% *}"; wan_ip="${_w#* }"
+    [ "$wan_dev" != - ] || wan_dev=''
+    [ "$wan_ip" != - ] || wan_ip=''
 fi
+pub=''
+if ping_ip4_global "$wan_ip"; then
+    pub="$wan_ip"
+elif [ -n "$wan_dev" ] && [ -n "$echo_url" ]; then
+    pub="$(ping_echo "$wan_dev" "$echo_url")" || pub=''
+fi
+
+body="{\"v\":1,\"id\":\"$id\"}"
+[ -z "$pub" ] || body="{\"v\":1,\"id\":\"$id\",\"ip\":\"$pub\"}"
+
+# ---- отправка по очереди путей -----------------------------------------------------------
+code=''; via=''; bound=0
+if [ -n "$wan_dev" ] && command -v "$PING_CURL" >/dev/null 2>&1; then
+    bound=1
+    code="$(ping_post "$url" "$body" "$wan_dev")"
+else
+    code="$(ping_post "$url" "$body")"
+fi
+answered "$code" || ping_via_outputs "$url" "$body"
+if ! answered "$code" && [ "$bound" = 1 ]; then
+    code="$(ping_post "$url" "$body")"
+    if answered "$code"; then via=default; fi
+fi
+case "$via" in
+    '')      ;;
+    default) log "сайт по внешнему устройству не ответил — отклик ушёл обычным путём" ;;
+    *)       log "сайт напрямую не ответил — отклик ушёл через выход $via" ;;
+esac
 
 case "${code:-}" in
     2??)
