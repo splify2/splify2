@@ -38,6 +38,15 @@ rpcd() {  # ПЕРЕМЕННЫЕ... МЕТОД ВХОД
 }
 req() { python3 -c 'import json,sys; print(json.dumps({"spec": sys.argv[1]}))' "$1"; }
 
+# jsonfilter роутера (машина разработки его не имеет): только `-i файл -e '@.ключ'` верхнего уровня.
+cat > "$T/bin/jsonfilter" <<'EOF'
+#!/bin/sh
+python3 -c 'import json,sys
+d = json.load(open(sys.argv[1], encoding="utf-8"))
+k = sys.argv[2][2:]
+if k in d: print(json.dumps(d[k]) if isinstance(d[k], (dict, list)) else d[k])' "$2" "$4"
+EOF
+chmod +x "$T/bin/jsonfilter"
 printf 'example.org\n' > "$T/lists/dom.lst"
 printf '#!/bin/sh\nexit 0\n' > "$T/bin/initd"; chmod +x "$T/bin/initd"
 

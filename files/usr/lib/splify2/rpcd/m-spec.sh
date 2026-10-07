@@ -439,6 +439,13 @@ fw_sync() {
     fi
 }
 
+# Спека v1 — верхний ключ `schema` без `version`. Слово «schema» глубже (имя выхода или списка)
+# v1 не делает, поэтому поиском по тексту это не определяется.
+spec_is_v1() {
+    [ -n "$(jsonfilter -i "$SPEC" -e '@.schema' 2>/dev/null)" ] &&
+        [ -z "$(jsonfilter -i "$SPEC" -e '@.version' 2>/dev/null)" ]
+}
+
 # САМОЛЕЧЕНИЕ: выходу-интерфейсу без ключа `ipv6` в нашей зоне без masq6 записывается `ipv6: nat`
 # или `ipv6: off` — смотря по тому, есть ли у его устройства адрес IPv6.
 #
@@ -479,7 +486,7 @@ fw_sync() {
 spec_heal_ipv6() {
     [ -s "$SPEC" ] || return 1
     [ -s "${SPEC%/*}/spec.yaml" ] && return 1
-    grep -q '"schema"' "$SPEC" 2>/dev/null && return 1
+    spec_is_v1 && return 1
     _sh_devs=""
     for _sh_d in $(fw_devices_of interface,awg); do
         _sh_z="$(fw_zone_id_of_dev "$_sh_d")"
@@ -665,7 +672,7 @@ case "$2" in
         # Прежняя спека v1 (`schema`) перед первой заменой на v2 остаётся копией рядом:
         # интерфейс переписывает формат сам, и откатить перенос должно быть чем. Копия
         # одна и старейшая — повторные сохранения её не затирают.
-        if [ -s "$SPEC" ] && grep -q '"schema"' "$SPEC" 2>/dev/null && [ ! -e "$SPEC.v1.bak" ]; then
+        if [ -s "$SPEC" ] && spec_is_v1 && [ ! -e "$SPEC.v1.bak" ]; then
             cp "$SPEC" "$SPEC.v1.bak" 2>/dev/null
         fi
         # Код возврата mv проверяется: без этого «Сохранено» печаталось независимо от

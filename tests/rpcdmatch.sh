@@ -4748,6 +4748,16 @@ out="$(heal_apply apply)"
 check "heal: второй apply спеку не меняет (идемпотентно)" "$sum1" "$(cksum < "$T/etc/spec.json")"
 check "heal: и не сообщает о правке" "no" "$(printf '%s' "$out" | jget output | grep -q 'записан ipv6' && echo yes || echo no)"
 check "heal: чужие устройства и после второго apply вне нашей зоны" "" "$(in_zone steer_iface wg_f wgnet wg_d wg_i pptp-vpn)"
+# v2 со словом «schema» где-то в тексте (выход так назван) — всё равно v2: лечится, и копии v1 нет.
+heal_spec; heal_zones
+sed -i 's/"warp":{/"schema":{/' "$T/etc/spec.json"
+rm -f "$T/etc/spec.json.v1.bak"
+out="$(heal_apply apply)"
+check "heal: выход с именем schema в спеке v2 лечится" "nat" "$(v6of schema)"
+heal_spec
+sed -i 's/"warp":{/"schema":{/' "$T/etc/spec.json"
+out="$(heal_apply spec_set '{"spec":"{\"version\":2,\"outputs\":{\"schema\":{\"kind\":\"direct\"}}}"}')"
+check "spec_set: спека v2 со словом schema копией v1 не сохраняется" "no" "$([ -e "$T/etc/spec.json.v1.bak" ] && echo yes || echo no)"
 # masq6 у зоны уже включён — жалобы нет, спеку не трогаем.
 heal_spec; heal_zones 1
 out="$(heal_apply apply)"
