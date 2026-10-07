@@ -1616,6 +1616,21 @@ out="$(APK_LIST="$CORE_LIST
 steer-extended-2.0.0-r1 x {steer-extended}" rpcd steer_module_del '{"module":"hysteria2"}')"
 check "мета-пакет steer-extended снимается вместе с модулем" "del steer-extended|del steer-hysteria2" \
       "$(grep '^del' "$T/apk.log" | tr '\n' '|' | sed 's/|$//')"
+# Мета-пакет мог быть единственным в /etc/apk/world (apk add steer-extended из репозитория): `apk del`
+# мета-пакета снёс бы и остальные его зависимости, не названные в world. Ядро и остающиеся модули
+# закрепляются ДО снятия мета-пакета.
+reset_logs
+out="$(APK_LIST="$CORE_LIST
+steer-hysteria2-2.0.0-r1 x {steer-hysteria2}
+steer-xsteer-2.0.0-r1 x {steer-xsteer}
+steer-extended-2.0.0-r1 x {steer-extended}" rpcd steer_module_del '{"module":"hysteria2"}')"
+check "снятие модуля при мета-пакете: ядро и остальные модули закреплены в world до снятия" \
+      "add add steer-core|add add steer-vless|add add steer-proxy|add add steer-xsteer|del steer-extended|del steer-hysteria2" \
+      "$(grep '^add\|^del' "$T/apk.log" | tr '\n' '|' | sed 's/|$//')"
+reset_logs
+out="$(APK_LIST="$CORE_LIST
+steer-hysteria2-2.0.0-r1 x {steer-hysteria2}" rpcd steer_module_del '{"module":"hysteria2"}')"
+check "без мета-пакета ничего не закрепляется" "del steer-hysteria2" "$(grep '^add\|^del' "$T/apk.log" | tr '\n' '|' | sed 's/|$//')"
 out="$(rpcd steer_module_add '{"module":"../x"}')"
 check "незнакомый модуль отвергается" "false" "$(printf '%s' "$out" | jget ok)"
 mkdir -p "$T/box"; printf '# steer-box-connector\n' > "$T/box/sing-box"

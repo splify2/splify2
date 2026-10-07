@@ -921,7 +921,16 @@ case "$2" in
             case " $SPEC_MODS " in
                 *" $m "*) fail "модуль нужен выходам: $(spec_mod_outs "$m")" ;;
             esac
-            pkg_in "steer-extended" >/dev/null && pkg_del steer-extended
+            if pkg_in "steer-extended" >/dev/null; then
+                # Снятие мета-пакета у apk уносит и его зависимости, которых нет в /etc/apk/world: если
+                # человек ставил только steer-extended, ушли бы ядро и остальные модули. Они
+                # закрепляются заранее (у opkg такой записи нет — pkg_unpin ничего не делает).
+                pkg_unpin steer-core
+                for _k in $STEER_MODULES; do
+                    [ "$_k" != "$m" ] && pkg_in "steer-$_k" >/dev/null && pkg_unpin "steer-$_k"
+                done
+                pkg_del steer-extended
+            fi
             pkg_del "steer-$m"
             PKGS="$(pkg_list)"
             json_init
