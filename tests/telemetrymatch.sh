@@ -671,5 +671,12 @@ check "отметка отклика не тронута" "yes" "$([ -e "$R/tmp/
 check "согласие осталось" "0" "$(uget splify2.main.telemetry)"
 check "идентификатор остался" "$ID" "$(uget splify2.main.telemetry_id)"
 
+# ---- тексты про то, что хранит сайт: не «только город» (docs/TELEMETRY.md, counter.py) ----
+for _f in README.md docs/guide.md ui/src/copy/ru.ts; do
+  check "$_f: нет «только город»" "0" "$(grep -ci 'только город' "$_f")"
+done
+check "ru.ts: назван сервер dns.yo1nk.app" "1" "$(grep -c 'chtoUhodit:.*dns.yo1nk.app' ui/src/copy/ru.ts)"
+check "ru.ts: не называет сайтом splify2.github.io приёмник отклика" "0" "$(grep -c 'chtoUhodit:.*splify2.github.io' ui/src/copy/ru.ts)"
+
 printf '\n%d проверок пройдено, %d ПРОВАЛЕНО\n' "$pass" "$fail"
 [ "$fail" -eq 0 ]
