@@ -106,6 +106,20 @@ geo_refresh() {  # ВЫХОД
         "$_gr_ms" > "$GEO_DIR/geo-$1" 2>/dev/null
 }
 
+# Фоновый замер, но не чаще раза в GEO_RETRY на выход: отметка попытки ставится ДО запуска, и
+# следующий опрос, пришедший, пока curl ещё ждёт, или после неудачи, в сеть не идёт.
+geo_try_bg() {  # ВЫХОД
+    _gt_f="$GEO_DIR/geo-$1.try"
+    _gt_now="$(date +%s)"
+    _gt_at=0
+    [ -s "$_gt_f" ] && read -r _gt_at < "$_gt_f"
+    case "${_gt_at:-}" in ''|*[!0-9]*) _gt_at=0 ;; esac
+    [ $(( _gt_now - _gt_at )) -ge "$GEO_RETRY" ] || return 0
+    mkdir -p "$GEO_DIR" 2>/dev/null
+    printf '%s\n' "$_gt_now" > "$_gt_f" 2>/dev/null || return 0
+    geo_refresh "$1" >/dev/null 2>&1 &
+}
+
 # Достать JSON из вывода движка, к которому подмешаны его же человеческие строки.
 #
 # Движок пишет предупреждения в stderr («соединился, пропущено мёртвых адресов: 2 из 15»), а
@@ -636,7 +650,7 @@ case "$2" in
         # трубу, из которой rpcd читает ответ, и вызов не завершился бы до конца curl.
         if [ "$fresh" != "1" ] && [ "$fresh" != "true" ]; then
             if [ "$_geo_at" -le 0 ] || [ "$_geo_age" -ge "$GEO_TTL" ]; then
-                geo_refresh "$output" >/dev/null 2>&1 &
+                geo_try_bg "$output"
             fi
             json_init
             json_add_string output "$output"
