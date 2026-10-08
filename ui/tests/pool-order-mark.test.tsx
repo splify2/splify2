@@ -11,7 +11,8 @@ import { live } from './fixtures'
 // «London №…». Теперь она — строка под названием, в одном с ним столбце: переносится по словам и
 // названия не трогает. Название помеченной строки переносится, а не усекается: по нему узнают,
 // какой узел не берётся, а в колонке на 26rem рядом с подписью подписки ему остаётся около ста
-// пикселей. У строк без пометки название усекается, как и прежде.
+// пикселей. Теперь так у любой строки: «Великобри…» и «Нидерланд…» вместо имени узла
+// (жалоба из чата splify2) — название переносится и без пометки.
 //
 // jsdom раскладки не считает, поэтому здесь сторожится строение, от которого раскладка зависит:
 // где стоит пометка и что приглушено. Как это выглядит на 1440 и 390 пикселях, смотрится глазами
@@ -72,15 +73,15 @@ describe('пометка строки порядка', () => {
         expect(mark.closest('.opacity-60')).toBeNull()
     })
 
-    it('название помеченной строки переносится, а не усекается; у остальных усекается', async () => {
+    it('название переносится, а не усекается — и у помеченной строки, и у остальных', async () => {
         const order = await open([0, 1])
         await within(order).findByText('не берётся')
         const marked = within(order).getByText('London №1 Premium')
         expect(marked.className).toMatch(/break-words/)
         expect(marked.className).not.toMatch(/truncate/)
         const plain = within(order).getByText('Frankfurt')
-        expect(plain.className).toMatch(/truncate/)
-        expect(plain.className).not.toMatch(/break-words/)
+        expect(plain.className).toMatch(/break-words/)
+        expect(plain.className).not.toMatch(/truncate/)
     })
 
     it('«не берётся» у части с живым узлом — там же, под названием', async () => {

@@ -1305,12 +1305,12 @@ export default function PoolEditor({
                                                     сжималось до нуля, на телефоне — до «London №…». Под
                                                     названием пометка переносится по словам и названия не
                                                     трогает. Приглушены название и бейджи, пометка — нет.
-                                                    У помеченной строки название переносится, а не усекается:
-                                                    по нему и узнают, какой узел не берётся, а рядом с
-                                                    подписью подписки в узкой колонке ему остаётся около ста
-                                                    пикселей. */}
+                                                    Название переносится, а не усекается, у любой строки: по
+                                                    нему узнают узел, а рядом с подписью подписки в узкой
+                                                    колонке ему остаётся около ста пикселей — «Великобри…»
+                                                    и «Нидерланд…» вместо имени (чат splify2). */}
                                                 <span className="min-w-0 flex-1">
-                                                    <span className={`block text-[13px] font-medium ${mark ? 'break-words opacity-60' : 'truncate'}`}>{label}</span>
+                                                    <span className={`block text-[13px] font-medium ${mark ? 'break-words opacity-60' : 'break-words'}`}>{label}</span>
                                                     {mark && <span className="mt-0.5 block text-[11px] text-warning-fg">{mark}</span>}
                                                     <ConfBadges list={conf} className={`mt-0.5 ${mark ? 'opacity-60' : ''}`} />
                                                 </span>
@@ -1511,7 +1511,7 @@ function Choice({
             )}
             {badges?.length ? (
                 <span className="min-w-0 flex-1">
-                    <span className="block truncate font-medium">{title}</span>
+                    <span className="block break-words font-medium">{title}</span>
                     <ConfBadges list={badges} className="mt-1" />
                     {/* С бейджами подсказка — строкой под ними: справа она забирала у названия и
                         бейджей половину строки, и в редакторе на 1280 пикселях «любая рабочая»
@@ -1519,7 +1519,7 @@ function Choice({
                     {hint && <span className="mt-1 block text-[11px] text-muted-foreground">{hint}</span>}
                 </span>
             ) : (
-                <span className="min-w-0 flex-1 truncate font-medium">{title}</span>
+                <span className="min-w-0 flex-1 break-words font-medium">{title}</span>
             )}
             {/* Подсказка справа на узком экране прячется: она отъедала место у названия, и
                 «любая рабочая» обрезалось до «любая р…». */}
