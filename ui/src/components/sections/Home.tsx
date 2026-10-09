@@ -430,7 +430,9 @@ export default function Home({
                         onClick={() => onSection('diag')}
                         className="block w-full text-left text-xs text-muted-foreground underline decoration-dotted"
                     >
-                        {v.notes.length > 1 ? `${v.why}: ` : S.home.sovet}
+                        {/* Через точку, а не двоеточие: у самого совета своё двоеточие, и «советов: 3: канал …»
+                            читалось двумя подписями подряд. */}
+                        {v.notes.length > 1 ? `${v.why} · ` : S.home.sovet}
                         {v.notes[0].what}
                     </button>
                 )}

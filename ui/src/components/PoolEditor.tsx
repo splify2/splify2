@@ -827,8 +827,12 @@ export default function PoolEditor({
                 back={onCancel}
                 backLabel={S.poolEditor.otmena}
                 right={
-                    <Button onClick={save}>
-                        <Check className="h-4 w-4" aria-hidden="true" /> {S.poolEditor.sohranitVyhod}</Button>
+                    <Button onClick={save} aria-label={S.poolEditor.sohranitVyhod.trim()}>
+                        {/* На телефоне «Сохранить выход» забирал ширину у заголовка, и тот обрезался до
+                            «Добавить …» (QEMU-стенд, 390 пикселей): там на кнопке один глагол, полное
+                            название остаётся в aria-label. */}
+                        <Check className="h-4 w-4" aria-hidden="true" /> {S.poolEditor.sohranit}
+                        <span className="max-sm:hidden">{S.poolEditor.vyhodSlovo}</span></Button>
                 }
             />
 

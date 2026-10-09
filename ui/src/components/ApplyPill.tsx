@@ -33,7 +33,7 @@ export default function ApplyPill() {
                 title={refused ? S.pending.nastroykiNeZapisany(saveError) : S.applyPill.izmeneniyaUzheSohranenyKnopka}
                 className={[
                     'flex h-11 items-center gap-2.5 rounded-full px-6 text-sm font-medium text-white',
-                    'shadow-[0_6px_20px_rgba(0,0,0,0.18)] transition-all duration-300',
+                    'shadow-[0_6px_20px_rgba(0,0,0,0.18)] transition-[transform,background-color] duration-200 ease-[cubic-bezier(0.23,1,0.32,1)] active:scale-[0.97] motion-reduce:active:scale-100',
                     'focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring',
                     justApplied ? 'bg-success' : applying ? 'bg-muted-foreground' : refused ? 'bg-destructive' : 'bg-primary hover:-translate-y-px',
                 ].join(' ')}

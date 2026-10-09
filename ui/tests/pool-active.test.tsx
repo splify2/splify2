@@ -130,7 +130,7 @@ describe('пул узлов туннеля в редакторе выхода', 
         let saved: Spec | null = null
         render(<PoolEditor spec={{ outputs: {}, channels: [] }} live={WITH} onCancel={() => {}} onSave={(n) => { saved = n }} />)
         await click(/Амстердам/)
-        const every = screen.getByRole('spinbutton', { name: /Проверять узел раз в, с/ })
+        const every = screen.getByRole('spinbutton', { name: /Проверять узел каждые, с/ })
         const quiet = screen.getByRole('spinbutton', { name: /Считать узел мёртвым после молчания, с/ })
         expect(quiet.getAttribute('placeholder')).toBe('20')
         expect(screen.getByText('0 — выключено')).toBeInTheDocument()

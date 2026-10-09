@@ -55,6 +55,22 @@ interface Props {
     onDelete: () => void
 }
 
+/** Имя, которое правилу дала сама форма (RulesTab, «Новое правило»). */
+const AUTO_NAME = new RegExp(`^${S.rulesTab.pravilo('')}\\d+$`)
+
+/** Имя правила по сервису — если ядро его примет (label_ok и 31 байт, `rule.name[32]` в
+ *  spec.h) и оно не занято другим правилом; иначе остаётся прежнее. Занятое — с номером. */
+function serviceName(service: string, current: string, taken: string[]): string {
+    const others = new Set(taken.filter((n) => n !== current))
+    const fits = (n: string) => !/["\\\p{Cc}]/u.test(n) && new TextEncoder().encode(n).length <= 31
+    for (let i = 1; i < 100; i++) {
+        const n = i === 1 ? service : `${service} ${i}`
+        if (!fits(n)) return current
+        if (!others.has(n)) return n
+    }
+    return current
+}
+
 export default function RuleEditor({
     ch, index, services, local, outputs, clash, rulesTotal, coveredBy, onChange, onClose, onDelete,
 }: Props) {
@@ -179,8 +195,13 @@ export default function RuleEditor({
             },
             narrow: Object.keys(narrow).length ? narrow : undefined,
         }
+        /* Имя «правилоN» форма даёт сама, и в списке оно не говорит, что правило делает. Первый
+         * выбранный сервис называет правило; имя, набранное человеком, не трогается. */
+        const named = !on && selectedIds(ch, services).length === 0 && AUTO_NAME.test(ch.name)
+            ? { ...next, name: serviceName(entry.name, ch.name, (fullSpec?.channels || []).map((c) => c.name)) }
+            : next
         /* Подмена порта — свойство доменов правила: новый доменный файл получает её тоже. */
-        onChange(port === undefined ? next : withOverridePort(next, port))
+        onChange(port === undefined ? named : withOverridePort(named, port))
         if (set) return
         /* Сужение неизвестно (набор ещё не разбирали) — узнать сейчас, а не при следующем
          * открытии каталога: list_fetch разбирает набор и отдаёт `narrow` тем же ответом.
@@ -423,7 +444,7 @@ export default function RuleEditor({
                                 className="min-w-0 flex-1 bg-transparent py-2 text-sm outline-none"
                             />
                             <span className="shrink-0 text-xs text-muted-foreground">
-                                {shown.length} {S.ruleEditor.zapisey2}</span>
+                                {S.ruleEditor.zapisey2(shown.length)}</span>
                         </div>
 
                         {/* Каталог — строками через волосяную линию, галочка у правого края, как
@@ -450,7 +471,11 @@ export default function RuleEditor({
                                             {probing.has(sv.id) ? (
                                                 <span className="ml-2 text-xs text-muted-foreground">
                                                     {S.ruleEditor.skachivaetsya}</span>
-                                            ) : missing > 0 && (
+                                            ) : missing > 0 && on && (
+                                                /* Только у отмеченного: на свежей установке на
+                                                   роутере нет ни одного списка, и «скачается»
+                                                   стояло у каждой строки каталога — то есть не
+                                                   говорило ни о чём. */
                                                 <span className="ml-2 text-xs text-muted-foreground">
                                                     {S.ruleEditor.skachaetsya}</span>
                                             )}

@@ -398,6 +398,19 @@
   .splify-react-root :where(button, input, select, textarea)[class~="text-base"]   { font-size: 1rem !important }
   .splify-react-root :where(button, input, select, textarea)[class~="text-lg"]     { font-size: 1.125rem !important }
 
+  /* ПОЛЯ НА ТЕЛЕФОНЕ — 16px. Safari на iPhone увеличивает страницу, когда фокус попадает в поле
+   *  мельче 16px, и обратно не уменьшает: после ввода ссылки подписки человек оставался с
+   *  обрезанной панелью. Только для пальца (pointer: coarse) — с мышью поля остаются по шкале.
+   *  Специфичность на шаг выше перечня над этим комментарием, иначе `text-sm` его перебивает. */
+  @media (pointer: coarse) {
+    .splify-react-root.splify-react-root :is(input, select, textarea) { font-size: 16px !important }
+  }
+
+  /* КАСАНИЕ: без серой вспышки WebKit поверх нажатого (отклик у кнопок свой) и без ожидания
+   *  второго касания — у кнопок и ссылок двойное касание ничего не увеличивает. */
+  .splify-react-root { -webkit-tap-highlight-color: transparent }
+  .splify-react-root :where(button, a, label, [role="button"]) { touch-action: manipulation }
+
   /* ШИРОКАЯ ТАБЛИЦА НА УЗКОМ ЭКРАНЕ становится строками — без второй вёрстки.
    *
    *  Каталог — это тридцать восемь записей по четыре столбца: имя с пояснениями, число, где
