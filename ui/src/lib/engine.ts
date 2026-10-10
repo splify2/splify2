@@ -190,8 +190,8 @@ export function dnsOtherSupported(status: Status | null | undefined): boolean {
 }
 
 /** С какой версии ядро знает `fragment` у серверов DoT/DoH и адрес `h3://` (steer после 2.0.4).
- *  Умения `dns_fragment` и `dns_h3` в `status.features` ядро пока не печатает; когда напечатает,
- *  спрашивается оно, а версия остаётся запасным признаком для ядер без перечня этих имён. */
+ *  Сначала спрашивается умение `dns_fragment`/`dns_h3` в `status.features` (ядро печатает их
+ *  вместе с самой поддержкой); версия — запасной признак для ядер без перечня этих имён. */
 export const DNS_FRAGMENT_SINCE = '2.0.5'
 
 function dnsFeature(status: Status | null | undefined, name: string, version?: string): boolean {
