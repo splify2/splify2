@@ -336,6 +336,8 @@ export const ru = {
         vyhodNeRazmechen: "выход не размечен",
         nuzhnaSborkaSTls: "нужна сборка с TLS",
         dnsPoTcp: "DNS по TCP",
+        delitPervyyPaket: "Делить первый пакет",
+        h3NuzhnoNovoeYadro: "Для адреса h3:// нужно обновить ядро steer.",
         zagruzka: "Загрузка…",
         serverVybranVPravilah: (p0: unknown, p1: unknown) => `Сервер «${p0}» выбран в правилах: ${p1}`,
         serveryDns: "Серверы DNS",

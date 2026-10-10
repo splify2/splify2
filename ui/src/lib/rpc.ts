@@ -198,7 +198,7 @@ export interface VlessNodesReply {
 export interface DnsUpstreamState {
     name: string
     url: string
-    proto: 'udp' | 'tcp' | 'dot' | 'doh' | 'doq' | string
+    proto: 'udp' | 'tcp' | 'dot' | 'doh' | 'doq' | 'doh3' | string
     /** Выход, через который уходит запрос; null — напрямую. */
     via: string | null
     state: 'ready' | 'idle' | 'connecting' | 'down' | 'unmarked' | 'no-tls' | string

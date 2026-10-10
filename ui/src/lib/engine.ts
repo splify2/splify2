@@ -189,6 +189,27 @@ export function dnsOtherSupported(status: Status | null | undefined): boolean {
     return Array.isArray(status?.features) && status.features.includes('dns_other')
 }
 
+/** С какой версии ядро знает `fragment` у серверов DoT/DoH и адрес `h3://` (steer после 2.0.4).
+ *  Умения `dns_fragment` и `dns_h3` в `status.features` ядро пока не печатает; когда напечатает,
+ *  спрашивается оно, а версия остаётся запасным признаком для ядер без перечня этих имён. */
+export const DNS_FRAGMENT_SINCE = '2.0.5'
+
+function dnsFeature(status: Status | null | undefined, name: string, version?: string): boolean {
+    if (Array.isArray(status?.features) && status.features.includes(name)) return true
+    return !!version && cmpVersion(version, DNS_FRAGMENT_SINCE) >= 0
+}
+
+/** Умеет ли установленное ядро `fragment: true` у сервера DoT/DoH (умение `dns_fragment`).
+ *  Ядро без умения спеку с этим ключом отвергает целиком. `version` — версия ядра из `engine`. */
+export function dnsFragmentSupported(status: Status | null | undefined, version?: string): boolean {
+    return dnsFeature(status, 'dns_fragment', version)
+}
+
+/** Умеет ли установленное ядро адрес `h3://` (DoH по HTTP/3, умение `dns_h3`). */
+export function dnsH3Supported(status: Status | null | undefined, version?: string): boolean {
+    return dnsFeature(status, 'dns_h3', version)
+}
+
 /** Модули ядра 2.0 (пакеты steer-<модуль>) в порядке показа — тот же, что у бэкенда
  *  (m-engine.sh, STEER_MODULES). */
 export const STEER_MODULES = ['vless', 'hysteria2', 'proxy', 'xsteer', 'obfs', 'tgws']

@@ -20,6 +20,7 @@ import {
     type Spec,
 } from '@/lib/model'
 import { type Live } from '@/lib/live'
+import { dnsFragmentSupported, dnsH3Supported } from '@/lib/engine'
 import { Hint } from '@/components/ui/hint'
 import { Block, Group } from '@/components/ui/layout'
 import RuleEditor from '@/components/tabs/RuleEditor'
@@ -359,6 +360,8 @@ export default function RulesTab({
                 : []
         return (
             <RuleEditor
+                dnsFragmentOk={dnsFragmentSupported(live.status, live.build?.version)}
+                dnsH3Ok={dnsH3Supported(live.status, live.build?.version)}
                 ch={ch}
                 index={open}
                 services={services}

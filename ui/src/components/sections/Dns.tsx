@@ -9,14 +9,16 @@ import { useSpecCopy } from '@/lib/speccopy'
 import { rpc, type DnsLog } from '@/lib/rpc'
 import { isPart, type DomainMode, type DnsSpec, type Spec, type Upstream, type UpstreamGroup } from '@/lib/model'
 import { type Live } from '@/lib/live'
-import { dnsGroupsSupported, dnsOtherSupported } from '@/lib/engine'
+import { dnsFragmentSupported, dnsGroupsSupported, dnsH3Supported, dnsOtherSupported } from '@/lib/engine'
+import { withUrl } from '@/lib/dnsurl'
+import DnsUpstreamExtras from '@/components/DnsUpstreamExtras'
 
 import { S } from '@/copy'
 /** DNS: какими серверами и через какой выход резолвер движка спрашивает имена под правилами.
  *
  *  Резолвер движка отвечает только на имена, которые попали под правило; остальные спрашивает
  *  системный DNS роутера, как раньше. Здесь выбирается, КУДА уходят вопросы о тех именах: DoH,
- *  DoT, DoQ или обычный DNS, напрямую или через выход. Серверы, которые уже настроены на самом
+ *  DoT, DoQ, DoH3 или обычный DNS, напрямую или через выход. Серверы, которые уже настроены на самом
  *  роутере (dnsmasq, https-dns-proxy), этот раздел не трогает. */
 
 const NAME_RE = /^[A-Za-z0-9_.-]{1,31}$/
@@ -69,7 +71,7 @@ const STATE_TEXT: Record<string, string> = {
     'no-tls': S.dns.nuzhnaSborkaSTls,
 }
 
-const PROTO_TEXT: Record<string, string> = { udp: 'DNS', tcp: S.dns.dnsPoTcp, dot: 'DoT', doh: 'DoH', doq: 'DoQ' }
+const PROTO_TEXT: Record<string, string> = { udp: 'DNS', tcp: S.dns.dnsPoTcp, dot: 'DoT', doh: 'DoH', doq: 'DoQ', doh3: 'DoH3' }
 
 const listOf = (s: string) => s.split(/[\s,]+/).map((x) => x.trim()).filter(Boolean)
 
@@ -239,6 +241,9 @@ export default function Dns({ live }: { live?: Live }) {
     const groups = dns.groups || {}
     /* Группы и сервер для остальных — по умению ядра; записанное в спеке видно и снимается и без него. */
     const canGroup = dnsGroupsSupported(live?.status)
+    const coreVersion = live?.build?.version
+    const fragmentOk = dnsFragmentSupported(live?.status, coreVersion)
+    const h3Ok = dnsH3Supported(live?.status, coreVersion)
     const showOther = dnsOtherSupported(live?.status) || !!dns.other
     const outs = Object.entries(spec.outputs)
         .filter(([, o]) => !isPart(o) && o.kind !== 'direct' && o.kind !== 'zapret' && o.kind !== 'tgws' && o.kind !== 'group')
@@ -388,11 +393,12 @@ export default function Dns({ live }: { live?: Live }) {
                                     <FieldRow label={S.dns.adres}>
                                         <input
                                             value={u.url}
-                                            onChange={(e) => setUp(n, { ...u, url: e.currentTarget.value.trim() })}
+                                            onChange={(e) => setUp(n, withUrl(u, e.currentTarget.value.trim()))}
                                             placeholder="https://dns.example/dns-query"
                                             className={`${inputCls} w-full font-mono`}
                                         />
                                     </FieldRow>
+                                    <DnsUpstreamExtras up={u} onChange={(next) => setUp(n, next)} fragmentOk={fragmentOk} h3Ok={h3Ok} />
                                     <FieldRow label={S.dns.cherezVyhod}>
                                         <select
                                             value={u.out || ''}

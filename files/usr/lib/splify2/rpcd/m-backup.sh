@@ -232,8 +232,8 @@ backup_check_spec() {  # ФАЙЛ
     # Адрес сервера DNS уезжает в запросы резолвера: без пробелов, кавычек и подстановок.
     for v in $(jsonfilter -i "$1" -e '@.dns.upstreams[*].url' 2>/dev/null); do
         case "$v" in
-            https://*|tls://*|quic://*|udp://*|tcp://*) ;;
-            *) echo "DNS «$v»: ждём https://, tls://, quic://, udp:// или tcp://"; return 1 ;;
+            https://*|tls://*|quic://*|h3://*|udp://*|tcp://*) ;;
+            *) echo "DNS «$v»: ждём https://, tls://, quic://, h3://, udp:// или tcp://"; return 1 ;;
         esac
         case "$v" in *[\ \"\'\`\$\;\|\&\<\>]*) echo "DNS «$v»: недопустимые символы"; return 1 ;; esac
     done

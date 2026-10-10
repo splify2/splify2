@@ -4547,6 +4547,10 @@ out="$(printf '%s\n' 'splify2-backup 2' '[spec]' '{"version":2,"lists":{"a":{"do
 check "список вне каталога списков в v2 отвергается" "false" "$(printf '%s' "$out" | jget ok)"
 out="$(printf '%s\n' 'splify2-backup 2' '[spec]' '{"version":2,"dns":{"upstreams":{"g":{"url":"file:///etc/shadow"}}}}' | backup_put)"
 check "чужая схема в адресе DNS отвергается" "false" "$(printf '%s' "$out" | jget ok)"
+out="$(printf '%s\n' 'splify2-backup 2' '[spec]' '{"version":2,"dns":{"upstreams":{"a":{"url":"h3://dns.adguard-dns.com/dns-query","ips":["94.140.14.14"]},"b":{"url":"https://dns.google/dns-query","ips":["8.8.8.8"],"fragment":true}}}}' | backup_put)"
+check "архив с адресом h3:// и fragment у DoH принимается" "true" "$(printf '%s' "$out" | jget ok)"
+out="$(printf '%s\n' 'splify2-backup 2' '[spec]' '{"version":2,"dns":{"upstreams":{"g":{"url":"h3://x;reboot"}}}}' | backup_put)"
+check "адрес h3:// с разделителем команд отвергается" "false" "$(printf '%s' "$out" | jget ok)"
 out="$(printf '%s\n' 'splify2-backup 2' '[spec]' '{"version":2,"outputs":{"t":{"kind":"awg","conf":"/etc/shadow"}}}' | backup_put)"
 check "файл настройки вне каталога движка отвергается" "false" "$(printf '%s' "$out" | jget ok)"
 

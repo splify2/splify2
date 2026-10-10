@@ -33,9 +33,14 @@ export { pathFor, srsPathFor, ruleFiles, onRouter, srsOf, selectedIds, isDomains
 import { pathFor, srsPathFor, ruleFiles, onRouter, srsProbe, mayNarrow, selectedIds, isDomains, serviceFiles, overridePortOf, withOverridePort } from '@/lib/rulefiles'
 
 
+import DnsUpstreamExtras from '@/components/DnsUpstreamExtras'
+import { withUrl } from '@/lib/dnsurl'
 import { S } from '@/copy'
 interface Props {
     ch: Channel
+    /** Умеет ли ядро steer `fragment` у DoT/DoH и адрес `h3://` — без умения выключатель скрыт. */
+    dnsFragmentOk?: boolean
+    dnsH3Ok?: boolean
     index: number
     services: ServiceEntry[]
     local: Record<string, { count: number; mtime: number }>
@@ -72,7 +77,7 @@ function serviceName(service: string, current: string, taken: string[]): string 
 }
 
 export default function RuleEditor({
-    ch, index, services, local, outputs, clash, rulesTotal, coveredBy, onChange, onClose, onDelete,
+    dnsFragmentOk = false, dnsH3Ok = false, ch, index, services, local, outputs, clash, rulesTotal, coveredBy, onChange, onClose, onDelete,
 }: Props) {
     const [q, setQ] = useState('')
     /** Наборы каталога, о которых сейчас спрашиваем роутер (pick → srsOf). */
@@ -679,11 +684,12 @@ export default function RuleEditor({
                                 <FieldRow label={S.ruleEditor.adresDns}>
                                     <input
                                         value={ownDns.url}
-                                        onChange={(e) => setOwnDns({ ...ownDns, url: e.currentTarget.value.trim() })}
+                                        onChange={(e) => setOwnDns(withUrl(ownDns, e.currentTarget.value.trim()))}
                                         placeholder="https://dns.example/dns-query"
                                         className="w-full rounded-lg border border-border bg-background px-2 py-1.5 font-mono text-sm"
                                     />
                                 </FieldRow>
+                                <DnsUpstreamExtras up={ownDns} onChange={setOwnDns} fragmentOk={dnsFragmentOk} h3Ok={dnsH3Ok} />
                                 <FieldRow label={S.ruleEditor.dnsCherezVyhod}>
                                     <select
                                         value={ownDns.out || ''}
