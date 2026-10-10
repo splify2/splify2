@@ -75,7 +75,7 @@ export SB
 # в install.sh переименуют, стенд упадёт здесь, а не молча начнёт проверять пустоту.
 # Вместе с latest() достаётся и обход по хостам самого GitHub: третий путь к версии
 # идёт через него, и без этих функций стенд проверял бы отказ вместо обхода.
-eval "$(sed -n '/^API=/p; /^RAW=/p; /^CODELOAD=/p; /^MIRROR=/p; /^DIST_BRANCH=/p; /^info()/p; /^gl_file() {/,/^}/p; /^gh_api_file() {/,/^}/p; /^gh_tarball() {/,/^}/p; /^gh_file() {/,/^}/p; /^latest() {/,/^}/p; /^fetch() {/,/^}/p; /^dl_url() {/,/^}/p; /^pm_add() {/,/^}/p' "$ROOT/install.sh")"
+eval "$(sed -n '/^API=/p; /^RAW=/p; /^CODELOAD=/p; /^MIRROR=/p; /^DIST_BRANCH=/p; /^info()/p; /^gl_file() {/,/^}/p; /^gh_api_file() {/,/^}/p; /^gh_tarball() {/,/^}/p; /^gh_file() {/,/^}/p; /^latest() {/,/^}/p; /^fetch() {/,/^}/p; /^dl_url() {/,/^}/p; /^pm_add() {/,/^}/p; /^PM_OURS=/p; /^pm_world_heal() {/,/^}/p' "$ROOT/install.sh")"
 TMP="$SB/tmp"; mkdir -p "$TMP"
 die() { printf 'die: %s\n' "$*" >&2; return 1; }
 check "функция latest достана из install.sh" "latest" "$(command -v latest >/dev/null && echo latest)"
@@ -567,6 +567,37 @@ for pm in apk opkg; do
     check "$pm: переход объявлен вслух" "1" \
         "$(rm -f "$SB/$pm.index"; PM=$pm pm_add "$SB/pkg.file" 2>/dev/null | grep -c 'обновляю')"
 done
+
+# ---- закрепления в /etc/apk/world после оборванной установки -----------------------------
+# `apk add ФАЙЛ` пишет в world «имя><хеш файла»; оборванная транзакция (кончилось место) оставляет
+# хеши новых файлов при прежних пакетах в базе — и дальше любая команда apk отвечает «unable to
+# select packages: breaks: world[steer-core><Q1…]» (воспроизведено на apk 3.0.5). Установщик
+# чинит файл до своей команды и после неё, при любом исходе.
+export APK_WORLD="$SB/apk.world" APK_DB="$SB/apk.db"
+printf '%s\n' 'steer-core><QnEWcoreNEWcoreNEWcoreNEWcor=' 'steer-vless><QnEWvlessNEWvlessNEWvlessNEW=' \
+    'zapret><QgoodZapretGoodZapretGoodZapretG=' '!libsteer' > "$APK_WORLD.seed"
+printf '%s\n' 'C:QoLdcoreOLDcoreOLDcoreOLDcoreO=' 'P:steer-core' 'V:2.0.3-r1' '' \
+    'C:QgoodZapretGoodZapretGoodZapretG=' 'P:zapret' 'V:72-r1' '' > "$APK_DB"
+cat > "$SB/bin/apk" <<STUB
+#!/bin/sh
+[ "\$1" = add ] && exit "\${APK_ADD_RC:-0}"
+exit 0
+STUB
+chmod +x "$SB/bin/apk"
+cp "$APK_WORLD.seed" "$APK_WORLD"
+APK_ADD_RC=1 PM=apk pm_add "$SB/pkg.file" >/dev/null 2>&1
+check "обрыв: закрепление стоящего ядра стало «именем»" "steer-core" "$(grep '^steer-core' "$APK_WORLD")"
+check "обрыв: закрепление за пакетом, которого в базе нет, убрано" "0" "$(grep -c '^steer-vless' "$APK_WORLD")"
+check "обрыв: чужое закрепление с верным хешом и запись !имя целы" \
+    "zapret><QgoodZapretGoodZapretGoodZapretG= !libsteer" \
+    "$(grep -e '^zapret' -e '^!' "$APK_WORLD" | tr '\n' ' ' | sed 's/ $//')"
+cp "$APK_WORLD.seed" "$APK_WORLD"
+APK_ADD_RC=0 PM=apk pm_add "$SB/pkg.file" >/dev/null 2>&1
+check "успех: закрепление нашего пакета стало «именем» (пакет стоит)" "steer-core" "$(grep '^steer-core' "$APK_WORLD")"
+cp "$APK_WORLD.seed" "$APK_WORLD"; rm -f "$APK_DB.none"
+check "opkg: файла world нет — лечение молча ничего не делает" "0" \
+    "$(rm -f "$SB/none.world"; APK_WORLD="$SB/none.world" PM=opkg pm_world_heal; echo $?)"
+unset APK_WORLD APK_DB
 
 printf '\n%d проверок пройдено\n' "$pass"
 if [ "$fail" -gt 0 ]; then

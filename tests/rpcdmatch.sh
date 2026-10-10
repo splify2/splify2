@@ -860,6 +860,7 @@ rpcd() {  # МЕТОД [JSON_ЗАПРОСА]  — вызов метода; дл�
         GH_CACHE="$T/var/releases.json" \
         GH_CACHE_TTL_MIN="${GH_CACHE_TTL_MIN:-0}" \
         STEER_ERR="${STEER_ERR:-}" \
+        APK_WORLD="$T/apk.world" APK_DB="$T/apk.db" \
         APK_ADD_RC="${APK_ADD_RC:-0}" \
         APK_ADD_OUT="${APK_ADD_OUT:-}" \
         PM_FIXTURE="${PM_FIXTURE:-}" \
@@ -4859,6 +4860,62 @@ check "и ему хватает проброса из его зоны" "lan vpns
 rm -rf "$T/outnet-heal" "$T/outnet-v6" "$T/etc/awg" "$T/etc/amn.conf" "$T/etc/amn4.conf"
 rm -f "$T/uci.store" "$T/etc/fw-owned"; : > "$T/uci.store"
 printf '{"schema":1,"outputs":{},"channels":[]}\n' > "$T/etc/spec.json"
+
+# ---- закрепления в /etc/apk/world после оборванной установки ------------------------------
+# `apk add ФАЙЛ` (apk 3) пишет в world «имя><хеш файла». Транзакция, оборванная на середине
+# (кончилось место при распаковке второго пакета), оставляет в world хеши НОВЫХ файлов, а в базе —
+# прежние пакеты: с тех пор любая команда apk отвечает «unable to select packages: breaks:
+# world[steer-core><Q1…]», и не ставится даже чужой zapret. Воспроизведено на apk 3.0.5 с tmpfs
+# на 4–5 МБ (тот же вывод). Стенд кладёт такое состояние в APK_WORLD и APK_DB и проверяет, что
+# наши установщики его лечат правкой файла, не трогая чужого и не вызывая лишних apk.
+poison() {
+    printf '%s\n' \
+        'steer-core><QnEWcoreNEWcoreNEWcoreNEWcor=' \
+        'steer-vless><QnEWvlessNEWvlessNEWvlessNEW=' \
+        'luci-app-splify2><QgoodSplifyGoodSplifyGoodSpli=' \
+        'zapret><QgoodZapretGoodZapretGoodZapretG=' \
+        'kmod-tun><QstaleStaleStaleStaleStaleStale=' \
+        '!libsteer' \
+        'ip-full' > "$T/apk.world"
+    printf '%s\n' \
+        'C:QoLdcoreOLDcoreOLDcoreOLDcoreO=' 'P:steer-core' 'V:2.0.3-r1' '' \
+        'C:QgoodSplifyGoodSplifyGoodSpli=' 'P:luci-app-splify2' 'V:26.9-r1' '' \
+        'C:QgoodZapretGoodZapretGoodZapretG=' 'P:zapret' 'V:72-r1' '' \
+        'C:QotherKmodOtherKmodOtherKmodOt=' 'P:kmod-tun' 'V:6.12-r1' '' \
+        'C:Qip' 'P:ip-full' 'V:6-r1' '' > "$T/apk.db"
+}
+poison; reset_logs
+out="$(APK_ADD_RC=1 APK_ADD_OUT='ERROR: steer-vless-2.0.4-r1: No space left on device' \
+       rpcd splify2_install '{"version":"26.9"}')"
+check "обрыв установки: закрепление нового хеша стоящего ядра снято до «имя»" \
+      "steer-core" "$(grep '^steer-core' "$T/apk.world")"
+check "  закрепление за модулем, которого в базе нет, убрано" \
+      "0" "$(grep -c '^steer-vless' "$T/apk.world")"
+check "  наше закрепление с верным хешом тоже становится «именем»" \
+      "luci-app-splify2" "$(grep '^luci-app-splify2' "$T/apk.world")"
+check "  чужое закрепление с верным хешом не тронуто" \
+      "zapret><QgoodZapretGoodZapretGoodZapretG=" "$(grep '^zapret' "$T/apk.world")"
+check "  чужое закрепление за пакетом с другим хешом стало «именем»" \
+      "kmod-tun" "$(grep '^kmod-tun' "$T/apk.world")"
+check "  запись !имя и запись без закрепления целы" \
+      "!libsteer ip-full" "$(grep -e '^!' -e '^ip-full' "$T/apk.world" | tr '\n' ' ' | sed 's/ $//')"
+check "  лечение — правка файла: лишних вызовов apk нет" \
+      "add" "$(awk '{printf "%s ", $1}' "$T/apk.log" | sed 's/ $//')"
+
+# Успех: закрепления наших пакетов за файлами снимаются сразу — следующая установка того же номера
+# другой сборки ничему не мешает, а чужие остаются как были.
+poison; reset_logs
+out="$(rpcd splify2_install '{"version":"26.9"}')"
+check "успешная установка: наше закрепление стало «именем»" \
+      "luci-app-splify2" "$(grep '^luci-app-splify2' "$T/apk.world")"
+check "  чужое закрепление с верным хешом осталось" \
+      "zapret><QgoodZapretGoodZapretGoodZapretG=" "$(grep '^zapret' "$T/apk.world")"
+
+# Прежняя поломка уже есть на роутере: установщик чинит её ДО своей команды apk.
+poison
+check "opkg: world не существует, лечение ничего не трогает" \
+      "ok" "$(PM_FIXTURE=opkg rpcd splify2_install '{"version":"26.9"}' >/dev/null 2>&1; grep -q 'steer-core><QnEW' "$T/apk.world" && echo ok || echo changed)"
+
 
 printf '\n%s\n' "$([ "$fails" -eq 0 ] && echo 'все проверки прошли' || echo "ЕСТЬ ПРОВАЛЫ: $fails")"
 [ "$fails" -eq 0 ]

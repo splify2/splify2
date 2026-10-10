@@ -91,6 +91,52 @@ pm_installed() {
     fi
 }
 
+# Закрепления в /etc/apk/world, которые ни на что не указывают.
+#
+# `apk add ФАЙЛ` (apk 3) записывает в world не «имя», а «имя><хеш файла» — закрепление за этой
+# сборкой. Если транзакция оборвалась на середине (на роутере с малым флешем — «No space left on
+# device» при распаковке второго пакета набора), world уже записан с хешами НОВЫХ файлов, а в базе
+# остались прежние пакеты или не появилось вовсе нового. С этой минуты ЛЮБАЯ команда apk — и наша,
+# и чужая, хоть установка zapret — не решается: «unable to select packages: breaks:
+# world[steer-core><Q1…]». Воспроизведено на apk 3.0.5 (как на OpenWrt 25.12.5) с tmpfs на 4–5 МБ.
+#
+# Чиним правкой самого файла, без apk: решатель в таком состоянии отказывает и на `apk add имя`.
+# Что делаем с каждой записью «имя><хеш»:
+#   - пакета с таким именем нет в базе — запись убирается: она ничего не держит;
+#   - пакет стоит, но с другим хешом — становится просто «имя»;
+#   - наше имя (аргумент — регулярное выражение имён) — становится «имя» всегда: закрепление за
+#     файлом нужно только самой транзакции, дальше оно лишь не даёт apk увидеть пакет в фиде и
+#     ломает следующую установку той же версии другой сборки.
+# Записи без «><» (в том числе `!имя`) и закрепления чужих пакетов с верным хешом не трогаются.
+# Пути — APK_WORLD и APK_DB: стенды подставляют свои.
+PM_OURS='^(steer|steer-.*|libsteer.*|splify2.*|luci-app-splify2|luci-i18n-splify2-.*|steer-box-connector|luci-app-steer-box-connector)$'
+pm_world_heal() {  # [ИМЕНА-ERE]
+    [ "$PM" = apk ] || return 0
+    _wh_w="${APK_WORLD:-/etc/apk/world}"; _wh_d="${APK_DB:-/lib/apk/db/installed}"
+    [ -s "$_wh_w" ] && [ -s "$_wh_d" ] || return 0
+    grep -q '><' "$_wh_w" 2>/dev/null || return 0
+    grep -q '^P:' "$_wh_d" 2>/dev/null || return 0
+    _wh_t="$_wh_w.heal.$$"
+    if awk -v ours="${1:-^$}" '
+        FILENAME == ARGV[1] {
+            if ($0 ~ /^C:/) { c = substr($0, 3); if (p != "") id[p] = c }
+            else if ($0 ~ /^P:/) { p = substr($0, 3); if (c != "") id[p] = c }
+            if ($0 == "") { c = ""; p = "" }
+            next
+        }
+        {
+            i = index($0, "><")
+            if (i == 0) { print; next }
+            n = substr($0, 1, i - 1); q = substr($0, i + 2)
+            if (!(n in id)) next
+            if (n ~ ours || id[n] != q) print n; else print
+        }' "$_wh_d" "$_wh_w" > "$_wh_t" 2>/dev/null; then
+        cmp -s "$_wh_t" "$_wh_w" || mv "$_wh_t" "$_wh_w"
+    fi
+    rm -f "$_wh_t"
+    return 0
+}
+
 # Установка локального файла. --allow-untrusted нужен ТОЛЬКО apk: пакеты не подписаны
 # ключом репозитория OpenWrt, они лежат в GitHub Releases, а opkg подпись локального
 # файла не проверяет вовсе и такого флага не знает. --force-overwrite нужен обоим:
@@ -108,16 +154,25 @@ pm_installed() {
 # отказа просто не встречала; у 26.9 их две (https-dns-proxy, ip-full).
 pm_add() {  # ФАЙЛ... [!ИМЯ...] — одной транзакцией
     if [ "$PM" = apk ]; then
+        # До: поломку прошлой оборванной установки (см. pm_world_heal) apk сам не чинит, и без
+        # лечения не ставится ничто. После — при любом исходе: оборванная транзакция ломает world
+        # заново, а закрепления за файлами нам не нужны.
+        pm_world_heal
         out="$(apk add --allow-untrusted --force-overwrite "$@" 2>&1)"
-        [ $? = 0 ] && return 0
+        _pm_rc=$?
+        if [ "$_pm_rc" = 0 ]; then pm_world_heal "$PM_OURS"; return 0; fi
         case "$out" in
             *"unable to select packages"*)
+                pm_world_heal "$PM_OURS"
                 info "нет индексов пакетов — обновляю (apk update)"
                 apk update >/dev/null 2>&1
                 apk add --allow-untrusted --force-overwrite "$@" >/dev/null 2>&1
-                return $?
+                _pm_rc=$?
+                pm_world_heal "$PM_OURS"
+                return $_pm_rc
                 ;;
         esac
+        pm_world_heal "$PM_OURS"
         printf '%s\n' "$out" >&2
         return 1
     fi

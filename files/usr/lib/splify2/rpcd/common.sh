@@ -593,6 +593,52 @@ v6_mode_of_dev() {  # ТАБЛИЦА УСТРОЙСТВО [ФАЙЛ_AWG] -> nat 
 # нём удаление и остаётся законным, уже вторым шагом.
 #
 # Возвращает код apk; заполняет PKG_OUT (вывод apk) и PKG_REMOVED (снимался ли пакет).
+# Закрепления в /etc/apk/world, которые ни на что не указывают.
+#
+# `apk add ФАЙЛ` (apk 3) записывает в world не «имя», а «имя><хеш файла» — закрепление за этой
+# сборкой. Если транзакция оборвалась на середине (на роутере с малым флешем — «No space left on
+# device» при распаковке второго пакета набора), world уже записан с хешами НОВЫХ файлов, а в базе
+# остались прежние пакеты или не появилось вовсе нового. С этой минуты ЛЮБАЯ команда apk — и наша,
+# и чужая, хоть установка zapret — не решается: «unable to select packages: breaks:
+# world[steer-core><Q1…]». Воспроизведено на apk 3.0.5 (как на OpenWrt 25.12.5) с tmpfs на 4–5 МБ.
+#
+# Чиним правкой самого файла, без apk: решатель в таком состоянии отказывает и на `apk add имя`.
+# Что делаем с каждой записью «имя><хеш»:
+#   - пакета с таким именем нет в базе — запись убирается: она ничего не держит;
+#   - пакет стоит, но с другим хешом — становится просто «имя»;
+#   - наше имя (аргумент — регулярное выражение имён) — становится «имя» всегда: закрепление за
+#     файлом нужно только самой транзакции, дальше оно лишь не даёт apk увидеть пакет в фиде и
+#     ломает следующую установку той же версии другой сборки.
+# Записи без «><» (в том числе `!имя`) и закрепления чужих пакетов с верным хешом не трогаются.
+# Пути — APK_WORLD и APK_DB: стенды подставляют свои.
+PKG_OURS='^(steer|steer-.*|libsteer.*|splify2.*|luci-app-splify2|luci-i18n-splify2-.*|steer-box-connector|luci-app-steer-box-connector)$'
+pkg_world_heal() {  # [ИМЕНА-ERE]
+    [ "$PM" = apk ] || return 0
+    _wh_w="${APK_WORLD:-/etc/apk/world}"; _wh_d="${APK_DB:-/lib/apk/db/installed}"
+    [ -s "$_wh_w" ] && [ -s "$_wh_d" ] || return 0
+    grep -q '><' "$_wh_w" 2>/dev/null || return 0
+    grep -q '^P:' "$_wh_d" 2>/dev/null || return 0
+    _wh_t="$_wh_w.heal.$$"
+    if awk -v ours="${1:-^$}" '
+        FILENAME == ARGV[1] {
+            if ($0 ~ /^C:/) { c = substr($0, 3); if (p != "") id[p] = c }
+            else if ($0 ~ /^P:/) { p = substr($0, 3); if (c != "") id[p] = c }
+            if ($0 == "") { c = ""; p = "" }
+            next
+        }
+        {
+            i = index($0, "><")
+            if (i == 0) { print; next }
+            n = substr($0, 1, i - 1); q = substr($0, i + 2)
+            if (!(n in id)) next
+            if (n ~ ours || id[n] != q) print n; else print
+        }' "$_wh_d" "$_wh_w" > "$_wh_t" 2>/dev/null; then
+        cmp -s "$_wh_t" "$_wh_w" || mv "$_wh_t" "$_wh_w"
+    fi
+    rm -f "$_wh_t"
+    return 0
+}
+
 # Поставить локальный файл тем менеджером, который есть. --force-overwrite понимают оба
 # и нужен обоим (см. выше про общий /usr/sbin/steer); --allow-untrusted — только apk:
 # у opkg проверки подписи для локального файла нет вовсе, и такого флага он не знает.
@@ -606,11 +652,13 @@ v6_mode_of_dev() {  # ТАБЛИЦА УСТРОЙСТВО [ФАЙЛ_AWG] -> nat 
 # про opkg: у 1.2.5 зависимостей не было, и ветка apk отказа не встречала; у 26.9 их две.
 pkg_add_file() {  # ФАЙЛ... [!ИМЯ...] — одной транзакцией менеджера
     if [ "$PM" = apk ]; then
+        pkg_world_heal
         _pa_out="$(apk add --allow-untrusted --force-overwrite "$@" 2>&1)"
         _pa_rc=$?
         if [ "$_pa_rc" != 0 ]; then
             case "$_pa_out" in
                 *"unable to select packages"*)
+                    pkg_world_heal "$PKG_OURS"
                     apk update >/dev/null 2>&1
                     _pa_out="$(apk add --allow-untrusted --force-overwrite "$@" 2>&1)
 списки пакетов были пусты — обновил их (apk update) и повторил"
@@ -618,6 +666,9 @@ pkg_add_file() {  # ФАЙЛ... [!ИМЯ...] — одной транзакцие
                     ;;
             esac
         fi
+        # Любой исход, в том числе отказ: оборванная транзакция оставляет в world закрепления за
+        # файлами, которых в базе нет, — и тогда не ставится уже ничто (см. pkg_world_heal).
+        pkg_world_heal "$PKG_OURS"
         printf '%s' "$_pa_out"
         return $_pa_rc
     fi
@@ -641,11 +692,13 @@ pkg_add_file() {  # ФАЙЛ... [!ИМЯ...] — одной транзакцие
 # файла пакет записан там как «имя><хеш файла», и пакет-замена под тем же именем (steer-core,
 # provides steer) иначе с ним не уживается. У opkg такой записи нет — делать нечего.
 pkg_unpin() {  # ИМЯ
+    pkg_world_heal
     [ "$PM" = apk ] && apk add "$1" >/dev/null 2>&1
     return 0
 }
 
 pkg_del() {  # ИМЯ
+    pkg_world_heal
     if [ "$PM" = apk ]; then apk del "$1" >/dev/null 2>&1
     else opkg remove "$1" >/dev/null 2>&1
     fi
