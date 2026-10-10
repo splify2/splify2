@@ -749,6 +749,14 @@ case "$2" in
                 files="$files /tmp/$name"
             done
 
+            # Место на флеше — до apk (flash_room_ok, common.sh).
+            # shellcheck disable=SC2086
+            if ! flash_room_ok $files; then
+                # shellcheck disable=SC2086
+                rm -f $files
+                fail "$ROOM_ERR"
+            fi
+
             legacy=""
             for n in steer steer-extended libsteer libsteer-wolfssl; do
                 # steer-extended 1.x в этой транзакции заменяется мета-пакетом 2.0, а не снимается.
@@ -825,6 +833,12 @@ case "$2" in
             json_dump; exit 0
         fi
         [ -n "$FETCH_NOTE" ] && json_add_string via "$FETCH_NOTE"
+        if ! flash_room_ok "$tmp"; then
+            rm -f "$tmp"
+            json_add_boolean ok 0
+            json_add_string error "$ROOM_ERR"
+            json_dump; exit 0
+        fi
         # Порядок apk и разбор конфликта — в pkg_install: он же обслуживает установку
         # самого интерфейса, и две копии этой логики означали бы два разных ответа на
         # вопрос «что делать, когда apk отказал».

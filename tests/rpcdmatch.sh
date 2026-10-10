@@ -999,6 +999,25 @@ cat > "$T/etc/openwrt_release" <<'EOF'
 DISTRIB_ARCH='aarch64_cortex-a53'
 EOF
 
+# МЕСТО НА ФЛЕШЕ — ДО apk. Транзакция, оборванная нехваткой места при распаковке, оставляет в
+# /etc/apk/world закрепления за файлами, которых в базе нет, и дальше не ставится ничто (жалоба из
+# чата: «breaks: world[steer-core><Q1…]»). Значит, мало места — честный отказ с числами до apk.
+cat > "$T/bin/df" <<'DFEOF'
+#!/bin/sh
+echo "Filesystem 1K-blocks Used Available Use% Mounted on"
+echo "overlay 100000 10 ${DF_AVAIL_KB:-9999999} 1% /overlay"
+DFEOF
+chmod +x "$T/bin/df"
+reset_logs
+out="$(DF_AVAIL_KB=50 rpcd steer_install '{"version":"0.9.6","extended":true}')"
+check "мало места на флеше: отказ до apk" "false" "$(printf '%s' "$out" | jget ok)"
+check "мало места на флеше: apk не вызывался" "" "$(grep -c '^add' "$T/apk.log" 2>/dev/null | sed 's/^0$//')"
+check "мало места на флеше: причина названа числами" "1" "$(printf '%s' "$out" | jget error | grep -c 'свободно')"
+reset_logs
+out="$(DF_AVAIL_KB=50 rpcd steer_install '{"version":"2.0.0"}')"
+check "ядро 2.x, мало места: отказ до apk" "false" "$(printf '%s' "$out" | jget ok)"
+check "ядро 2.x, мало места: apk не вызывался" "" "$(grep -c '^add' "$T/apk.log" 2>/dev/null | sed 's/^0$//')"
+
 # Отказ НЕ по конфликту: нет зависимости. apk печатает про это тем же «unable to select
 # packages», что и про конфликт, — поэтому по одному этому тексту снимать работающий
 # движок нельзя, и проверка сторожит именно это различие.
