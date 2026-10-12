@@ -734,11 +734,13 @@
   --sp-accent: var(--an-glass-hover);
 }
 
-/* ---- пилюли «Куда» (components/board) ------------------------------------------------------
- * Пилюля лежит третьим слоем стекла (блок → блок раздела → пилюля), а вложенное стекло Andromeda —
- * плоский тон без блика (glass.css, `.an-glass .an-glass`). Пилюле — стекло целиком: тон, блик,
- * светлая кромка сверху и тень; выбор (bg-primary/10) красит только тон, блик остаётся. */
-.splify-react-root .an-glass .sp-pill {
+/* ---- стекло внутри блоков «доски» (components/board, приложение для ПК) ----------------------
+ * Вложенное стекло Andromeda — плоский тон без блика (glass.css, `.an-glass .an-glass`), и плитки,
+ * карточки и пилюли в блоках выглядели матовыми рядом со стеклянными (владелец: «опять стекло забыл
+ * на некоторых боксах»). Всему стеклу внутри блока — стекло целиком: тон, блик, светлая кромка и
+ * тень; выбор (bg-primary/10) красит только тон, блик остаётся. */
+.splify-react-root .an-glass .sp-pill,
+.splify-react-root .sp-board-group .an-glass {
   background-color: var(--an-glass-tint);
   background-image: var(--an-glass-sheen);
   border-color: var(--an-glass-border);
