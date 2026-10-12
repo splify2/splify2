@@ -1,4 +1,5 @@
 import { lazy, Suspense, useEffect, useState, type ReactNode } from 'react'
+import { createPortal } from 'react-dom'
 import { Check } from 'lucide-react'
 import { useLive, type Live } from '@/lib/live'
 import { pending, usePending } from '@/lib/pending'
@@ -49,7 +50,10 @@ export interface ExtraSection {
     render: (live: Live) => ReactNode
 }
 
-export default function Console({ extra }: { extra?: ExtraSection[] } = {}) {
+/** `railHost` — узел оболочки, куда рисуется рельс разделов (порталом): в приложении для
+ *  компьютера рельс — отдельная колонка окна вне прокрутки раздела. Нет — рельс рядом с
+ *  разделом, как под LuCI. */
+export default function Console({ extra, railHost }: { extra?: ExtraSection[]; railHost?: Element | null } = {}) {
     const [section, setSection] = useState<SectionId | string>('home')
     const live = useLive()
     const { spec, savedFlash, loadFailed, retry } = usePending()
@@ -121,7 +125,9 @@ export default function Console({ extra }: { extra?: ExtraSection[] } = {}) {
                 фона. `min-h-full` работает от родителя с известной высотой — им и является
                 .sp-root. */}
             <div className="flex min-h-full flex-col lg:flex-row">
-                <Rail live={live} section={section} onSection={(s) => go(s)} counts={counts} extra={extra} />
+                {railHost
+                    ? createPortal(<Rail live={live} section={section} onSection={(s) => go(s)} counts={counts} extra={extra} />, railHost)
+                    : <Rail live={live} section={section} onSection={(s) => go(s)} counts={counts} extra={extra} />}
 
                 {/* Отступ снизу на узком экране — под нижнюю панель разделов: без него последняя
                     карточка уезжает под неё, и человек не видит, что страница кончилась. */}
