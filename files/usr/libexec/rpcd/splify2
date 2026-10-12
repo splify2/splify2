@@ -312,8 +312,11 @@ FW_OWNED="${FW_OWNED:-/etc/splify2/fw-owned}"
 # hysteria2 (QUIC-клиент со своим TUN, как vless) и прокси steer-proxy (trojan, shadowsocks,
 # socks, http, vmess — тоже свой TUN, TCP завершается в клиенте) идут в зону туннелей движка, awg
 # (WireGuard в ядре, адреса наружу меняются masquerade, как у обычного интерфейса) — в зону
-# интерфейсов.
-FW_ZONES="steer_clients:clients:0 steer_vless:vless,hysteria2,trojan,shadowsocks,socks,http,vmess,xsteer:0 steer_iface:interface,awg:1"
+# интерфейсов. warp-masque (туннель MASQUE группы kind: warp, TUN модуля steer-warpbox) — в зону
+# туннелей движка, как vless (решение владельца 2026-10-12): подмену адреса для членов WARP ставит
+# само ядро (postrouting_nat4), зоне masq не нужен. Ядро без steer-warpbox такого вида не знает —
+# `steer outputs --kind warp-masque` отвечает отказом, fw_devices_of глушит его и даёт пустой список.
+FW_ZONES="steer_clients:clients:0 steer_vless:vless,hysteria2,trojan,shadowsocks,socks,http,vmess,xsteer,warp-masque:0 steer_iface:interface,awg:1"
 
 # Релизы GitHub: версия, которой ставится пакет, и НАЗВАНИЕ, которым выпуск называют.
 #
