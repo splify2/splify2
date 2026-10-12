@@ -36,7 +36,7 @@ export function useSubProbe(path: string) {
 }
 
 /** Пилюля любого блока «Куда»: все одного размера — во всю ячейку сетки и одной высоты. */
-export const PILL = 'an-glass flex h-[64px] w-full min-w-0 flex-col justify-center gap-1.5 rounded-xl border px-3 text-left'
+export const PILL = 'an-glass sp-pill flex h-[64px] w-full min-w-0 flex-col justify-center gap-1.5 rounded-xl border px-3 text-left'
 
 /** Строка бейджей в пилюле — одна линия, лишние бейджи переносятся за её край и не видны. */
 export const BADGE_ROW = 'h-5 content-start overflow-hidden'
@@ -64,7 +64,7 @@ export function NodePill({ node, lat, chosen, on, onClick, disabled }: {
             className={[
                 `${PILL} transition-[border-color,opacity,box-shadow] duration-200`,
                 'hover:border-primary/50 disabled:cursor-default',
-                chosen ? 'border-primary/80 bg-primary/10 shadow-[0_0_0_2px_color-mix(in_srgb,var(--sp-primary)_25%,transparent)]' : '',
+                chosen ? 'border-primary/80 bg-primary/10 shadow-[inset_0_1px_0_var(--an-glass-edge),0_0_0_2px_color-mix(in_srgb,var(--sp-primary)_25%,transparent)]' : '',
                 on && !chosen ? 'border-success/70' : '',
                 dead ? 'opacity-55' : '',
             ].join(' ')}

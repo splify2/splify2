@@ -243,7 +243,7 @@ function Pill({ title, badges, note, chosen, rank, on, onClick }: {
             aria-pressed={chosen}
             className={[
                 `${PILL} relative transition-[border-color,box-shadow] duration-200 hover:border-primary/50`,
-                chosen ? 'border-primary/80 bg-primary/10 shadow-[0_0_0_2px_color-mix(in_srgb,var(--sp-primary)_25%,transparent)]' : '',
+                chosen ? 'border-primary/80 bg-primary/10 shadow-[inset_0_1px_0_var(--an-glass-edge),0_0_0_2px_color-mix(in_srgb,var(--sp-primary)_25%,transparent)]' : '',
             ].join(' ')}
         >
             <span className="flex min-w-0 items-center gap-1.5 text-[13px] font-semibold">
@@ -326,7 +326,7 @@ function SubPills({ sub, picks, rank, live, onToggle, onAuto }: {
                         aria-pressed={autoOn}
                         className={[
                             `${PILL} transition-[border-color,box-shadow] duration-200 hover:border-primary/50`,
-                            autoOn ? 'border-primary/80 bg-primary/10 shadow-[0_0_0_2px_color-mix(in_srgb,var(--sp-primary)_25%,transparent)]' : '',
+                            autoOn ? 'border-primary/80 bg-primary/10 shadow-[inset_0_1px_0_var(--an-glass-edge),0_0_0_2px_color-mix(in_srgb,var(--sp-primary)_25%,transparent)]' : '',
                         ].join(' ')}
                     >
                         <span className="flex items-center gap-1.5 text-[13px] font-semibold"><Flag cc={undefined} />{S.ruleTarget.avto}</span>

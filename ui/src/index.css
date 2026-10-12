@@ -734,6 +734,20 @@
   --sp-accent: var(--an-glass-hover);
 }
 
+/* ---- пилюли «Куда» (components/board) ------------------------------------------------------
+ * Пилюля лежит третьим слоем стекла (блок → блок раздела → пилюля), а вложенное стекло Andromeda —
+ * плоский тон без блика (glass.css, `.an-glass .an-glass`). Пилюле — стекло целиком: тон, блик,
+ * светлая кромка сверху и тень; выбор (bg-primary/10) красит только тон, блик остаётся. */
+.splify-react-root .an-glass .sp-pill {
+  background-color: var(--an-glass-tint);
+  background-image: var(--an-glass-sheen);
+  border-color: var(--an-glass-border);
+  box-shadow: inset 0 1px 0 var(--an-glass-edge), var(--an-glass-shadow);
+}
+@media (hover: hover) and (pointer: fine) {
+  .splify-react-root .an-glass .sp-pill:hover { background-color: var(--an-glass-hover); }
+}
+
 /* ---- бейджи конфигурации (lib/badges.ts, components/ConfBadges.tsx) -----------------------
  * Тонированная плашка поверх вложенного стекла: подложка --an-glass-tint (без стекла — поле),
  * на ней заливка тоном и светлая кромка сверху, как у стекла внутри стекла (glass.css).
