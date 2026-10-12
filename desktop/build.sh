@@ -44,7 +44,12 @@ case "$TARGET" in
         python3 scripts/squirrel-splash.py
         docker_build squirrel
         v="$(node -p 'require("./package.json").version')"
-        mv "release/squirrel-windows/splify2 Setup $v.exe" "release/squirrel-windows/splify2-desktop-$v-setup-x64.exe"
+        # Итоговый установщик — свой загрузчик (installer/setup.c: окно сразу, Squirrel — фоном и
+        # тихо) с дописанным Setup.exe Squirrel. Сам Setup.exe Squirrel остаётся рядом под своим
+        # именем: лента обновлений — RELEASES и .nupkg, установщик ей не нужен.
+        mv "release/squirrel-windows/splify2 Setup $v.exe" "release/squirrel-windows/splify2-$v-squirrel-setup.exe"
+        sh installer/build.sh "$PWD/release/squirrel-windows/splify2-$v-squirrel-setup.exe" \
+            "$PWD/release/squirrel-windows/splify2-desktop-$v-setup-x64.exe"
         ;;
     nsis)
         docker_build nsis
