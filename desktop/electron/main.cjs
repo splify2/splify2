@@ -10,6 +10,8 @@ const {
 const { Router } = require('./router.cjs')
 const { Settings } = require('./backend/settings.cjs')
 const { Monitor } = require('./backend/monitor.cjs')
+// Служебные запуски установщика Squirrel (Windows): ярлыки и выход; в остальных случаях — false.
+if (require('./squirrel.cjs').handled()) return
 
 const ROOT = path.join(__dirname, '..')
 const RENDERER = path.join(ROOT, 'dist', 'renderer')
