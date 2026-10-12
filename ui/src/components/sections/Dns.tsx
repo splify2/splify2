@@ -1,5 +1,5 @@
-import { useEffect, useState } from 'react'
-import { ArrowDown, ArrowUp, ChevronDown, Plus, Trash2, X } from 'lucide-react'
+import { useEffect, useRef, useState } from 'react'
+import { ArrowDown, ArrowUp, ChevronDown, Plus, RefreshCw, Settings2, Trash2, X } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Block, CardHead, FieldRow, KV, Segmented } from '@/components/ui/layout'
 import { inputCls } from '@/components/formbits'
@@ -13,7 +13,7 @@ import { dnsFragmentSupported, dnsGroupsSupported, dnsH3Supported, dnsOtherSuppo
 import { withUrl } from '@/lib/dnsurl'
 import DnsUpstreamExtras from '@/components/DnsUpstreamExtras'
 import ConfBadges from '@/components/ConfBadges'
-import { BADGE_ROW, PILL } from '@/components/board/NodePills'
+import { BADGE_ROW } from '@/components/board/NodePills'
 
 import { S } from '@/copy'
 /** DNS: какими серверами и через какой выход резолвер движка спрашивает имена под правилами.
@@ -86,6 +86,73 @@ function protoOfUrl(url: string): string {
     if (url.startsWith('quic://')) return 'doq'
     if (url.startsWith('tcp://')) return 'tcp'
     return 'udp'
+}
+
+/** Лампочка проверки: ответил ли сервер с роутера; 'busy' — проверка идёт. */
+type Lamp = { ok: boolean; ms?: number; error?: string } | 'busy'
+
+/** Хост сервера из адреса — подписью на карточке. */
+function hostOf(url: string): string {
+    const m = /^[a-z0-9]+:\/\/([^/?#]+)/i.exec(url)
+    return m ? m[1] : url
+}
+
+/** Карточка сервера DNS (приложение для ПК), как карточка правила: имя, хост, протокол, справа —
+ *  лампочка проверки. Щелчок выбирает сервер или убирает; у выбранного — «Настроить». */
+function DnsCard({ title, up, chosen, lamp, live, onToggle, onEdit, editing }: {
+    title: string
+    up: Upstream
+    chosen: boolean
+    lamp?: Lamp
+    live?: string
+    onToggle: () => void
+    onEdit?: () => void
+    editing: boolean
+}) {
+    const busy = lamp === 'busy'
+    const res = lamp && lamp !== 'busy' ? lamp : undefined
+    return (
+        <div
+            role="button"
+            tabIndex={0}
+            aria-pressed={chosen}
+            onClick={onToggle}
+            onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); onToggle() } }}
+            className={[
+                'sp-board-tile an-glass flex h-[96px] min-w-0 cursor-pointer flex-col gap-1.5 rounded-2xl border p-3.5 transition-[border-color,box-shadow] duration-200 hover:border-primary/50',
+                chosen ? 'border-primary/80 bg-primary/10 shadow-[inset_0_1px_0_var(--an-glass-edge),0_0_0_2px_color-mix(in_srgb,var(--sp-primary)_25%,transparent)]' : '',
+            ].join(' ')}
+        >
+            <div className="flex min-w-0 items-center gap-2">
+                <span className="min-w-0 flex-1 truncate text-sm font-semibold">{title}</span>
+                {res?.ok && res.ms !== undefined && <span className="shrink-0 text-xs tabular-nums text-muted-foreground">{S.subsBoard.ms(res.ms)}</span>}
+                <span
+                    title={res ? (res.ok ? S.dns.otvechaet : res.error || S.dns.neOtvechaetLampa) : busy ? S.dns.proveryaetsya : S.dns.neProveren}
+                    aria-label={res ? (res.ok ? S.dns.otvechaet : S.dns.neOtvechaetLampa) : S.dns.neProveren}
+                    className={[
+                        'h-2.5 w-2.5 shrink-0 rounded-full',
+                        busy ? 'animate-pulse bg-muted-foreground' : res ? (res.ok ? 'bg-success' : 'bg-destructive') : 'bg-muted-foreground/50',
+                    ].join(' ')}
+                />
+            </div>
+            <div className="truncate font-mono text-xs text-muted-foreground">{hostOf(up.url)}</div>
+            <div className="mt-auto flex min-w-0 items-center gap-2">
+                <ConfBadges list={[{ id: 'proto', text: PROTO_TEXT[protoOfUrl(up.url)], group: 'transport' }]} className={BADGE_ROW} />
+                {chosen && live && live !== 'ready' && live !== 'idle' && (
+                    <span className="truncate text-xs text-muted-foreground">{STATE_TEXT[live] || live}</span>
+                )}
+                {onEdit && (
+                    <button
+                        type="button"
+                        onClick={(e) => { e.stopPropagation(); onEdit() }}
+                        className={`ml-auto flex shrink-0 items-center gap-1 bg-transparent p-0 text-xs ${editing ? 'text-primary' : 'text-muted-foreground hover:text-foreground'}`}
+                    >
+                        <Settings2 className="h-3.5 w-3.5" aria-hidden="true" /> {S.dns.nastroit}
+                    </button>
+                )}
+            </div>
+        </div>
+    )
 }
 
 const listOf = (s: string) => s.split(/[\s,]+/).map((x) => x.trim()).filter(Boolean)
@@ -240,6 +307,10 @@ export default function Dns({ live, board = false }: { live?: Live; board?: bool
     const [log, setLog] = useState<DnsLog | null>(null)
     const [preset, setPreset] = useState(PRESETS[0].name)
     const [allPresets, setAllPresets] = useState(false)
+    /** Сервер, чьи поля открыты под карточками. */
+    const [editing, setEditing] = useState<string | null>(null)
+    /** Проверка серверов с роутера: по адресу — ответил ли и за сколько. */
+    const [probe, setProbe] = useState<{ busy: boolean; res: Record<string, Lamp>; unsupported?: boolean }>({ busy: false, res: {} })
 
     useEffect(() => {
         let stop = false
@@ -248,6 +319,15 @@ export default function Dns({ live, board = false }: { live?: Live; board?: bool
         const id = setInterval(tick, 5000)
         return () => { stop = true; clearInterval(id) }
     }, [])
+
+    /* Проверка — при открытии вкладки (приложение для ПК), когда спека уже есть. */
+    const probeRef = useRef<() => void>(() => {})
+    const probed = useRef(false)
+    useEffect(() => {
+        if (!board || !spec || probed.current) return
+        probed.current = true
+        probeRef.current()
+    }, [board, spec])
 
     if (!spec) return <div className="p-5 text-sm text-muted-foreground">{S.dns.zagruzka}</div>
 
@@ -323,12 +403,32 @@ export default function Dns({ live, board = false }: { live?: Live; board?: bool
         while (ups[name]) name = `${p.name}${k++}`
         setUp(name, { ...p.up })
     }
-    function addCustom() {
+    function addCustom(): string {
         let name = 'dns'
         let k = 2
         while (ups[name]) name = `dns${k++}`
         setUp(name, { url: 'https://' })
+        return name
     }
+
+    /** Проверить с роутера все карточки: готовые профили и свои серверы, каждый адрес один раз. */
+    async function probeAll() {
+        const list = [...new Map([...PRESETS.map((p) => p.up), ...Object.values(ups)]
+            .filter((u) => /^[a-z0-9]+:\/\/[^/]/i.test(u.url) || /^[0-9.:]+$/.test(u.url))
+            .map((u) => [u.url, u])).values()]
+        if (!list.length) return
+        setProbe((p) => ({ ...p, busy: true, res: {} }))
+        try {
+            const r = await rpc.dnsProbe(list.map((u) => (u.ips?.length ? `${u.url}=${u.ips.join(',')}` : u.url)))
+            if (r.unsupported) { setProbe({ busy: false, res: {}, unsupported: true }); return }
+            const res: Record<string, Lamp> = {}
+            for (const x of r.results || []) res[x.url.split('=')[0]] = { ok: x.ok, ms: x.ms, error: x.error }
+            setProbe({ busy: false, res })
+        } catch {
+            setProbe((p) => ({ ...p, busy: false }))
+        }
+    }
+    probeRef.current = () => void probeAll()
 
     /** Срок записи кэша (`dns.cache_ttl`): поле пустое — умолчание ядра (`def`). */
     type TtlKey = 'min' | 'max' | 'negative'
@@ -539,57 +639,63 @@ export default function Dns({ live, board = false }: { live?: Live; board?: bool
     if (board) {
         const GROUP = 'sp-board-group an-glass space-y-3 rounded-2xl border p-3'
         const TILE = 'sp-board-tile an-glass min-w-0 space-y-1 rounded-2xl border p-3.5'
-        const have = new Set(Object.values(ups).map((u) => u.url))
-        const presets = allPresets ? PRESETS : PRESETS.slice(0, PRESET_FOLD)
+        /* Карточки: готовые профили и добавленные свои серверы одним списком. Выбранная — сервер
+         * уже среди серверов роутера; щелчок выбирает или убирает. */
+        const byUrl = new Map(Object.entries(ups).map(([n, u]) => [u.url, n]))
+        const cards: { key: string; title: string; up: Upstream; name?: string }[] = [
+            ...PRESETS.map((p) => ({ key: p.name, title: PRESET_TITLE.get(p.name) ?? p.name, up: byUrl.has(p.up.url) ? ups[byUrl.get(p.up.url)!] : p.up, name: byUrl.get(p.up.url) })),
+            ...names.filter((n) => !PRESETS.some((p) => p.up.url === ups[n].url))
+                .map((n) => ({ key: `own:${n}`, title: n, up: ups[n], name: n })),
+        ]
+        const chosen = cards.filter((c) => c.name)
+        const rest = cards.filter((c) => !c.name)
+        const shown = allPresets ? cards : [...chosen, ...rest.slice(0, Math.max(0, PRESET_FOLD - chosen.length))]
         return (
             <div className="space-y-4">
                 <section className={GROUP}>
-                    <h2 className="sp-sub flex items-center gap-2 px-1 pt-1">
-                        {S.dns.serveryDns}
-                        {names.length > 0 && <span className="rounded-full bg-primary/15 px-2 text-xs font-semibold text-primary">{names.length}</span>}
-                    </h2>
-                    {names.length === 0 && <p className="px-1 text-sm text-muted-foreground">{S.dns.serverovNetImenaPod}</p>}
-                    {names.length > 0 && (
-                        <div className="grid gap-3 sm:grid-cols-2 sm:items-start">
-                            {names.map((n) => server(n, TILE))}
-                        </div>
-                    )}
-                    <div className={`${TILE} space-y-3`}>
-                        <div className="text-[13px] font-semibold">{S.dns.dobavit}</div>
-                        <div className="grid grid-cols-[repeat(auto-fill,minmax(180px,1fr))] gap-2">
-                            {presets.map((p) => {
-                                const added = have.has(p.up.url)
-                                return (
-                                    <button
-                                        key={p.name}
-                                        type="button"
-                                        onClick={() => addPreset(p.name)}
-                                        disabled={added}
-                                        aria-pressed={added}
-                                        className={[
-                                            `${PILL} transition-[border-color,box-shadow] duration-200 hover:border-primary/50 disabled:cursor-default`,
-                                            added ? 'border-primary/80 bg-primary/10' : '',
-                                        ].join(' ')}
-                                    >
-                                        <span className="min-w-0 truncate text-[13px] font-semibold">{PRESET_TITLE.get(p.name) ?? p.name}</span>
-                                        <ConfBadges list={[{ id: 'proto', text: PROTO_TEXT[protoOfUrl(p.up.url)], group: 'transport' }]} className={BADGE_ROW} />
-                                    </button>
-                                )
-                            })}
-                            <button
-                                type="button"
-                                onClick={addCustom}
-                                style={{ borderColor: 'color-mix(in srgb, var(--sp-muted-foreground) 45%, transparent)' }}
-                                className="flex h-[64px] items-center justify-center gap-2 rounded-xl border border-dashed bg-transparent text-sm text-muted-foreground transition-colors duration-200 hover:border-primary/50 hover:text-primary"
-                            >
-                                <Plus className="h-4 w-4" aria-hidden="true" /> {S.dns.svoyAdres}
-                            </button>
-                        </div>
-                        <button type="button" onClick={() => setAllPresets((v) => !v)} className="flex items-center gap-1.5 bg-transparent px-1 text-xs text-primary">
-                            <ChevronDown className={`h-3.5 w-3.5 transition-transform duration-200 ${allPresets ? 'rotate-180' : ''}`} aria-hidden="true" />
-                            {allPresets ? S.subsBoard.svernut : S.subsBoard.pokazatVse(PRESETS.length)}
+                    <div className="flex items-center justify-between gap-2 px-1 pt-1">
+                        <h2 className="sp-sub flex items-center gap-2">
+                            {S.dns.serveryDns}
+                            {names.length > 0 && <span className="rounded-full bg-primary/15 px-2 text-xs font-semibold text-primary">{names.length}</span>}
+                        </h2>
+                        <Button variant="ghost" size="sm" onClick={() => void probeAll()} disabled={probe.busy}>
+                            <RefreshCw className={probe.busy ? 'animate-spin' : ''} aria-hidden="true" /> {S.dns.proverit}
+                        </Button>
+                    </div>
+                    <div className="grid gap-3 sm:grid-cols-2">
+                        {shown.map((c) => (
+                            <DnsCard
+                                key={c.key}
+                                title={c.title}
+                                up={c.up}
+                                chosen={!!c.name}
+                                lamp={probe.busy && !probe.res[c.up.url] ? 'busy' : probe.res[c.up.url]}
+                                live={c.name ? state(c.name)?.state : undefined}
+                                onToggle={() => {
+                                    if (c.name) remove(c.name)
+                                    else if (c.key.startsWith('own:')) return
+                                    else addPreset(c.key)
+                                }}
+                                onEdit={c.name ? () => setEditing(editing === c.name ? null : c.name!) : undefined}
+                                editing={!!c.name && editing === c.name}
+                            />
+                        ))}
+                        <button
+                            type="button"
+                            onClick={() => setEditing(addCustom())}
+                            style={{ borderColor: 'color-mix(in srgb, var(--sp-muted-foreground) 45%, transparent)' }}
+                            className="flex h-[96px] items-center justify-center gap-2 rounded-2xl border border-dashed bg-transparent text-sm text-muted-foreground transition-colors duration-200 hover:border-primary/50 hover:text-primary"
+                        >
+                            <Plus className="h-4 w-4" aria-hidden="true" /> {S.dns.svoyServer}
                         </button>
                     </div>
+                    {rest.length > PRESET_FOLD - chosen.length && (
+                        <button type="button" onClick={() => setAllPresets((v) => !v)} className="flex items-center gap-1.5 bg-transparent px-1 text-xs text-primary">
+                            <ChevronDown className={`h-3.5 w-3.5 transition-transform duration-200 ${allPresets ? 'rotate-180' : ''}`} aria-hidden="true" />
+                            {allPresets ? S.subsBoard.svernut : S.subsBoard.pokazatVse(cards.length)}
+                        </button>
+                    )}
+                    {editing && ups[editing] && server(editing, TILE)}
                 </section>
 
                 <section className={GROUP}>

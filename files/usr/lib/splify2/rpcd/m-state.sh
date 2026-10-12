@@ -969,6 +969,38 @@ case "$2" in
         printf '%s\n' "$out"
         ;;
 
+    dns_probe)
+        # Проверка серверов DNS тем же кодом, которым ходит резолвер ядра (`steer dns-probe`,
+        # контракт — в splicicd/DESKTOP.md): все разом, общий срок 3 с, ответ ядра — дословно.
+        # Ядро без этой команды отвечает не JSON — тогда `unsupported`: экран оставляет лампочки
+        # серыми, а не красными (сервер не проверен — не то же, что не отвечает).
+        read -r input
+        json_load "$input" 2>/dev/null || fail "неразбираемый запрос"
+        set --
+        if json_is_a urls array; then
+            json_select urls
+            _i=1
+            while json_is_a "$_i" string; do
+                json_get_var _u "$_i"
+                case "$_u" in ''|*[!A-Za-z0-9:/._=,%@?+-]*) fail "недопустимый адрес сервера" ;; esac
+                set -- "$@" "$_u"
+                _i=$((_i + 1))
+            done
+            json_select ..
+        fi
+        [ "$#" -gt 0 ] || fail "нет серверов"
+        raw="$("$STEER" dns-probe --timeout 3000 "$@" 2>&1)"
+        out="$(json_tail "$raw")"
+        if [ -z "$out" ]; then
+            json_init
+            json_add_boolean unsupported 1
+            json_add_string error "$raw"
+            json_dump
+        else
+            printf '%s\n' "$out"
+        fi
+        ;;
+
     helper)
         # Живое состояние помощников выхода из памяти демона: запущен ли, поднят ли, сколько
         # раз перезапускали, какой модуль и его версия, причина последнего отказа. Помощника

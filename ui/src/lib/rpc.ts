@@ -221,6 +221,14 @@ export interface DnsUpstreamState {
     servers?: { name: string; pause: number; ok: number; failed: number }[]
 }
 
+/** Ответ `dns_probe`: по серверу — ответил ли годно и за сколько, или почему нет. */
+export interface DnsProbeReply {
+    name?: string
+    results?: { url: string; proto?: string; ok: boolean; ms?: number; error?: string }[]
+    unsupported?: boolean
+    error?: string
+}
+
 export interface DnsLog {
     running: boolean
     size?: number
@@ -960,6 +968,11 @@ export const rpc = {
     /** Журнал имён резолвера движка: какое имя в какое правило попало, а также серверы DNS
      *  (`upstreams`: адрес, транспорт, выход, состояние, счётчики, последняя ошибка) и кэш. */
     dnsLog: declare<DnsLog>('dns_log'),
+
+    /** Проверить серверы DNS с роутера — тем же кодом, которым ходит резолвер ядра (`steer dns-probe`).
+     *  `urls` — адрес сервера, как в dns.upstreams, и по желанию «=адрес,адрес» (минуя bootstrap).
+     *  `unsupported` — ядро такой проверки не умеет: сервер не проверен, а не «не отвечает». */
+    dnsProbe: declare<DnsProbeReply>('dns_probe', ['urls']),
 
     /** Соединения, которые движок повёл в свои выходы (до 2000 записей). */
     conns: declare<ConnsReply>('conns'),

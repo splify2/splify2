@@ -30,6 +30,7 @@
           "proxy_nodes",
           "proxy_probe",
           "dns_log",
+          "dns_probe",
           "conns",
           "helper",
           "live",

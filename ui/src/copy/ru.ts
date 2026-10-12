@@ -296,6 +296,13 @@ export const ru = {
         raz: (n: number) => plural(n, 'раз', 'раза', 'раз'),
     },
     dns: {
+        proverit: "Проверить",
+        svoyServer: "Свой сервер",
+        nastroit: "Настроить",
+        otvechaet: "Отвечает",
+        neOtvechaetLampa: "Не отвечает",
+        neProveren: "Не проверен",
+        proveryaetsya: "Проверяется",
         /** Названия готовых серверов DNS (components/sections/Dns.tsx, PRESETS) — парами [имя, название].
          *  Списком пар, а не объектом: сборка (vite.config.ts, splify-inline-copy) вычищает из словаря
          *  простые строковые свойства и подставляет их в код по прямым ссылкам S.раздел.ключ, а к
