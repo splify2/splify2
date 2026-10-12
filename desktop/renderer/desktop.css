@@ -23,6 +23,31 @@ html:has(.splify-react-root) {
   height: 100%;
 }
 
+/* Приложение, а не страница. Текст не выделяется и курсор над ним — обычная стрелка: протянутая
+ * мышь по кнопке, плитке или подписи не синит её (владелец). Выделяется то, что копируют: поля ввода,
+ * журнал и адреса моноширинным; на кнопках и плитках-кнопках — никогда. Картинки и ссылки не
+ * перетаскиваются. */
+body,
+body * {
+  -webkit-user-select: none;
+  user-select: none;
+  -webkit-user-drag: none;
+}
+body {
+  cursor: default;
+}
+body :is(input, textarea, select, [contenteditable]:not([contenteditable="false"]), code, pre, .font-mono, .desk-mono, .sp-selectable) {
+  -webkit-user-select: text;
+  user-select: text;
+}
+body :is(input, textarea, [contenteditable]:not([contenteditable="false"])) {
+  cursor: text;
+}
+body :is(button, [role="button"], a, label, summary) :is(*, .font-mono, .desk-mono, code) {
+  -webkit-user-select: none;
+  user-select: none;
+}
+
 .desk {
   position: fixed;
   overflow: hidden;

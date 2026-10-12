@@ -148,6 +148,8 @@ function createWindow(showNow) {
             sandbox: true,
             nodeIntegration: false,
             spellcheck: false,
+            // Инструменты разработчика — только в сборке для разработки.
+            devTools: !app.isPackaged,
             // Масштаб — с первого кадра, а не после загрузки: иначе окно мелькает крупным.
             zoomFactor: (settings.get().zoom / 100) * BASE_ZOOM,
         },
@@ -191,6 +193,34 @@ function createWindow(showNow) {
         if (url.startsWith('app://splify/')) return
         e.preventDefault()
         if (/^https?:\/\//i.test(url)) shell.openExternal(url)
+    })
+
+    // ПРИЛОЖЕНИЕ, А НЕ БРАУЗЕР (владелец: «перелопать браузер в полноценное приложение»). Клавиши
+    // браузера — перезагрузка страницы, печать, её исходник, масштаб — не делают ничего: перезагрузка
+    // сбрасывала бы состояние посреди правки, масштаб — свой, в настройках. Щипок тачпада не
+    // увеличивает. Инструменты разработчика — только в сборке для разработки.
+    win.webContents.setVisualZoomLevelLimits(1, 1).catch(() => {})
+    win.webContents.on('before-input-event', (e, input) => {
+        if (input.type !== 'keyDown') return
+        const k = input.key.toLowerCase()
+        const mod = input.control || input.meta
+        if (k === 'f5' || (mod && ['r', 'p', 'u', '=', '+', '-', '0'].includes(k)) ||
+            (app.isPackaged && (k === 'f12' || (mod && input.shift && ['i', 'j', 'c'].includes(k)))))
+            e.preventDefault()
+    })
+    // Своё короткое меню правки — только там, где оно нужно: в поле ввода и на выделенном тексте.
+    win.webContents.on('context-menu', (_e, p) => {
+        const f = p.editFlags
+        const items = p.isEditable
+            ? [
+                { role: 'cut', label: 'Вырезать', enabled: f.canCut },
+                { role: 'copy', label: 'Копировать', enabled: f.canCopy },
+                { role: 'paste', label: 'Вставить', enabled: f.canPaste },
+                { type: 'separator' },
+                { role: 'selectAll', label: 'Выделить всё', enabled: f.canSelectAll },
+            ]
+            : p.selectionText.trim() ? [{ role: 'copy', label: 'Копировать' }] : []
+        if (items.length) Menu.buildFromTemplate(items).popup({ window: win })
     })
 }
 
