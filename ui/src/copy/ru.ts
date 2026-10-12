@@ -657,6 +657,7 @@ export const ru = {
         neUstanovlenCurlStrana: "Не установлен curl: страна и отклик выходов не измеряются. Установите пакет curl.",
         vPule: (p0: unknown) => `в пуле ${p0}`,
         kudaPoydetZapros: "Куда пойдёт запрос",
+        kudaPoydetTrafik: "Куда пойдёт трафик",
         youtubeComKudaPoydet: "адрес сайта",
         ochistit: "Очистить",
         sprashivaem: "Спрашиваем…",

@@ -542,10 +542,6 @@ body :is(button, [role="button"], a, label, summary) :is(*, .font-mono, .desk-mo
 .desk .sp-board-address-value { min-width: 0; flex: 1; font: 12px/1.5 var(--an-font-mono, monospace); overflow-wrap: anywhere; }
 .desk .sp-board-icon { display: inline-flex; justify-content: center; align-items: center; flex: none; width: 26px; height: 26px; color: var(--sp-muted-foreground); border-radius: 6px; }
 .desk .sp-board-copy-error { flex-basis: 100%; font-size: 12px; }
-.desk .sp-board-explain { padding-top: 14px; border-top: 1px solid var(--sp-border); }
-.desk .sp-board-explain > summary { display: flex; align-items: center; gap: 7px; color: var(--sp-muted-foreground); font-size: 12px; cursor: pointer; list-style: none; }
-.desk .sp-board-explain > summary::-webkit-details-marker { display: none; }
-.desk .sp-board-explain > .an-glass { margin-top: 12px; }
 @media (hover: hover) {
   .desk .sp-board-rule:hover { border-color: color-mix(in srgb, var(--sp-primary) 40%, var(--sp-border)); }
   .desk .sp-board-more:hover, .desk .sp-board-icon:hover { background: var(--sp-accent); color: var(--sp-foreground); }

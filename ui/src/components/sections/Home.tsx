@@ -546,10 +546,8 @@ export default function Home({
                     </h2>
                     <RuleCards live={live} facts={facts} onSection={onSection} onEdit={onEditRule} onAdd={onAddRule} />
                 </section>
-                <details className="sp-board-explain">
-                    <summary><Search className="h-3.5 w-3.5" aria-hidden="true" />{S.home.kudaPoydetZapros}</summary>
-                    <ExplainCard />
-                </details>
+                {/* Своим блоком, а не свёрнутой строчкой внизу: её не замечали (владелец). */}
+                <ExplainCard board />
             </div>
         )
     }
@@ -1264,7 +1262,7 @@ function WarpTile({ name, st, facts }: { name: string; st: OutputStatus; facts?:
 
 const SUGGESTED_DOMAINS = ['youtube.com', 'instagram.com', 'discord.com', 'rutracker.org']
 
-function ExplainCard() {
+function ExplainCard({ board = false }: { board?: boolean }) {
     const [q, setQ] = useState('')
     const [answer, setAnswer] = useState<string | null>(null)
     const [asking, setAsking] = useState(false)
@@ -1289,9 +1287,8 @@ function ExplainCard() {
         setAnswer(null)
     }
 
-    return (
-        <Block>
-            <CardHead title={S.home.kudaPoydetZapros} />
+    const inner = (
+        <>
             <div className="flex flex-wrap gap-2">
                 <div className="relative min-w-0 flex-1">
                     <input
@@ -1342,6 +1339,22 @@ function ExplainCard() {
                     {answer}
                 </pre>
             )}
+        </>
+    )
+    if (board) {
+        return (
+            <section className="sp-board-group an-glass space-y-3 rounded-2xl border p-3">
+                <h2 className="sp-sub flex items-center gap-2 px-1 pt-1">
+                    <Search className="h-4 w-4 text-primary" aria-hidden="true" /> {S.home.kudaPoydetTrafik}
+                </h2>
+                <div className="sp-board-tile an-glass space-y-3 rounded-2xl border p-3.5">{inner}</div>
+            </section>
+        )
+    }
+    return (
+        <Block>
+            <CardHead title={S.home.kudaPoydetZapros} />
+            {inner}
         </Block>
     )
 }
