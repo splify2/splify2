@@ -515,7 +515,7 @@ export default function Home({
                     </Block>
                 )}
                 {verdictBlock}
-                <section className="sp-board-group space-y-3">
+                <section className="sp-board-group an-glass space-y-3 rounded-2xl border p-3">
                     <div className="flex items-center justify-between gap-3 px-1 pt-1">
                         <h2 className="sp-sub">{S.home.podklyucheniya}</h2>
                         <button
@@ -533,7 +533,7 @@ export default function Home({
                         <OutputsColumn live={live} facts={facts} busy={busy} noCurl={noCurl} onRefresh={refresh} tiles />
                     </div>
                 </section>
-                <section className="sp-board-group space-y-3">
+                <section className="sp-board-group an-glass space-y-3 rounded-2xl border p-3">
                     <h2 className="sp-sub flex items-center gap-2 px-1 pt-1">
                         {S.home.pravila}
                         {(spec?.channels.length ?? 0) > 0 && (

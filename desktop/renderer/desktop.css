@@ -438,13 +438,11 @@ html:has(.splify-react-root) {
 
 /* Главная desktop: две колонки, статус над сеткой. Группы разделяет воздух,
  * поверхности остаются только у самостоятельных карточек. */
-.desk .sp-board > * + * { margin-top: 24px; }
+.desk .sp-board > * + * { margin-top: 16px; }
+/* Вердикт — на своей подложке, как и блоки «Подключения» и «Правила» (владелец: «верни
+ * подложки»): три отдельных блока, а не плитки на голом фоне. */
 .desk .sp-board .sp-board-verdict {
-  padding: 2px 1px 4px !important;
-  background: transparent;
-  border: 0;
-  box-shadow: none;
-  backdrop-filter: none;
+  padding: 16px 18px !important;
 }
 .desk .sp-board-verdict .sp-verdict { font-size: 23px; line-height: 1.3; }
 .desk .sp-board-grid { align-items: stretch; }

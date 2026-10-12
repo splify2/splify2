@@ -1,7 +1,7 @@
 {
   "name": "splify2-desktop",
   "productName": "splify2",
-  "version": "0.1.10",
+  "version": "0.1.11",
   "description": "splify2 для компьютера: панель роутера в своём окне",
   "author": "splify2",
   "private": true,
