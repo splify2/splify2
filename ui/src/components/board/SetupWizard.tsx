@@ -175,8 +175,9 @@ export default function SetupWizard({ live, onDone, railHost }: {
 
     const steps = [S.setup.cherezChto, S.setup.chtoPustit, S.setup.kakSprashivat, S.setup.vseGotovo]
     const rail = railHost && createPortal(
-        <nav className="sp-wiz-rail flex h-full flex-col gap-1 px-3 py-4" aria-label={S.setup.zagolovok}>
-            <div className="px-2 pb-3 text-sm font-semibold">{S.setup.zagolovok}</div>
+        /* Колонка — той же ширины и того же стекла, что рельс (Rail.tsx): иначе раздел съезжал влево. */
+        <aside className="an-glass-chrome flex w-[236px] shrink-0 self-stretch flex-col gap-1 border-r p-4" aria-label={S.setup.zagolovok}>
+            <div className="px-1.5 pb-3 pt-1 text-sm font-semibold">{S.setup.zagolovok}</div>
             {steps.map((t, i) => {
                 const n = i + 1
                 const cur = step === n
@@ -191,12 +192,14 @@ export default function SetupWizard({ live, onDone, railHost }: {
                     </div>
                 )
             })}
-        </nav>,
+        </aside>,
         railHost,
     )
 
+    /* Карточка — по центру окна: и по ширине, и по высоте видимой части раздела. */
     return (
-        <div className="mx-auto max-w-3xl">
+        <div className="flex min-h-[calc(100vh-150px)] items-center justify-center">
+        <div className="w-full max-w-3xl">
             {rail}
             <section className="sp-board-group an-glass space-y-4 rounded-2xl border p-5">
                 <div className="flex items-center gap-3">
@@ -314,6 +317,7 @@ export default function SetupWizard({ live, onDone, railHost }: {
                     )}
                 </div>
             </section>
+        </div>
         </div>
     )
 }
