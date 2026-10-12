@@ -51,6 +51,11 @@ contextBridge.exposeInMainWorld('splifyDesktop', {
         state: () => invoke('monitor:state'),
         onState: (cb) => listen('monitor:state', cb),
     },
+    warp: {
+        state: () => invoke('warp:state'),
+        scan: (group) => invoke('warp:scan', group),
+        scanState: (group) => invoke('warp:scan-state', group),
+    },
     wizard: {
         discover: () => invoke('wizard:discover'),
         probe: (address) => invoke('wizard:probe', address),

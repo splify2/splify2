@@ -85,7 +85,7 @@ class Monitor extends EventEmitter {
         // Члены групп (у WARP — `<выход>.<n>`, у пула — части) говорят через свою группу:
         // по сообщению на каждый туннель группы было бы шумом.
         const members = new Set()
-        for (const st of Object.values(outs)) for (const m of st.members || []) members.add(m)
+        for (const st of Object.values(outs)) for (const m of st.group?.members || []) members.add(m)
         const now = {}
         for (const [name, st] of Object.entries(outs)) {
             if (st.kind === 'direct' || members.has(name)) continue
