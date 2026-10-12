@@ -5,12 +5,16 @@
 // роутера по токену устройства (SPLIFY2_API.md в хабе). Сама панель об этом не знает.
 import '@/index.css'
 import './desktop.css'
-import { StrictMode, useEffect, useState } from 'react'
+import './motion.css'
+import './settings/settings.css'
+import { StrictMode, useCallback, useEffect, useState } from 'react'
 import { createRoot } from 'react-dom/client'
-import App from '@/App'
+import Console, { type ExtraSection } from '@/components/Console'
 import TitleBar from './TitleBar'
 import Connect from './Connect'
+import Settings from './settings/Settings'
 import { desk, lastBase, resetMemory, type ApiState } from './desk'
+import { useSettings } from './hooks'
 
 window.luci_rpc = {
     declare: ({ method, params }) => (...args: unknown[]) => {
@@ -31,6 +35,9 @@ dark.addEventListener('change', syncTheme)
 
 document.documentElement.dataset.platform = desk.platform
 
+/** Разделы, которых нет под LuCI, — только в приложении. */
+const EXTRA: ExtraSection[] = []
+
 /** Панель держит состояние и в модулях, не только в дереве: после смены роутера её надёжнее
  *  перезапустить целиком, чем размонтировать. */
 let appShown = false
@@ -38,15 +45,31 @@ let appShown = false
 function Root() {
     const [st, setSt] = useState<ApiState | null>(null)
     const [lost, setLost] = useState('')
+    const [settingsOpen, setSettingsOpen] = useState(false)
+    const [prefs] = useSettings()
 
     useEffect(() => {
         desk.api.state().then(setSt, () => setSt({ connected: false, base: null, hostname: '', device: null }))
-        return desk.api.onLost((msg) => {
+        const offLost = desk.api.onLost((msg) => {
             resetMemory(lastBase())
             setLost(msg)
             setSt((s) => (s ? { ...s, connected: false } : s))
         })
+        // Щелчок по уведомлению: открыть раздел панели (Console слушает splify:section).
+        const offNav = desk.win.onNav((section) => {
+            setSettingsOpen(false)
+            window.dispatchEvent(new CustomEvent('splify:section', { detail: section }))
+        })
+        const offSet = desk.win.onOpenSettings(() => setSettingsOpen(true))
+        return () => { offLost(); offNav(); offSet() }
     }, [])
+
+    // Анимации выключены в настройках — правила motion.css смотрят на этот признак.
+    useEffect(() => {
+        if (prefs) document.documentElement.dataset.motion = prefs.motion ? 'on' : 'off'
+    }, [prefs?.motion])
+
+    const closeSettings = useCallback(() => setSettingsOpen(false), [])
 
     function connected(s: ApiState) {
         if (s.base !== lastBase()) resetMemory(s.base)
@@ -69,12 +92,20 @@ function Root() {
 
     return (
         <div className="splify-react-root desk an-backdrop">
-            <TitleBar state={st} onDisconnect={disconnect} />
-            <main className="desk-body">
-                {st && (st.connected
-                    ? <App />
-                    : <Connect initial={lastBase()} note={lost} onConnected={connected} />)}
-            </main>
+            <TitleBar
+                state={st}
+                onDisconnect={disconnect}
+                onSettings={() => setSettingsOpen((v) => !v)}
+                settingsOpen={settingsOpen}
+            />
+            <div className="desk-stage">
+                <main className="desk-body" data-behind={settingsOpen ? 'true' : undefined} inert={settingsOpen || undefined}>
+                    {st && (st.connected
+                        ? <Console extra={EXTRA} />
+                        : <Connect initial={lastBase()} note={lost} onConnected={connected} />)}
+                </main>
+                <Settings open={settingsOpen} onClose={closeSettings} router={st} onDisconnect={disconnect} />
+            </div>
         </div>
     )
 }

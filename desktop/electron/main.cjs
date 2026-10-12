@@ -2,11 +2,14 @@
 // splify2 для компьютера: окно без системной рамки, значок в трее и мост к API роутера.
 
 const path = require('node:path')
+const fs = require('node:fs')
 const { pathToFileURL } = require('node:url')
 const {
-    app, BrowserWindow, Menu, Tray, ipcMain, nativeImage, nativeTheme, net, protocol, shell,
+    app, BrowserWindow, Menu, Notification, Tray, ipcMain, nativeImage, nativeTheme, net, protocol, shell,
 } = require('electron')
 const { Router } = require('./router.cjs')
+const { Settings } = require('./backend/settings.cjs')
+const { Monitor } = require('./backend/monitor.cjs')
 
 const ROOT = path.join(__dirname, '..')
 const RENDERER = path.join(ROOT, 'dist', 'renderer')
@@ -27,24 +30,85 @@ app.setAppUserModelId('io.github.splify2.desktop')
 
 /** @type {BrowserWindow | null} */
 let win = null
+/** @type {BrowserWindow | null} */
+let splash = null
 /** @type {Tray | null} */
 let tray = null
 let quitting = false
+/** @type {Router} */
 let router
+/** @type {Settings} */
+let settings
+/** @type {Monitor} */
+let monitor
+/** Раздел, который окно должно открыть, когда загрузится (щелчок по уведомлению при закрытом окне). */
+let pendingNav = null
+
+const HIDDEN_START = process.argv.includes('--hidden')
+
+// ── окно ──────────────────────────────────────────────────────────────────────
+
+function send(ch, v) {
+    if (win && !win.isDestroyed()) win.webContents.send(ch, v)
+}
 
 function showWindow() {
-    if (!win) return createWindow()
+    if (!win) {
+        createWindow(true)
+        return
+    }
     if (win.isMinimized()) win.restore()
     win.show()
     win.focus()
 }
 
-function sendState() {
-    if (!win || win.isDestroyed()) return
-    win.webContents.send('win:state', { maximized: win.isMaximized(), focused: win.isFocused() })
+function navigate(section) {
+    if (!section) return
+    if (win && !win.webContents.isLoading()) send('nav', section)
+    else pendingNav = section
 }
 
-function createWindow() {
+function sendWinState() {
+    if (!win || win.isDestroyed()) return
+    send('win:state', { maximized: win.isMaximized(), focused: win.isFocused() })
+}
+
+function applyLook(s) {
+    nativeTheme.themeSource = s.theme
+    if (win && !win.isDestroyed()) win.webContents.setZoomFactor(s.zoom / 100)
+}
+
+/** Заставка при запуске — как у Discord: маленькое окно с логотипом, пока поднимается главное. */
+function createSplash() {
+    splash = new BrowserWindow({
+        width: 280,
+        height: 300,
+        frame: false,
+        resizable: false,
+        movable: true,
+        transparent: true,
+        skipTaskbar: false,
+        show: false,
+        alwaysOnTop: false,
+        title: 'splify2',
+        icon: path.join(RES, 'icon.png'),
+        backgroundColor: '#00000000',
+        webPreferences: { contextIsolation: true, sandbox: true, nodeIntegration: false },
+    })
+    splash.loadURL('app://splify/splash.html')
+    splash.once('ready-to-show', () => splash?.show())
+    splash.on('closed', () => { splash = null })
+}
+
+function closeSplash() {
+    if (!splash || splash.isDestroyed()) return
+    const s = splash
+    s.webContents.executeJavaScript('document.documentElement.classList.add("out")').catch(() => {})
+    setTimeout(() => { if (!s.isDestroyed()) s.destroy() }, 220)
+}
+
+function createWindow(showNow) {
+    const started = Date.now()
     win = new BrowserWindow({
         width: 1280,
         height: 820,
@@ -65,19 +129,33 @@ function createWindow() {
     })
     win.removeMenu()
     win.loadURL('app://splify/index.html')
-    win.once('ready-to-show', () => {
-        if (!process.argv.includes('--hidden')) win.show()
+    win.webContents.on('did-finish-load', () => {
+        applyLook(settings.get())
+        if (pendingNav) { send('nav', pendingNav); pendingNav = null }
     })
-    // Крестик прячет окно в трей, а не закрывает программу: выход — из меню значка.
+    win.once('ready-to-show', () => {
+        if (!showNow) return
+        // Заставка видна хотя бы мгновение: вспышка на 100 мс читается как сбой, а не как запуск.
+        const wait = Math.max(0, 700 - (Date.now() - started))
+        setTimeout(() => {
+            if (!win || win.isDestroyed()) return
+            win.show()
+            closeSplash()
+        }, wait)
+    })
+    // Крестик прячет окно в трей (если так настроено), выход — из меню значка.
     win.on('close', (e) => {
-        if (!quitting) {
+        if (!quitting && settings.get().closeToTray) {
             e.preventDefault()
             win.hide()
         }
     })
-    win.on('closed', () => { win = null })
+    win.on('closed', () => {
+        win = null
+        if (!settings.get().closeToTray && !quitting) app.quit()
+    })
     for (const ev of ['maximize', 'unmaximize', 'focus', 'blur', 'enter-full-screen', 'leave-full-screen'])
-        win.on(ev, sendState)
+        win.on(ev, sendWinState)
 
     // Ссылки наружу (выпуски на GitHub, страница подписки) — в браузер человека, а не новым окном.
     win.webContents.setWindowOpenHandler(({ url }) => {
@@ -91,28 +169,91 @@ function createWindow() {
     })
 }
 
-function trayImage() {
-    if (process.platform === 'win32') return nativeImage.createFromPath(path.join(RES, 'tray.ico'))
-    const img = nativeImage.createFromPath(path.join(RES, 'tray-32.png'))
+// ── трей ──────────────────────────────────────────────────────────────────────
+
+function trayImage(alert) {
+    const name = alert ? 'tray-alert' : 'tray'
+    if (process.platform === 'win32') {
+        const ico = path.join(RES, name + '.ico')
+        if (fs.existsSync(ico)) return nativeImage.createFromPath(ico)
+    }
+    const png = path.join(RES, name + '-32.png')
+    const img = nativeImage.createFromPath(fs.existsSync(png) ? png : path.join(RES, 'tray-32.png'))
     return img.resize({ width: 22, height: 22 })
 }
+
+let trayAlert = false
 
 function updateTray() {
     if (!tray) return
     const st = router.state
-    tray.setToolTip(st.connected ? `splify2 — ${st.hostname || st.base}` : 'splify2 — роутер не подключён')
+    const m = monitor?.state
+    const bad = !!st.connected && (m?.reachable === false || m?.engine === false ||
+        Object.values(m?.outputs || {}).includes('down'))
+    if (bad !== trayAlert) {
+        trayAlert = bad
+        tray.setImage(trayImage(bad))
+    }
+    let line = 'роутер не подключён'
+    if (st.connected) {
+        const host = st.hostname || st.base
+        if (m?.reachable === false) line = `${host} — нет связи`
+        else if (m?.engine === false) line = `${host} — ядро не отвечает`
+        else {
+            const down = Object.entries(m?.outputs || {}).filter(([, v]) => v === 'down').map(([k]) => k)
+            line = down.length ? `${host} — не отвечает: ${down.join(', ')}` : `${host} — всё работает`
+        }
+    }
+    tray.setToolTip(`splify2 — ${line}`)
     tray.setContextMenu(Menu.buildFromTemplate([
         { label: 'Открыть splify2', click: showWindow },
+        { label: 'Настройки', click: () => { showWindow(); send('settings:open', null) } },
+        { type: 'separator' },
+        { label: line, enabled: false },
         { type: 'separator' },
         { label: 'Выход', click: () => { quitting = true; app.quit() } },
     ]))
 }
 
-function createTray() {
-    tray = new Tray(trayImage())
-    tray.on('click', showWindow)
-    updateTray()
+// ── уведомления ───────────────────────────────────────────────────────────────
+
+function notify(ev) {
+    console.log(`splify2: ${ev.down ? 'сбой' : 'починилось'} — ${ev.title}: ${ev.body}`)
+    const n = settings.get().notify
+    if (!n.enabled || !n[ev.kind]) return
+    if (!ev.down && !n.recover) return
+    if (!Notification.isSupported()) return
+    const note = new Notification({
+        title: ev.title,
+        body: ev.body,
+        silent: !n.sound,
+        icon: path.join(RES, 'icon.png'),
+    })
+    note.on('click', () => {
+        showWindow()
+        navigate(ev.section)
+    })
+    note.show()
 }
+
+// ── автозапуск ────────────────────────────────────────────────────────────────
+
+function applyLoginItem(s) {
+    // Из исходников (npm start) автозапуск не трогаем: он записал бы в систему путь к electron
+    // из node_modules.
+    if (!app.isPackaged || process.platform === 'linux') return
+    const opts = { openAtLogin: s.launchAtLogin, args: ['--hidden'] }
+    // Установка Squirrel кладёт программу в app-<версия>\ рядом с Update.exe: запуск через него
+    // переживает обновление (путь к exe с номером версии после обновления бы умер).
+    const update = path.resolve(path.dirname(process.execPath), '..', 'Update.exe')
+    if (process.platform === 'win32' && fs.existsSync(update)) {
+        opts.path = update
+        opts.args = ['--processStart', path.basename(process.execPath), '--process-start-args', '--hidden']
+    }
+    app.setLoginItemSettings(opts)
+}
+
+// ── связь с окном ─────────────────────────────────────────────────────────────
 
 function registerIpc() {
     ipcMain.on('win:minimize', () => win?.minimize())
@@ -137,6 +278,35 @@ function registerIpc() {
     ipcMain.handle('api:connect', wrap((address, password) => router.connect(address, password)))
     ipcMain.handle('api:disconnect', wrap(() => router.disconnect()))
     ipcMain.handle('api:call', wrap((method, params) => router.call(method, params)))
+    ipcMain.handle('api:devices', wrap(() => router.devices()))
+    ipcMain.handle('api:revoke', wrap((id) => router.revoke(id)))
+    ipcMain.handle('api:info', wrap(() => router.info()))
+
+    ipcMain.handle('settings:get', wrap(() => settings.get()))
+    ipcMain.handle('settings:set', wrap((patch) => settings.set(patch)))
+    ipcMain.handle('monitor:state', wrap(() => monitor.state))
+    ipcMain.handle('app:info', wrap(() => ({
+        version: app.getVersion(),
+        electron: process.versions.electron,
+        chrome: process.versions.chrome,
+        platform: process.platform,
+    })))
+    ipcMain.handle('notify:test', wrap(() => {
+        if (!Notification.isSupported()) throw Object.assign(new Error('Система не показывает уведомления'), { code: 'unsupported' })
+        const n = new Notification({
+            title: 'Уведомления включены',
+            body: 'Так splify2 сообщит о сбое на роутере',
+            silent: !settings.get().notify.sound,
+            icon: path.join(RES, 'icon.png'),
+        })
+        n.on('click', showWindow)
+        n.show()
+        return true
+    }))
+    ipcMain.handle('shell:open', wrap((url) => {
+        if (!/^https?:\/\//i.test(url)) throw new Error('Только адреса http(s)')
+        return shell.openExternal(url)
+    }))
 }
 
 app.on('second-instance', showWindow)
@@ -147,9 +317,22 @@ app.on('before-quit', () => { quitting = true })
 app.on('window-all-closed', () => {})
 
 app.whenReady().then(() => {
+    settings = new Settings(path.join(app.getPath('userData'), 'settings.json'))
     router = new Router(path.join(app.getPath('userData'), 'connection.json'))
-    router.on('changed', updateTray)
-    router.on('lost', (msg) => win?.webContents.send('api:lost', msg))
+    monitor = new Monitor(router, settings)
+
+    nativeTheme.themeSource = settings.get().theme
+    applyLoginItem(settings.get())
+    settings.on('changed', (s, before) => {
+        applyLook(s)
+        if (s.launchAtLogin !== before.launchAtLogin) applyLoginItem(s)
+        send('settings:changed', s)
+    })
+
+    router.on('changed', () => { updateTray(); send('api:changed', router.state) })
+    router.on('lost', (msg) => send('api:lost', msg))
+    monitor.on('state', (st) => { updateTray(); send('monitor:state', st) })
+    monitor.on('event', notify)
 
     protocol.handle('app', (req) => {
         const u = new URL(req.url)
@@ -161,6 +344,13 @@ app.whenReady().then(() => {
     })
 
     registerIpc()
-    createTray()
-    createWindow()
+    tray = new Tray(trayImage(false))
+    tray.on('click', showWindow)
+    updateTray()
+
+    // Запуск вместе с системой — в трей, без окна: сторож и уведомления работают и так. Окно
+    // создаётся при первом открытии.
+    if (HIDDEN_START && settings.get().startHidden) return
+    createSplash()
+    createWindow(true)
 })

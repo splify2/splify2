@@ -32,6 +32,7 @@
       "resources/icon.png",
       "resources/tray-*.png",
       "resources/tray.ico",
+      "resources/tray-alert.ico",
       "package.json"
     ],
     "win": {

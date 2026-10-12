@@ -1,0 +1,120 @@
+/* Движение приложения. Только transform и opacity; длительности — токены Andromeda
+ * (ui/andromeda/tokens/motion.css), кривая входа — сильный ease-out рядом с ними: у Andromeda
+ * одна кривая (стандартная ease-in-out), а появлению нужен быстрый старт.
+ *
+ * Выключено — в настройках «Анимации» (html[data-motion="off"]) или системным «уменьшить
+ * движение»: тогда остаётся короткое проявление без сдвигов и масштаба. */
+
+:root {
+  --an-ease-out: cubic-bezier(0.23, 1, 0.32, 1);
+}
+
+/* ── смена раздела панели: едва заметно — её делают десятки раз в день ───────── */
+
+.desk .sp-section {
+  transition: opacity var(--an-dur-hover) var(--an-ease-out), transform var(--an-dur-hover) var(--an-ease-out);
+}
+
+@starting-style {
+  .desk .sp-section {
+    opacity: 0;
+    transform: translateY(4px);
+  }
+}
+
+/* ── настройки поверх окна: панель уходит вглубь, настройки выходят навстречу ─── */
+
+.desk-body {
+  transform-origin: 50% 40%;
+  transition: opacity var(--an-dur-control) var(--an-ease-out), transform var(--an-dur-control) var(--an-ease-out);
+}
+
+.desk-body[data-behind] {
+  opacity: 0;
+  transform: scale(0.96);
+}
+
+.desk-settings {
+  transition: opacity var(--an-dur-control) var(--an-ease-out), transform var(--an-dur-control) var(--an-ease-out);
+}
+
+.desk-settings[data-state="closed"] {
+  opacity: 0;
+  transform: scale(1.04);
+  pointer-events: none;
+}
+
+@starting-style {
+  .desk-settings[data-state="open"] {
+    opacity: 0;
+    transform: scale(1.04);
+  }
+}
+
+/* Страница настроек сменилась — проявление на месте, без сдвига. */
+.desk-settings-content {
+  transition: opacity var(--an-dur-hover) var(--an-ease-out);
+}
+
+@starting-style {
+  .desk-settings-content {
+    opacity: 0;
+  }
+}
+
+/* ── меню роутера в рамке: из-под кнопки ──────────────────────────────────── */
+
+.desk-menu {
+  transform-origin: 24px 0;
+  transition: opacity 150ms var(--an-ease-out), transform 150ms var(--an-ease-out);
+}
+
+@starting-style {
+  .desk-menu {
+    opacity: 0;
+    transform: scale(0.96);
+  }
+}
+
+/* ── карточка подключения и шаги мастера: появление ─────────────────────── */
+
+.desk-card,
+.desk-step {
+  transition: opacity var(--an-dur-enter) var(--an-ease-out), transform var(--an-dur-enter) var(--an-ease-out);
+}
+
+@starting-style {
+  .desk-card {
+    opacity: 0;
+    transform: translateY(8px) scale(0.98);
+  }
+
+  .desk-step {
+    opacity: 0;
+    transform: translateX(12px);
+  }
+}
+
+/* ── меньше движения ──────────────────────────────────────────────────────── */
+
+@media (prefers-reduced-motion: reduce) {
+  .desk .sp-section,
+  .desk-body,
+  .desk-settings,
+  .desk-menu,
+  .desk-card,
+  .desk-step {
+    transform: none !important;
+  }
+}
+
+html[data-motion="off"] .desk .sp-section,
+html[data-motion="off"] .desk-body,
+html[data-motion="off"] .desk-settings,
+html[data-motion="off"] .desk-settings-content,
+html[data-motion="off"] .desk-menu,
+html[data-motion="off"] .desk-card,
+html[data-motion="off"] .desk-step {
+  transform: none !important;
+  transition-duration: 1ms !important;
+}

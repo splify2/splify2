@@ -41,6 +41,12 @@ export default {
         outDir: path.join(HERE, 'dist', 'renderer'),
         emptyOutDir: true,
         modulePreload: false,
+        rollupOptions: {
+            input: {
+                index: path.join(HERE, 'renderer', 'index.html'),
+                splash: path.join(HERE, 'renderer', 'splash.html'),
+            },
+        },
         chunkSizeWarningLimit: 4096,
     },
 }

@@ -218,9 +218,32 @@ class Router extends EventEmitter {
     /** Вызов метода ubus-объекта splify2 — ровно то, что панель LuCI зовёт через rpc.declare. */
     async call(method, params) {
         const q = LONG.has(method) ? '?async=1' : ''
-        let r = await this.request('POST', `/v1/call/${encodeURIComponent(method)}${q}`, params ?? {})
-        while (r.status === 202) r = await this.request('GET', `/v1/jobs/${r.data.job}`)
-        return r.data
+        try {
+            let r = await this.request('POST', `/v1/call/${encodeURIComponent(method)}${q}`, params ?? {})
+            while (r.status === 202) r = await this.request('GET', `/v1/jobs/${r.data.job}`)
+            this.emit('call', method, r.data, null)
+            return r.data
+        } catch (e) {
+            // Ответы видит сторож (backend/monitor.cjs): по ним он судит о роутере, не спрашивая сам.
+            this.emit('call', method, null, e)
+            throw e
+        }
+    }
+
+    /** Подключённые к роутеру устройства (GET /v1/devices) и отключение одного из них. */
+    async devices() {
+        return (await this.request('GET', '/v1/devices')).data.devices
+    }
+
+    async revoke(id) {
+        await this.request('POST', `/v1/devices/${encodeURIComponent(id)}/revoke`, {})
+    }
+
+    /** Что за роутер: версия splify2 и имя (без токена). */
+    async info() {
+        if (!this.base) return null
+        const r = await this.http(this.base, 'GET', '/v1/info')
+        return r.status === 200 ? r.data : null
     }
 }
 

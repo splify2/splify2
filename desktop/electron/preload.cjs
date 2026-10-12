@@ -26,12 +26,34 @@ contextBridge.exposeInMainWorld('splifyDesktop', {
         close: () => ipcRenderer.send('win:close'),
         state: () => ipcRenderer.invoke('win:state'),
         onState: (cb) => listen('win:state', cb),
+        /** Главный процесс просит открыть раздел панели (щелчок по уведомлению). */
+        onNav: (cb) => listen('nav', cb),
+        /** …или настройки (пункт меню трея). */
+        onOpenSettings: (cb) => listen('settings:open', cb),
     },
     api: {
         state: () => invoke('api:state'),
         connect: (address, password) => invoke('api:connect', address, password),
         disconnect: () => invoke('api:disconnect'),
         call: (method, params) => invoke('api:call', method, params),
+        devices: () => invoke('api:devices'),
+        revoke: (id) => invoke('api:revoke', id),
+        info: () => invoke('api:info'),
         onLost: (cb) => listen('api:lost', cb),
+        onChanged: (cb) => listen('api:changed', cb),
+    },
+    settings: {
+        get: () => invoke('settings:get'),
+        set: (patch) => invoke('settings:set', patch),
+        onChanged: (cb) => listen('settings:changed', cb),
+    },
+    monitor: {
+        state: () => invoke('monitor:state'),
+        onState: (cb) => listen('monitor:state', cb),
+    },
+    app: {
+        info: () => invoke('app:info'),
+        testNotification: () => invoke('notify:test'),
+        open: (url) => invoke('shell:open', url),
     },
 })

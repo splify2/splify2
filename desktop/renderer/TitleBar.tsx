@@ -1,14 +1,30 @@
 import { useEffect, useState } from 'react'
-import { ChevronDown, Copy, Minus, Square, X } from 'lucide-react'
+import { ChevronDown, Copy, Minus, Settings as Gear, Square, X } from 'lucide-react'
 import { useConfirm } from '@/components/ui/confirm'
 import { desk, type ApiState } from './desk'
+import { useMonitor } from './hooks'
 
 /** Своя рамка вместо системной: за неё окно таскают, в ней роутер и кнопки окна. */
-export default function TitleBar({ state, onDisconnect }: { state: ApiState | null; onDisconnect: () => void }) {
+export default function TitleBar({ state, onDisconnect, onSettings, settingsOpen }: {
+    state: ApiState | null
+    onDisconnect: () => void
+    onSettings: () => void
+    settingsOpen: boolean
+}) {
     const [max, setMax] = useState(false)
     const [focused, setFocused] = useState(true)
     const [menu, setMenu] = useState(false)
     const [ask, dialog] = useConfirm()
+    const mon = useMonitor()
+    const downs = Object.entries(mon?.outputs ?? {}).filter(([, v]) => v === 'down').map(([k]) => k)
+    // Точка у имени роутера — сводка сторожа: связь, ядро, выходы.
+    const health = !mon || mon.reachable === null ? 'wait'
+        : mon.reachable === false || mon.engine === false ? 'bad'
+        : downs.length ? 'warn' : 'ok'
+    const healthText = health === 'bad'
+        ? (mon?.reachable === false ? 'Нет связи с роутером' : 'Ядро steer не отвечает')
+        : health === 'warn' ? `Не отвечает: ${downs.join(', ')}`
+        : health === 'ok' ? 'Всё работает' : 'Проверяем роутер'
 
     useEffect(() => {
         desk.win.state().then((s) => { setMax(s.maximized); setFocused(s.focused) })
@@ -34,8 +50,8 @@ export default function TitleBar({ state, onDisconnect }: { state: ApiState | nu
                 <img src="/favicon.svg" alt="" aria-hidden="true" className="desk-logo" draggable={false} />
                 <span className="desk-name">splify2</span>
                 {state?.connected && (
-                    <button type="button" className="desk-chip" onClick={() => setMenu((v) => !v)} aria-expanded={menu}>
-                        <span className="desk-dot" aria-hidden="true" />
+                    <button type="button" className="desk-chip" onClick={() => setMenu((v) => !v)} aria-expanded={menu} title={healthText}>
+                        <span className="desk-dot" data-health={health} aria-hidden="true" />
                         <span className="desk-chip-text">{state.hostname || host}</span>
                         <ChevronDown aria-hidden="true" />
                     </button>
@@ -43,6 +59,8 @@ export default function TitleBar({ state, onDisconnect }: { state: ApiState | nu
             </div>
             <div className="desk-fill" />
             <div className="desk-ctl">
+                <button type="button" aria-label="Настройки" aria-pressed={settingsOpen} className="desk-gear" onClick={onSettings}><Gear /></button>
+                <span className="desk-ctl-sep" aria-hidden="true" />
                 <button type="button" aria-label="Свернуть" onClick={() => desk.win.minimize()}><Minus /></button>
                 <button type="button" aria-label={max ? 'Восстановить' : 'Развернуть'} onClick={() => desk.win.toggleMaximize()}>
                     {max ? <Copy className="desk-restore" /> : <Square />}
@@ -56,7 +74,11 @@ export default function TitleBar({ state, onDisconnect }: { state: ApiState | nu
                         <div className="desk-menu-head">
                             <div className="desk-menu-title">{state?.hostname || host}</div>
                             <div className="desk-menu-sub">{host}</div>
+                            <div className="desk-menu-health" data-health={health}>{healthText}</div>
                         </div>
+                        <button type="button" role="menuitem" className="desk-menu-item" onClick={() => { setMenu(false); onSettings() }}>
+                            Настройки
+                        </button>
                         <button type="button" role="menuitem" className="desk-menu-item desk-danger" onClick={disconnect}>
                             Отключить этот компьютер
                         </button>
