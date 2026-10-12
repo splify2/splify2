@@ -76,7 +76,7 @@ const STATE_TEXT: Record<string, string> = {
 const PROTO_TEXT: Record<string, string> = { udp: 'DNS', tcp: S.dns.dnsPoTcp, dot: 'DoT', doh: 'DoH', doq: 'DoQ', doh3: 'DoH3' }
 
 /** Сколько готовых серверов видно до «Показать все». */
-const PRESET_FOLD = 7
+const PRESET_FOLD = 8
 
 /** Протокол сервера по адресу — как его называет ядро в `dns_log`. */
 function protoOfUrl(url: string): string {
@@ -662,7 +662,7 @@ export default function Dns({ live, board = false }: { live?: Live; board?: bool
                             <RefreshCw className={probe.busy ? 'animate-spin' : ''} aria-hidden="true" /> {S.dns.proverit}
                         </Button>
                     </div>
-                    <div className="grid gap-3 sm:grid-cols-2">
+                    <div className="grid gap-3 sm:grid-cols-3">
                         {shown.map((c) => (
                             <DnsCard
                                 key={c.key}
