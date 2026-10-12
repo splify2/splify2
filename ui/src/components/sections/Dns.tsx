@@ -53,6 +53,9 @@ const PRESET_FOLD = 7
 /** Лампочка проверки: ответил ли сервер с роутера; 'busy' — проверка идёт. */
 type Lamp = { ok: boolean; ms?: number; error?: string } | 'busy'
 
+/** Последние ответы проверки (по адресу) — на всё окно, между заходами на вкладку. */
+let lastProbe: Record<string, Lamp> = {}
+
 /** Хост сервера из адреса — подписью на карточке. */
 function hostOf(url: string): string {
     const m = /^[a-z0-9]+:\/\/([^/?#]+)/i.exec(url)
@@ -287,7 +290,13 @@ export default function Dns({ live, board = false }: { live?: Live; board?: bool
     /** Сервер, чьи поля открыты под карточками. */
     const [editing, setEditing] = useState<string | null>(null)
     /** Проверка серверов с роутера: по адресу — ответил ли и за сколько. */
-    const [probe, setProbe] = useState<{ busy: boolean; res: Record<string, Lamp>; unsupported?: boolean }>({ busy: false, res: {} })
+    const [probe, setProbeRaw] = useState<{ busy: boolean; res: Record<string, Lamp>; unsupported?: boolean }>(() => ({ busy: false, res: { ...lastProbe } }))
+    /** Последний ответ запоминается на всё окно: при возврате на вкладку лампочки видны сразу. */
+    const setProbe: typeof setProbeRaw = (v) => setProbeRaw((cur) => {
+        const next = typeof v === 'function' ? v(cur) : v
+        if (!next.busy && Object.keys(next.res).length) lastProbe = { ...next.res }
+        return next
+    })
 
     useEffect(() => {
         let stop = false
@@ -394,7 +403,7 @@ export default function Dns({ live, board = false }: { live?: Live; board?: bool
             .filter((u) => /^[a-z0-9]+:\/\/[^/]/i.test(u.url) || /^[0-9.:]+$/.test(u.url))
             .map((u) => [u.url, u])).values()]
         if (!list.length) return
-        setProbe((p) => ({ ...p, busy: true, res: {} }))
+        setProbe((p) => ({ ...p, busy: true }))
         try {
             const r = await rpc.dnsProbe(list.map((u) => (u.ips?.length ? `${u.url}=${u.ips.join(',')}` : u.url)))
             if (r.unsupported) { setProbe({ busy: false, res: {}, unsupported: true }); return }
@@ -628,7 +637,10 @@ export default function Dns({ live, board = false }: { live?: Live; board?: bool
             const g = dns.groups?.[cur]
             return g ? g.servers : [cur]
         }
-        const picked = listOf2(which)
+        /* Отметки — по серверу доменов правил, а если он не задан — по серверу остальных имён:
+         * старая форма вкладки записывала назначения порознь, и «DNS провайдера» горел при
+         * заданном `dns.other`. Следующий щелчок пишет оба назначения одинаково (assign). */
+        const picked = listOf2('upstream').length ? listOf2('upstream') : showOther ? listOf2('other') : []
         const grp = dns[which] ? dns.groups?.[dns[which]!] : undefined
         const byUrl = new Map(Object.entries(ups).map(([n, u]) => [u.url, n]))
         const cards: { key: string; title: string; up: Upstream; name?: string; preset?: string }[] = [
@@ -744,7 +756,7 @@ export default function Dns({ live, board = false }: { live?: Live; board?: bool
                                 chosen={used(c.name)}
                                 rank={picked.length > 1 && c.name && picked.includes(c.name) ? picked.indexOf(c.name) + 1 : undefined}
                                 where={[]}
-                                lamp={probe.busy && !probe.res[c.up.url] ? 'busy' : probe.res[c.up.url]}
+                                lamp={probe.res[c.up.url] ?? (probe.busy ? 'busy' : undefined)}
                                 live={c.name ? state(c.name)?.state : undefined}
                                 onToggle={() => toggle(c)}
                                 onEdit={c.name ? () => setEditing(editing === c.name ? null : c.name!) : undefined}
