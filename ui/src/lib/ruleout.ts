@@ -1,5 +1,6 @@
 import { DIRECT, isPart, isTunnelKind, type Output, type ProxyKind, type Spec } from '@/lib/model'
 import { outputUsers } from '@/lib/outrefs'
+import { directDomains } from '@/lib/rulefiles'
 
 /** Выход правила в приложении для компьютера: «на одно правило — один выход (набор)».
  *
@@ -404,7 +405,9 @@ export function applyTarget(spec: Spec, index: number, t: Target): Spec {
     }
     if (t.direct) {
         const d = directOf(spec)
-        return setOut(d.spec, d.name)
+        const s2 = setOut(d.spec, d.name)
+        /* Напрямую — домены настоящими адресами (rulefiles.directDomains). */
+        return { ...s2, channels: s2.channels.map((c, k) => (k === index ? directDomains(c) : c)) }
     }
     const built = buildTarget(t)
     if (!built) return spec

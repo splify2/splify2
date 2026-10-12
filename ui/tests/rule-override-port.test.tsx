@@ -14,7 +14,7 @@ import type { Channel, Spec } from '@/lib/model'
 
 const DOM = '/etc/steer/lists/youtube.lst'
 const PFX = '/etc/steer/lists/youtube-ip.lst'
-const OUTPUTS = { direct: { kind: 'direct', up: true } } as never
+const OUTPUTS = { vpn: { kind: 'interface', device: 'wg0', up: true } } as never
 
 function mount(ch: Channel) {
     const changes: Channel[] = []
@@ -25,7 +25,7 @@ function mount(ch: Channel) {
     return changes
 }
 
-const base: Channel = { name: 'yt', out: 'direct', match: { domains_files: [DOM], prefixes_files: [PFX], mode: 'fakeip' } } as Channel
+const base: Channel = { name: 'yt', out: 'vpn', match: { domains_files: [DOM], prefixes_files: [PFX], mode: 'fakeip' } } as Channel
 
 beforeEach(() => {
     vi.restoreAllMocks()
@@ -42,7 +42,7 @@ describe('порт назначения у доменов правила', () =>
         expect(ch.file_extra).toEqual({ [DOM]: { override_port: 8443 } })
         // В спеке — отдельный список имён с подменой (подсети рядом её не несут), и обратно
         // правило читается тем же.
-        const spec = { outputs: { direct: { name: 'direct', kind: 'direct' } }, channels: [ch] } as Spec
+        const spec = { outputs: { vpn: { name: 'vpn', kind: 'interface', device: 'wg0' } }, channels: [ch] } as Spec
         const doc = encodeSpec(spec)
         const lists = Object.values(doc.lists as Record<string, Record<string, unknown>>)
         expect(lists).toContainEqual({ domains_file: [DOM], override_port: 8443 })

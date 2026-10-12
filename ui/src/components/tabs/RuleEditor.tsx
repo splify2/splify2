@@ -30,7 +30,7 @@ const OWN_DNS = ' own'
 const OWN_GROUP = ' own-group'
 
 export { pathFor, srsPathFor, ruleFiles, onRouter, srsOf, selectedIds, isDomains } from '@/lib/rulefiles'
-import { pathFor, srsPathFor, ruleFiles, onRouter, srsProbe, mayNarrow, selectedIds, isDomains, serviceFiles, overridePortOf, withOverridePort } from '@/lib/rulefiles'
+import { pathFor, srsPathFor, ruleFiles, onRouter, srsProbe, mayNarrow, selectedIds, isDomains, serviceFiles, overridePortOf, withOverridePort, directDomains } from '@/lib/rulefiles'
 
 
 import DnsUpstreamExtras from '@/components/DnsUpstreamExtras'
@@ -157,6 +157,13 @@ export default function RuleEditor({
      *  сущности в движке нет и не нужно: метку раздаёт первое совпадение, поэтому верхнее
      *  правило забирает сервис себе и оставляет его на обычном пути. */
     const isException = outputs[ch.out]?.kind === 'direct'
+    /* Исключение с доменами, записанное с fake-IP, — на настоящие адреса (rulefiles.directDomains). */
+    useEffect(() => {
+        if (!isException) return
+        const next = directDomains(ch)
+        if (next !== ch) onChange(next)
+        // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [isException, hasDomains, ch.match.mode])
 
     /** Туннели, которые не ведёт ни один выход.
      *
@@ -259,7 +266,7 @@ export default function RuleEditor({
                 prefixes_files: pref.size ? [...pref] : undefined,
                 domains_files: doms.size ? [...doms] : undefined,
                 srs_files: srs.size ? [...srs] : undefined,
-                mode: doms.size || srs.size ? (ch.match.mode ?? 'fakeip') : undefined,
+                mode: doms.size || srs.size ? (ch.match.mode ?? (isException ? 'realip' : 'fakeip')) : undefined,
             },
             narrow: Object.keys(narrow).length ? narrow : undefined,
         }
@@ -329,7 +336,7 @@ export default function RuleEditor({
                 prefixes_files: pref.length ? pref : undefined,
                 domains_files: doms.length ? doms : undefined,
                 srs_files: srs.length ? srs : undefined,
-                mode: doms.length || srs.length ? (ch.match.mode ?? 'fakeip') : undefined,
+                mode: doms.length || srs.length ? (ch.match.mode ?? (isException ? 'realip' : 'fakeip')) : undefined,
             },
         }
         onChange(port === undefined ? next : withOverridePort(next, port))
@@ -625,7 +632,7 @@ export default function RuleEditor({
                             <p className="text-xs text-destructive">
                                 {S.ruleEditor.isklyucheniePerekrytoVysheStoit}{coveredBy.join('», «')}{S.ruleEditor.sTemiZheZapisyami}</p>
                         )}
-                        {hasDomains && (
+                        {hasDomains && !isException && (
                             /* Два режима — сегментами, как любой выбор из двух-четырёх вариантов в
                                приложении; значения те же, что были у выпадающего списка. */
                             <div className="space-y-1.5 border-t border-border pt-3 text-xs">

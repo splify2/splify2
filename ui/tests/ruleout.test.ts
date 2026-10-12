@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest'
 import { applyTarget, EMPTY_TARGET, sharedWith, shape, targetOf, type Target } from '@/lib/ruleout'
 import type { Channel, Output, Spec } from '@/lib/model'
 import { decodeSpec, encodeSpec } from '@/lib/specv2'
+import { overridePortOf, withOverridePort } from '@/lib/rulefiles'
 
 // Выход правила в приложении для компьютера (lib/ruleout.ts): набор пилюль → спека и обратно,
 // общий выход у одинаковых наборов, разведение при правке, уборка осиротевшего.
@@ -117,6 +118,14 @@ describe('общий выход и разведение', () => {
         s = applyTarget(s, 0, { ...structuredClone(EMPTY_TARGET), direct: true })
         expect(s.channels[0].out).toBe('direct')
         expect(Object.keys(s.outputs).sort()).toEqual(['cf', 'direct'])
+    })
+
+    it('напрямую — домены настоящими адресами, подмены порта нет', () => {
+        const ch: Channel = { name: 'a', out: 'direct', match: { domains_files: ['/etc/steer/lists/d.lst'], mode: 'fakeip' } }
+        const base = spec({}, [withOverridePort(ch, 8443)])
+        const s = applyTarget(base, 0, { ...structuredClone(EMPTY_TARGET), direct: true })
+        expect(s.channels[0].match.mode).toBe('realip')
+        expect(overridePortOf(s.channels[0])).toBeUndefined()
     })
 
     it('выход, через который идёт DNS, не убирается', () => {

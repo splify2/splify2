@@ -118,3 +118,12 @@ export function withOverridePort(ch: Channel, port: number | undefined): Channel
     else delete next.file_extra
     return next
 }
+
+/** Правило в выход direct: домены — настоящими адресами (`realip`). Подменный адрес там ни к чему:
+ *  трафик и так идёт мимо туннеля, а запись fake-IP занимает карту (владелец: «для выхода direct
+ *  fake-ip нахуй не нужон»). Подмены порта при realip ядро не принимает — она снимается. */
+export function directDomains(ch: Channel): Channel {
+    const has = (ch.match.domains_files?.length ?? 0) > 0 || (ch.match.srs_files?.length ?? 0) > 0
+    if (!has || ch.match.mode === 'realip') return ch
+    return withOverridePort({ ...ch, match: { ...ch.match, mode: 'realip' } }, undefined)
+}
