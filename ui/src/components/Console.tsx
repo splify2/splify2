@@ -199,7 +199,8 @@ export default function Console({ extra, railHost, board = false, settingsHost, 
                     {/* Обёртка с ключом раздела: при смене раздела она новая, и оболочка вне LuCI может
                         показать смену движением (класс sp-section). Под LuCI у класса нет правил. */}
                     <div key={section} className="sp-section">
-                    {section !== 'home' && (
+                    {/* Правило в приложении для ПК открывается с главной, и шапка редактора — его заголовок. */}
+                    {section !== 'home' && !(board && section === 'rules') && (
                         <h1 className="sp-title mb-3">{SECTION_TITLE[section as SectionId] ?? ext?.label}</h1>
                     )}
 
@@ -243,7 +244,7 @@ export default function Console({ extra, railHost, board = false, settingsHost, 
                             />
                         )}
                         {section === 'vpn' && !loadFailed && (board ? <SubsBoard /> : <Vpn live={live} />)}
-                        {section === 'dns' && !loadFailed && <Dns live={live} />}
+                        {section === 'dns' && !loadFailed && <Dns live={live} board={board} />}
                         {section === 'diag' && <Diagnostics live={live} />}
                         {section === 'settings' && !loadFailed && (
                             <Settings

@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef, useState, type ReactNode } from 'react'
-import { Search, Trash2 } from 'lucide-react'
+import { LoaderCircle, Search, Trash2 } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Block, CardHead, FieldRow, ScreenHeader, Segmented } from '@/components/ui/layout'
 import { rpc } from '@/lib/rpc'
@@ -42,6 +42,12 @@ interface Props {
     /** Приложение для компьютера: «Куда» — отдельным блоком во всю ширину под остальными
      *  (components/board/RuleTarget.tsx); список выходов здесь тогда не показывается. */
     target?: ReactNode
+    /** Черновик (приложение для ПК): правка не уходит на роутер, пока её не сохранили, и роутер ни о
+     *  чём не спрашивается — наборы каталога разбираются на «Сохранить». Стрелка назад — выйти без
+     *  сохранения. `onSave` получает правило, каким его надо записать. */
+    defer?: boolean
+    isNew?: boolean
+    onSave?: (ch: Channel) => void
     /** Умеет ли ядро steer `fragment` у DoT/DoH и адрес `h3://` — без умения выключатель скрыт. */
     dnsFragmentOk?: boolean
     dnsH3Ok?: boolean
@@ -81,7 +87,7 @@ function serviceName(service: string, current: string, taken: string[]): string 
 }
 
 export default function RuleEditor({
-    dnsFragmentOk = false, dnsH3Ok = false, ch, target, index, services, local, outputs, clash, rulesTotal, coveredBy, onChange, onClose, onDelete,
+    dnsFragmentOk = false, dnsH3Ok = false, ch, target, defer = false, isNew = false, onSave, index, services, local, outputs, clash, rulesTotal, coveredBy, onChange, onClose, onDelete,
 }: Props) {
     const [q, setQ] = useState('')
     /** Наборы каталога, о которых сейчас спрашиваем роутер (pick → srsOf). */
@@ -90,6 +96,14 @@ export default function RuleEditor({
      *  надо к тому, что человек успел наредактировать, а не к снимку на момент щелчка. */
     const latest = useRef(ch)
     latest.current = ch
+    /** Черновик: выбранные сервисы, которые роутер разберёт на «Сохранить». */
+    const deferred = useRef(new Set<string>())
+    const [saving, setSaving] = useState(false)
+    async function save() {
+        if (!onSave || saving) return
+        setSaving(true)
+        try { onSave(await finalize()) } finally { setSaving(false) }
+    }
     /** Аренды DHCP — чтобы устройства выбирали по имени, а не набирали MAC руками. Опечатка в
      *  MAC не совпадёт ни с чем и не пожалуется: правило просто не будет действовать. */
     const [leases, setLeases] = useState<{ mac: string; ip: string; name: string }[]>([])
@@ -153,6 +167,14 @@ export default function RuleEditor({
      *  лежат в нём постоянно, домены кладёт резолвер с TTL. Поэтому и выбор стал про сервис. */
     function pick(sv: ServiceEntry) {
         const on = chosen.includes(sv.id)
+        /* Черновик (приложение для ПК): роутер ни о чём не спрашивается, пока правило не сохранено, —
+         * сервис встаёт списками, а набор разбирается и скачивается на «Сохранить» (finalize). */
+        if (defer) {
+            if (on) deferred.current.delete(sv.id)
+            else if (sv.srs || mayNarrow(sv)) deferred.current.add(sv.id)
+            put(ch, sv, on)
+            return
+        }
         /* Набор каталога: списками или файлом — узнаём до того, как правило уедет на роутер
          * (см. srsOf). Ответ приходит через секунды, ставим его в правило, каким оно стало. */
         if (!on && sv.srs) {
@@ -171,6 +193,31 @@ export default function RuleEditor({
      *  набора. Снимается сервис в обоих видах — каким бы его ни поставили. `known` — роутер уже
      *  ответил про сужение подсетей (srsProbe): `narrow` пусто — подсети не сужены. */
     function put(ch: Channel, entry: ServiceEntry, on: boolean, set?: string, known?: { narrow?: Narrow }) {
+        onChange(withService(ch, entry, on, set, known))
+        if (set || defer) return
+        const sv = set ? { ...entry, prefixes: [], domains: [] } : entry
+        /* Сужение неизвестно (набор ещё не разбирали) — узнать сейчас, а не при следующем
+         * открытии каталога: list_fetch разбирает набор и отдаёт `narrow` тем же ответом.
+         * Ответ без сужения — тоже ответ: подсети не ограничены. Спрашивается по КАЖДОЙ части
+         * подсетей её id: у записи каталога id записи — склейка частей, и роутер его не знает
+         * (I-421); у второго издателя id части и записи совпадают. */
+        if (!on && !known && mayNarrow(sv) && sv.narrow === undefined) {
+            for (const part of sv.parts.filter((p) => p.kind === 'prefixes')) {
+                const file = pathFor(part.file)
+                void rpc.listFetch(part.id, 'prefixes')
+                    .then((r) => {
+                        if (!r.ok || !r.narrow) return
+                        const cur = latest.current
+                        if (!cur.match.prefixes_files?.includes(file)) return
+                        onChange({ ...cur, narrow: { ...(cur.narrow || {}), [file]: r.narrow } })
+                    })
+                    .catch(() => undefined)
+            }
+        }
+    }
+
+    /** Правило `ch` с сервисом (`on` — без него) — без записи и без вопросов роутеру. */
+    function withService(ch: Channel, entry: ServiceEntry, on: boolean, set?: string, known?: { narrow?: Narrow }): Channel {
         const pref = new Set(ch.match.prefixes_files || [])
         const doms = new Set(ch.match.domains_files || [])
         const srs = new Set(ch.match.srs_files || [])
@@ -210,26 +257,30 @@ export default function RuleEditor({
             ? { ...next, name: serviceName(entry.name, ch.name, (fullSpec?.channels || []).map((c) => c.name)) }
             : next
         /* Подмена порта — свойство доменов правила: новый доменный файл получает её тоже. */
-        onChange(port === undefined ? named : withOverridePort(named, port))
-        if (set) return
-        /* Сужение неизвестно (набор ещё не разбирали) — узнать сейчас, а не при следующем
-         * открытии каталога: list_fetch разбирает набор и отдаёт `narrow` тем же ответом.
-         * Ответ без сужения — тоже ответ: подсети не ограничены. Спрашивается по КАЖДОЙ части
-         * подсетей её id: у записи каталога id записи — склейка частей, и роутер его не знает
-         * (I-421); у второго издателя id части и записи совпадают. */
-        if (!on && !known && mayNarrow(sv) && sv.narrow === undefined) {
+        return port === undefined ? named : withOverridePort(named, port)
+    }
+
+    /** Черновик на «Сохранить»: наборы каталога, выбранные в нём, разбираются роутером (скачиваются)
+     *  — файлом набора или списками, с сужением подсетей, — как без черновика при щелчке. */
+    async function finalize(): Promise<Channel> {
+        let cur = latest.current
+        for (const id of [...deferred.current]) {
+            const sv = services.find((x) => x.id === id)
+            if (!sv || !selectedIds(cur, services).includes(id)) continue
+            if (sv.srs) {
+                const r = await srsProbe(sv, local)
+                if (r.set || r.asked) cur = withService(withService(cur, sv, true), sv, false, r.set, r.asked ? { narrow: r.narrow } : undefined)
+                continue
+            }
+            if (sv.narrow !== undefined) continue
             for (const part of sv.parts.filter((p) => p.kind === 'prefixes')) {
                 const file = pathFor(part.file)
-                void rpc.listFetch(part.id, 'prefixes')
-                    .then((r) => {
-                        if (!r.ok || !r.narrow) return
-                        const cur = latest.current
-                        if (!cur.match.prefixes_files?.includes(file)) return
-                        onChange({ ...cur, narrow: { ...(cur.narrow || {}), [file]: r.narrow } })
-                    })
-                    .catch(() => undefined)
+                const r = await rpc.listFetch(part.id, 'prefixes').catch(() => null)
+                if (r?.ok && r.narrow && cur.match.prefixes_files?.includes(file)) cur = { ...cur, narrow: { ...(cur.narrow || {}), [file]: r.narrow } }
             }
         }
+        deferred.current.clear()
+        return cur
     }
 
     const shown = services.filter((sv) => {
@@ -679,6 +730,18 @@ export default function RuleEditor({
                     title={S.ruleEditor.praviloIz(index + 1, rulesTotal)}
                     back={onClose}
                     backLabel={S.ruleEditor.vsePravila}
+                    right={
+                        <div className="flex shrink-0 items-center gap-2">
+                            <Button size="sm" variant="outline" onClick={onDelete}
+                                className="border-destructive/60 text-destructive hover:bg-destructive/10 hover:text-destructive">
+                                <Trash2 aria-hidden="true" /> {S.ruleEditor.udalit}
+                            </Button>
+                            <Button size="sm" onClick={save} disabled={saving}>
+                                {saving && <LoaderCircle className="animate-spin" aria-hidden="true" />}
+                                {isNew ? S.ruleEditor.sozdat : S.ruleEditor.sohranit}
+                            </Button>
+                        </div>
+                    }
                 />
 
                 <section className="sp-board-group an-glass space-y-3 rounded-2xl border p-3">
@@ -716,16 +779,6 @@ export default function RuleEditor({
                         </div>
                     </div>
                 </section>
-
-                <div className="space-y-2">
-                    <Button onClick={onClose} className="w-full">{S.ruleEditor.gotovo}</Button>
-                    <Button
-                        variant="outline"
-                        onClick={onDelete}
-                        className="w-full border-destructive text-destructive hover:bg-destructive/10 hover:text-destructive"
-                    >
-                        <Trash2 className="mr-1 h-4 w-4" aria-hidden="true" /> {S.ruleEditor.udalitPravilo}</Button>
-                </div>
             </div>
         )
     }

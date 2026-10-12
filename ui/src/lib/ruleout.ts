@@ -440,3 +440,10 @@ export function applyTarget(spec: Spec, index: number, t: Target): Spec {
     const name = freeName(taken, ch.name)
     return setOut(place(spec, built, name, {}), name)
 }
+
+/** Убрать правило `index` вместе с выходом, который после этого никому не нужен (его частями). */
+export function dropRule(spec: Spec, index: number): Spec {
+    const out = spec.channels[index]?.out
+    const next: Spec = { ...spec, channels: spec.channels.filter((_, k) => k !== index) }
+    return out ? prune(next, out) : next
+}

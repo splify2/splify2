@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react'
-import { ArrowDown, ArrowUp, Plus, Trash2, X } from 'lucide-react'
+import { ArrowDown, ArrowUp, ChevronDown, Plus, Trash2, X } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Block, CardHead, FieldRow, KV, Segmented } from '@/components/ui/layout'
 import { inputCls } from '@/components/formbits'
@@ -12,6 +12,8 @@ import { type Live } from '@/lib/live'
 import { dnsFragmentSupported, dnsGroupsSupported, dnsH3Supported, dnsOtherSupported } from '@/lib/engine'
 import { withUrl } from '@/lib/dnsurl'
 import DnsUpstreamExtras from '@/components/DnsUpstreamExtras'
+import ConfBadges from '@/components/ConfBadges'
+import { BADGE_ROW, PILL } from '@/components/board/NodePills'
 
 import { S } from '@/copy'
 /** DNS: какими серверами и через какой выход резолвер движка спрашивает имена под правилами.
@@ -72,6 +74,19 @@ const STATE_TEXT: Record<string, string> = {
 }
 
 const PROTO_TEXT: Record<string, string> = { udp: 'DNS', tcp: S.dns.dnsPoTcp, dot: 'DoT', doh: 'DoH', doq: 'DoQ', doh3: 'DoH3' }
+
+/** Сколько готовых серверов видно до «Показать все». */
+const PRESET_FOLD = 7
+
+/** Протокол сервера по адресу — как его называет ядро в `dns_log`. */
+function protoOfUrl(url: string): string {
+    if (url.startsWith('https://')) return 'doh'
+    if (url.startsWith('h3://')) return 'doh3'
+    if (url.startsWith('tls://')) return 'dot'
+    if (url.startsWith('quic://')) return 'doq'
+    if (url.startsWith('tcp://')) return 'tcp'
+    return 'udp'
+}
 
 const listOf = (s: string) => s.split(/[\s,]+/).map((x) => x.trim()).filter(Boolean)
 
@@ -220,10 +235,11 @@ function DnsTarget({ spec, dns, which, label, names, canGroup, log, onDns }: {
     )
 }
 
-export default function Dns({ live }: { live?: Live }) {
+export default function Dns({ live, board = false }: { live?: Live; board?: boolean }) {
     const [spec, setSpec] = useSpecCopy()
     const [log, setLog] = useState<DnsLog | null>(null)
     const [preset, setPreset] = useState(PRESETS[0].name)
+    const [allPresets, setAllPresets] = useState(false)
 
     useEffect(() => {
         let stop = false
@@ -299,8 +315,8 @@ export default function Dns({ live }: { live?: Live }) {
             other: dns.other === name ? undefined : dns.other,
         })
     }
-    function addPreset() {
-        const p = PRESETS.find((x) => x.name === preset)
+    function addPreset(which = preset) {
+        const p = PRESETS.find((x) => x.name === which)
         if (!p) return
         let name = p.name
         let k = 2
@@ -351,24 +367,12 @@ export default function Dns({ live }: { live?: Live }) {
             : st === 'ready' || st === 'idle' ? 'bg-success'
                 : st === 'connecting' ? 'bg-warning' : 'bg-destructive'
 
-    /* Bode: раскладка приложения. Серверы — строками одной карточки через линию, у каждого
-     * шапка «точка · имя · состояние · убрать» и поля строками «подпись — поле»; режим — двумя
-     * сегментами вместо двух радиокнопок столбиком. */
-    return (
-        <div className="space-y-4">
-            <Block>
-                <CardHead title={S.dns.serveryDns} meta={names.length ? S.dns.serverov(names.length) : undefined} />
-                {names.length === 0 && (
-                    <p className="text-sm text-muted-foreground">
-                        {S.dns.serverovNetImenaPod}</p>
-                )}
-                {names.length > 0 && (
-                    <div className="divide-y divide-border">
-                        {names.map((n) => {
+    /** Сервер: шапка «точка · имя · состояние · убрать» и поля строками «подпись — поле». */
+    const server = (n: string, cls: string) => {
                             const u = ups[n]
                             const s = state(n)
                             return (
-                                <div key={n} className="space-y-1 py-3 first:pt-0">
+                                <div key={n} className={cls}>
                                     <div className="flex flex-wrap items-center gap-2">
                                         <span className={`h-2 w-2 shrink-0 rounded-full ${dotOf(s?.state)}`} aria-hidden="true" />
                                         <input
@@ -438,28 +442,16 @@ export default function Dns({ live }: { live?: Live }) {
                                         <p className="text-xs text-destructive">{s.error}</p>}
                                 </div>
                             )
-                        })}
-                    </div>
-                )}
-                <div className="flex flex-wrap items-center gap-2 border-t border-border pt-3">
-                    <select
-                        value={preset}
-                        aria-label={S.dns.dobavit}
-                        onChange={(e) => setPreset(e.currentTarget.value)}
-                        className={`${inputCls} min-w-0 flex-1`}
-                    >
-                        {PRESETS.map((p) => <option key={p.name} value={p.name}>{PRESET_TITLE.get(p.name) ?? p.name}</option>)}
-                    </select>
-                    <Button onClick={addPreset}><Plus className="h-4 w-4" aria-hidden="true" /> {S.dns.dobavit2}</Button>
-                    <Button variant="secondary" onClick={addCustom}>{S.dns.svoyAdres}</Button>
-                </div>
-            </Block>
+    }
 
-            <Block>
-                <CardHead title={S.dns.kakSprashivat} />
-                <div className="divide-y divide-border">
+    const upTarget = (
+        <>
                     <DnsTarget spec={spec} dns={dns} which="upstream" label={S.dns.dlyaImenPodPravilami}
                         names={names} canGroup={canGroup} log={log} onDns={setDns} />
+        </>
+    )
+    const otherTarget = (
+        <>
                     {showOther && (
                         <>
                             <DnsTarget spec={spec} dns={dns} which="other" label={S.dns.dlyaOstalnyhSaytov}
@@ -469,6 +461,10 @@ export default function Dns({ live }: { live?: Live }) {
                             )}
                         </>
                     )}
+        </>
+    )
+    const bootstrapField = (
+        <>
                     <FieldRow label={S.dns.serveryDlyaRazresheniyaImen}>
                         <input
                             defaultValue={(dns.bootstrap || []).join(', ')}
@@ -477,6 +473,10 @@ export default function Dns({ live }: { live?: Live }) {
                             className={`${inputCls} w-full font-mono`}
                         />
                     </FieldRow>
+        </>
+    )
+    const modeField = (
+        <>
                     <div className="space-y-2 py-3">
                         <div className="text-sm text-subtle">{S.dns.rezhimDomennyhPravil}</div>
                         <Segmented
@@ -494,6 +494,10 @@ export default function Dns({ live }: { live?: Live }) {
                                 : S.dns.trassirovkaViditNastoyaschieUzly}
                         </p>
                     </div>
+        </>
+    )
+    const cacheField = (
+        <>
                     <FieldRow label={S.dns.zapiseyVKesheOtvetov}>
                         <input
                             type="number"
@@ -527,6 +531,119 @@ export default function Dns({ live }: { live?: Live }) {
                             />
                         </div>
                     )}
+        </>
+    )
+
+    /* Приложение для компьютера — блоками, как главная и правило: серверы плитками, готовые серверы
+     * пилюлями, «как спрашивать» — плитками по вопросу. */
+    if (board) {
+        const GROUP = 'sp-board-group an-glass space-y-3 rounded-2xl border p-3'
+        const TILE = 'sp-board-tile an-glass min-w-0 space-y-1 rounded-2xl border p-3.5'
+        const have = new Set(Object.values(ups).map((u) => u.url))
+        const presets = allPresets ? PRESETS : PRESETS.slice(0, PRESET_FOLD)
+        return (
+            <div className="space-y-4">
+                <section className={GROUP}>
+                    <h2 className="sp-sub flex items-center gap-2 px-1 pt-1">
+                        {S.dns.serveryDns}
+                        {names.length > 0 && <span className="rounded-full bg-primary/15 px-2 text-xs font-semibold text-primary">{names.length}</span>}
+                    </h2>
+                    {names.length === 0 && <p className="px-1 text-sm text-muted-foreground">{S.dns.serverovNetImenaPod}</p>}
+                    {names.length > 0 && (
+                        <div className="grid gap-3 sm:grid-cols-2 sm:items-start">
+                            {names.map((n) => server(n, TILE))}
+                        </div>
+                    )}
+                    <div className={`${TILE} space-y-3`}>
+                        <div className="text-[13px] font-semibold">{S.dns.dobavit}</div>
+                        <div className="grid grid-cols-[repeat(auto-fill,minmax(180px,1fr))] gap-2">
+                            {presets.map((p) => {
+                                const added = have.has(p.up.url)
+                                return (
+                                    <button
+                                        key={p.name}
+                                        type="button"
+                                        onClick={() => addPreset(p.name)}
+                                        disabled={added}
+                                        aria-pressed={added}
+                                        className={[
+                                            `${PILL} transition-[border-color,box-shadow] duration-200 hover:border-primary/50 disabled:cursor-default`,
+                                            added ? 'border-primary/80 bg-primary/10' : '',
+                                        ].join(' ')}
+                                    >
+                                        <span className="min-w-0 truncate text-[13px] font-semibold">{PRESET_TITLE.get(p.name) ?? p.name}</span>
+                                        <ConfBadges list={[{ id: 'proto', text: PROTO_TEXT[protoOfUrl(p.up.url)], group: 'transport' }]} className={BADGE_ROW} />
+                                    </button>
+                                )
+                            })}
+                            <button
+                                type="button"
+                                onClick={addCustom}
+                                style={{ borderColor: 'color-mix(in srgb, var(--sp-muted-foreground) 45%, transparent)' }}
+                                className="flex h-[64px] items-center justify-center gap-2 rounded-xl border border-dashed bg-transparent text-sm text-muted-foreground transition-colors duration-200 hover:border-primary/50 hover:text-primary"
+                            >
+                                <Plus className="h-4 w-4" aria-hidden="true" /> {S.dns.svoyAdres}
+                            </button>
+                        </div>
+                        <button type="button" onClick={() => setAllPresets((v) => !v)} className="flex items-center gap-1.5 bg-transparent px-1 text-xs text-primary">
+                            <ChevronDown className={`h-3.5 w-3.5 transition-transform duration-200 ${allPresets ? 'rotate-180' : ''}`} aria-hidden="true" />
+                            {allPresets ? S.subsBoard.svernut : S.subsBoard.pokazatVse(PRESETS.length)}
+                        </button>
+                    </div>
+                </section>
+
+                <section className={GROUP}>
+                    <h2 className="sp-sub px-1 pt-1">{S.dns.kakSprashivat}</h2>
+                    <div className="grid gap-3 sm:grid-cols-2 sm:items-start">
+                        <div className={TILE}>{upTarget}</div>
+                        {showOther && <div className={TILE}>{otherTarget}</div>}
+                        <div className={TILE}>{modeField}</div>
+                        <div className={TILE}>{bootstrapField}</div>
+                        <div className={`${TILE} sm:col-span-2`}>{cacheField}</div>
+                    </div>
+                </section>
+            </div>
+        )
+    }
+
+    /* Bode: раскладка приложения. Серверы — строками одной карточки через линию, у каждого
+     * шапка «точка · имя · состояние · убрать» и поля строками «подпись — поле»; режим — двумя
+     * сегментами вместо двух радиокнопок столбиком. */
+    return (
+        <div className="space-y-4">
+            <Block>
+                <CardHead title={S.dns.serveryDns} meta={names.length ? S.dns.serverov(names.length) : undefined} />
+                {names.length === 0 && (
+                    <p className="text-sm text-muted-foreground">
+                        {S.dns.serverovNetImenaPod}</p>
+                )}
+                {names.length > 0 && (
+                    <div className="divide-y divide-border">
+                        {names.map((n) => server(n, 'space-y-1 py-3 first:pt-0'))}
+                    </div>
+                )}
+                <div className="flex flex-wrap items-center gap-2 border-t border-border pt-3">
+                    <select
+                        value={preset}
+                        aria-label={S.dns.dobavit}
+                        onChange={(e) => setPreset(e.currentTarget.value)}
+                        className={`${inputCls} min-w-0 flex-1`}
+                    >
+                        {PRESETS.map((p) => <option key={p.name} value={p.name}>{PRESET_TITLE.get(p.name) ?? p.name}</option>)}
+                    </select>
+                    <Button onClick={() => addPreset()}><Plus className="h-4 w-4" aria-hidden="true" /> {S.dns.dobavit2}</Button>
+                    <Button variant="secondary" onClick={addCustom}>{S.dns.svoyAdres}</Button>
+                </div>
+            </Block>
+
+            <Block>
+                <CardHead title={S.dns.kakSprashivat} />
+                <div className="divide-y divide-border">
+                    {upTarget}
+                    {otherTarget}
+                    {bootstrapField}
+                    {modeField}
+                    {cacheField}
                 </div>
             </Block>
         </div>
