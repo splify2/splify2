@@ -1,0 +1,87 @@
+import { useEffect, useState } from 'react'
+import { rpc, type VlessNodesReply } from '@/lib/rpc'
+import { isProxyKind, type ProxyKind, type VlessNode } from '@/lib/model'
+import { ccFromName, plainName } from '@/lib/nodename'
+
+/** Конфигурация (узел) подписки — одним списком на все протоколы: VLESS, Hysteria2 и прокси
+ *  steer-proxy. Номер узла у ядра — внутри своего протокола (`index`); у прокси в перечне файла
+ *  целиком номер свой (`at`), по нему спрашивается проверка. */
+export interface SubNode {
+    /** Ключ строки и замера: `<протокол>:<номер>`. */
+    key: string
+    proto: 'vless' | 'hysteria2' | ProxyKind
+    index: number
+    at?: number
+    name: string
+    cc?: string
+    /** «протокол · транспорт · защита» — подпись пилюли. */
+    foot: string
+}
+
+export const PROTO_NAME: Record<string, string> = {
+    vless: 'VLESS', hysteria2: 'Hysteria2', trojan: 'Trojan', shadowsocks: 'Shadowsocks',
+    socks: 'SOCKS', http: 'HTTP', vmess: 'VMess',
+}
+
+/** Узлы прокси — номерами внутри своего протокола, как их считает ядро (у файла — сквозные). */
+export function pxSplit(nodes: VlessNode[] | undefined): { nd: VlessNode; proto: ProxyKind; at: number }[] {
+    const seen: Partial<Record<ProxyKind, number>> = {}
+    const out: { nd: VlessNode; proto: ProxyKind; at: number }[] = []
+    for (const n of nodes || []) {
+        if (!isProxyKind(n.type)) continue
+        const i = seen[n.type] ?? 0
+        seen[n.type] = i + 1
+        out.push({ nd: { ...n, index: i }, proto: n.type, at: n.index })
+    }
+    return out
+}
+
+function footOf(proto: string, n: VlessNode): string {
+    return [PROTO_NAME[proto] || proto, n.mode && n.mode !== 'quic' ? n.mode : '', n.security && n.security !== 'none' ? n.security : '', n.vision ? 'vision' : '']
+        .filter(Boolean)
+        .join(' · ')
+}
+
+function node(proto: SubNode['proto'], n: VlessNode, at?: number): SubNode {
+    return {
+        key: `${proto}:${n.index}`,
+        proto,
+        index: n.index,
+        at,
+        name: plainName(n.name) || n.host,
+        cc: n.cc || ccFromName(n.name),
+        foot: footOf(proto, n),
+    }
+}
+
+/** Все конфигурации подписки по пути к её файлу. null — ещё не спросили или файла нет;
+ *  пустой список — подписка есть, пригодных узлов нет. */
+export function useSubNodes(path: string, present: boolean, key: unknown = null): SubNode[] | null {
+    const [nodes, setNodes] = useState<SubNode[] | null>(null)
+    useEffect(() => {
+        if (!present) { setNodes(null); return }
+        let stop = false
+        type R = VlessNodesReply | null
+        Promise.all([
+            rpc.vlessNodesOfSub(path).catch((): R => null),
+            rpc.hysteria2NodesOfSub(path).catch((): R => null),
+            rpc.proxyNodesOfSub(path).catch((): R => null),
+        ]).then(([v, h, p]) => {
+            if (stop) return
+            setNodes([
+                ...(v?.nodes || []).filter((n) => !n.excluded).map((n) => node('vless', n)),
+                ...(h?.nodes || []).filter((n) => !n.excluded).map((n) => node('hysteria2', n)),
+                ...pxSplit(p?.nodes).map((x) => node(x.proto, x.nd, x.at)),
+            ])
+        })
+        return () => { stop = true }
+    }, [path, present, key])
+    return nodes
+}
+
+/** Проверка одного узла подписки — тем методом, что у его протокола. */
+export function probeSubNode(path: string, n: SubNode) {
+    if (n.proto === 'vless') return rpc.vlessProbeOfSub(path, n.index)
+    if (n.proto === 'hysteria2') return rpc.hysteria2ProbeOfSub(path, n.index)
+    return rpc.proxyProbeOfSub(path, n.at ?? n.index)
+}

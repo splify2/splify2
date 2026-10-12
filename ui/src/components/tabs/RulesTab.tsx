@@ -24,6 +24,7 @@ import { dnsFragmentSupported, dnsH3Supported } from '@/lib/engine'
 import { Hint } from '@/components/ui/hint'
 import { Block, Group } from '@/components/ui/layout'
 import RuleEditor from '@/components/tabs/RuleEditor'
+import RuleTarget from '@/components/board/RuleTarget'
 import { pathFor, ruleFiles, selectedIds, srsProbe } from '@/lib/rulefiles'
 
 import { S } from '@/copy'
@@ -107,10 +108,12 @@ interface Props {
     onEditUsed?: () => void
     /** Редактор закрыт — оболочка, открывшая его с главной, возвращается туда. */
     onClosed?: () => void
+    /** Приложение для компьютера: «Куда» правила — пилюлями, выход у правила свой (RuleTarget). */
+    board?: boolean
 }
 
 export default function RulesTab({
-    live, wanted, onWantedUsed, addNow, onAddUsed, onGoOutbounds, editNow, onEditUsed, onClosed,
+    live, wanted, onWantedUsed, addNow, onAddUsed, onGoOutbounds, editNow, onEditUsed, onClosed, board = false,
 }: Props) {
     /* Спека приходит из общего хранилища (pending), а не своим запросом: хранилище помнит
      * и несохранённые полсекунды, и снимок применённого — свой specGet здесь вернул бы то,
@@ -385,6 +388,7 @@ export default function RulesTab({
                 onChange={(next) =>
                     edit({ ...spec, channels: spec.channels.map((c, k) => (k === open ? next : c)) })
                 }
+                target={board ? <RuleTarget spec={spec} index={open} live={live} onSpec={edit} /> : undefined}
                 onClose={() => { setOpen(null); onClosed?.() }}
                 onDelete={() => {
                     edit({ ...spec, channels: spec.channels.filter((_, k) => k !== open) })

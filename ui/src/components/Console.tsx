@@ -32,6 +32,7 @@ import { S } from '@/copy'
 
 const RulesTab = lazy(() => import('@/components/tabs/RulesTab'))
 const Vpn = lazy(() => import('@/components/sections/Vpn'))
+const SubsBoard = lazy(() => import('@/components/board/SubsBoard'))
 const Dns = lazy(() => import('@/components/sections/Dns'))
 const Settings = lazy(() => import('@/components/sections/Settings'))
 type SettingsScreen = Exclude<import('@/components/sections/Settings').Screen, 'root'>
@@ -238,9 +239,10 @@ export default function Console({ extra, railHost, board = false, settingsHost, 
                                 editNow={editRule}
                                 onEditUsed={() => setEditRule(null)}
                                 onClosed={board ? () => go('home') : undefined}
+                                board={board}
                             />
                         )}
-                        {section === 'vpn' && !loadFailed && <Vpn live={live} />}
+                        {section === 'vpn' && !loadFailed && (board ? <SubsBoard /> : <Vpn live={live} />)}
                         {section === 'dns' && !loadFailed && <Dns live={live} />}
                         {section === 'diag' && <Diagnostics live={live} />}
                         {section === 'settings' && !loadFailed && (

@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState } from 'react'
+import { useEffect, useMemo, useRef, useState, type ReactNode } from 'react'
 import { Search, Trash2 } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Block, CardHead, FieldRow, ScreenHeader, Segmented } from '@/components/ui/layout'
@@ -38,6 +38,9 @@ import { withUrl } from '@/lib/dnsurl'
 import { S } from '@/copy'
 interface Props {
     ch: Channel
+    /** Приложение для компьютера: «Куда» — отдельным блоком во всю ширину под остальными
+     *  (components/board/RuleTarget.tsx); список выходов здесь тогда не показывается. */
+    target?: ReactNode
     /** Умеет ли ядро steer `fragment` у DoT/DoH и адрес `h3://` — без умения выключатель скрыт. */
     dnsFragmentOk?: boolean
     dnsH3Ok?: boolean
@@ -77,7 +80,7 @@ function serviceName(service: string, current: string, taken: string[]): string 
 }
 
 export default function RuleEditor({
-    dnsFragmentOk = false, dnsH3Ok = false, ch, index, services, local, outputs, clash, rulesTotal, coveredBy, onChange, onClose, onDelete,
+    dnsFragmentOk = false, dnsH3Ok = false, ch, target, index, services, local, outputs, clash, rulesTotal, coveredBy, onChange, onClose, onDelete,
 }: Props) {
     const [q, setQ] = useState('')
     /** Наборы каталога, о которых сейчас спрашиваем роутер (pick → srsOf). */
@@ -538,8 +541,9 @@ export default function RuleEditor({
                         {clash && <p className="text-xs text-warning-fg">{clash}</p>}
                     </Block>
 
-                    <Block>
-                        <CardHead title={S.ruleEditor.kudaNapravlenieVyhod} />
+                    {(!target || hasDomains || isException) && <Block>
+                        <CardHead title={target ? S.ruleEditor.domenyIDns : S.ruleEditor.kudaNapravlenieVyhod} />
+                        {!target && (<>
                         {outNames.length === 0 && (
                             <p className="text-xs text-warning-fg">
                                 {S.ruleEditor.vyhodovNetPraviluNekuda}</p>
@@ -596,6 +600,7 @@ export default function RuleEditor({
                                 })}
                             </div>
                         )}
+                        </>)}
                         {/* Исключение называется словом ровно там, где оно задаётся. Механизм в
                             продукте был всегда — канал в direct выше туннельных, — но нигде так не
                             назывался, и запрос «Spotify без VPN работает лучше» (splify2#3) не
@@ -718,9 +723,11 @@ export default function RuleEditor({
                                 </FieldRow>
                             </div>
                         )}
-                    </Block>
+                    </Block>}
                 </div>
             </div>
+
+            {target}
 
             <div className="space-y-2">
                 <Button onClick={onClose} className="w-full">{S.ruleEditor.gotovo}</Button>
