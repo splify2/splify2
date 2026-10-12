@@ -11,8 +11,9 @@ const { EventEmitter } = require('node:events')
 const DEFAULTS = Object.freeze({
     /** system | light | dark */
     theme: 'system',
-    /** Масштаб окна, проценты. */
-    zoom: 100,
+    /** Масштаб окна, проценты. 90, а не 100: панель нарисована для страницы браузера, и в окне
+     *  на FHD с масштабом Windows 125–150 % она выходила крупной (замечание владельца). */
+    zoom: 90,
     /** Анимации интерфейса. Системное «уменьшить движение» выключает их и так. */
     motion: true,
     /** Запускаться вместе с системой — иначе уведомлений о сбоях нет, пока программу не откроют. */
@@ -39,6 +40,8 @@ const DEFAULTS = Object.freeze({
     pollHidden: 30,
     /** Мастер первого запуска пройден. */
     wizardDone: false,
+    /** Версия файла настроек — для разовых переводов старых значений (см. migrate). */
+    v: 2,
 })
 
 const ZOOMS = [80, 90, 100, 110, 125, 150]
@@ -63,12 +66,23 @@ function sane(s) {
     return s
 }
 
+/** Разовые переводы файла прежних версий. v1 (без поля v) писал умолчание zoom: 100 — его
+ *  переводим на новое умолчание, выбранное человеком значение (не 100) оставляем. */
+function migrate(raw) {
+    if (!raw || typeof raw !== 'object') return {}
+    if (!raw.v) {
+        if (raw.zoom === 100) raw.zoom = DEFAULTS.zoom
+        raw.v = DEFAULTS.v
+    }
+    return raw
+}
+
 class Settings extends EventEmitter {
     constructor(file) {
         super()
         this.file = file
         let raw = {}
-        try { raw = JSON.parse(fs.readFileSync(file, 'utf8')) } catch { /* первый запуск */ }
+        try { raw = migrate(JSON.parse(fs.readFileSync(file, 'utf8'))) } catch { /* первый запуск */ }
         this.data = sane(merge(DEFAULTS, raw))
     }
 

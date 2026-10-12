@@ -154,8 +154,15 @@ function Group({ spec, out, live, info }: { spec: Spec; out: WarpOut; live: Live
     const wst = (g as { warp?: WarpStatus } | undefined)?.warp
     const selected = g?.selected ?? null
     const alive = new Set(g?.alive ?? [])
+    /* Почему группа держится не за самый быстрый туннель (`status.group.why`, ядро steer): разница
+     * меньше допуска — переключение рвало бы соединения ради нескольких миллисекунд. Без
+     * пояснения 418 мс против 263 читались как поломка (поймал владелец). */
+    const gx = g as { why?: string; tolerance?: number } | undefined
+    const hold = gx?.why === 'in_tolerance' && selected
+        ? ` · держится: разница с самым быстрым меньше ${gx.tolerance ?? 50} мс`
+        : ''
     const head = !st ? 'Ещё не применён'
-        : selected ? `Работает · через ${selected}`
+        : selected ? `Работает · через ${selected}${hold}`
         : 'Ни один туннель не отвечает'
 
     return (

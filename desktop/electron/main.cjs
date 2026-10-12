@@ -5,7 +5,7 @@ const path = require('node:path')
 const fs = require('node:fs')
 const { pathToFileURL } = require('node:url')
 const {
-    app, BrowserWindow, Menu, Notification, Tray, ipcMain, nativeImage, nativeTheme, net, protocol, shell,
+    app, BrowserWindow, Menu, Notification, Tray, ipcMain, nativeImage, nativeTheme, net, protocol, screen, shell,
 } = require('electron')
 const { Router } = require('./router.cjs')
 const { Settings } = require('./backend/settings.cjs')
@@ -113,11 +113,17 @@ function closeSplash() {
 
 function createWindow(showNow) {
     const started = Date.now()
+    // Размер — один и тот же при каждом открытии, но не больше 85 % рабочей области: в логических
+    // пикселях 1280×820 на FHD с масштабом Windows 150 % — это 1920×1230 точек, больше экрана.
+    const wa = screen.getPrimaryDisplay().workAreaSize
+    const width = Math.min(1120, Math.round(wa.width * 0.85))
+    const height = Math.min(740, Math.round(wa.height * 0.85))
     win = new BrowserWindow({
-        width: 1280,
-        height: 820,
-        minWidth: 360,
-        minHeight: 480,
+        width,
+        height,
+        center: true,
+        minWidth: Math.min(900, width),
+        minHeight: Math.min(560, height),
         frame: false,
         show: false,
         title: 'splify2',
@@ -129,6 +135,8 @@ function createWindow(showNow) {
             sandbox: true,
             nodeIntegration: false,
             spellcheck: false,
+            // Масштаб — с первого кадра, а не после загрузки: иначе окно мелькает крупным.
+            zoomFactor: settings.get().zoom / 100,
         },
     })
     win.removeMenu()
