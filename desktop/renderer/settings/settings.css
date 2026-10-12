@@ -9,9 +9,10 @@
 }
 
 .desk-settings-nav {
-  /* Доли от ширины окна, а не от содержимого: иначе колонка разделов «ездила» от страницы к
-   * странице вслед за шириной её текста. */
-  flex: 1 0 218px;
+  /* Колонка разделов — постоянной ширины, страница — во всё остальное место. Окно фиксированного
+   * размера, и раскладка Discord с колонками по долям оставляла справа пустую полосу, а таблица
+   * каталога упиралась в край страницы (владелец: «я ж про это уже говорил»). */
+  flex: 0 0 236px;
   display: flex;
   justify-content: flex-end;
   overflow-y: auto;
@@ -23,8 +24,8 @@
   display: flex;
   flex-direction: column;
   gap: 2px;
-  width: 220px;
-  padding: 48px 12px 24px 16px;
+  width: 100%;
+  padding: 32px 12px 24px 16px;
 }
 
 .desk-settings-group {
@@ -81,20 +82,19 @@
 
 .desk-settings-main {
   position: relative;
-  flex: 1 1 800px;
+  flex: 1 1 auto;
   min-width: 0;
   overflow-y: auto;
 }
 
 .desk-settings-content {
-  max-width: 680px;
-  padding: 48px 72px 64px 40px;
+  padding: 32px 76px 48px 32px;
 }
 
 .desk-settings-close {
   position: absolute;
-  top: 44px;
-  right: 24px;
+  top: 28px;
+  right: 20px;
   display: flex;
   flex-direction: column;
   align-items: center;
@@ -126,26 +126,6 @@
   border-color: var(--sp-muted-foreground);
   background-color: var(--an-glass-tint);
   color: var(--sp-foreground);
-}
-
-/* Узкое окно: колонка разделов уже, страница без больших полей. */
-@media (max-width: 900px) {
-  .desk-settings-nav {
-    flex: 0 0 auto;
-  }
-
-  .desk-settings-nav-in {
-    width: 190px;
-    padding-left: 10px;
-  }
-
-  .desk-settings-content {
-    padding: 40px 64px 48px 24px;
-  }
-
-  .desk-settings-close {
-    right: 12px;
-  }
 }
 
 /* ── страница ─────────────────────────────────────────────────────────────── */
