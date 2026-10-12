@@ -56,7 +56,10 @@ FW_INITD=${FW_INITD:-/etc/init.d/firewall}
 # «имя:виды:masq». Виды и masq здесь не нужны — удалять зону можно, не зная, чем её наполняли,
 # — но формат оставлен общим нарочно: строку правят в одном месте и переносят сюда как есть,
 # без перевода, на котором и теряются такие правки.
-FW_ZONES=${FW_ZONES:-"steer_clients:clients:0 steer_vless:vless,hysteria2,trojan,shadowsocks,socks,http,vmess,xsteer,warp-masque:0 steer_iface:interface,awg:1"}
+FW_ZONES=${FW_ZONES:-"steer_clients:clients:0 steer_zone:vless,hysteria2,trojan,shadowsocks,socks,http,vmess,xsteer,warp-masque,interface,awg:0"}
+# Зоны прежних версий: steer_vless и steer_iface слиты в steer_zone. Заведённые нами (по расписке)
+# убираются так же, как текущие: после обновления без единого apply они ещё могут стоять.
+FW_LEGACY_ZONES=${FW_LEGACY_ZONES:-"steer_vless steer_iface"}
 # Таблицы nftables, которые ставим МЫ: правило «DoH через туннель», фикс Zapret Manager и
 # изоляция проверки стратегий. Четвёртая, `inet steer`, принадлежит движку и в обычном порядке
 # уходит сама: её сносит остановка службы, которая идёт первым делом. Она перечислена здесь
@@ -227,6 +230,9 @@ purge_firewall() {
     FW_CHANGED=0
     for _z in $FW_ZONES; do
         purge_zone "${_z%%:*}"
+    done
+    for _z in $FW_LEGACY_ZONES; do
+        purge_zone "$_z"
     done
     [ "$FW_CHANGED" = 1 ] || return 0
     # Перезагрузка ОДНА на все зоны: fw4 перестраивает набор целиком, и звать её на каждую
