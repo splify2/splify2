@@ -76,23 +76,26 @@ export interface RouterInventory {
     steer: string | null
 }
 
-/** Точка входа WARP из подбора (`steer warp-scan`). class: 0 — годна, 1 — колония занята, 2 — без HTTPS. */
+/** Точка входа WARP из подбора (`steer warp-scan`). AWG: class (0 — годна, 1 — колония занята,
+ *  2 — без HTTPS), потери, колония. MASQUE: только ok и rtt либо error. */
 export interface WarpPoint {
     ip: string
     port: number
-    class: number
-    loss: number
-    rtt: number
-    colo: string
-    cc: string
+    class?: number
+    loss?: number
+    rtt?: number
+    colo?: string
+    cc?: string
     seen?: string
-    warp: boolean
+    warp?: boolean
+    ok?: boolean
+    error?: string
 }
 
 export interface WarpScan {
     running: boolean
     at: number
-    result: { ok: boolean; points: WarpPoint[]; torn?: number; filtered?: number; error?: string } | null
+    result: { ok?: boolean; transport?: string; points: WarpPoint[]; torn?: number; filtered?: number; error?: string } | null
 }
 
 /** Ответ шлюза GET /v1/warp. */

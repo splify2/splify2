@@ -29,6 +29,9 @@ type WarpOut = Output & { extra?: Record<string, unknown> }
 
 const isWarp = (o: Output) => (o.kind as string) === 'warp'
 
+/** Точка «адрес:порт»; у MASQUE адрес бывает IPv6 — тогда в скобках. */
+const hostPort = (ip: string, port?: number) => `${ip.includes(':') ? `[${ip}]` : ip}${port ? `:${port}` : ''}`
+
 /** `status.outputs.<группа>.group.warp`: неизвестные значения отсутствуют. */
 interface WarpStatus {
     mask?: string
@@ -140,6 +143,8 @@ function Group({ spec, out, live, info }: { spec: Spec; out: WarpOut; live: Live
     const x = out.extra || {}
     const count = num(x.count, 3)
     const pick = x.pick === 'order' ? 'order' : 'latency'
+    // MASQUE — туннели по HTTP/3, их держит сам модуль (вид членов warp-masque в ядре).
+    const transport = x.transport === 'masque' ? 'masque' : 'awg'
     const only = codes(x.countries)
     const except = codes(x.exclude_countries)
     const st = live.status?.outputs?.[out.name]
@@ -189,7 +194,7 @@ function Group({ spec, out, live, info }: { spec: Spec; out: WarpOut; live: Live
                 {members.map((m) => {
                     const w = winfo?.members.find((mm) => mm.name === m)
                     const ws = wst?.members?.find((mm) => mm.out === m)
-                    const ep = ws?.ip ? `${ws.ip}:${ws.port ?? ''}` : w?.endpoint
+                    const ep = ws?.ip ? hostPort(ws.ip, ws.port) : w?.endpoint
                     const lat = g?.latency?.[m]
                     const state = !st ? 'wait' : alive.has(m) ? 'ok' : 'bad'
                     return (
@@ -237,11 +242,11 @@ function Group({ spec, out, live, info }: { spec: Spec; out: WarpOut; live: Live
                 <div className="desk-block-title">Протокол</div>
                 <Segmented
                     label="Протокол"
-                    value="awg"
-                    onChange={() => {}}
+                    value={transport}
+                    onChange={(v) => editOut(spec, out.name, { transport: v === 'awg' ? undefined : v })}
                     items={[
                         { value: 'awg', label: 'AmneziaWG' },
-                        { value: 'masque', label: 'MASQUE — скоро' },
+                        { value: 'masque', label: 'MASQUE' },
                     ]}
                 />
             </div>
@@ -370,25 +375,41 @@ function Scan({ group, applied, initial }: { group: string; applied: boolean; in
                 {!applied && <span className="desk-note">После «Применить»</span>}
                 {scan?.result && !scan.running && (
                     <span className="desk-note">
-                        {scan.result.ok ? `найдено: ${pts.length}` : scan.result.error}
+                        {scan.result.ok !== false ? `найдено: ${pts.length}` : scan.result.error}
                         {scan.result.filtered ? ` · отсеяно фильтром стран: ${scan.result.filtered}` : ''}
                     </span>
                 )}
             </div>
             {err && <div className="desk-error">{err}</div>}
-            {pts.length > 0 && !scan?.running && (
+            {pts.length > 0 && !scan?.running && scan?.result?.transport === 'masque' && (
+                <table className="desk-warp-points">
+                    <thead>
+                        <tr><th>Точка</th><th>Задержка</th><th /></tr>
+                    </thead>
+                    <tbody>
+                        {pts.map((p) => (
+                            <tr key={hostPort(p.ip, p.port)} data-class={p.ok ? 0 : 2}>
+                                <td className="desk-mono">{hostPort(p.ip, p.port)}</td>
+                                <td>{typeof p.rtt === 'number' && p.rtt >= 0 ? `${p.rtt} мс` : '—'}</td>
+                                <td className="desk-note">{p.ok ? 'годна' : p.error || 'не ответила'}</td>
+                            </tr>
+                        ))}
+                    </tbody>
+                </table>
+            )}
+            {pts.length > 0 && !scan?.running && scan?.result?.transport !== 'masque' && (
                 <table className="desk-warp-points">
                     <thead>
                         <tr><th>Точка</th><th>Колония</th><th>Задержка</th><th>Потери</th><th /></tr>
                     </thead>
                     <tbody>
                         {pts.map((p) => (
-                            <tr key={`${p.ip}:${p.port}`} data-class={p.class}>
-                                <td className="desk-mono">{p.ip}:{p.port}</td>
+                            <tr key={hostPort(p.ip, p.port)} data-class={p.class}>
+                                <td className="desk-mono">{hostPort(p.ip, p.port)}</td>
                                 <td><Flag cc={p.cc} /> {p.colo || '—'}</td>
-                                <td>{p.rtt >= 0 ? `${p.rtt} мс` : '—'}</td>
-                                <td>{p.loss}%</td>
-                                <td className="desk-note">{CLASS_TEXT[p.class] ?? ''}</td>
+                                <td>{typeof p.rtt === 'number' && p.rtt >= 0 ? `${p.rtt} мс` : '—'}</td>
+                                <td>{p.loss ?? 0}%</td>
+                                <td className="desk-note">{CLASS_TEXT[p.class ?? -1] ?? ''}</td>
                             </tr>
                         ))}
                     </tbody>
