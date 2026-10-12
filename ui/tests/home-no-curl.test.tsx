@@ -23,7 +23,7 @@ const live = {
     refresh: () => undefined,
 } as unknown as Live
 
-describe('обзор без curl', () => {
+describe.each([false, true])('обзор без curl (desktop=%s)', (board) => {
     beforeEach(() => {
         vi.restoreAllMocks()
         window.localStorage.clear()
@@ -36,14 +36,14 @@ describe('обзор без curl', () => {
 
     it('curl нет — сказано, что не меряется и что поставить', async () => {
         vi.spyOn(rpc, 'outboundGeo').mockResolvedValue({ output: 'wg', curl: false } as never)
-        render(<Home live={live} onSection={() => undefined} onAddRule={() => undefined} />)
+        render(<Home board={board} live={live} onSection={() => undefined} onAddRule={() => undefined} />)
         await waitFor(() => expect(screen.getByText(/Не установлен curl/)).toBeInTheDocument())
         expect(screen.getByText(/Установите пакет curl/)).toBeInTheDocument()
     })
 
     it('curl есть — ни слова о нём', async () => {
         const geo = vi.spyOn(rpc, 'outboundGeo').mockResolvedValue({ output: 'wg', cc: 'NL', ip: '203.0.113.1' } as never)
-        render(<Home live={live} onSection={() => undefined} onAddRule={() => undefined} />)
+        render(<Home board={board} live={live} onSection={() => undefined} onAddRule={() => undefined} />)
         await waitFor(() => expect(geo).toHaveBeenCalled())
         await new Promise((r) => setTimeout(r, 20))
         expect(screen.queryByText(/curl/)).toBeNull()

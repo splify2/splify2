@@ -39,7 +39,7 @@ function dot() {
     return screen.getByRole('heading', { level: 1 }).parentElement!.previousElementSibling as HTMLElement
 }
 
-describe('вердикт главной: выход правила не отвечает', () => {
+describe.each([false, true])('вердикт главной: выход правила не отвечает (desktop=%s)', (board) => {
     beforeEach(() => {
         vi.restoreAllMocks()
         window.localStorage.clear()
@@ -56,7 +56,7 @@ describe('вердикт главной: выход правила не отве
     })
 
     it('не поднят, on_fail: drop — поломка, а не «работает»', () => {
-        render(<Home live={liveWith({ up: false, on_fail: 'drop' })} onSection={() => undefined} />)
+        render(<Home board={board} live={liveWith({ up: false, on_fail: 'drop' })} onSection={() => undefined} />)
         expect(screen.getByRole('heading', { level: 1 }).textContent).toBe('Выход не отвечает')
         expect(dot().className).toContain('bg-destructive')
         expect(screen.getByText('vl: трафик правила T остановлен')).toBeInTheDocument()
@@ -64,18 +64,18 @@ describe('вердикт главной: выход правила не отве
 
     it('и дорога — к выходам, в VPN', async () => {
         const go = vi.fn()
-        render(<Home live={liveWith({ up: false, on_fail: 'drop' })} onSection={go} />)
+        render(<Home board={board} live={liveWith({ up: false, on_fail: 'drop' })} onSection={go} />)
         fireEvent.click(screen.getByText('vl: трафик правила T остановлен'))
         await waitFor(() => expect(go).toHaveBeenCalledWith('vpn'))
     })
 
     it('сторож поставил on_fail (failed) — то же самое', () => {
-        render(<Home live={liveWith({ up: false, failed: true, on_fail: 'drop' })} onSection={() => undefined} />)
+        render(<Home board={board} live={liveWith({ up: false, failed: true, on_fail: 'drop' })} onSection={() => undefined} />)
         expect(screen.getByRole('heading', { level: 1 }).textContent).toBe('Выход не отвечает')
     })
 
     it('on_fail: direct — предупреждение: трафик идёт мимо туннеля', () => {
-        render(<Home live={liveWith({ up: false, on_fail: 'direct' })} onSection={() => undefined} />)
+        render(<Home board={board} live={liveWith({ up: false, on_fail: 'direct' })} onSection={() => undefined} />)
         expect(screen.getByRole('heading', { level: 1 }).textContent).toBe('Выход не отвечает')
         expect(dot().className).toContain('bg-warning')
         expect(screen.getByText('vl: трафик правила T идёт напрямую')).toBeInTheDocument()
@@ -83,7 +83,7 @@ describe('вердикт главной: выход правила не отве
 
     it('несколько правил на одном выходе — названы все', () => {
         render(
-            <Home
+            <Home board={board}
                 live={liveWith({ up: false, on_fail: 'drop' }, [
                     { name: 'vl_ip', out: 'vl', kind: 'prefixes', live: true, channels: ['T', 'U'] },
                 ])}
@@ -94,24 +94,24 @@ describe('вердикт главной: выход правила не отве
     })
 
     it('перебор узлов — не поломка: ждать, а не чинить', () => {
-        render(<Home live={liveWith({ up: false, on_fail: 'drop', probe: { state: 'probing', node: 1, total: 3 } })} onSection={() => undefined} />)
+        render(<Home board={board} live={liveWith({ up: false, on_fail: 'drop', probe: { state: 'probing', node: 1, total: 3 } })} onSection={() => undefined} />)
         expect(screen.getByRole('heading', { level: 1 }).textContent).toBe('Маршрутизация работает')
     })
 
     it('выход поднят — работает', () => {
-        render(<Home live={liveWith({ up: true, on_fail: 'drop' })} onSection={() => undefined} />)
+        render(<Home board={board} live={liveWith({ up: true, on_fail: 'drop' })} onSection={() => undefined} />)
         expect(screen.getByRole('heading', { level: 1 }).textContent).toBe('Маршрутизация работает')
         expect(dot().className).toContain('bg-success')
     })
 
     it('выход не поднят, но правила через него нет — на маршрутизацию не влияет', () => {
-        render(<Home live={liveWith({ up: false, on_fail: 'drop' }, [])} onSection={() => undefined} />)
+        render(<Home board={board} live={liveWith({ up: false, on_fail: 'drop' }, [])} onSection={() => undefined} />)
         expect(screen.getByRole('heading', { level: 1 }).textContent).toBe('Маршрутизация работает')
     })
 
     it('отказ проверок ядра остаётся первым', () => {
         const l = liveWith({ up: false, on_fail: 'drop' })
-        render(<Home live={{ ...l, diag: { checks: [], warn: 0, fail: 1 } } as Live} onSection={() => undefined} />)
+        render(<Home board={board} live={{ ...l, diag: { checks: [], warn: 0, fail: 1 } } as Live} onSection={() => undefined} />)
         expect(screen.getByRole('heading', { level: 1 }).textContent).toBe('Есть поломки')
     })
 })

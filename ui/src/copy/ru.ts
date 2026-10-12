@@ -570,6 +570,15 @@ export const ru = {
         udalit: " Удалить",
     },
     home: {
+        escheSpiskov: (n: number) => `ещё ${n}`,
+        vybrannyeSpiski: "Выбранные списки",
+        zakrytSpiski: "Закрыть список",
+        adresSkryt: "IP скрыт",
+        skopirovatAdres: "Скопировать IP",
+        adresSkopirovan: "IP скопирован",
+        neSkopirovan: "Не удалось скопировать. Выделите адрес вручную.",
+        podklyucheniya: "Подключения",
+
         sostoyanie: "Состояние",
         warpTunneley: (ok: unknown, total: unknown) => `туннелей работает: ${ok} из ${total}`,
         yadroNeOtvechaet: "Ядро не отвечает",

@@ -20,6 +20,7 @@ import Flag from '@/components/Flag'
 import { type SectionId } from '@/lib/sections'
 
 import { S } from '@/copy'
+import { BoardAddress, BoardLabels } from '@/components/BoardDetails'
 /** Главная: работает ли, куда идут правила и чем роутер выходит наружу.
  *
  *  ДВА СТОЛБЦА, И ЭТО ДВА РАЗНЫХ ВОПРОСА. Слева правила: что куда ведёт, сколько через него
@@ -369,7 +370,7 @@ export default function Home({
      * каждая теперь устроена как карточка приложения: строка «заголовок — подпись справа»,
      * под ней однородные строки через волосяную линию. */
     const verdictBlock = (
-            <Block>
+            <Block className={board ? "sp-board-verdict" : undefined}>
                 <div className="flex items-start gap-3">
                     {/* Кольцо вокруг точки — как в приложении: точка держит полный цвет, а
                         полупрозрачное кольцо того же тона видно и на тёмной карточке. */}
@@ -505,7 +506,7 @@ export default function Home({
 
     if (board) {
         return (
-            <div className="space-y-4">
+            <div className="sp-board space-y-4">
                 {specV2Unsupported(live.status) && (
                     <Block className="border-destructive">
                         <CardHead title={S.home.yadroNeChitaetNovuyu} />
@@ -513,12 +514,10 @@ export default function Home({
                             {S.home.etotInterfeysZapisyvaetNastroyki}</p>
                     </Block>
                 )}
-                {/* Два блока — состояние и правила — каждый своей подложкой: правила не продолжение
-                    карточек состояния, а отдельный раздел со своим заголовком (владелец: «главное
-                    разделение блоков правил и статуса»). */}
-                <section className="sp-board-group space-y-3 rounded-2xl border border-border/60 p-3">
+                {verdictBlock}
+                <section className="sp-board-group space-y-3">
                     <div className="flex items-center justify-between gap-3 px-1 pt-1">
-                        <h2 className="sp-title">{S.home.sostoyanie}</h2>
+                        <h2 className="sp-sub">{S.home.podklyucheniya}</h2>
                         <button
                             type="button"
                             onClick={refresh}
@@ -529,13 +528,13 @@ export default function Home({
                             {busy ? S.home.meryaem : S.home.proverit}
                         </button>
                     </div>
-                    <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
-                        <VerdictTile live={live} v={v} onSection={onSection} />
+                    {noCurl && <p className="text-xs text-warning-fg">{S.home.neUstanovlenCurlStrana}</p>}
+                    <div className="sp-board-grid grid gap-3 sm:grid-cols-2">
                         <OutputsColumn live={live} facts={facts} busy={busy} noCurl={noCurl} onRefresh={refresh} tiles />
                     </div>
                 </section>
-                <section className="sp-board-group space-y-3 rounded-2xl border border-border/60 p-3">
-                    <h2 className="sp-title flex items-center gap-2 px-1 pt-1">
+                <section className="sp-board-group space-y-3">
+                    <h2 className="sp-sub flex items-center gap-2 px-1 pt-1">
                         {S.home.pravila}
                         {(spec?.channels.length ?? 0) > 0 && (
                             <span className="rounded-full bg-primary/15 px-2 text-xs font-semibold text-primary">
@@ -545,7 +544,10 @@ export default function Home({
                     </h2>
                     <RuleCards live={live} facts={facts} onSection={onSection} onEdit={onEditRule} onAdd={onAddRule} />
                 </section>
-                <ExplainCard />
+                <details className="sp-board-explain">
+                    <summary><Search className="h-3.5 w-3.5" aria-hidden="true" />{S.home.kudaPoydetZapros}</summary>
+                    <ExplainCard />
+                </details>
             </div>
         )
     }
@@ -616,7 +618,7 @@ function RuleCards({
     }
 
     return (
-        <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
+        <div className="sp-board-grid grid gap-3 sm:grid-cols-2">
             {channels.map((ch, i) => (
                 <RuleCard
                     key={`${ch.name}-${i}`}
@@ -639,7 +641,7 @@ function RuleCards({
                    класса фона (`button:not([class*="bg-"])`), и пунктира не было видно вовсе. */
                 style={{ borderColor: 'color-mix(in srgb, var(--sp-muted-foreground) 45%, transparent)' }}
                 className={[
-                    'flex h-[112px] flex-col items-center justify-center gap-1.5 rounded-2xl border border-dashed bg-transparent',
+                    'sp-board-ghost flex h-[124px] flex-col items-center justify-center gap-1.5 rounded-2xl border border-dashed bg-transparent',
                     'text-sm text-muted-foreground transition-colors duration-200',
                     'hover:border-primary/50 hover:text-primary',
                     'focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary',
@@ -690,47 +692,23 @@ function RuleCard({
               .join(' · ') || (st?.up ? S.home.rabotaet : S.home.nePodnyat2)
 
     return (
-        <div
-            role="button"
-            tabIndex={0}
-            onClick={onOpen}
-            onKeyDown={(e) => { if (e.key === 'Enter') onOpen() }}
-            className={[
-                TILE,
-                'cursor-pointer text-left transition-[border-color,opacity] duration-200 hover:border-primary/40',
-                'focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary',
-                on ? '' : 'opacity-60',
-            ].join(' ')}
-        >
-            <div className="flex min-w-0 items-center justify-between gap-2">
-                <span className="min-w-0 truncate text-sm font-semibold">{ch.name}</span>
-                <span onClick={(e) => e.stopPropagation()} onKeyDown={(e) => e.stopPropagation()}>
-                    <Switch on={on} label={on ? S.rulesTab.vyklyuchitPravilo(ch.name) : S.rulesTab.vklyuchitPravilo(ch.name)} onClick={onToggle} />
-                </span>
+        <article className={[TILE, 'sp-board-rule', on ? '' : 'sp-board-rule-off'].join(' ')}>
+            <div className="flex min-w-0 items-start justify-between gap-3">
+                <button type="button" onClick={onOpen} className="sp-board-rule-open bg-transparent text-left text-sm font-semibold">{ch.name}</button>
+                <div className="sp-board-rule-control"><Switch on={on} label={on ? S.rulesTab.vyklyuchitPravilo(ch.name) : S.rulesTab.vklyuchitPravilo(ch.name)} onClick={onToggle} /></div>
             </div>
-            <button
-                type="button"
-                onClick={(e) => { e.stopPropagation(); onSection('vpn') }}
-                className="flex min-w-0 max-w-full items-baseline gap-1.5 bg-transparent text-left"
-            >
-                <ArrowRight className="h-3 w-3 shrink-0 self-center text-muted-foreground" aria-hidden="true" />
+            <button type="button" onClick={() => onSection('vpn')} className="sp-board-rule-control flex min-w-0 items-center gap-1.5 bg-transparent text-left">
+                <ArrowRight className="h-3.5 w-3.5 shrink-0 text-muted-foreground" aria-hidden="true" />
                 <Flag cc={facts?.geo?.cc} />
-                <span className="min-w-0 truncate text-[13px]">{ch.out}</span>
+                <span className="shrink-0 text-[13px] font-medium">{ch.out}</span>
                 <span className="min-w-0 truncate text-xs text-muted-foreground">{where}</span>
             </button>
-            <div className="flex min-w-0 items-center justify-between gap-2">
-                <div className="flex min-w-0 flex-1 gap-1 overflow-hidden">
-                    {labels.length
-                        ? labels.map((l) => <Badge key={l} variant="proto" className="shrink-0">{l}</Badge>)
-                        : <span className="truncate text-xs text-muted-foreground">{S.rulesTab.servisNeVybran}</span>}
-                </div>
-                <span className="shrink-0 text-[11px] tabular-nums text-muted-foreground" title={shared ? S.home.schetchikObschiy : undefined}>
-                    {!on ? S.home.vyklyucheno
-                        : set && !set.live && !phase ? S.home.netVYadreLinux
-                        : `↓ ${down ?? '—'} ↑ ${up ?? '—'}`}
-                </span>
+            <BoardLabels labels={labels} />
+            <div className="sp-board-rule-foot text-[11px] tabular-nums text-muted-foreground">
+                <span>{!on ? S.home.vyklyucheno : set && !set.live && !phase ? S.home.netVYadreLinux : ''}</span>
+                <span title={shared ? S.home.schetchikObschiy : undefined}>{shared ? S.home.schetchikObschiy + ' · ' : ''}↓ {down ?? '—'} ↑ {up ?? '—'}</span>
             </div>
-        </div>
+        </article>
     )
 }
 
@@ -1007,7 +985,7 @@ function OutputsColumn({
     /* Ни подписки, ни туннеля — столбца нет вовсе. Пустой столбец с заголовком «Выходы»
      * занимал бы место ради строки «ничего нет», а про отсутствие выходов уже сказано над
      * столбцами, и сказано с последствием («трафику некуда идти»). */
-    if (vless.length === 0 && tunnels.length === 0 && !subs?.length) return null
+    if (vless.length === 0 && tunnels.length === 0 && !subs?.length && !(tiles && outputs.some(([, o]) => !!(o.group as { warp?: unknown } | undefined)?.warp))) return null
 
     /* Подписка выхода — файлом, приведённым к полному пути: в спеке v2 путь бывает и
      * относительным, от каталога спеки (`subscription: sub-test.txt`), а перечень sub_list
@@ -1127,12 +1105,15 @@ function OutputsColumn({
  *  диагностике: спрашивают его до того, как решат, что что-то сломано. */
 /** Плитка «доски»: одна высота у всех (владелец: «нормальный размер… скомпонуй»), содержимое —
  *  главное в три-четыре строки; подробности — в разделах VPN и WarpBox. */
-export const TILE = 'an-glass flex h-[112px] min-w-0 flex-col justify-between gap-1 overflow-hidden rounded-2xl border p-3.5'
+/* Высота одна у всех плиток «доски» — и выходов, и правил, и призрачной: владелец просил
+ * одинаковый и компактный размер («че за гигаблоки»). Содержимое не обрезается: из плитки
+ * правила раскрывается список «ещё N». */
+const TILE = 'sp-board-tile flex h-[124px] min-w-0 flex-col gap-1.5 rounded-2xl border p-3.5'
 
 function TileHead({ title, tag }: { title: ReactNode; tag?: ReactNode }) {
     return (
         <div className="flex min-w-0 items-center justify-between gap-2">
-            <span className="min-w-0 truncate text-sm font-semibold">{title}</span>
+            <span className="sp-board-tile-name min-w-0 text-sm font-semibold">{title}</span>
             {tag}
         </div>
     )
@@ -1142,7 +1123,7 @@ function StateLine({ ok, children }: { ok: boolean | null; children: ReactNode }
     return (
         <div className="flex min-w-0 items-center gap-2 text-[13px]">
             <span className={`h-2 w-2 shrink-0 rounded-full ${ok === null ? 'bg-muted-foreground' : ok ? 'bg-success' : 'bg-destructive'}`} aria-hidden="true" />
-            <span className="min-w-0 truncate">{children}</span>
+            <span className="min-w-0 break-words">{children}</span>
         </div>
     )
 }
@@ -1177,6 +1158,7 @@ function SubTile({ sub, outs, facts, spec }: {
             <StateLine ok={live ? !!live[1].up && !outDown(live[1]) : null}>
                 <Flag cc={f?.geo?.cc} /> {[country(f?.geo?.cc), ms(f)].filter(Boolean).join(' · ') || (live ? outDownWord(live[1]) || S.home.rabotaet : S.home.nePodnyat2)}
             </StateLine>
+            <BoardAddress ip={f?.geo?.ip} />
         </div>
     )
 }
@@ -1198,6 +1180,7 @@ function OutTile({ name, st, facts, out, device }: {
             <StateLine ok={ok}>
                 <Flag cc={facts?.geo?.cc} /> {[country(facts?.geo?.cc), ms(facts)].filter(Boolean).join(' · ') || outDownWord(st) || (st.up ? S.home.rabotaet : S.home.nePodnyat2)}
             </StateLine>
+            <BoardAddress ip={facts?.geo?.ip} />
         </div>
     )
 }
@@ -1219,33 +1202,7 @@ function WarpTile({ name, st, facts }: { name: string; st: OutputStatus; facts?:
             <StateLine ok={!!sel}>
                 <Flag cc={cc} /> {sel ? [country(cc), m?.colo, ms(facts)].filter(Boolean).join(' · ') || S.home.rabotaet : S.home.chlenyNeOtvechayut}
             </StateLine>
-        </div>
-    )
-}
-
-/** Вердикт плиткой: точка и состояние, устройства в сети, одна строка находки с дорогой к ней. */
-function VerdictTile({ live, v, onSection }: { live: Live; v: Verdict; onSection: (s: SectionId) => void }) {
-    const warn = live.status?.warnings?.length ?? 0
-    return (
-        <div className={TILE}>
-            <div className="flex min-w-0 items-center gap-2">
-                <span className={`h-2.5 w-2.5 shrink-0 rounded-full ring-4 ${DOT[v.tone]} ${RING[v.tone]}`} aria-hidden="true" />
-                <span className="min-w-0 truncate text-[17px] font-semibold">{v.text}</span>
-            </div>
-            <div className="text-xs text-muted-foreground">
-                {live.net ? <>{S.home.ustroystvVSeti}{live.net.active_clients}</> : null}
-            </div>
-            {!live.phase && (v.finding || warn > 0) ? (
-                <button
-                    type="button"
-                    onClick={() => onSection(v.finding?.go ?? 'diag')}
-                    className={`flex min-w-0 items-center gap-1.5 bg-transparent text-left text-xs ${v.finding?.bad ? 'text-destructive' : 'text-warning-fg'}`}
-                >
-                    <TriangleAlert className="h-3.5 w-3.5 shrink-0" aria-hidden="true" />
-                    <span className="min-w-0 truncate">{v.finding ? v.why : S.home.preduprezhdeniyaSteer}</span>
-                    <ArrowRight className="h-3 w-3 shrink-0" aria-hidden="true" />
-                </button>
-            ) : <span />}
+            <BoardAddress ip={facts?.geo?.ip} />
         </div>
     )
 }
