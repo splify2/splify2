@@ -152,6 +152,10 @@ export default defineConfig({
           // главный бандл, и ленивые разделы.
           if (/[\\/]src[\\/]lib[\\/]/.test(id)) return 'x'
           if (/[\\/]src[\\/]components[\\/]ui[\\/]/.test(id)) return 'x'
+          // Поля сервера DNS (fragment, h3) — у двух ленивых разделов сразу: DNS и редактора
+          // правила. Без этой строки rollup выделял их в `splify-DnsUpstreamExtras.js` без пина
+          // `?v=`, и барьер останавливал сборку (пришло с 54ef275).
+          if (/[\\/]src[\\/]components[\\/]DnsUpstreamExtras\.tsx$/.test(id)) return 'x'
           return undefined
         },
       }
