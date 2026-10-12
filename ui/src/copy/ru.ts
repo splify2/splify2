@@ -570,6 +570,8 @@ export const ru = {
         udalit: " Удалить",
     },
     home: {
+        sostoyanie: "Состояние",
+        warpTunneley: (ok: unknown, total: unknown) => `туннелей работает: ${ok} из ${total}`,
         yadroNeOtvechaet: "Ядро не отвечает",
         obnovitePodstranitsu: "Обновите страницу или проверьте, что splify2 установлен",
         estPolomki: "Есть поломки",

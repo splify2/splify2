@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef, useState } from 'react'
+import { useCallback, useEffect, useRef, useState, type ReactNode } from 'react'
 import { ArrowRight, LoaderCircle, Plus, Search, TriangleAlert, X } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Switch } from '@/components/ui/switch'
@@ -12,7 +12,7 @@ import { pending, usePending } from '@/lib/pending'
 import { useServices } from '@/lib/catalog'
 import { ruleFiles, selectedIds } from '@/lib/rulefiles'
 import { specV2Unsupported } from '@/lib/engine'
-import { ON_FAIL_TEXT, type Channel, type OnFail, type ChannelStatus, type OutputStatus, devList, isPart, isTunnelKind } from '@/lib/model'
+import { ON_FAIL_TEXT, type Channel, type OnFail, type ChannelStatus, type Output, type OutputStatus, devList, isPart, isTunnelKind } from '@/lib/model'
 import { devKindsOf } from '@/lib/badges'
 import { country } from '@/lib/geo'
 import { outDown, outDownWord } from '@/lib/outstate'
@@ -513,13 +513,38 @@ export default function Home({
                             {S.home.etotInterfeysZapisyvaetNastroyki}</p>
                     </Block>
                 )}
-                <div className="grid gap-4 lg:grid-cols-2 lg:items-start">
-                    {verdictBlock}
-                    <div className="min-w-0">
-                        <OutputsColumn live={live} facts={facts} busy={busy} noCurl={noCurl} onRefresh={refresh} />
+                {/* Два блока — состояние и правила — каждый своей подложкой: правила не продолжение
+                    карточек состояния, а отдельный раздел со своим заголовком (владелец: «главное
+                    разделение блоков правил и статуса»). */}
+                <section className="sp-board-group space-y-3 rounded-2xl border border-border/60 p-3">
+                    <div className="flex items-center justify-between gap-3 px-1 pt-1">
+                        <h2 className="sp-title">{S.home.sostoyanie}</h2>
+                        <button
+                            type="button"
+                            onClick={refresh}
+                            disabled={busy}
+                            className="flex shrink-0 items-center gap-1 text-xs text-primary underline decoration-dotted disabled:opacity-60"
+                        >
+                            {busy && <LoaderCircle className="h-3 w-3 animate-spin" aria-hidden="true" />}
+                            {busy ? S.home.meryaem : S.home.proverit}
+                        </button>
                     </div>
-                </div>
-                <RuleCards live={live} facts={facts} onSection={onSection} onEdit={onEditRule} onAdd={onAddRule} />
+                    <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
+                        <VerdictTile live={live} v={v} onSection={onSection} />
+                        <OutputsColumn live={live} facts={facts} busy={busy} noCurl={noCurl} onRefresh={refresh} tiles />
+                    </div>
+                </section>
+                <section className="sp-board-group space-y-3 rounded-2xl border border-border/60 p-3">
+                    <h2 className="sp-title flex items-center gap-2 px-1 pt-1">
+                        {S.home.pravila}
+                        {(spec?.channels.length ?? 0) > 0 && (
+                            <span className="rounded-full bg-primary/15 px-2 text-xs font-semibold text-primary">
+                                {spec!.channels.length}
+                            </span>
+                        )}
+                    </h2>
+                    <RuleCards live={live} facts={facts} onSection={onSection} onEdit={onEditRule} onAdd={onAddRule} />
+                </section>
                 <ExplainCard />
             </div>
         )
@@ -574,11 +599,6 @@ function RuleCards({
     const setOf = (name: string): ChannelStatus | undefined =>
         sets.find((s) => (s.channels || []).includes(name)) || sets.find((s) => s.name === name)
     const channels = spec?.channels ?? []
-    const load = (name: string) => {
-        const st = setOf(name)
-        return (st?.down_bytes ?? 0) + (st?.bytes ?? 0)
-    }
-    const peak = Math.max(0, ...channels.map((c) => load(c.name)))
 
     function toggle(i: number) {
         if (!spec) return
@@ -596,7 +616,7 @@ function RuleCards({
     }
 
     return (
-        <div className="grid gap-4 md:grid-cols-2">
+        <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
             {channels.map((ch, i) => (
                 <RuleCard
                     key={`${ch.name}-${i}`}
@@ -606,7 +626,6 @@ function RuleCards({
                     st={live.status?.outputs?.[ch.out]}
                     facts={facts[ch.out]}
                     phase={live.phase}
-                    share={peak > 0 ? load(ch.name) / peak : 0}
                     onOpen={() => onEdit?.(i)}
                     onToggle={() => toggle(i)}
                     onSection={onSection}
@@ -615,14 +634,18 @@ function RuleCards({
             <button
                 type="button"
                 onClick={() => onAdd?.()}
+                /* Цвет пунктира — переменной темы (утилиты с прозрачностью для этого цвета в сборке
+                   нет), а bg-transparent — не украшение: сброс index.css гасит рамку у кнопок без
+                   класса фона (`button:not([class*="bg-"])`), и пунктира не было видно вовсе. */
+                style={{ borderColor: 'color-mix(in srgb, var(--sp-muted-foreground) 45%, transparent)' }}
                 className={[
-                    'flex min-h-[148px] flex-col items-center justify-center gap-2 rounded-2xl border-2 border-dashed border-border',
+                    'flex h-[112px] flex-col items-center justify-center gap-1.5 rounded-2xl border border-dashed bg-transparent',
                     'text-sm text-muted-foreground transition-colors duration-200',
                     'hover:border-primary/50 hover:text-primary',
                     'focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary',
                 ].join(' ')}
             >
-                <Plus className="h-6 w-6" aria-hidden="true" />
+                <Plus className="h-5 w-5" aria-hidden="true" />
                 {S.home.dobavitPravilo}
             </button>
         </div>
@@ -640,7 +663,7 @@ function ruleLabels(ch: Channel, services: ReturnType<typeof useServices>): stri
 }
 
 function RuleCard({
-    ch, labels, set, st, facts, phase, share, onOpen, onToggle, onSection,
+    ch, labels, set, st, facts, phase, onOpen, onToggle, onSection,
 }: {
     ch: Channel
     labels: string[]
@@ -648,7 +671,6 @@ function RuleCard({
     st?: OutputStatus
     facts?: Facts
     phase: Live['phase']
-    share: number
     onOpen: () => void
     onToggle: () => void
     onSection: (s: SectionId) => void
@@ -674,45 +696,39 @@ function RuleCard({
             onClick={onOpen}
             onKeyDown={(e) => { if (e.key === 'Enter') onOpen() }}
             className={[
-                'an-glass flex min-h-[148px] cursor-pointer flex-col gap-3 rounded-2xl border p-4 text-left',
-                'transition-[border-color,opacity] duration-200 hover:border-primary/40',
+                TILE,
+                'cursor-pointer text-left transition-[border-color,opacity] duration-200 hover:border-primary/40',
                 'focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary',
                 on ? '' : 'opacity-60',
             ].join(' ')}
         >
-            <div className="flex items-start justify-between gap-3">
-                <div className="min-w-0">
-                    <div className="truncate text-[15px] font-semibold">{ch.name}</div>
-                    <button
-                        type="button"
-                        onClick={(e) => { e.stopPropagation(); onSection('vpn') }}
-                        className="mt-0.5 flex min-w-0 max-w-full items-baseline gap-1.5 text-left"
-                    >
-                        <ArrowRight className="h-3 w-3 shrink-0 self-center text-muted-foreground" aria-hidden="true" />
-                        <Flag cc={facts?.geo?.cc} />
-                        <span className="min-w-0 truncate text-[13px]">{ch.out}</span>
-                        <span className="min-w-0 truncate text-xs text-muted-foreground">{where}</span>
-                    </button>
-                </div>
+            <div className="flex min-w-0 items-center justify-between gap-2">
+                <span className="min-w-0 truncate text-sm font-semibold">{ch.name}</span>
                 <span onClick={(e) => e.stopPropagation()} onKeyDown={(e) => e.stopPropagation()}>
                     <Switch on={on} label={on ? S.rulesTab.vyklyuchitPravilo(ch.name) : S.rulesTab.vklyuchitPravilo(ch.name)} onClick={onToggle} />
                 </span>
             </div>
-            <div className="flex min-w-0 flex-wrap gap-1">
-                {labels.length
-                    ? labels.map((l) => <Badge key={l} variant="proto">{l}</Badge>)
-                    : <span className="text-xs text-muted-foreground">{S.rulesTab.servisNeVybran}</span>}
-            </div>
-            <div className="mt-auto space-y-1.5">
-                <Meter value={share} muted={st?.kind === 'direct' || !on} />
-                <div className="flex items-center justify-between gap-3 text-[11px] tabular-nums text-muted-foreground">
-                    <span>↓ {down ?? '—'}  ↑ {up ?? '—'}</span>
-                    <span className="truncate">
-                        {!on ? S.home.vyklyucheno
-                            : set && !set.live && !phase ? S.home.netVYadreLinux
-                            : shared ? S.home.schetchikObschiy : ''}
-                    </span>
+            <button
+                type="button"
+                onClick={(e) => { e.stopPropagation(); onSection('vpn') }}
+                className="flex min-w-0 max-w-full items-baseline gap-1.5 bg-transparent text-left"
+            >
+                <ArrowRight className="h-3 w-3 shrink-0 self-center text-muted-foreground" aria-hidden="true" />
+                <Flag cc={facts?.geo?.cc} />
+                <span className="min-w-0 truncate text-[13px]">{ch.out}</span>
+                <span className="min-w-0 truncate text-xs text-muted-foreground">{where}</span>
+            </button>
+            <div className="flex min-w-0 items-center justify-between gap-2">
+                <div className="flex min-w-0 flex-1 gap-1 overflow-hidden">
+                    {labels.length
+                        ? labels.map((l) => <Badge key={l} variant="proto" className="shrink-0">{l}</Badge>)
+                        : <span className="truncate text-xs text-muted-foreground">{S.rulesTab.servisNeVybran}</span>}
                 </div>
+                <span className="shrink-0 text-[11px] tabular-nums text-muted-foreground" title={shared ? S.home.schetchikObschiy : undefined}>
+                    {!on ? S.home.vyklyucheno
+                        : set && !set.live && !phase ? S.home.netVYadreLinux
+                        : `↓ ${down ?? '—'} ↑ ${up ?? '—'}`}
+                </span>
             </div>
         </div>
     )
@@ -925,13 +941,17 @@ function RuleRow({
  *  Порядок постоянный — подписка, затем туннели по имени: блоки, переставляющиеся местами при
  *  каждом опросе, человек перечитывает заново каждый раз. */
 function OutputsColumn({
-    live, facts, busy, noCurl, onRefresh,
+    live, facts, busy, noCurl, onRefresh, tiles = false,
 }: {
     live: Live
     facts: Record<string, Facts>
     busy: boolean
     noCurl?: boolean
     onRefresh: () => void
+    /** «Доска»: каждый выход — своей плиткой (подписка, выход, свой туннель, WARP), без общей
+     *  карточки «Выходы»; плитки встают в сетку блока состояния (владелец: «есть выход
+     *  stresskvn — ему свой блок, есть выход warp — ему свой»). */
+    tiles?: boolean
 }) {
     /* Какой выход к какой подписке относится — знает СПЕКА, а не состояние: `steer status`
      * поля `sub_file` не печатает вовсе. Пока группировка шла по состоянию, ни одна локация
@@ -1015,6 +1035,31 @@ function OutputsColumn({
      * срок и локации строками), свой туннель — одной строкой с точкой состояния. Прежде
      * каждая подписка и каждый туннель были отдельной карточкой, и три карточки подряд
      * читались как три разных раздела, хотя это один перечень «чем роутер выходит наружу». */
+    if (tiles) {
+        const warps = outputs.filter(([, o]) => !!(o.group as { warp?: unknown } | undefined)?.warp)
+        return (
+            <>
+                {(subs ?? []).map((sub) => {
+                    const outs = vless.filter(([n, o]) => subOf(n, o) === sub.path)
+                    return <SubTile key={'sub:' + sub.name} sub={sub} outs={outs} facts={facts} spec={spec} />
+                })}
+                {subs === null && vless.map(([name, st]) => (
+                    <OutTile key={'v:' + name} name={name} st={st} facts={facts[name]} out={spec?.outputs?.[name]} />
+                ))}
+                {loose.map(([name, st]) => (
+                    <OutTile key={'l:' + name} name={name} st={st} facts={facts[name]} out={spec?.outputs?.[name]} />
+                ))}
+                {tunnels.map(([name, st]) => {
+                    const o = spec?.outputs?.[name]
+                    const devs = devList(o).length ? devList(o) : devList(st)
+                    if (devs.length > 0 && devs.every((d) => isPart(spec?.outputs?.[d]))) return null
+                    return <OutTile key={'t:' + name} name={name} st={st} facts={facts[name]} out={o} device={devs[0]} />
+                })}
+                {warps.map(([name, st]) => <WarpTile key={'w:' + name} name={name} st={st} facts={facts[name]} />)}
+            </>
+        )
+    }
+
     return (
         <Block>
             <CardHead
@@ -1080,6 +1125,131 @@ function OutputsColumn({
 /** «Куда пойдёт запрос» — единственный вопрос, который человек задаёт посреди работы, и
  *  отвечает на него ЖИВОЕ ядро, а не настройка. Поэтому поле здесь, на главной, а не в
  *  диагностике: спрашивают его до того, как решат, что что-то сломано. */
+/** Плитка «доски»: одна высота у всех (владелец: «нормальный размер… скомпонуй»), содержимое —
+ *  главное в три-четыре строки; подробности — в разделах VPN и WarpBox. */
+export const TILE = 'an-glass flex h-[112px] min-w-0 flex-col justify-between gap-1 overflow-hidden rounded-2xl border p-3.5'
+
+function TileHead({ title, tag }: { title: ReactNode; tag?: ReactNode }) {
+    return (
+        <div className="flex min-w-0 items-center justify-between gap-2">
+            <span className="min-w-0 truncate text-sm font-semibold">{title}</span>
+            {tag}
+        </div>
+    )
+}
+
+function StateLine({ ok, children }: { ok: boolean | null; children: ReactNode }) {
+    return (
+        <div className="flex min-w-0 items-center gap-2 text-[13px]">
+            <span className={`h-2 w-2 shrink-0 rounded-full ${ok === null ? 'bg-muted-foreground' : ok ? 'bg-success' : 'bg-destructive'}`} aria-hidden="true" />
+            <span className="min-w-0 truncate">{children}</span>
+        </div>
+    )
+}
+
+const PROTO_NAME: Record<string, string> = {
+    vless: 'VLESS', hysteria2: 'Hysteria2', trojan: 'Trojan', shadowsocks: 'Shadowsocks',
+    socks: 'SOCKS', http: 'HTTP', vmess: 'VMess', interface: 'WireGuard', awg: 'AmneziaWG', xsteer: 'XSTEER',
+}
+
+const ms = (f?: Facts) => (f?.ping && f.ping.ms >= 0 ? S.home.ms(f.ping.ms) : null)
+
+/** Подписка: имя, расход за период и где сейчас её активный узел. */
+function SubTile({ sub, outs, facts, spec }: {
+    sub: { name: string; title?: string; quota?: SubQuota }
+    outs: [string, OutputStatus][]
+    facts: Record<string, Facts>
+    spec: ReturnType<typeof usePending>['spec']
+}) {
+    const q = sub.quota
+    const used = q ? Number(q.up || 0) + Number(q.down || 0) : null
+    const total = q && q.total && q.total !== '0' ? Number(q.total) : null
+    const live = outs.find(([, st]) => st.up && !outDown(st)) ?? outs[0]
+    const f = live ? facts[live[0]] : undefined
+    const kind = live ? (spec?.outputs?.[live[0]]?.kind ?? live[1].kind) : undefined
+    return (
+        <div className={TILE}>
+            <TileHead title={sub.title || sub.name} tag={kind && PROTO_NAME[kind] ? <Badge variant="proto">{PROTO_NAME[kind]}</Badge> : undefined} />
+            <div className="flex items-baseline gap-1.5">
+                <span className="text-xl font-semibold tabular-nums">{used !== null ? human(used) : '—'}</span>
+                {used !== null && <span className="text-xs text-muted-foreground">{total ? `/ ${human(total)}` : '/ ∞'}</span>}
+            </div>
+            <StateLine ok={live ? !!live[1].up && !outDown(live[1]) : null}>
+                <Flag cc={f?.geo?.cc} /> {[country(f?.geo?.cc), ms(f)].filter(Boolean).join(' · ') || (live ? outDownWord(live[1]) || S.home.rabotaet : S.home.nePodnyat2)}
+            </StateLine>
+        </div>
+    )
+}
+
+/** Выход без подписки или свой туннель: протокол или устройство, состояние, отклик. */
+function OutTile({ name, st, facts, out, device }: {
+    name: string
+    st: OutputStatus
+    facts?: Facts
+    out?: Output
+    device?: string
+}) {
+    const kind = out?.kind ?? st.kind
+    const ok = !!st.up && !outDown(st)
+    return (
+        <div className={TILE}>
+            <TileHead title={name} tag={kind && PROTO_NAME[kind] ? <Badge variant="proto">{PROTO_NAME[kind]}</Badge> : undefined} />
+            <div className="truncate font-mono text-xs text-muted-foreground">{device ?? st.device ?? ''}</div>
+            <StateLine ok={ok}>
+                <Flag cc={facts?.geo?.cc} /> {[country(facts?.geo?.cc), ms(facts)].filter(Boolean).join(' · ') || outDownWord(st) || (st.up ? S.home.rabotaet : S.home.nePodnyat2)}
+            </StateLine>
+        </div>
+    )
+}
+
+/** Выход WARP: какой туннель несёт трафик, колония, отклик. Поля `group.warp` печатает модуль
+ *  steer-warpbox (ветка warpbox); нет — только выбранный член. */
+function WarpTile({ name, st, facts }: { name: string; st: OutputStatus; facts?: Facts }) {
+    const grp = st.group
+    const w = (grp as { warp?: { members?: { out: string; colo?: string; seen?: string; ok?: boolean }[] } } | undefined)?.warp
+    const sel = grp?.selected ?? null
+    const m = w?.members?.find((x) => x.out === sel)
+    const ok = (w?.members ?? []).filter((x) => x.ok).length
+    const total = w?.members?.length ?? grp?.members.length ?? 0
+    const cc = m?.seen ?? facts?.geo?.cc
+    return (
+        <div className={TILE}>
+            <TileHead title={name} tag={<Badge variant="proto">WARP</Badge>} />
+            <div className="text-xs text-muted-foreground">{total > 0 ? S.home.warpTunneley(ok || (sel ? 1 : 0), total) : ''}</div>
+            <StateLine ok={!!sel}>
+                <Flag cc={cc} /> {sel ? [country(cc), m?.colo, ms(facts)].filter(Boolean).join(' · ') || S.home.rabotaet : S.home.chlenyNeOtvechayut}
+            </StateLine>
+        </div>
+    )
+}
+
+/** Вердикт плиткой: точка и состояние, устройства в сети, одна строка находки с дорогой к ней. */
+function VerdictTile({ live, v, onSection }: { live: Live; v: Verdict; onSection: (s: SectionId) => void }) {
+    const warn = live.status?.warnings?.length ?? 0
+    return (
+        <div className={TILE}>
+            <div className="flex min-w-0 items-center gap-2">
+                <span className={`h-2.5 w-2.5 shrink-0 rounded-full ring-4 ${DOT[v.tone]} ${RING[v.tone]}`} aria-hidden="true" />
+                <span className="min-w-0 truncate text-[17px] font-semibold">{v.text}</span>
+            </div>
+            <div className="text-xs text-muted-foreground">
+                {live.net ? <>{S.home.ustroystvVSeti}{live.net.active_clients}</> : null}
+            </div>
+            {!live.phase && (v.finding || warn > 0) ? (
+                <button
+                    type="button"
+                    onClick={() => onSection(v.finding?.go ?? 'diag')}
+                    className={`flex min-w-0 items-center gap-1.5 bg-transparent text-left text-xs ${v.finding?.bad ? 'text-destructive' : 'text-warning-fg'}`}
+                >
+                    <TriangleAlert className="h-3.5 w-3.5 shrink-0" aria-hidden="true" />
+                    <span className="min-w-0 truncate">{v.finding ? v.why : S.home.preduprezhdeniyaSteer}</span>
+                    <ArrowRight className="h-3 w-3 shrink-0" aria-hidden="true" />
+                </button>
+            ) : <span />}
+        </div>
+    )
+}
+
 const SUGGESTED_DOMAINS = ['youtube.com', 'instagram.com', 'discord.com', 'rutracker.org']
 
 function ExplainCard() {
