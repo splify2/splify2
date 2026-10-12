@@ -118,7 +118,7 @@ function sectionOf(outs: Record<string, Output>, name: string): Section | null {
     if (o.kind === 'awg' || o.kind === 'xsteer') return { kind: 'own', mode: 'manual', picks: [`out:${name}`] }
     if (isTunnelKind(o.kind)) {
         /* Один узел — «вручную»: ядру это то же, что «первый живой» из одного. */
-        const mode: Mode = (o.active ?? 1) > 1 ? 'balance' : nodesOf(o).length === 1 ? 'manual' : 'order'
+        const mode: Mode = o.pick === 'latency' ? 'latency' : (o.active ?? 1) > 1 ? 'balance' : nodesOf(o).length === 1 ? 'manual' : 'order'
         return { kind: 'subs', mode, picks: subPicksOf(o) }
     }
     if (o.kind === 'interface') {
@@ -208,7 +208,13 @@ function tunnel(name: string, r: { sub: string; proto: Proto; nodes: number[] },
     return o
 }
 
-function buildSubs(mode: Mode, picks: SubPick[]): Built | null {
+/** Что умеет ядро — от этого зависит, как набор ложится в спеку. */
+export interface Caps {
+    /** `pick: latency` у туннеля (умение pool_latency): «Самый быстрый» — один туннель на подписку. */
+    tunnelLatency?: boolean
+}
+
+function buildSubs(mode: Mode, picks: SubPick[], caps: Caps = {}): Built | null {
     if (!picks.length) return null
     if (mode === 'manual') {
         const p = picks[0]
@@ -224,8 +230,22 @@ function buildSubs(mode: Mode, picks: SubPick[]): Built | null {
         top.device = top.devices[0]
         return { top, owned }
     }
+    if (mode === 'latency' && caps.tunnelLatency) {
+        /* Ядро меряет узлы подписки само, в одном туннеле (`pick: latency`); у hysteria2 так нельзя —
+         * у него часть на узел. Несколько подписок или протоколов — пул latency из таких туннелей. */
+        const parts = runs.flatMap((r) =>
+            r.proto === 'hysteria2' && r.nodes.length > 1 ? r.nodes.map((n) => ({ ...r, nodes: [n] })) : [r])
+        const lat = (r: { proto: Proto; nodes: number[] }): Partial<Output> =>
+            r.proto !== 'hysteria2' && r.nodes.length !== 1 ? { pick: 'latency' } : {}
+        if (parts.length === 1) return { top: tunnel(tmp(), parts[0], lat(parts[0])), owned: [] }
+        const top: Output = { name: tmp(), kind: 'interface', devices: [], pick: 'latency', on_fail: 'drop' }
+        const owned = parts.map((r) => tunnel(tmp(), r, { ...lat(r), part_of: top.name }))
+        top.devices = owned.map((p) => p.name)
+        top.device = top.devices[0]
+        return { top, owned }
+    }
     if (mode === 'latency') {
-        /* Сравнить задержку ядро умеет между частями, не внутри туннеля: по части на узел. */
+        /* Ядро без pool_latency сравнивает задержку только между частями: по части на узел. */
         const each = picks.map((p) => ({ sub: p.sub, proto: p.proto, nodes: p.idx === undefined ? [] : [p.idx] }))
         if (each.length === 1) return { top: tunnel(tmp(), each[0]), owned: [] }
         const top: Output = { name: tmp(), kind: 'interface', devices: [], pick: 'latency', on_fail: 'drop' }
@@ -273,9 +293,9 @@ function buildOwn(mode: Mode, picks: string[]): Built | { ref: string } | null {
 }
 
 /** Набор правила целиком. `ref` — правило ведёт прямо в готовый выход. */
-export function buildTarget(t: Target): Built | { ref: string } | null {
+export function buildTarget(t: Target, caps: Caps = {}): Built | { ref: string } | null {
     const secs: (Built | { ref: string })[] = []
-    const s = buildSubs(t.subs.mode, t.subs.picks)
+    const s = buildSubs(t.subs.mode, t.subs.picks, caps)
     if (s) secs.push(s)
     for (const w of t.warp) secs.push({ ref: w })
     const o = buildOwn(t.own.mode, t.own.picks)
@@ -318,7 +338,9 @@ function prune(spec: Spec, root: string): Spec {
     let outputs = { ...spec.outputs }
     for (;;) {
         const cur: Spec = { ...spec, outputs }
-        const gone = tree.filter((n) => outputs[n] && !kept(outputs[n]) && Object.values(outputUsers(cur, [n])).every((l) => l.length === 0))
+        /* «Блок» никому не нужный убирается: настройки у него нет, при следующем выборе заведётся заново. */
+        const gone = tree.filter((n) => outputs[n] && (!kept(outputs[n]) || (outputs[n].kind as string) === 'block') &&
+            Object.values(outputUsers(cur, [n])).every((l) => l.length === 0))
         if (!gone.length) return cur
         outputs = Object.fromEntries(Object.entries(outputs).filter(([k]) => !gone.includes(k)))
     }
@@ -406,7 +428,7 @@ export function sharedWith(spec: Spec, index: number): string[] {
 
 /** Поставить правилу `index` выбор `t`. Пустой выбор (ни пилюли, не «напрямую») спеку не меняет —
  *  правилу нужен выход. */
-export function applyTarget(spec: Spec, index: number, t: Target): Spec {
+export function applyTarget(spec: Spec, index: number, t: Target, caps: Caps = {}): Spec {
     const ch = spec.channels[index]
     if (!ch) return spec
     const prev = ch.out
@@ -428,7 +450,7 @@ export function applyTarget(spec: Spec, index: number, t: Target): Spec {
         /* Напрямую — домены настоящими адресами (rulefiles.directDomains). */
         return { ...s2, channels: s2.channels.map((c, k) => (k === index ? directDomains(c) : c)) }
     }
-    const built = buildTarget(t)
+    const built = buildTarget(t, caps)
     if (!built) return spec
     if ('ref' in built) return setOut(spec, built.ref)
 

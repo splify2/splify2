@@ -8,7 +8,7 @@ import { rpc } from '@/lib/rpc'
 import { notify } from '@/lib/notify'
 import { pending, usePending } from '@/lib/pending'
 import { type Live } from '@/lib/live'
-import { dnsOtherSupported } from '@/lib/engine'
+import { dnsOtherSupported, poolLatencySupported } from '@/lib/engine'
 import { customServices, toAllowDomainsServices, toCatalog, type Channel, type Output, type ServiceEntry, type Spec } from '@/lib/model'
 import { pathFor, srsProbe } from '@/lib/rulefiles'
 import { applyTarget, EMPTY_TARGET, type Target } from '@/lib/ruleout'
@@ -128,7 +128,7 @@ export default function SetupWizard({ live, onDone, railHost }: {
             } else if (via === 'warp') {
                 let name = 'warp'
                 for (let k = 2; sp.outputs[name]; k++) name = `warp${k}`
-                sp.outputs = { ...sp.outputs, [name]: { name, kind: 'warp' as Output['kind'], extra: { count: 3, exclude_countries: [] } } as Output }
+                sp.outputs = { ...sp.outputs, [name]: { name, kind: 'warp' as Output['kind'] } as Output }
                 t.warp = [name]
             } else if (via === 'own' && dev) {
                 t.own = { mode: 'manual', picks: [`dev:${dev}`] }
@@ -150,7 +150,7 @@ export default function SetupWizard({ live, onDone, railHost }: {
                 mode: doms.size || srs.size ? 'fakeip' : undefined,
             }
             sp = { ...sp, channels: [...sp.channels, ch] }
-            sp = applyTarget(sp, sp.channels.length - 1, t)
+            sp = applyTarget(sp, sp.channels.length - 1, t, { tunnelLatency: poolLatencySupported(live.status) })
             /* DNS: выбранный сервер — для всех запросов (как карточка на вкладке DNS). */
             const p = PRESETS.find((x) => x.name === dns)
             if (p) {

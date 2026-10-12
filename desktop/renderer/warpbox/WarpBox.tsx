@@ -103,8 +103,8 @@ function Create({ spec, first = false }: { spec: Spec; first?: boolean }) {
         if (!ok) return
         pending.edit({
             ...spec,
-            /* Без исключения страны: по умолчанию её не исключаем (владелец), а без ключа модуль исключил бы RU. */
-            outputs: { ...spec.outputs, [name]: { name, kind: 'warp' as Output['kind'], extra: { count: 3, exclude_countries: [] } } as WarpOut },
+            /* Умолчания модуля: один туннель, страны любые. */
+            outputs: { ...spec.outputs, [name]: { name, kind: 'warp' as Output['kind'] } as WarpOut },
         })
         setOpen(false)
     }
@@ -148,7 +148,8 @@ function Create({ spec, first = false }: { spec: Spec; first?: boolean }) {
 
 function Group({ spec, out, live, info }: { spec: Spec; out: WarpOut; live: Live; info: WarpState | null }) {
     const x = out.extra || {}
-    const count = num(x.count, 3)
+    /* По умолчанию туннель один (steer 2.1.0): самую быструю точку модуль держит у того же устройства. */
+    const count = num(x.count, 1)
     const pick = x.pick === 'order' ? 'order' : 'latency'
     // MASQUE — туннели по HTTP/3, их держит сам модуль (вид членов warp-masque в ядре).
     const transport = x.transport === 'masque' ? 'masque' : 'awg'
@@ -255,7 +256,7 @@ function Group({ spec, out, live, info }: { spec: Spec; out: WarpOut; live: Live
                     <Segmented
                         label="Сколько туннелей"
                         value={String(count)}
-                        onChange={(v) => editOut(spec, out.name, { count: Number(v) === 3 ? undefined : Number(v) })}
+                        onChange={(v) => editOut(spec, out.name, { count: Number(v) === 1 ? undefined : Number(v) })}
                         items={['1', '2', '3', '4', '5'].map((v) => ({ value: v, label: v }))}
                     />
                 </div>
@@ -309,16 +310,13 @@ function Countries({ only, except, onChange }: {
     onChange: (only: string[] | undefined, except: string[] | undefined) => void
 }) {
     const mode = only?.length ? 'only' : 'except'
-    // Ключей нет (выход заведён руками или прежней версией) — модуль исключает RU сам
-    // (docs/warp.md); показываем это как есть.
-    const list = mode === 'only' ? only! : except ?? ['RU']
+    // Ключей нет — страны любые (steer 2.1.0, docs/warp.md: RU по умолчанию не исключается).
+    const list = mode === 'only' ? only! : except ?? []
     const [code, setCode] = useState('')
 
-    /* Исключения пишутся всегда явным списком, пустой — тоже: без ключа модуль исключил бы RU сам,
-     * а владелец решил, что по умолчанию страну не исключаем (сами разберутся). */
     const set = (next: string[]) => (mode === 'only'
         ? onChange(next.length ? next : undefined, undefined)
-        : onChange(undefined, next))
+        : onChange(undefined, next.length ? next : undefined))
     const add = (c: string) => {
         const cc = c.trim().toUpperCase()
         if (!/^[A-Z]{2}$/.test(cc) || list.includes(cc)) return
@@ -331,7 +329,7 @@ function Countries({ only, except, onChange }: {
             <Segmented
                 label="Как выбирать страну"
                 value={mode}
-                onChange={(m) => (m === 'only' ? onChange(['NL'], undefined) : onChange(undefined, []))}
+                onChange={(m) => (m === 'only' ? onChange(['NL'], undefined) : onChange(undefined, undefined))}
                 items={[
                     { value: 'except', label: 'Любая, кроме' },
                     { value: 'only', label: 'Только' },

@@ -178,6 +178,12 @@ export function activeNodesSupported(status: Status | null | undefined): boolean
     return Array.isArray(status?.features) && status.features.includes('active_nodes')
 }
 
+/** Умеет ли установленное ядро самые быстрые узлы подписки в одном туннеле (`pick: latency` у
+ *  `kind: tunnel`, умение `pool_latency`): «Самый быстрый» без устройства на каждый узел. */
+export function poolLatencySupported(status: Status | null | undefined): boolean {
+    return Array.isArray(status?.features) && status.features.includes('pool_latency')
+}
+
 /** Умеет ли установленное ядро выход «Блок» (`kind: block`, умение `block`): ядро без умения спеку
  *  с таким выходом отвергает целиком. */
 export function blockSupported(status: Status | null | undefined): boolean {

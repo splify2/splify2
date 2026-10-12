@@ -8,7 +8,7 @@ import ConfBadges from '@/components/ConfBadges'
 import { devProto, protoBadge, type ConfBadge } from '@/lib/badges'
 import { rpc } from '@/lib/rpc'
 import { notify } from '@/lib/notify'
-import { blockSupported } from '@/lib/engine'
+import { blockSupported, poolLatencySupported } from '@/lib/engine'
 import { subsRemember, subsRemembered } from '@/lib/subs'
 import { plainName } from '@/lib/nodename'
 import { devList, isPart, isTunnelKind, type Output, type Spec } from '@/lib/model'
@@ -59,7 +59,7 @@ export default function RuleTarget({ spec, index, live, onSpec }: {
 
     function put(next: Target) {
         setT(next)
-        const s = applyTarget(spec, index, next)
+        const s = applyTarget(spec, index, next, { tunnelLatency: poolLatencySupported(live.status) })
         if (s !== spec) onSpec(s)
     }
 
@@ -277,7 +277,7 @@ function WarpPill({ name, o, live, chosen, onClick }: { name: string; o: Output;
     const x = (o.extra || {}) as { count?: number; transport?: string }
     const st = live.status?.outputs?.[name]
     const w = (st?.group as { warp?: { members?: { ok?: boolean }[] } } | undefined)?.warp
-    const total = w?.members?.length ?? x.count ?? 0
+    const total = w?.members?.length ?? x.count ?? 1
     const ok = w?.members?.filter((m) => m.ok).length
     const badges = [protoBadge(x.transport === 'masque' ? 'masque' : 'awg')]
     const note = total ? S.ruleTarget.izN(ok ?? total, total) : undefined

@@ -205,6 +205,12 @@ function decodeOutput(name: string, o: J): Output {
         if (kind !== 'hysteria2') {
             const ac = int('active')
             if (ac !== undefined) out.active = ac
+            /* Самые быстрые узлы подписки в одном устройстве (spec-v2.md, `pick: latency`, умение
+             * pool_latency). */
+            const pk = str(o.pick)
+            if (pk === 'latency' || pk === 'order') { used.add('pick'); if (pk === 'latency') out.pick = 'latency' }
+            const tol = int('tolerance')
+            if (tol !== undefined) out.tolerance = tol
             const by = str(o.by)
             if (by && (POOL_BY as readonly string[]).includes(by)) { used.add('by'); out.by = by as Output['by'] }
         }
@@ -603,6 +609,10 @@ function putPool(out: J, o: Output, proto: string) {
         const many = typeof o.active === 'number' && o.active > 1
         if (many) out.active = o.active
         if (many && o.by && o.by !== 'connection') out.by = o.by
+        if (o.pick === 'latency') {
+            out.pick = 'latency'
+            if (typeof o.tolerance === 'number' && o.tolerance !== 50) out.tolerance = o.tolerance
+        }
     }
     if (typeof o.interval === 'number' && o.interval !== POOL_INTERVAL) out.interval = o.interval
     if (typeof o.silence === 'number' && o.silence !== poolSilence(proto)) out.silence = o.silence

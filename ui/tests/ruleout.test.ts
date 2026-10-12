@@ -196,5 +196,36 @@ describe('блок', () => {
         expect(Object.values(s2.outputs).filter((o) => (o.kind as string) === 'block')).toHaveLength(1)
         const back = decodeSpec(encodeSpec(s2))
         expect(back.outputs[s.channels[0].out].kind).toBe('block')
+        /* Оба правила ушли с «Блока» — выход block убран. */
+        let s3 = applyTarget(s2, 0, { ...structuredClone(EMPTY_TARGET), direct: true })
+        s3 = applyTarget(s3, 1, { ...structuredClone(EMPTY_TARGET), direct: true })
+        expect(Object.values(s3.outputs).some((o) => (o.kind as string) === 'block')).toBe(false)
+    })
+})
+
+describe('самый быстрый — ядро с pool_latency', () => {
+    const caps = { tunnelLatency: true }
+    it('одна подписка — один туннель pick: latency, без частей', () => {
+        const s = applyTarget(spec({}, [rule('a', 'direct')]), 0, subs('latency', [
+            { sub: SUB, proto: 'vless', idx: 0 }, { sub: SUB, proto: 'vless', idx: 2 },
+        ]), caps)
+        expect(s.outputs.a).toMatchObject({ kind: 'vless', nodes: [0, 2], pick: 'latency' })
+        expect(Object.values(s.outputs).filter((o) => o.part_of)).toHaveLength(0)
+    })
+    it('«Авто» — все узлы подписки, самый быстрый', () => {
+        const s = applyTarget(spec({}, [rule('a', 'direct')]), 0, subs('latency', [{ sub: SUB, proto: 'vless' }]), caps)
+        expect(s.outputs.a).toMatchObject({ kind: 'vless', pick: 'latency' })
+        expect(s.outputs.a.nodes).toBeUndefined()
+    })
+    it('две подписки — пул latency из туннелей latency; через спеку ядра и обратно', () => {
+        const t = subs('latency', [{ sub: SUB, proto: 'vless', idx: 1 }, { sub: SUB, proto: 'vless', idx: 3 }, { sub: SUB2, proto: 'vless' }])
+        const s = applyTarget(spec({}, [rule('a', 'direct')]), 0, t, caps)
+        expect(s.outputs.a).toMatchObject({ kind: 'interface', pick: 'latency' })
+        expect(s.outputs.a.devices!.map((d) => s.outputs[d].pick)).toEqual(['latency', 'latency'])
+        const doc = encodeSpec(s) as { outputs: Record<string, Record<string, unknown>> }
+        expect(Object.values(doc.outputs).filter((o) => o.pick === 'latency' && o.kind === 'tunnel')).toHaveLength(2)
+        const back = decodeSpec(doc)
+        expect(targetOf(back, back.channels[0].out)).toEqual(t)
+        expect(applyTarget(back, 0, t, caps)).toBe(back)
     })
 })
