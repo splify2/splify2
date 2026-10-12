@@ -223,6 +223,14 @@ chmod 0755 "$PKG/usr/libexec/rpcd/splify2" "$PKG/usr/sbin/splify2-update-lists" 
 chmod 0644 "$PKG/usr/share/splify2/allow-domains.sh"
 chmod 0644 "$PKG"/usr/lib/splify2/*.sh "$PKG"/usr/lib/splify2/rpcd/*.sh
 
+# API для приложений вне LuCI (docs/api.md): шлюз CGI на ucode с токенами устройств. Версия
+# пакета вписывается на сборке — её отдаёт /v1/info, и клиенту не нужен отдельный вызов.
+mkdir -p "$PKG/www/cgi-bin"
+sed "s/@VERSION@/$VERSION/" files/www/cgi-bin/splify2-api > "$PKG/www/cgi-bin/splify2-api"
+chmod 0755 "$PKG/www/cgi-bin/splify2-api"
+grep -q "^const VERSION = '$VERSION';" "$PKG/www/cgi-bin/splify2-api" || {
+    echo "в www/cgi-bin/splify2-api не вписана версия — /v1/info назовёт заглушку"; exit 1; }
+
 # Протокол xsteer: обработчик netifd и страница LuCI.
 #
 # ПОЧЕМУ ЗДЕСЬ, А НЕ В steer. Клиент xsteer — часть ядра steer: с 2.0 это модуль steer-xsteer
@@ -458,7 +466,7 @@ docker run --rm -v "$PWD":/w -w /w alpine:latest sh -c \
     "apk add --no-cache apk-tools >/dev/null 2>&1 && apk mkpkg \
        --info name:luci-app-splify2 --info version:$VERSION-r1 \
        --info description:'splify2: правила, выходы и списки поверх ядра steer' \
-       --info arch:noarch --info depends:'luci-base ip-full curl' \
+       --info arch:noarch --info depends:'luci-base ip-full curl ucode ucode-mod-fs ucode-mod-ubus' \
        --script post-install:build/scripts/post-install \
        --script post-upgrade:build/scripts/post-install \
        -F $PKG -o $OUT/luci-app-splify2-$VERSION-1_noarch.apk" > "$BUILD_LOG" 2>&1 \
@@ -500,7 +508,7 @@ mkdir -p "$PKG/CONTROL"
 cat > "$PKG/CONTROL/control" <<EOF
 Package: luci-app-splify2
 Version: $VERSION-1
-Depends: luci-base, ip-full, curl
+Depends: luci-base, ip-full, curl, ucode, ucode-mod-fs, ucode-mod-ubus
 Architecture: all
 Maintainer: xyzmean
 Section: luci

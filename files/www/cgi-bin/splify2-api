@@ -1,0 +1,445 @@
+#!/usr/bin/ucode
+// API splify2 — HTTP-шлюз к ubus-объекту splify2 для приложений вне LuCI (docs/api.md).
+//
+// ЗАЧЕМ ОТДЕЛЬНЫЙ ВХОД, А НЕ /ubus. Сессия ubus живёт пять минут без обращений и пропадает с
+// перезагрузкой роутера: приложение на компьютере просило бы пароль root снова и снова. Здесь
+// пароль спрашивается ОДИН раз — при подключении устройства, — а дальше устройство живёт на паре
+// токенов: короткий токен доступа и долгий токен обновления, который меняется при каждом
+// обновлении. Устройство можно отключить, не трогая пароль.
+//
+// ЧТО ВНУТРИ ВЫЗОВА. Тот же ubus-объект splify2, что зовёт панель LuCI, — через локальный ubus от
+// root. Сигнатуры, приведение типов и набор методов остаются у rpcd; своей модели здесь нет.
+//
+// ДОЛГИЕ ВЫЗОВЫ — ЗАДАНИЕМ, ПО ПРОСЬБЕ КЛИЕНТА. uhttpd обрывает CGI ровно через script_timeout
+// (60 с по умолчанию; вывод порциями предел не продлевает — проверено на стенде), а rpcd ждёт
+// обработчик до 120 с. Тот же предел у панели LuCI: uhttpd-mod-ubus берёт тайм-аут оттуда же.
+// Обычный вызов идёт прямо здесь — так он стоит столько же, сколько у панели (задание через
+// отдельный процесс прибавляло ~130 мс на стенде). Вызов с ?async=1 выполняет отдельный процесс
+// (этот же файл с ключом --job): шлюз ждёт его до WAIT секунд, не дождался — отдаёт 202 с номером
+// задания, и клиент дочитывает ответ по /v1/jobs/<id>.
+'use strict';
+
+import * as fs from 'fs';
+import * as ubus from 'ubus';
+
+const API = 1;
+const VERSION = '@VERSION@';
+
+// Устройства — во флеше: переживают перезагрузку и sysupgrade (lib/upgrade/keep.d/splify2).
+// Токены доступа и задания — в памяти: после перезагрузки токен доступа обновляется сам.
+const ETC = '/etc/splify2/api';
+const DEV = ETC + '/devices';
+const RUN = '/tmp/splify2-api';
+const ACC = RUN + '/access';
+const JOBS = RUN + '/jobs';
+const FAILS = RUN + '/fails.json';
+
+// Час, а не минуты: каждое обновление переписывает файл устройства во флеше. Час — 24 записи в
+// сутки на устройство, а не сотня.
+const ACCESS_TTL = 3600;
+// Устройство, которое не обновляло токен 90 дней, забывается.
+const IDLE_TTL = 90 * 86400;
+// Прежний токен обновления годен ещё минуту после смены: ответ на обновление мог потеряться в
+// сети, и клиент вправе повторить. Позже прежний токен — признак кражи: устройство отключается.
+const GRACE = 60;
+// Сколько ждать ответа задания до 202 и прямого вызова до 504. Запас до 60 с uhttpd — на запуск
+// и запись ответа.
+const WAIT = 45;
+const JOB_KEEP = 600;
+const BODY_MAX = 4 * 1024 * 1024;
+// Пять неверных паролей с одного адреса за пять минут — пауза для этого адреса до конца окна.
+const FAIL_MAX = 5;
+const FAIL_WINDOW = 300;
+
+const SELF = sourcepath() ?? '/www/cgi-bin/splify2-api';
+
+const STATUS_TEXT = {
+	'200': 'OK', '202': 'Accepted', '400': 'Bad Request', '401': 'Unauthorized',
+	'403': 'Forbidden', '404': 'Not Found', '405': 'Method Not Allowed',
+	'413': 'Payload Too Large', '429': 'Too Many Requests', '500': 'Internal Server Error',
+	'502': 'Bad Gateway', '504': 'Gateway Timeout',
+};
+
+function reply(code, body) {
+	print(`Status: ${code} ${STATUS_TEXT[code] ?? ''}\r\n`,
+		'Content-Type: application/json\r\n',
+		'Cache-Control: no-store\r\n\r\n',
+		sprintf('%J', body), '\n');
+	exit(0);
+}
+
+function fail(code, id, message, extra) {
+	let b = { error: id, message };
+	for (let k, v in extra) b[k] = v;
+	reply(code, b);
+}
+
+function mkdirs(path) {
+	let p = '';
+	for (let part in split(path, '/')) {
+		if (part == '') continue;
+		p += '/' + part;
+		if (!fs.stat(p))
+			fs.mkdir(p, 0700);
+	}
+}
+
+function rand_hex(n) {
+	return hexenc(fs.readfile('/dev/urandom', n));
+}
+
+// Вход — только [0-9a-f], его проверяет вызывающий: строка уходит в оболочку.
+function sha256(hex) {
+	let p = fs.popen(`printf %s ${hex} | sha256sum`, 'r');
+	let out = p.read('all');
+	p.close();
+	return substr(out, 0, 64);
+}
+
+function read_json(path) {
+	let s = fs.readfile(path);
+	if (s == null) return null;
+	try { return json(s); } catch (e) { return null; }
+}
+
+function write_json(path, v) {
+	fs.writefile(path + '.tmp', sprintf('%J', v));
+	fs.chmod(path + '.tmp', 0600);
+	fs.rename(path + '.tmp', path);
+}
+
+function read_body() {
+	let n = +(getenv('CONTENT_LENGTH') ?? 0);
+	if (n > BODY_MAX) fail(413, 'too_large', 'Слишком большой запрос');
+	if (!n) return {};
+	let s = '';
+	while (length(s) < n) {
+		let c = fs.stdin.read(n - length(s));
+		if (c == null || c == '') break;
+		s += c;
+	}
+	let v;
+	try { v = json(s); } catch (e) { fail(400, 'bad_json', 'Тело запроса — не JSON'); }
+	if (type(v) != 'object') fail(400, 'bad_json', 'Тело запроса — не объект JSON');
+	return v;
+}
+
+// ── Устройства ──────────────────────────────────────────────────────────────
+
+function dev_path(id) { return `${DEV}/${id}.json`; }
+
+function dev_load(id) {
+	if (type(id) != 'string' || !match(id, /^[0-9a-f]{16}$/)) return null;
+	return read_json(dev_path(id));
+}
+
+function dev_save(d) {
+	mkdirs(DEV);
+	write_json(dev_path(d.id), d);
+}
+
+function dev_forget(id) {
+	fs.unlink(dev_path(id));
+	for (let f in fs.lsdir(ACC) ?? []) {
+		let a = read_json(`${ACC}/${f}`);
+		if (!a || a.dev == id) fs.unlink(`${ACC}/${f}`);
+	}
+}
+
+function sweep_access() {
+	let now = time();
+	for (let f in fs.lsdir(ACC) ?? []) {
+		let a = read_json(`${ACC}/${f}`);
+		if (!a || a.exp <= now) fs.unlink(`${ACC}/${f}`);
+	}
+}
+
+function client_ip() { return getenv('REMOTE_ADDR') ?? ''; }
+
+// Новая пара токенов. Токен обновления хранится только хешем: в файле устройства его не
+// прочитать, даже если файл уехал в чужие руки.
+function issue(d) {
+	mkdirs(ACC);
+	sweep_access();
+	let secret = rand_hex(32);
+	let access = 'sa_' + rand_hex(32);
+	let now = time();
+	if (d.hash) {
+		d.prev = d.hash;
+		d.prev_until = now + GRACE;
+	}
+	d.hash = sha256(secret);
+	d.seen = now;
+	d.ip = client_ip();
+	dev_save(d);
+	write_json(`${ACC}/${access}`, { dev: d.id, exp: now + ACCESS_TTL });
+	return {
+		access_token: access,
+		token_type: 'Bearer',
+		expires_in: ACCESS_TTL,
+		refresh_token: `sr_${d.id}.${secret}`,
+		device: { id: d.id, name: d.name },
+	};
+}
+
+// Устройство по токену доступа или 401. Отключённое устройство теряет и токены доступа сразу:
+// файл устройства проверяется на каждом вызове, а это один stat.
+function authorize() {
+	let m = match(getenv('HTTP_AUTHORIZATION') ?? '', /^Bearer (sa_[0-9a-f]{64})$/);
+	if (!m) fail(401, 'no_token', 'Нужен токен доступа');
+	let path = `${ACC}/${m[1]}`;
+	let a = read_json(path);
+	if (!a) fail(401, 'bad_token', 'Токен доступа не найден');
+	if (a.exp <= time()) {
+		fs.unlink(path);
+		fail(401, 'token_expired', 'Срок токена доступа истёк');
+	}
+	if (!fs.access(dev_path(a.dev))) {
+		fs.unlink(path);
+		fail(401, 'revoked', 'Устройство отключено');
+	}
+	return a.dev;
+}
+
+function dev_public(d, me) {
+	return {
+		id: d.id, name: d.name, platform: d.platform, created: d.created,
+		seen: d.seen, ip: d.ip, current: d.id == me,
+	};
+}
+
+// ── Вход ────────────────────────────────────────────────────────────────────
+
+// Счёт неверных паролей — по адресу, а не общий: общий давал бы любому в сети запереть вход
+// владельцу пятью неверными паролями.
+function fails_load() {
+	let now = time(), all = read_json(FAILS), out = {};
+	if (type(all) != 'object') return out;
+	for (let ip, list in all) {
+		if (type(list) != 'array') continue;
+		let keep = filter(list, (t) => type(t) == 'int' && now - t < FAIL_WINDOW);
+		if (length(keep)) out[ip] = keep;
+	}
+	return out;
+}
+
+function login(b) {
+	let fails = fails_load();
+	let recent = fails[client_ip()] ?? [];
+	if (length(recent) >= FAIL_MAX)
+		fail(429, 'too_many_attempts', 'Слишком много неверных паролей, попробуйте позже',
+			{ retry_after: FAIL_WINDOW - (time() - recent[0]) });
+
+	let user = b.username ?? 'root';
+	let name = b.device_name;
+	if (type(user) != 'string' || type(b.password) != 'string')
+		fail(400, 'bad_request', 'Нужны имя пользователя и пароль');
+	if (type(name) != 'string' || length(name) == 0 || length(name) > 64)
+		fail(400, 'bad_request', 'Нужно имя устройства до 64 знаков');
+
+	// Пароль проверяет сам rpcd — те же учётные записи и то же правило, что у входа в LuCI.
+	let c = ubus.connect();
+	let s = c.call('session', 'login', { username: user, password: b.password, timeout: 30 });
+	if (!s?.ubus_rpc_session) {
+		mkdirs(RUN);
+		push(recent, time());
+		fails[client_ip()] = recent;
+		write_json(FAILS, fails);
+		sleep(1000);
+		fail(401, 'bad_password', 'Неверное имя пользователя или пароль');
+	}
+	// Вход в LuCI ещё не значит права на splify2: у учётной записи только для чтения их нет, а
+	// вызовы шлюза идут от root. Пускаем только тех, кому панель разрешила бы запись.
+	let acc = c.call('session', 'access', {
+		ubus_rpc_session: s.ubus_rpc_session, scope: 'ubus', object: 'splify2', 'function': 'spec_set',
+	});
+	c.call('session', 'destroy', { ubus_rpc_session: s.ubus_rpc_session });
+	if (!acc?.access)
+		fail(403, 'forbidden', 'У этой учётной записи нет прав на splify2');
+
+	let d = {
+		id: rand_hex(8), name, platform: type(b.platform) == 'string' ? substr(b.platform, 0, 32) : '',
+		user, created: time(),
+	};
+	reply(200, issue(d));
+}
+
+function refresh(b) {
+	let m = match(b.refresh_token ?? '', /^sr_([0-9a-f]{16})\.([0-9a-f]{64})$/);
+	if (!m) fail(401, 'bad_token', 'Токен обновления не распознан');
+	let d = dev_load(m[1]);
+	if (!d) fail(401, 'revoked', 'Устройство отключено');
+	let now = time();
+	if (now - d.seen > IDLE_TTL) {
+		dev_forget(d.id);
+		fail(401, 'revoked', 'Устройство долго не подключалось и отключено');
+	}
+	let h = sha256(m[2]);
+	if (h == d.hash || (h == d.prev && now <= d.prev_until))
+		reply(200, issue(d));
+	if (h == d.prev) {
+		// Прежний токен после окна повтора: им уже кто-то воспользовался.
+		dev_forget(d.id);
+		fail(401, 'revoked', 'Токен обновления использован повторно — устройство отключено');
+	}
+	fail(401, 'bad_token', 'Токен обновления не подходит');
+}
+
+// ── Вызовы ──────────────────────────────────────────────────────────────────
+
+// Статус ubus приходит только строкой ubus.error() — числового кода привязка не отдаёт.
+function ubus_fail(err) {
+	err ??= '';
+	if (index(err, 'Method not found') == 0) return [404, 'no_method', 'Метода нет'];
+	if (index(err, 'Not found') == 0) return [502, 'no_backend', 'Объект splify2 не найден в ubus'];
+	if (index(err, 'Invalid argument') == 0) return [400, 'bad_args', 'Неверные аргументы'];
+	if (index(err, 'Permission denied') == 0) return [403, 'forbidden', 'Нет доступа'];
+	if (index(err, 'Request timed out') == 0) return [504, 'timeout', 'Обработчик не ответил'];
+	return [502, 'backend_error', err];
+}
+
+function sweep_jobs() {
+	let now = time();
+	for (let j in fs.lsdir(JOBS) ?? []) {
+		let st = fs.stat(`${JOBS}/${j}`);
+		if (st && now - st.mtime > JOB_KEEP) {
+			for (let f in fs.lsdir(`${JOBS}/${j}`) ?? []) fs.unlink(`${JOBS}/${j}/${f}`);
+			fs.rmdir(`${JOBS}/${j}`);
+		}
+	}
+}
+
+function job_drop(dir) {
+	for (let f in fs.lsdir(dir) ?? []) fs.unlink(`${dir}/${f}`);
+	fs.rmdir(dir);
+}
+
+// Ждать ответа задания до WAIT секунд. Опрос файла с растущим шагом: короткий вызов (состояние,
+// спека) отвечает за десятки миллисекунд, и первые проверки идут часто.
+function job_wait(id, dir) {
+	let until = time() + WAIT, step = 10;
+	while (true) {
+		let out = read_json(`${dir}/out`);
+		if (out) {
+			job_drop(dir);
+			if (out.error) {
+				let f = ubus_fail(out.error);
+				fail(f[0], f[1], f[2]);
+			}
+			reply(200, out.result ?? {});
+		}
+		if (time() >= until) break;
+		sleep(step);
+		if (step < 100) step *= 2;
+	}
+	reply(202, { job: id, poll: `/v1/jobs/${id}` });
+}
+
+function call(dev, method, args, async) {
+	if (!match(method, /^[a-z][a-z0-9_]{0,63}$/)) fail(404, 'no_method', 'Метода нет');
+	if (!async) {
+		let c = ubus.connect(null, WAIT);
+		if (!c) fail(502, 'no_backend', 'ubus недоступен');
+		let res = c.call('splify2', method, args);
+		let err = ubus.error();
+		if (err) {
+			let f = ubus_fail(err);
+			fail(f[0], f[1], f[2]);
+		}
+		reply(200, res ?? {});
+	}
+	mkdirs(JOBS);
+	sweep_jobs();
+	let id = rand_hex(8), dir = `${JOBS}/${id}`;
+	fs.mkdir(dir, 0700);
+	write_json(`${dir}/in`, { dev, method, args });
+	// Свой сеанс (setsid) и закрытые потоки: задание не держит трубу uhttpd и переживает
+	// выход шлюза. Аргументы — только наш путь и шестнадцатеричный номер.
+	system(`setsid ${SELF} --job ${id} </dev/null >/dev/null 2>&1 &`);
+	job_wait(id, dir);
+}
+
+function job_poll(dev, id) {
+	if (!match(id, /^[0-9a-f]{16}$/)) fail(404, 'no_job', 'Задания нет');
+	let dir = `${JOBS}/${id}`;
+	let req = read_json(`${dir}/in`);
+	if (!req || req.dev != dev) fail(404, 'no_job', 'Задания нет');
+	job_wait(id, dir);
+}
+
+// Исполнитель задания: один вызов ubus и ответ файлом. Срок — больше, чем ждёт сам rpcd (120 с).
+function run_job(id) {
+	if (!match(id ?? '', /^[0-9a-f]{16}$/)) exit(1);
+	let dir = `${JOBS}/${id}`;
+	let req = read_json(`${dir}/in`);
+	if (!req) exit(1);
+	let c = ubus.connect(null, 150);
+	let res = c ? c.call('splify2', req.method, type(req.args) == 'object' ? req.args : {}) : null;
+	let err = c ? ubus.error() : 'Not found: ubus';
+	write_json(`${dir}/out`, err ? { error: err } : { result: res });
+	exit(0);
+}
+
+// ── Разбор запроса ──────────────────────────────────────────────────────────
+
+if (ARGV[0] == '--job')
+	run_job(ARGV[1]);
+
+const method = getenv('REQUEST_METHOD') ?? 'GET';
+const path = getenv('PATH_INFO') ?? '/';
+let m;
+
+function only(verb) {
+	if (method != verb) fail(405, 'bad_verb', `Нужен ${verb}`);
+}
+
+if (path == '/v1/info' || path == '/v1' || path == '/') {
+	only('GET');
+	reply(200, {
+		product: 'splify2', api: API, version: VERSION,
+		hostname: trim(fs.readfile('/proc/sys/kernel/hostname') ?? ''),
+		auth: ['password'],
+	});
+}
+else if (path == '/v1/auth/login') {
+	only('POST');
+	login(read_body());
+}
+else if (path == '/v1/auth/refresh') {
+	only('POST');
+	refresh(read_body());
+}
+else if (path == '/v1/auth/logout') {
+	only('POST');
+	let me = authorize();
+	dev_forget(me);
+	reply(200, { ok: true });
+}
+else if (path == '/v1/devices') {
+	only('GET');
+	let me = authorize();
+	let list = [];
+	for (let f in fs.lsdir(DEV) ?? []) {
+		let d = read_json(`${DEV}/${f}`);
+		if (d?.id) push(list, dev_public(d, me));
+	}
+	reply(200, { devices: sort(list, (a, b) => b.seen - a.seen) });
+}
+else if ((m = match(path, /^\/v1\/devices\/([0-9a-f]{16})\/revoke$/))) {
+	only('POST');
+	authorize();
+	if (!dev_load(m[1])) fail(404, 'no_device', 'Устройства нет');
+	dev_forget(m[1]);
+	reply(200, { ok: true });
+}
+else if ((m = match(path, /^\/v1\/call\/([^\/]+)$/))) {
+	only('POST');
+	let me = authorize();
+	call(me, m[1], read_body(), match(getenv('QUERY_STRING') ?? '', /(^|&)async=1(&|$)/) != null);
+}
+else if ((m = match(path, /^\/v1\/jobs\/([^\/]+)$/))) {
+	only('GET');
+	job_poll(authorize(), m[1]);
+}
+else
+	fail(404, 'no_route', 'Нет такого адреса');
