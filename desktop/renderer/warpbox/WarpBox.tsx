@@ -28,6 +28,13 @@ const QUICK = ['NL', 'DE', 'FI', 'SE', 'PL', 'GB', 'FR', 'US']
 type WarpOut = Output & { extra?: Record<string, unknown> }
 
 const isWarp = (o: Output) => (o.kind as string) === 'warp'
+
+/** `status.outputs.<группа>.group.warp`: неизвестные значения отсутствуют. */
+interface WarpStatus {
+    mask?: string
+    why?: string
+    members?: { out: string; ip?: string; port?: number; colo?: string; seen?: string; ok?: boolean }[]
+}
 const num = (v: unknown, d: number) => (typeof v === 'number' && Number.isFinite(v) ? v : d)
 const codes = (v: unknown) => (Array.isArray(v) ? v.filter((c): c is string => typeof c === 'string') : undefined)
 
@@ -142,6 +149,9 @@ function Group({ spec, out, live, info }: { spec: Spec; out: WarpOut; live: Live
     const [ask, dialog] = useConfirm()
 
     const members = Array.from({ length: count }, (_, i) => `${out.name}.${i + 1}`)
+    /* Что модуль знает о туннелях — `status.group.warp` (steer, ветка warpbox): точка, колония,
+     * страна, которую видят сайты. Поля нет (модуль старше) — точка из файла туннеля (/v1/warp). */
+    const wst = (g as { warp?: WarpStatus } | undefined)?.warp
     const selected = g?.selected ?? null
     const alive = new Set(g?.alive ?? [])
     const head = !st ? 'Ещё не применён'
@@ -165,23 +175,34 @@ function Group({ spec, out, live, info }: { spec: Spec; out: WarpOut; live: Live
                 </Button>
             </header>
 
+            <div className="desk-warp-body">
+            <div className="desk-warp-main">
+            {wst?.why && <div className="desk-error">{wst.why}</div>}
             <div className="desk-warp-members">
                 {members.map((m) => {
                     const w = winfo?.members.find((mm) => mm.name === m)
+                    const ws = wst?.members?.find((mm) => mm.out === m)
+                    const ep = ws?.ip ? `${ws.ip}:${ws.port ?? ''}` : w?.endpoint
                     const lat = g?.latency?.[m]
                     const state = !st ? 'wait' : alive.has(m) ? 'ok' : 'bad'
                     return (
                         <div key={m} className="desk-warp-member" data-active={m === selected || undefined}>
                             <span className="desk-warp-dot" data-state={state} aria-hidden="true" />
                             <span className="desk-warp-mname">{m}</span>
-                            <span className="desk-warp-mep">{w?.endpoint ?? (w?.reg ? 'подбирается точка' : 'регистрация')}</span>
+                            <span className="desk-warp-mep">{ep ?? (w?.reg ? 'подбирается точка' : 'регистрация')}</span>
+                            <span className="desk-warp-mcolo">
+                                {ws?.seen && <Flag cc={ws.seen} />} {ws?.colo ?? ''}
+                            </span>
                             <span className="desk-warp-mlat">{typeof lat === 'number' ? `${lat} мс` : ''}</span>
-                            {m === selected && <span className="desk-badge">несёт трафик</span>}
+                            {m === selected ? <span className="desk-badge">несёт трафик</span> : <span />}
                         </div>
                     )
                 })}
             </div>
+            <Scan group={out.name} applied={!!winfo} initial={info?.scans?.[out.name]} />
+            </div>
 
+            <div className="desk-warp-side">
             <div className="desk-warp-grid">
                 <div className="desk-block-title">Туннелей</div>
                 <Segmented
@@ -217,8 +238,8 @@ function Group({ spec, out, live, info }: { spec: Spec; out: WarpOut; live: Live
                     ]}
                 />
             </div>
-
-            <Scan group={out.name} applied={!!winfo} initial={info?.scans?.[out.name]} />
+            </div>
+            </div>
 
             <footer className="desk-warp-foot">
                 <Button

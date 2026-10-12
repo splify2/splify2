@@ -4,7 +4,33 @@
   display: flex;
   flex-direction: column;
   gap: 16px;
-  max-width: 880px;
+}
+
+/* Две колонки на широком окне: слева — что происходит (туннели, подбор), справа — настройка.
+ * Одной колонкой карточка либо ограничена по ширине (и справа пустует полоса), либо строки
+ * туннелей растягиваются на весь экран. */
+.desk-warp-body {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  gap: 20px;
+}
+
+@media (min-width: 1180px) {
+  .desk-warp-body {
+    grid-template-columns: minmax(0, 1.35fr) minmax(300px, 1fr);
+    align-items: start;
+  }
+}
+
+.desk-warp-main {
+  display: flex;
+  min-width: 0;
+  flex-direction: column;
+  gap: 14px;
+}
+
+.desk-warp-side {
+  min-width: 0;
 }
 
 .desk-warp-banner {
@@ -95,7 +121,7 @@
 
 .desk-warp-member {
   display: grid;
-  grid-template-columns: auto 72px 1fr auto auto;
+  grid-template-columns: auto 52px minmax(0, 1fr) auto auto auto;
   align-items: center;
   gap: 12px;
   min-height: 42px;
@@ -125,6 +151,11 @@
   color: var(--sp-muted-foreground);
 }
 
+.desk-warp-mcolo {
+  font-size: 12px;
+  white-space: nowrap;
+}
+
 .desk-warp-mlat {
   font-variant-numeric: tabular-nums;
   color: var(--sp-muted-foreground);
@@ -132,26 +163,20 @@
 
 .desk-warp-grid {
   display: grid;
-  grid-template-columns: 180px 1fr;
-  align-items: center;
-  gap: 12px 16px;
+  grid-template-columns: 1fr;
+  gap: 6px;
+}
+
+.desk-warp-grid > [role="group"],
+.desk-warp-grid > .desk-warp-countries {
+  margin-bottom: 10px;
 }
 
 .desk-warp-grid .desk-block-title {
   margin: 0;
 }
 
-/* Подпись многострочного поля (страны) — у его первой строки, а не посередине. */
-.desk-warp-grid .desk-block-title:has(+ .desk-warp-countries) {
-  align-self: start;
-  padding-top: 12px;
-}
 
-@media (max-width: 720px) {
-  .desk-warp-grid {
-    grid-template-columns: 1fr;
-  }
-}
 
 .desk-warp-countries {
   display: flex;
