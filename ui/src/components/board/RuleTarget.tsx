@@ -3,7 +3,9 @@ import { ChevronDown, Gauge, LoaderCircle } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Segmented } from '@/components/ui/layout'
 import Flag from '@/components/Flag'
-import { NodePill, useSubProbe } from '@/components/board/NodePills'
+import { BADGE_ROW, NodePill, PILL, useSubProbe } from '@/components/board/NodePills'
+import ConfBadges from '@/components/ConfBadges'
+import { devProto, protoBadge, type ConfBadge } from '@/lib/badges'
 import { rpc } from '@/lib/rpc'
 import { subsRemember, subsRemembered } from '@/lib/subs'
 import { plainName } from '@/lib/nodename'
@@ -66,11 +68,15 @@ export default function RuleTarget({ spec, index, live, onSpec }: {
     const steerDevs = new Set(Object.entries(outs).filter(([, o]) => isPart(o) || isTunnelKind(o.kind)).flatMap(([n, o]) => [n, ...devList(o)]))
     /* Туннели WARP — «<выход>.<n>» и устройство MASQUE: их ведёт модуль, а не человек. */
     const warpDev = (d: string) => warps.some(([n]) => d.startsWith(`${n}.`) || d.startsWith(`${n}-`))
-    const own: { key: string; name: string; foot: string; up?: boolean }[] = [
+    const devBadge = (kind: string): ConfBadge[] => {
+        const p = devProto(kind)
+        return p ? [protoBadge(p)] : [{ id: `kind:${kind}`, text: DEV_KIND[kind] || kind || S.ruleTarget.tunnel, group: 'proto' }]
+    }
+    const own: { key: string; name: string; badges: ConfBadge[]; up?: boolean }[] = [
         ...devices.filter((d) => d.owner !== 'steer' && !steerDevs.has(d.name) && !warpDev(d.name))
-            .map((d) => ({ key: `dev:${d.name}`, name: d.name, foot: DEV_KIND[d.kind] || d.kind || S.ruleTarget.tunnel, up: d.up })),
+            .map((d) => ({ key: `dev:${d.name}`, name: d.name, badges: devBadge(d.kind), up: d.up })),
         ...Object.entries(outs).filter(([, o]) => o.kind === 'awg' || o.kind === 'xsteer')
-            .map(([n, o]) => ({ key: `out:${n}`, name: n, foot: o.kind === 'awg' ? 'AmneziaWG' : 'xsteer', up: live.status?.outputs?.[n]?.up })),
+            .map(([n, o]) => ({ key: `out:${n}`, name: n, badges: [protoBadge(o.kind === 'awg' ? 'awg' : 'xsteer')], up: live.status?.outputs?.[n]?.up })),
     ]
 
     const shared = sharedWith(spec, index)
@@ -181,7 +187,7 @@ export default function RuleTarget({ spec, index, live, onSpec }: {
                                         <Pill
                                             key={d.key}
                                             title={d.name}
-                                            foot={d.foot}
+                                            badges={d.badges}
                                             chosen={at >= 0}
                                             rank={t.own.mode === 'order' && t.own.picks.length > 1 && at >= 0 ? at + 1 : undefined}
                                             on={d.up}
@@ -220,9 +226,11 @@ function Grid({ children }: { children: ReactNode }) {
 }
 
 /** Пилюля без замера — своё устройство или WARP. */
-function Pill({ title, foot, chosen, rank, on, onClick }: {
+function Pill({ title, badges, note, chosen, rank, on, onClick }: {
     title: string
-    foot: string
+    badges: ConfBadge[]
+    /** Справа от имени — как задержка в пилюле узла. */
+    note?: string
     chosen: boolean
     rank?: number
     on?: boolean
@@ -234,15 +242,16 @@ function Pill({ title, foot, chosen, rank, on, onClick }: {
             onClick={onClick}
             aria-pressed={chosen}
             className={[
-                'an-glass relative flex min-w-0 flex-col gap-1 rounded-xl border px-3 py-2 text-left transition-[border-color,box-shadow] duration-200 hover:border-primary/50',
+                `${PILL} relative transition-[border-color,box-shadow] duration-200 hover:border-primary/50`,
                 chosen ? 'border-primary/80 bg-primary/10 shadow-[0_0_0_2px_color-mix(in_srgb,var(--sp-primary)_25%,transparent)]' : '',
             ].join(' ')}
         >
             <span className="flex min-w-0 items-center gap-1.5 text-[13px] font-semibold">
-                <span className="truncate">{title}</span>
-                {on !== undefined && <span className={`ml-auto h-1.5 w-1.5 shrink-0 rounded-full ${on ? 'bg-success' : 'bg-destructive'}`} aria-hidden="true" />}
+                <span className="min-w-0 truncate">{title}</span>
+                {note && <span className="ml-auto shrink-0 text-[11.5px] font-semibold tabular-nums text-muted-foreground">{note}</span>}
+                {on !== undefined && <span className={`${note ? '' : 'ml-auto '}h-1.5 w-1.5 shrink-0 rounded-full ${on ? 'bg-success' : 'bg-destructive'}`} aria-hidden="true" />}
             </span>
-            <span className="truncate text-[11.5px] text-muted-foreground">{foot}</span>
+            <ConfBadges list={badges} className={BADGE_ROW} />
             {rank !== undefined && <Rank n={rank} />}
         </button>
     )
@@ -262,8 +271,9 @@ function WarpPill({ name, o, live, chosen, onClick }: { name: string; o: Output;
     const w = (st?.group as { warp?: { members?: { ok?: boolean }[] } } | undefined)?.warp
     const total = w?.members?.length ?? x.count ?? 0
     const ok = w?.members?.filter((m) => m.ok).length
-    const foot = [x.transport === 'masque' ? 'MASQUE' : 'AmneziaWG', total ? S.ruleTarget.izRabotayut(ok ?? total, total) : ''].filter(Boolean).join(' · ')
-    return <Pill title={name} foot={foot} chosen={chosen} on={st ? !!st.up : undefined} onClick={onClick} />
+    const badges = [protoBadge(x.transport === 'masque' ? 'masque' : 'awg')]
+    const note = total ? S.ruleTarget.izN(ok ?? total, total) : undefined
+    return <Pill title={name} badges={badges} note={note} chosen={chosen} on={st ? !!st.up : undefined} onClick={onClick} />
 }
 
 /** Пилюли одной подписки: «Авто» и по пилюле на конфигурацию, с проверкой задержки. */
@@ -315,7 +325,7 @@ function SubPills({ sub, picks, rank, live, onToggle, onAuto }: {
                         onClick={() => onAuto(protos, autoOn)}
                         aria-pressed={autoOn}
                         className={[
-                            'an-glass flex min-w-0 flex-col gap-1 rounded-xl border px-3 py-2 text-left transition-[border-color,box-shadow] duration-200 hover:border-primary/50',
+                            `${PILL} transition-[border-color,box-shadow] duration-200 hover:border-primary/50`,
                             autoOn ? 'border-primary/80 bg-primary/10 shadow-[0_0_0_2px_color-mix(in_srgb,var(--sp-primary)_25%,transparent)]' : '',
                         ].join(' ')}
                     >
@@ -325,7 +335,7 @@ function SubPills({ sub, picks, rank, live, onToggle, onAuto }: {
                     {shown.map((n) => {
                         const at = keys.indexOf(subPickKey(pickOf(n)))
                         return (
-                            <div key={n.key} className="relative">
+                            <div key={n.key} className="relative min-w-0">
                                 <NodePill
                                     node={n}
                                     lat={lat[n.key]}

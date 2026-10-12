@@ -1,5 +1,6 @@
 import { useState } from 'react'
 import Flag from '@/components/Flag'
+import ConfBadges from '@/components/ConfBadges'
 import { latencyTone, probeMs } from '@/lib/probe'
 import { probeSubNode, type SubNode } from '@/lib/subnodes'
 import { S } from '@/copy'
@@ -34,6 +35,12 @@ export function useSubProbe(path: string) {
     return { lat, probe, probing }
 }
 
+/** Пилюля любого блока «Куда»: все одного размера — во всю ячейку сетки и одной высоты. */
+export const PILL = 'an-glass flex h-[64px] w-full min-w-0 flex-col justify-center gap-1.5 rounded-xl border px-3 text-left'
+
+/** Строка бейджей в пилюле — одна линия, лишние бейджи переносятся за её край и не видны. */
+export const BADGE_ROW = 'h-5 content-start overflow-hidden'
+
 /** Пилюля конфигурации по образцу вкладки Steer апстримного Zapret Manager: флаг и имя,
  *  «протокол · транспорт · защита», задержка цветом. `chosen` — узел взят правилом,
  *  `on` — ядро держит его сейчас. */
@@ -53,9 +60,9 @@ export function NodePill({ node, lat, chosen, on, onClick, disabled }: {
             onClick={onClick}
             disabled={disabled}
             aria-pressed={chosen}
-            title={lat?.why || undefined}
+            title={lat?.why || `${node.name} — ${node.foot}`}
             className={[
-                'an-glass flex min-w-0 flex-col gap-1 rounded-xl border px-3 py-2 text-left transition-[border-color,opacity,box-shadow] duration-200',
+                `${PILL} transition-[border-color,opacity,box-shadow] duration-200`,
                 'hover:border-primary/50 disabled:cursor-default',
                 chosen ? 'border-primary/80 bg-primary/10 shadow-[0_0_0_2px_color-mix(in_srgb,var(--sp-primary)_25%,transparent)]' : '',
                 on && !chosen ? 'border-success/70' : '',
@@ -64,18 +71,17 @@ export function NodePill({ node, lat, chosen, on, onClick, disabled }: {
         >
             <span className="flex min-w-0 items-center gap-1.5 text-[13px] font-semibold">
                 <Flag cc={node.cc} />
-                <span className="truncate">{node.name}</span>
-                {on && <span className="ml-auto h-1.5 w-1.5 shrink-0 rounded-full bg-success" aria-label={S.subsBoard.rabotaet} />}
-            </span>
-            <span className="flex min-w-0 items-center justify-between gap-2 text-[11.5px]">
-                <span className="min-w-0 truncate text-muted-foreground">{node.foot}</span>
+                <span className="min-w-0 truncate">{node.name}</span>
                 <span className={[
-                    'shrink-0 font-semibold tabular-nums',
+                    'ml-auto shrink-0 text-[11.5px] font-semibold tabular-nums',
                     lat?.busy ? 'text-muted-foreground' : dead ? 'text-destructive' : tone === 'good' ? 'text-success' : tone === 'ok' ? 'text-warning-fg' : tone ? 'text-destructive' : '',
                 ].join(' ')}>
                     {lat?.busy ? '…' : dead ? S.subsBoard.netOtveta : lat?.ok && lat.ms !== undefined ? S.subsBoard.ms(lat.ms) : ''}
                 </span>
+                {on && <span className="h-1.5 w-1.5 shrink-0 rounded-full bg-success" aria-label={S.subsBoard.rabotaet} />}
             </span>
+            {/* Бейджи одной строкой: не влезший уходит целиком, а не обрезается посередине. */}
+            <ConfBadges list={node.badges} className={BADGE_ROW} />
         </button>
     )
 }

@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react'
 import { rpc, type VlessNodesReply } from '@/lib/rpc'
 import { isProxyKind, type ProxyKind, type VlessNode } from '@/lib/model'
 import { ccFromName, plainName } from '@/lib/nodename'
+import { nodeBadges, type ConfBadge } from '@/lib/badges'
 
 /** Конфигурация (узел) подписки — одним списком на все протоколы: VLESS, Hysteria2 и прокси
  *  steer-proxy. Номер узла у ядра — внутри своего протокола (`index`); у прокси в перечне файла
@@ -14,8 +15,10 @@ export interface SubNode {
     at?: number
     name: string
     cc?: string
-    /** «протокол · транспорт · защита» — подпись пилюли. */
+    /** «протокол · транспорт · защита» — подпись пилюли словами. */
     foot: string
+    /** То же цветными бейджами (lib/badges.ts). */
+    badges: ConfBadge[]
 }
 
 export const PROTO_NAME: Record<string, string> = {
@@ -51,6 +54,7 @@ function node(proto: SubNode['proto'], n: VlessNode, at?: number): SubNode {
         name: plainName(n.name) || n.host,
         cc: n.cc || ccFromName(n.name),
         foot: footOf(proto, n),
+        badges: nodeBadges(n, proto),
     }
 }
 

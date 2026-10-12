@@ -856,7 +856,7 @@ export const ru = {
         proveritVse: (p0: unknown) => `проверить все${p0}`,
         lyubayaRabochaya: "любая рабочая",
         tunnel: "туннель",
-        izRabotayut: (ok: number, n: number) => `${ok} из ${n} работают`,
+        izN: (ok: number, n: number) => `${ok} из ${n}`,
         neSlomaetsyaPriObnovlenii: "не сломается при обновлении подписки",
         /** Модули клиентов, которых нет: `hysteria2`, `proxy`. Один — назван протокол его ссылок. */
         uzlovNetNuzhenPaket: (need: readonly string[]) => need.length === 1
@@ -1191,7 +1191,7 @@ export const ru = {
         avto: "Авто",
         lyubayaRabochaya: "любая рабочая",
         tunnel: "туннель",
-        izRabotayut: (ok: number, n: number) => `${ok} из ${n} работают`,
+        izN: (ok: number, n: number) => `${ok} из ${n}`,
     },
     subsBoard: {
         podpiski: "Подписки",
