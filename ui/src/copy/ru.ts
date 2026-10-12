@@ -583,6 +583,8 @@ export const ru = {
         udalit: " Удалить",
     },
     home: {
+        poryadokPravila: (n: number, all: number) => `Правило ${n} из ${all}: перетащите или ↑/↓, чтобы поменять порядок`,
+        peretaschite: "Перетащите, чтобы поменять порядок: верхнее правило главнее",
         escheSpiskov: (n: number) => `ещё ${n}`,
         vybrannyeSpiski: "Выбранные списки",
         zakrytSpiski: "Закрыть список",

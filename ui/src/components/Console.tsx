@@ -187,7 +187,7 @@ export default function Console({ extra, railHost, board = false, settingsHost, 
 
                 {/* Отступ снизу на узком экране — под нижнюю панель разделов: без него последняя
                     карточка уезжает под неё, и человек не видит, что страница кончилась. */}
-                <main className="min-w-0 flex-1 px-3 pb-24 pt-3 lg:p-6">
+                <main className={board ? 'relative min-w-0 flex-1 px-3 pb-24 pt-3 lg:px-6 lg:pb-6 lg:pt-3' : 'min-w-0 flex-1 px-3 pb-24 pt-3 lg:p-6'}>
                     {/* «Сохранено» — вспышка на полторы секунды после каждой УДАВШЕЙСЯ записи, а
                         не после правки: взамен кнопки эта галочка — единственное, по чему человек
                         судит, уехало ли что-нибудь на роутер. */}
@@ -195,7 +195,8 @@ export default function Console({ extra, railHost, board = false, settingsHost, 
                         были шестнадцать пустых пикселей над вердиктом на каждом разделе, и
                         читались они как незаполненная дырка. Место под неё резервируется только
                         на широком, где оно есть. */}
-                    <div className="relative flex justify-end lg:mb-1 lg:h-4">
+                    {/* В приложении для ПК вспышка лежит поверх, без своей строки: раздел начинается выше. */}
+                    <div className={board ? 'pointer-events-none absolute right-6 top-2 z-10 flex justify-end' : 'relative flex justify-end lg:mb-1 lg:h-4'}>
                         <span
                             aria-hidden={!savedFlash}
                             className={[

@@ -1,5 +1,5 @@
-import { useCallback, useEffect, useRef, useState, type ReactNode } from 'react'
-import { ArrowRight, LoaderCircle, Plus, Search, TriangleAlert, X } from 'lucide-react'
+import { useCallback, useEffect, useRef, useState, type HTMLAttributes, type ReactNode } from 'react'
+import { ArrowRight, GripVertical, LoaderCircle, Plus, Search, TriangleAlert, X } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Switch } from '@/components/ui/switch'
 import { Badge } from '@/components/ui/badge'
@@ -619,11 +619,35 @@ function RuleCards({
         })
     }
 
+    /** Порядок — это приоритет: правило переносится мышью (или ↑/↓ на ручке) на место другого. */
+    const [drag, setDrag] = useState<number | null>(null)
+    const [over, setOver] = useState<number | null>(null)
+    function move(from: number, to: number) {
+        if (!spec || from === to || to < 0 || to >= spec.channels.length) return
+        const next = spec.channels.slice()
+        const [x] = next.splice(from, 1)
+        next.splice(to, 0, x)
+        pending.edit({ ...spec, channels: next })
+    }
+
     return (
         <div className="sp-board-grid grid gap-3 sm:grid-cols-2">
             {channels.map((ch, i) => (
                 <RuleCard
                     key={`${ch.name}-${i}`}
+                    index={i}
+                    total={channels.length}
+                    dragging={drag === i}
+                    target={over === i && drag !== null && drag !== i}
+                    dnd={{
+                        draggable: true,
+                        onDragStart: (e) => { setDrag(i); e.dataTransfer.effectAllowed = 'move'; e.dataTransfer.setData('text/plain', String(i)) },
+                        onDragOver: (e) => { if (drag === null) return; e.preventDefault(); if (over !== i) setOver(i) },
+                        onDragLeave: () => { if (over === i) setOver(null) },
+                        onDrop: (e) => { e.preventDefault(); if (drag !== null) move(drag, i); setDrag(null); setOver(null) },
+                        onDragEnd: () => { setDrag(null); setOver(null) },
+                    }}
+                    onMove={(d) => move(i, i + d)}
                     ch={ch}
                     labels={ruleLabels(ch, services)}
                     set={setOf(ch.name)}
@@ -667,8 +691,14 @@ function ruleLabels(ch: Channel, services: ReturnType<typeof useServices>): stri
 }
 
 function RuleCard({
-    ch, labels, set, st, facts, phase, onOpen, onToggle, onSection,
+    ch, labels, set, st, facts, phase, onOpen, onToggle, onSection, index, total, dragging, target, dnd, onMove,
 }: {
+    index: number
+    total: number
+    dragging: boolean
+    target: boolean
+    dnd: HTMLAttributes<HTMLElement>
+    onMove: (delta: number) => void
     ch: Channel
     labels: string[]
     set?: ChannelStatus
@@ -694,9 +724,32 @@ function RuleCard({
               .join(' · ') || (st?.up ? S.home.rabotaet : S.home.nePodnyat2)
 
     return (
-        <article className={[TILE, 'sp-board-rule', on ? '' : 'sp-board-rule-off'].join(' ')}>
+        <article
+            {...dnd}
+            className={[
+                TILE, 'sp-board-rule transition-[opacity,box-shadow] duration-150', on ? '' : 'sp-board-rule-off',
+                dragging ? 'opacity-50' : '',
+                target ? 'shadow-[0_0_0_2px_var(--sp-primary)]' : '',
+            ].join(' ')}
+        >
             <div className="flex min-w-0 items-start justify-between gap-3">
-                <button type="button" onClick={onOpen} className="sp-board-rule-open bg-transparent text-left text-sm font-semibold">{ch.name}</button>
+                <div className="flex min-w-0 items-center gap-1.5">
+                    {/* Ручка: за неё (и за всю карточку) правило переносится; номер — приоритет. */}
+                    <button
+                        type="button"
+                        className="sp-board-rule-control sp-board-grip flex shrink-0 cursor-grab items-center gap-0.5 rounded-md bg-transparent px-0.5 text-[11px] font-semibold tabular-nums text-muted-foreground hover:text-foreground"
+                        aria-label={S.home.poryadokPravila(index + 1, total)}
+                        title={S.home.peretaschite}
+                        onKeyDown={(e) => {
+                            if (e.key === 'ArrowUp' || e.key === 'ArrowLeft') { e.preventDefault(); onMove(-1) }
+                            if (e.key === 'ArrowDown' || e.key === 'ArrowRight') { e.preventDefault(); onMove(1) }
+                        }}
+                    >
+                        <GripVertical className="h-3.5 w-3.5" aria-hidden="true" />
+                        {index + 1}
+                    </button>
+                    <button type="button" onClick={onOpen} className="sp-board-rule-open min-w-0 bg-transparent text-left text-sm font-semibold">{ch.name}</button>
+                </div>
                 <div className="sp-board-rule-control"><Switch on={on} label={on ? S.rulesTab.vyklyuchitPravilo(ch.name) : S.rulesTab.vklyuchitPravilo(ch.name)} onClick={onToggle} /></div>
             </div>
             <button type="button" onClick={() => onSection('vpn')} className="sp-board-rule-control flex min-w-0 items-center gap-1.5 bg-transparent text-left">

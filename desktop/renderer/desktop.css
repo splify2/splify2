@@ -553,3 +553,8 @@ body :is(button, [role="button"], a, label, summary) :is(*, .font-mono, .desk-mo
 
 .desk .sp-board-list-panel[data-above] { top: auto; bottom: calc(100% + 6px); }
 
+
+/* Перетаскивание там, где его ждут (порядок правил, состав пула): общий запрет выше гасил бы и его. */
+.desk [draggable="true"] {
+  -webkit-user-drag: element;
+}
