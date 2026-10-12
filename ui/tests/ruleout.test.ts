@@ -185,11 +185,11 @@ describe('через спеку ядра и обратно', () => {
 })
 
 describe('блок', () => {
-    it('«Блок» — выход kind: block (заводится один), домены настоящими адресами; обратно читается', () => {
+    it('«Блок» — выход kind: block (заводится один), режим доменов не трогается; обратно читается', () => {
         const ch: Channel = { name: 'ads', out: 'direct', match: { domains_files: ['/etc/steer/lists/ads.lst'], mode: 'fakeip' } }
         const s = applyTarget(spec({}, [ch, { ...ch, name: 'ads2' }]), 0, { ...structuredClone(EMPTY_TARGET), block: true })
         expect(s.outputs[s.channels[0].out]).toMatchObject({ kind: 'block' })
-        expect(s.channels[0].match.mode).toBe('realip')
+        expect(s.channels[0].match.mode).toBe('fakeip')
         expect(targetOf(s, s.channels[0].out)?.block).toBe(true)
         const s2 = applyTarget(s, 1, { ...structuredClone(EMPTY_TARGET), block: true })
         expect(s2.channels[1].out).toBe(s.channels[0].out)

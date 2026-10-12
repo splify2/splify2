@@ -157,8 +157,10 @@ export default function RuleEditor({
      *  сущности в движке нет и не нужно: метку раздаёт первое совпадение, поэтому верхнее
      *  правило забирает сервис себе и оставляет его на обычном пути. */
     const isException = outputs[ch.out]?.kind === 'direct'
-    /** Выход direct или «Блок» — домены только настоящими адресами (rulefiles.directDomains). */
-    const realOnly = isException || outputs[ch.out]?.kind === ('block' as typeof outputs[string]['kind'])
+    /** Выход direct — домены только настоящими адресами (rulefiles.directDomains). */
+    const realOnly = isException
+    /** «Блок»: домены решает резолвер ядра пустым адресом — режим доменов и порт здесь ни к чему. */
+    const isBlock = outputs[ch.out]?.kind === ('block' as typeof outputs[string]['kind'])
     /* Такое правило с доменами, записанное с fake-IP, — на настоящие адреса. */
     useEffect(() => {
         if (!realOnly) return
@@ -634,7 +636,7 @@ export default function RuleEditor({
                             <p className="text-xs text-destructive">
                                 {S.ruleEditor.isklyucheniePerekrytoVysheStoit}{coveredBy.join('», «')}{S.ruleEditor.sTemiZheZapisyami}</p>
                         )}
-                        {hasDomains && !realOnly && (
+                        {hasDomains && !realOnly && !isBlock && (
                             /* Два режима — сегментами, как любой выбор из двух-четырёх вариантов в
                                приложении; значения те же, что были у выпадающего списка. */
                             <div className="space-y-1.5 border-t border-border pt-3 text-xs">
@@ -657,7 +659,7 @@ export default function RuleEditor({
                                     {S.ruleEditor.fakeIpKazhdomuDomenu}</p>
                             </div>
                         )}
-                        {hasDomains && fakeip && (
+                        {hasDomains && fakeip && !isBlock && (
                             <div className="text-xs">
                                 <FieldRow label={S.ruleEditor.portNaznacheniya}>
                                     <input

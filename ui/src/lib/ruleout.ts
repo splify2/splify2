@@ -415,10 +415,12 @@ export function applyTarget(spec: Spec, index: number, t: Target): Spec {
         const next: Spec = { ...s, channels: s.channels.map((c, k) => (k === index ? { ...c, out } : c)) }
         return prev && prev !== out ? prune(next, prev) : next
     }
+    /* Домены в «Блок» решает резолвер ядра — пустым адресом (0.0.0.0, ::), ни один адрес в наборы не
+     * попадает: real-IP положил бы туда общий адрес CDN и заблокировал всё за ним. Режим доменов
+     * правила здесь не трогается. */
     if (t.block) {
         const b = blockOf(spec)
-        const s2 = setOut(b.spec, b.name)
-        return { ...s2, channels: s2.channels.map((c, k) => (k === index ? directDomains(c) : c)) }
+        return setOut(b.spec, b.name)
     }
     if (t.direct) {
         const d = directOf(spec)
