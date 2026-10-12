@@ -514,10 +514,9 @@ export default function Home({
                             {S.home.etotInterfeysZapisyvaetNastroyki}</p>
                     </Block>
                 )}
-                {/* Верх — один блок на стекле: вердикт с находкой диагностики и подключения под ним;
-                    низ — правила на матовой подложке (владелец: «весь блок подключений в стекло,
-                    а низ матовый», вердикт — не отдельно). */}
-                <section className="sp-board-group sp-board-glass space-y-3 rounded-2xl border p-3">
+                {/* Два блока на стекле, как карточки панели: верх — вердикт с находкой диагностики и
+                    подключения под ним (вердикт не отдельно), низ — правила. */}
+                <section className="sp-board-group an-glass space-y-3 rounded-2xl border p-3">
                     {verdictBlock}
                     <div className="flex items-center justify-between gap-3 px-1 pt-1">
                         <h2 className="sp-sub">{S.home.podklyucheniya}</h2>
@@ -536,7 +535,7 @@ export default function Home({
                         <OutputsColumn live={live} facts={facts} busy={busy} noCurl={noCurl} onRefresh={refresh} tiles />
                     </div>
                 </section>
-                <section className="sp-board-group sp-board-plate space-y-3 rounded-2xl border p-3">
+                <section className="sp-board-group an-glass space-y-3 rounded-2xl border p-3">
                     <h2 className="sp-sub flex items-center gap-2 px-1 pt-1">
                         {S.home.pravila}
                         {(spec?.channels.length ?? 0) > 0 && (
