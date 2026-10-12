@@ -1110,7 +1110,7 @@ function OutputsColumn({
 /* Высота одна у всех плиток «доски» — и выходов, и правил, и призрачной: владелец просил
  * одинаковый и компактный размер («че за гигаблоки»). Содержимое не обрезается: из плитки
  * правила раскрывается список «ещё N». */
-const TILE = 'sp-board-tile flex h-[124px] min-w-0 flex-col gap-1.5 rounded-2xl border p-3.5'
+const TILE = 'sp-board-tile an-glass flex h-[124px] min-w-0 flex-col gap-1.5 rounded-2xl border p-3.5'
 
 function TileHead({ title, tag }: { title: ReactNode; tag?: ReactNode }) {
     return (
