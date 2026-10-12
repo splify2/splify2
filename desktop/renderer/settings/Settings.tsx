@@ -1,12 +1,22 @@
-import { useEffect, useState, type ReactNode } from 'react'
-import { Bell, Info, Laptop, MonitorCog, Palette, Power, Router, SlidersHorizontal, X } from 'lucide-react'
+import { useCallback, useEffect, useState, type ReactNode } from 'react'
+import { Bell, Cpu, Info, Laptop, Layers, Library, MonitorCog, Network, Palette, Power, Router, SlidersHorizontal, X } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Segmented, ToggleRow } from '@/components/ui/layout'
 import { useConfirm } from '@/components/ui/confirm'
 import { desk, type ApiState, type AppSettings, type RouterDevice, type RouterInfo } from '../desk'
 import { ago, useSettings } from '../hooks'
 
-type Page = 'look' | 'startup' | 'notify' | 'panel' | 'router' | 'devices' | 'about'
+/** Экраны настроек роутера — их рисует панель (Console settingsHost, Settings only). */
+type RouterScreen = 'general' | 'catalog' | 'xsteer' | 'extra' | 'about'
+type Page = 'look' | 'startup' | 'notify' | `r-${RouterScreen}` | 'router' | 'devices' | 'about'
+
+const ROUTER_TITLE: Record<RouterScreen, string> = {
+    general: 'Общее',
+    catalog: 'Каталог',
+    xsteer: 'XSTEER',
+    extra: 'Дополнительно',
+    about: 'splify2 и ядро',
+}
 
 const NAV: ({ group: string } | { id: Page; label: string; icon: typeof Bell })[] = [
     { group: 'Приложение' },
@@ -14,7 +24,11 @@ const NAV: ({ group: string } | { id: Page; label: string; icon: typeof Bell })[
     { id: 'startup', label: 'Запуск и трей', icon: Power },
     { id: 'notify', label: 'Уведомления', icon: Bell },
     { group: 'Роутер' },
-    { id: 'panel', label: 'Настройки роутера', icon: SlidersHorizontal },
+    { id: 'r-general', label: ROUTER_TITLE.general, icon: SlidersHorizontal },
+    { id: 'r-catalog', label: ROUTER_TITLE.catalog, icon: Library },
+    { id: 'r-xsteer', label: ROUTER_TITLE.xsteer, icon: Network },
+    { id: 'r-extra', label: ROUTER_TITLE.extra, icon: Layers },
+    { id: 'r-about', label: ROUTER_TITLE.about, icon: Cpu },
     { id: 'router', label: 'Подключение', icon: Router },
     { id: 'devices', label: 'Устройства', icon: Laptop },
     { group: '' },
@@ -28,13 +42,20 @@ export default function Settings({ open, onClose, router, onDisconnect, onPanelH
     onClose: () => void
     router: ApiState | null
     onDisconnect: () => void
-    /** Узел для раздела «Настройки» панели: панель рисует его сюда порталом (Console,
-     *  settingsHost) — настройки роутера живут в этом же слое, а не вторым пунктом рельса. */
-    onPanelHost?: (el: HTMLElement | null) => void
+    /** Узел и экран для настроек роутера: панель рисует экран сюда порталом (Console,
+     *  settingsHost, settingsScreen) — каждый экран отдельным пунктом этого же слоя. */
+    onPanelHost?: (el: HTMLElement | null, screen?: RouterScreen) => void
 }) {
     const [page, setPage] = useState<Page>('look')
     const [mounted, setMounted] = useState(open)
     const [s, set] = useSettings()
+    /* Ссылка на узел экрана роутера — одна на страницу: новая функция на каждой перерисовке
+     * заставляла бы React звать её с null и снова с узлом, а каждый вызов меняет состояние
+     * оболочки — круг перерисовок. */
+    const panelRef = useCallback(
+        (el: HTMLElement | null) => onPanelHost?.(el, el && page.startsWith('r-') ? (page.slice(2) as RouterScreen) : undefined),
+        [page, onPanelHost],
+    )
 
     useEffect(() => {
         if (open) setMounted(true)
@@ -62,7 +83,7 @@ export default function Settings({ open, onClose, router, onDisconnect, onPanelH
         >
             <aside className="desk-settings-nav">
                 <nav className="desk-settings-nav-in" aria-label="Разделы настроек">
-                    {NAV.filter((it) => !('id' in it) || it.id !== 'panel' || router?.connected).map((it, i) =>
+                    {NAV.filter((it) => !('id' in it) || !it.id.startsWith('r-') || router?.connected).map((it, i) =>
                         'group' in it ? (
                             it.group ? <div key={i} className="desk-settings-group">{it.group}</div> : <div key={i} className="desk-settings-sep" />
                         ) : (
@@ -85,10 +106,13 @@ export default function Settings({ open, onClose, router, onDisconnect, onPanelH
                     {page === 'look' && <Look s={s} set={set} />}
                     {page === 'startup' && <Startup s={s} set={set} />}
                     {page === 'notify' && <Notify s={s} set={set} />}
-                    {page === 'panel' && (
+                    {page.startsWith('r-') && (
                         <>
-                            <Head title="Настройки роутера" />
-                            <div className="desk-panel-settings" ref={onPanelHost} />
+                            <Head title={ROUTER_TITLE[page.slice(2) as RouterScreen]} />
+                            <div
+                                className="desk-panel-settings"
+                                ref={panelRef}
+                            />
                         </>
                     )}
                     {page === 'router' && <RouterPage router={router} onDisconnect={onDisconnect} />}

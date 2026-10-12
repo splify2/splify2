@@ -65,6 +65,7 @@ contextBridge.exposeInMainWorld('splifyDesktop', {
     update: {
         onReady: (cb) => listen('update:ready', cb),
         install: () => ipcRenderer.invoke('update:install'),
+        state: () => ipcRenderer.invoke('update:state'),
     },
     app: {
         info: () => invoke('app:info'),

@@ -17,7 +17,11 @@ const path = require('node:path')
 const { app, autoUpdater } = require('electron')
 const { EventEmitter } = require('node:events')
 
-const CHECK_EVERY_MS = 4 * 60 * 60 * 1000
+// Раз в полчаса и при каждом открытии окна (не чаще MIN_GAP_MS): программа живёт в трее
+// сутками, и проверка раз в 4 часа означала, что выложенную версию человек не видит полдня
+// (владелец: «а где обновление то»).
+const CHECK_EVERY_MS = 30 * 60 * 1000
+const MIN_GAP_MS = 5 * 60 * 1000
 const FIRST_CHECK_MS = 6000
 
 function feed() {
@@ -57,7 +61,13 @@ class Updater extends EventEmitter {
 
     check() {
         if (!this.enabled || this.state === 'checking' || this.state === 'downloading' || this.state === 'ready') return
+        this.lastCheck = Date.now()
         try { autoUpdater.checkForUpdates() } catch (e) { this.error = e?.message; this.set('error') }
+    }
+
+    /** Проверить, если давно не проверяли (окно открыли из трея). */
+    nudge() {
+        if (Date.now() - (this.lastCheck || 0) >= MIN_GAP_MS) this.check()
     }
 
     /** Проверка при запуске: ответ «нет обновлений» за FIRST_CHECK_MS — или идём дальше без него;

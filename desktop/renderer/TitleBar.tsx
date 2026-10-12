@@ -15,7 +15,10 @@ export default function TitleBar({ state, onDisconnect, onSettings, settingsOpen
     const [menu, setMenu] = useState(false)
     const [ask, dialog] = useConfirm()
     const [update, setUpdate] = useState(false)
-    useEffect(() => desk.update.onReady(() => setUpdate(true)), [])
+    useEffect(() => {
+        desk.update.state().then((st) => { if (st === 'ready') setUpdate(true) }, () => {})
+        return desk.update.onReady(() => setUpdate(true))
+    }, [])
     const mon = useMonitor()
     const downs = Object.entries(mon?.outputs ?? {}).filter(([, v]) => v === 'down').map(([k]) => k)
     // Точка у имени роутера — сводка сторожа: связь, ядро, выходы.

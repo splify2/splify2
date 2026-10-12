@@ -60,6 +60,7 @@ function send(ch, v) {
 }
 
 function showWindow() {
+    updater?.nudge()
     if (!win) {
         createWindow(true)
         return
@@ -232,6 +233,9 @@ function updateTray() {
     tray.setContextMenu(Menu.buildFromTemplate([
         { label: 'Открыть splify2', click: showWindow },
         { label: 'Настройки', click: () => { showWindow(); send('settings:open', null) } },
+        ...(updater?.state === 'ready'
+            ? [{ label: 'Перезапустить в новой версии', click: () => updater.install() }]
+            : []),
         { type: 'separator' },
         { label: line, enabled: false },
         { type: 'separator' },
@@ -384,8 +388,10 @@ app.whenReady().then(() => {
         // Обновление скачалось, пока программа работала, — поставится при следующем запуске
         // (Squirrel переключает ярлык на новую версию); предлагаем перезапуск сейчас.
         if (st === 'ready' && win && !splash) send('update:ready', null)
+        if (st === 'ready') updateTray()
     })
     ipcMain.handle('update:install', () => updater.install())
+    ipcMain.handle('update:state', () => updater.state)
 
     if (HIDDEN_START && settings.get().startHidden) {
         updater.startup().then((r) => { if (r === 'ready') updater.install() })

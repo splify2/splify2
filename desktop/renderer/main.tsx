@@ -52,7 +52,9 @@ function Root() {
     const [settingsOpen, setSettingsOpen] = useState(false)
     const [prefs] = useSettings()
     const [railHost, setRailHost] = useState<HTMLElement | null>(null)
-    const [panelHost, setPanelHost] = useState<HTMLElement | null>(null)
+    const [panel, setPanel] = useState<{ host: HTMLElement | null; screen?: 'general' | 'catalog' | 'xsteer' | 'extra' | 'about' }>({ host: null })
+    const onPanelHost = useCallback((host: HTMLElement | null, screen?: 'general' | 'catalog' | 'xsteer' | 'extra' | 'about') =>
+        setPanel((p) => (p.host === host && p.screen === screen ? p : { host, screen })), [])
 
     useEffect(() => {
         desk.api.state().then(setSt, () => setSt({ connected: false, base: null, hostname: '', device: null }))
@@ -133,13 +135,13 @@ function Root() {
                     {st?.connected && <div className="desk-side" ref={setRailHost} />}
                     <main className="desk-body">
                         {st && prefs && (st.connected
-                            ? railHost && <Console extra={EXTRA} railHost={railHost} board settingsHost={panelHost} />
+                            ? railHost && <Console extra={EXTRA} railHost={railHost} board settingsHost={panel.host} settingsScreen={panel.screen} />
                             : !prefs.wizardDone && !lost
                                 ? <Wizard onConnected={connected} />
                                 : <Connect initial={lastBase()} note={lost} onConnected={connected} />)}
                     </main>
                 </div>
-                <Settings open={settingsOpen} onClose={closeSettings} router={st} onDisconnect={disconnect} onPanelHost={setPanelHost} />
+                <Settings open={settingsOpen} onClose={closeSettings} router={st} onDisconnect={disconnect} onPanelHost={onPanelHost} />
             </div>
         </div>
     )

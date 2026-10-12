@@ -160,6 +160,7 @@ interface Desk {
     update: {
         onReady(cb: () => void): Off
         install(): Promise<void>
+        state(): Promise<string>
     }
     app: {
         info(): Promise<{ version: string; electron: string; chrome: string; platform: string }>
