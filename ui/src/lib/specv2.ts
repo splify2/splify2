@@ -695,6 +695,17 @@ function encodeOutput(o: Output): J {
             put('by', o.pick === 'balance' && o.by !== 'connection' ? o.by : undefined)
             put('ipv6', o.ipv6 === 'off' ? 'off' : undefined)
             break
+        default:
+            /* Вид, которого модель не знает (`warp` модуля steer-warpbox и любой будущий): пишется
+             * как прочитан. Без этой ветки выход уезжал на роутер вовсе без `kind`, и ядро
+             * отвергало всю спеку («outputs.cf: нет kind») — поймано владельцем на правке WARP из
+             * приложения. Общие ключи, которые разбор забирает в поля модели (device, ipv6,
+             * prefix), возвращаются здесь же; остальные — из `extra` ниже. */
+            out.kind = o.kind
+            put('device', o.device)
+            put('ipv6', o.ipv6)
+            put('prefix', o.prefix)
+            break
     }
     put('on_fail', o.kind === 'direct' ? undefined : o.on_fail)
     put('over', o.over)
