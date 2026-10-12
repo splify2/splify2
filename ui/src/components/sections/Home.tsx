@@ -1,12 +1,16 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { ArrowRight, LoaderCircle, Plus, Search, TriangleAlert, X } from 'lucide-react'
 import { Button } from '@/components/ui/button'
+import { Switch } from '@/components/ui/switch'
+import { Badge } from '@/components/ui/badge'
 import { Block, CardHead, Meter } from '@/components/ui/layout'
 import { LooseBlock, SubBlock, TunnelBlock, type Facts } from '@/components/OutputCards'
 import { deadline, rpc, type SubQuota } from '@/lib/rpc'
 import { subsRemember, subsRemembered } from '@/lib/subs'
 import { human, type DiagCheck, type Live } from '@/lib/live'
-import { usePending } from '@/lib/pending'
+import { pending, usePending } from '@/lib/pending'
+import { useServices } from '@/lib/catalog'
+import { ruleFiles, selectedIds } from '@/lib/rulefiles'
 import { specV2Unsupported } from '@/lib/engine'
 import { ON_FAIL_TEXT, type Channel, type OnFail, type ChannelStatus, type OutputStatus, devList, isPart, isTunnelKind } from '@/lib/model'
 import { devKindsOf } from '@/lib/badges'
@@ -290,12 +294,17 @@ function useFacts(live: Live) {
 }
 
 export default function Home({
-    live, onSection, onAddRule,
+    live, onSection, onAddRule, board = false, onEditRule,
 }: {
     live: Live
     onSection: (s: SectionId) => void
     /** «Добавить правило» именно ЗАВОДИТ правило и открывает его — см. Console. */
     onAddRule?: () => void
+    /** Раскладка «доска» (приложение для компьютера): сверху состояние и выходы рядом, ниже
+     *  правила карточками с выключателем; правило открывается щелчком (onEditRule), новое —
+     *  «призрачной» карточкой. Под LuCI — прежняя главная. */
+    board?: boolean
+    onEditRule?: (index: number) => void
 }) {
     const v = verdictNow(live)
     const { spec } = usePending()
@@ -359,16 +368,7 @@ export default function Home({
      * другом на узком. Колонок две по той же причине, что и раньше (см. шапку файла), но
      * каждая теперь устроена как карточка приложения: строка «заголовок — подпись справа»,
      * под ней однородные строки через волосяную линию. */
-    return (
-        <div className="space-y-4">
-            {specV2Unsupported(live.status) && (
-                <Block className="border-destructive">
-                    <CardHead title={S.home.yadroNeChitaetNovuyu} />
-                    <p className="text-sm">
-                        {S.home.etotInterfeysZapisyvaetNastroyki}</p>
-                </Block>
-            )}
-
+    const verdictBlock = (
             <Block>
                 <div className="flex items-start gap-3">
                     {/* Кольцо вокруг точки — как в приложении: точка держит полный цвет, а
@@ -494,11 +494,48 @@ export default function Home({
                     </div>
                 )}
 
-                <div className="flex justify-end border-t border-border pt-3">
-                    <Button onClick={() => onAddRule?.()} className="w-full sm:w-auto">
-                        <Plus className="h-4 w-4" aria-hidden="true" /> {S.home.dobavitPravilo}</Button>
-                </div>
+                {!board && (
+                    <div className="flex justify-end border-t border-border pt-3">
+                        <Button onClick={() => onAddRule?.()} className="w-full sm:w-auto">
+                            <Plus className="h-4 w-4" aria-hidden="true" /> {S.home.dobavitPravilo}</Button>
+                    </div>
+                )}
             </Block>
+    )
+
+    if (board) {
+        return (
+            <div className="space-y-4">
+                {specV2Unsupported(live.status) && (
+                    <Block className="border-destructive">
+                        <CardHead title={S.home.yadroNeChitaetNovuyu} />
+                        <p className="text-sm">
+                            {S.home.etotInterfeysZapisyvaetNastroyki}</p>
+                    </Block>
+                )}
+                <div className="grid gap-4 lg:grid-cols-2 lg:items-start">
+                    {verdictBlock}
+                    <div className="min-w-0">
+                        <OutputsColumn live={live} facts={facts} busy={busy} noCurl={noCurl} onRefresh={refresh} />
+                    </div>
+                </div>
+                <RuleCards live={live} facts={facts} onSection={onSection} onEdit={onEditRule} onAdd={onAddRule} />
+                <ExplainCard />
+            </div>
+        )
+    }
+
+    return (
+        <div className="space-y-4">
+            {specV2Unsupported(live.status) && (
+                <Block className="border-destructive">
+                    <CardHead title={S.home.yadroNeChitaetNovuyu} />
+                    <p className="text-sm">
+                        {S.home.etotInterfeysZapisyvaetNastroyki}</p>
+                </Block>
+            )}
+
+            {verdictBlock}
 
             <div className="grid gap-4 xl:grid-cols-[minmax(0,1fr)_minmax(0,22rem)] xl:items-start">
                 <div className="min-w-0 space-y-4">
@@ -512,6 +549,169 @@ export default function Home({
                 </div>
                 <div className="min-w-0">
                     <OutputsColumn live={live} facts={facts} busy={busy} noCurl={noCurl} onRefresh={refresh} />
+                </div>
+            </div>
+        </div>
+    )
+}
+
+/** Правила карточками — раскладка «доска» приложения для компьютера (владелец: «блоки правил
+ *  по 2 на ряд с кнопками выключения, списки бейджами в одном цвете, добавление — призрачный
+ *  блок с + по центру»). Порядок — тот же приоритет, что в спеке: карточки идут слева направо,
+ *  сверху вниз. Счётчик — у набора, как в RulesBoard ниже: где набор общий, сказано словом. */
+function RuleCards({
+    live, facts, onSection, onEdit, onAdd,
+}: {
+    live: Live
+    facts: Record<string, Facts>
+    onSection: (s: SectionId) => void
+    onEdit?: (index: number) => void
+    onAdd?: () => void
+}) {
+    const { spec } = usePending()
+    const services = useServices()
+    const sets = live.status?.channels || []
+    const setOf = (name: string): ChannelStatus | undefined =>
+        sets.find((s) => (s.channels || []).includes(name)) || sets.find((s) => s.name === name)
+    const channels = spec?.channels ?? []
+    const load = (name: string) => {
+        const st = setOf(name)
+        return (st?.down_bytes ?? 0) + (st?.bytes ?? 0)
+    }
+    const peak = Math.max(0, ...channels.map((c) => load(c.name)))
+
+    function toggle(i: number) {
+        if (!spec) return
+        pending.edit({
+            ...spec,
+            channels: spec.channels.map((c, k) => {
+                if (k !== i) return c
+                if (c.enabled === false) {
+                    const { enabled: _off, ...rest } = c
+                    return rest
+                }
+                return { ...c, enabled: false }
+            }),
+        })
+    }
+
+    return (
+        <div className="grid gap-4 md:grid-cols-2">
+            {channels.map((ch, i) => (
+                <RuleCard
+                    key={`${ch.name}-${i}`}
+                    ch={ch}
+                    labels={ruleLabels(ch, services)}
+                    set={setOf(ch.name)}
+                    st={live.status?.outputs?.[ch.out]}
+                    facts={facts[ch.out]}
+                    phase={live.phase}
+                    share={peak > 0 ? load(ch.name) / peak : 0}
+                    onOpen={() => onEdit?.(i)}
+                    onToggle={() => toggle(i)}
+                    onSection={onSection}
+                />
+            ))}
+            <button
+                type="button"
+                onClick={() => onAdd?.()}
+                className={[
+                    'flex min-h-[148px] flex-col items-center justify-center gap-2 rounded-2xl border-2 border-dashed border-border',
+                    'text-sm text-muted-foreground transition-colors duration-200',
+                    'hover:border-primary/50 hover:text-primary',
+                    'focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary',
+                ].join(' ')}
+            >
+                <Plus className="h-6 w-6" aria-hidden="true" />
+                {S.home.dobavitPravilo}
+            </button>
+        </div>
+    )
+}
+
+/** Что правило берёт — словами каталога: сервисы, свои списки файлами, «весь трафик». */
+function ruleLabels(ch: Channel, services: ReturnType<typeof useServices>): string[] {
+    if (ch.match.any) return [S.rulesTab.vesTrafik]
+    const ids = new Set(selectedIds(ch, services))
+    const picked = services.filter((sv) => ids.has(sv.id))
+    const names = picked.map((sv) => sv.name)
+    if (names.length) return names
+    return ruleFiles(ch).map((f) => f.replace(/^.*\//, '').replace(/\.(lst|txt|srs)$/, ''))
+}
+
+function RuleCard({
+    ch, labels, set, st, facts, phase, share, onOpen, onToggle, onSection,
+}: {
+    ch: Channel
+    labels: string[]
+    set?: ChannelStatus
+    st?: OutputStatus
+    facts?: Facts
+    phase: Live['phase']
+    share: number
+    onOpen: () => void
+    onToggle: () => void
+    onSection: (s: SectionId) => void
+}) {
+    const on = ch.enabled !== false
+    const grp = st?.group
+    const active = grp ? (grp.selected ?? undefined) : st?.device
+    const place = country(facts?.geo?.cc)
+    const via = place || (active && active !== ch.out ? active : '')
+    const down = set?.down_bytes === undefined ? null : human(set.down_bytes)
+    const up = set?.bytes === undefined ? null : human(set.bytes)
+    const shared = (set?.channels?.length ?? 0) > 1
+    const where = st?.kind === 'direct'
+        ? S.home.napryamuyu
+        : [via, facts?.ping && facts.ping.ms >= 0 ? S.home.ms(facts.ping.ms) : null, grp && !grp.selected ? S.home.chlenyNeOtvechayut : null, outDownWord(st)]
+              .filter(Boolean)
+              .join(' · ') || (st?.up ? S.home.rabotaet : S.home.nePodnyat2)
+
+    return (
+        <div
+            role="button"
+            tabIndex={0}
+            onClick={onOpen}
+            onKeyDown={(e) => { if (e.key === 'Enter') onOpen() }}
+            className={[
+                'an-glass flex min-h-[148px] cursor-pointer flex-col gap-3 rounded-2xl border p-4 text-left',
+                'transition-[border-color,opacity] duration-200 hover:border-primary/40',
+                'focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary',
+                on ? '' : 'opacity-60',
+            ].join(' ')}
+        >
+            <div className="flex items-start justify-between gap-3">
+                <div className="min-w-0">
+                    <div className="truncate text-[15px] font-semibold">{ch.name}</div>
+                    <button
+                        type="button"
+                        onClick={(e) => { e.stopPropagation(); onSection('vpn') }}
+                        className="mt-0.5 flex min-w-0 max-w-full items-baseline gap-1.5 text-left"
+                    >
+                        <ArrowRight className="h-3 w-3 shrink-0 self-center text-muted-foreground" aria-hidden="true" />
+                        <Flag cc={facts?.geo?.cc} />
+                        <span className="min-w-0 truncate text-[13px]">{ch.out}</span>
+                        <span className="min-w-0 truncate text-xs text-muted-foreground">{where}</span>
+                    </button>
+                </div>
+                <span onClick={(e) => e.stopPropagation()} onKeyDown={(e) => e.stopPropagation()}>
+                    <Switch on={on} label={on ? S.rulesTab.vyklyuchitPravilo(ch.name) : S.rulesTab.vklyuchitPravilo(ch.name)} onClick={onToggle} />
+                </span>
+            </div>
+            <div className="flex min-w-0 flex-wrap gap-1">
+                {labels.length
+                    ? labels.map((l) => <Badge key={l} variant="proto">{l}</Badge>)
+                    : <span className="text-xs text-muted-foreground">{S.rulesTab.servisNeVybran}</span>}
+            </div>
+            <div className="mt-auto space-y-1.5">
+                <Meter value={share} muted={st?.kind === 'direct' || !on} />
+                <div className="flex items-center justify-between gap-3 text-[11px] tabular-nums text-muted-foreground">
+                    <span>↓ {down ?? '—'}  ↑ {up ?? '—'}</span>
+                    <span className="truncate">
+                        {!on ? S.home.vyklyucheno
+                            : set && !set.live && !phase ? S.home.netVYadreLinux
+                            : shared ? S.home.schetchikObschiy : ''}
+                    </span>
                 </div>
             </div>
         </div>

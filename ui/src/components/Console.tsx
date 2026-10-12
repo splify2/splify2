@@ -1,4 +1,4 @@
-import { lazy, Suspense, useEffect, useState, type ReactNode } from 'react'
+import { lazy, Suspense, useEffect, useRef, useState, type ReactNode } from 'react'
 import { createPortal } from 'react-dom'
 import { Check } from 'lucide-react'
 import { useLive, type Live } from '@/lib/live'
@@ -53,7 +53,17 @@ export interface ExtraSection {
 /** `railHost` — узел оболочки, куда рисуется рельс разделов (порталом): в приложении для
  *  компьютера рельс — отдельная колонка окна вне прокрутки раздела. Нет — рельс рядом с
  *  разделом, как под LuCI. */
-export default function Console({ extra, railHost }: { extra?: ExtraSection[]; railHost?: Element | null } = {}) {
+/** `board` — оболочка приложения для компьютера: главная «доской» (правила карточками), правила
+ *  открываются с неё и вкладки в рельсе нет, а сохранённая правка применяется сама — без кнопки
+ *  «Применить» (владелец). Под LuCI ничего этого нет. */
+export default function Console({ extra, railHost, board = false, settingsHost }: {
+    extra?: ExtraSection[]
+    railHost?: Element | null
+    board?: boolean
+    /** Узел оболочки для раздела «Настройки» (порталом): в приложении для компьютера настройки
+     *  роутера живут в общем слое настроек приложения, а не вторым пунктом рельса. */
+    settingsHost?: Element | null
+} = {}) {
     const [section, setSection] = useState<SectionId | string>('home')
     const live = useLive()
     const { spec, savedFlash, loadFailed, retry } = usePending()
@@ -66,6 +76,7 @@ export default function Console({ extra, railHost }: { extra?: ExtraSection[]; r
      *  кнопка стоит в одном разделе, а заводит правило другой. Считывается разделом правил
      *  один раз и сбрасывается — иначе следующий заход в правила снова заводил бы пустое. */
     const [addRule, setAddRule] = useState(false)
+    const [editRule, setEditRule] = useState<number | null>(null)
     const go = (s: SectionId | string) => setSection(s)
     const ext = extra?.find((e) => e.id === section)
 
@@ -73,6 +84,33 @@ export default function Console({ extra, railHost }: { extra?: ExtraSection[]; r
      * обязана оболочка, а не раздел правил. Вызов идемпотентен: кто пришёл раньше, тот и
      * загрузил (lib/pending.ts). */
     useEffect(() => { pending.load().catch(() => {}) }, [])
+
+    /* Без кнопки «Применить» (board): сохранённая правка применяется сама, через 0,8 с тишины —
+     * подряд идущие правки уходят одним применением. Только свои: правки, сохранённые и не
+     * применённые ДО открытия (например, в LuCI), молча не применяются — для них остаётся
+     * пилюля. Неудачное применение не повторяется по кругу: следующая попытка — со следующей
+     * правкой. */
+    const autoBase = useRef<unknown>(null)
+    const [, bump] = useState(0)
+    useEffect(() => {
+        if (!board) return
+        let t: ReturnType<typeof setTimeout> | null = null
+        const off = pending.subscribe(() => {
+            const saved = pending.saved
+            if (!saved) return
+            if (autoBase.current === null) { autoBase.current = saved; bump((n) => n + 1); return }
+            if (saved === autoBase.current || pending.hasUnsaved() || pending.applying) return
+            if (pending.count() === 0) { autoBase.current = saved; bump((n) => n + 1); return }
+            if (t) clearTimeout(t)
+            t = setTimeout(() => {
+                autoBase.current = pending.saved
+                bump((n) => n + 1)
+                void pending.apply()
+            }, 800)
+        })
+        return () => { off(); if (t) clearTimeout(t) }
+    }, [board])
+    const leftovers = board && pending.count() > 0 && pending.saved === autoBase.current && !pending.applying
 
     /* Переход в раздел снаружи — событием `splify:section` (detail — имя раздела). Нужен
      * приложению для компьютера: щелчок по уведомлению «выход не отвечает» открывает VPN. Под
@@ -126,8 +164,8 @@ export default function Console({ extra, railHost }: { extra?: ExtraSection[]; r
                 .sp-root. */}
             <div className="flex min-h-full flex-col lg:flex-row">
                 {railHost
-                    ? createPortal(<Rail live={live} section={section} onSection={(s) => go(s)} counts={counts} extra={extra} />, railHost)
-                    : <Rail live={live} section={section} onSection={(s) => go(s)} counts={counts} extra={extra} />}
+                    ? createPortal(<Rail live={live} section={section} onSection={(s) => go(s)} counts={counts} extra={extra} hide={board ? ['rules', 'settings'] : undefined} />, railHost)
+                    : <Rail live={live} section={section} onSection={(s) => go(s)} counts={counts} extra={extra} hide={board ? ['rules', 'settings'] : undefined} />}
 
                 {/* Отступ снизу на узком экране — под нижнюю панель разделов: без него последняя
                     карточка уезжает под неё, и человек не видит, что страница кончилась. */}
@@ -179,6 +217,11 @@ export default function Console({ extra, railHost }: { extra?: ExtraSection[]; r
                                     setAddRule(true)
                                     setSection('rules')
                                 }}
+                                board={board}
+                                onEditRule={(i) => {
+                                    setEditRule(i)
+                                    setSection('rules')
+                                }}
                             />
                         )}
                         {section === 'rules' && !loadFailed && (
@@ -189,6 +232,9 @@ export default function Console({ extra, railHost }: { extra?: ExtraSection[]; r
                                 addNow={addRule}
                                 onAddUsed={() => setAddRule(false)}
                                 onGoOutbounds={() => go('vpn')}
+                                editNow={editRule}
+                                onEditUsed={() => setEditRule(null)}
+                                onClosed={board ? () => go('home') : undefined}
                             />
                         )}
                         {section === 'vpn' && !loadFailed && <Vpn live={live} />}
@@ -206,6 +252,22 @@ export default function Console({ extra, railHost }: { extra?: ExtraSection[]; r
                         {ext?.render(live)}
                     </Suspense>
                     </div>
+                    {settingsHost && createPortal(
+                        <Suspense fallback={FALLBACK}>
+                            {!loadFailed && (
+                                <Settings
+                                    live={live}
+                                    onUseInRule={(l) => {
+                                        setWanted(l)
+                                        go('rules')
+                                        // Слой настроек оболочки закрывается: правило открыто под ним.
+                                        window.dispatchEvent(new CustomEvent('splify:settings-close'))
+                                    }}
+                                />
+                            )}
+                        </Suspense>,
+                        settingsHost,
+                    )}
 
                     {/* «Остановить всё» на узком экране — здесь, а не в нижней панели: красной
                         кнопке на всю ширину там не место, а прятать её нельзя (R-017). Под
@@ -233,7 +295,7 @@ export default function Console({ extra, railHost }: { extra?: ExtraSection[]; r
                 </main>
             </div>
 
-            <ApplyPill />
+            {(!board || leftovers) && <ApplyPill />}
         </div>
     )
 }

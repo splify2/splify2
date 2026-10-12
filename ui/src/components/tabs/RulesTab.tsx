@@ -102,10 +102,15 @@ interface Props {
     /** Уйти туда, где собирают пул. Правилу некуда вести, пока пула нет, и оставлять
      *  человека с советом «соберите» без дороги туда — это тупик в один щелчок. */
     onGoOutbounds?: () => void
+    /** Открыть правило с этим номером (карточка на главной-«доске» приложения для компьютера). */
+    editNow?: number | null
+    onEditUsed?: () => void
+    /** Редактор закрыт — оболочка, открывшая его с главной, возвращается туда. */
+    onClosed?: () => void
 }
 
 export default function RulesTab({
-    live, wanted, onWantedUsed, addNow, onAddUsed, onGoOutbounds,
+    live, wanted, onWantedUsed, addNow, onAddUsed, onGoOutbounds, editNow, onEditUsed, onClosed,
 }: Props) {
     /* Спека приходит из общего хранилища (pending), а не своим запросом: хранилище помнит
      * и несохранённые полсекунды, и снимок применённого — свой specGet здесь вернул бы то,
@@ -220,6 +225,13 @@ export default function RulesTab({
         add()
         // eslint-disable-next-line react-hooks/exhaustive-deps
     }, [addNow, spec])
+
+    useEffect(() => {
+        if (editNow === null || editNow === undefined || !spec) return
+        onEditUsed?.()
+        if (editNow >= 0 && editNow < spec.channels.length) setOpen(editNow)
+        // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [editNow, spec])
 
     function move(i: number, delta: number) {
         if (!spec) return
@@ -373,10 +385,11 @@ export default function RulesTab({
                 onChange={(next) =>
                     edit({ ...spec, channels: spec.channels.map((c, k) => (k === open ? next : c)) })
                 }
-                onClose={() => setOpen(null)}
+                onClose={() => { setOpen(null); onClosed?.() }}
                 onDelete={() => {
                     edit({ ...spec, channels: spec.channels.filter((_, k) => k !== open) })
                     setOpen(null)
+                    onClosed?.()
                 }}
             />
         )

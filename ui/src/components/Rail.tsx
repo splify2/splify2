@@ -44,6 +44,8 @@ export interface RailProps {
     counts: Partial<Record<SectionId, { text: string; alarm?: boolean }>>
     /** Разделы оболочки вне LuCI — после своих (Console, ExtraSection). */
     extra?: ExtraSection[]
+    /** Свои разделы, которых оболочке в рельсе не нужно (правила у главной-«доски»). */
+    hide?: SectionId[]
 }
 
 
@@ -53,8 +55,9 @@ function releaseSuffix(): string {
     return typeof __RELEASE_SUFFIX__ === 'string' ? __RELEASE_SUFFIX__ : ''
 }
 
-export default function Rail({ live, section, onSection, counts, extra }: RailProps) {
-    const items = extra?.length ? [...ITEMS, ...extra.map(({ id, label, icon }) => ({ id, label, icon }))] : ITEMS
+export default function Rail({ live, section, onSection, counts, extra, hide }: RailProps) {
+    const own = hide?.length ? ITEMS.filter((it) => !hide.includes(it.id as SectionId)) : ITEMS
+    const items = extra?.length ? [...own, ...extra.map(({ id, label, icon }) => ({ id, label, icon }))] : own
     return (
         <>
             {/* ── широкий экран: колонка слева ─────────────────────────────────────── */}
