@@ -1,6 +1,6 @@
-import { lazy, Suspense, useEffect, useState } from 'react'
+import { lazy, Suspense, useEffect, useState, type ReactNode } from 'react'
 import { Check } from 'lucide-react'
-import { useLive } from '@/lib/live'
+import { useLive, type Live } from '@/lib/live'
 import { pending, usePending } from '@/lib/pending'
 import { isPart, type ServiceEntry } from '@/lib/model'
 import { SECTION_TITLE, type SectionId } from '@/lib/sections'
@@ -40,8 +40,17 @@ const SPEC_SECTIONS: SectionId[] = ['rules', 'vpn', 'dns', 'settings']
 
 const FALLBACK = <div className="p-5 text-sm text-muted-foreground">{S.console.zagruzka}</div>
 
-export default function Console() {
-    const [section, setSection] = useState<SectionId>('home')
+/** Раздел, который приносит оболочка вне LuCI (приложение для компьютера): своё имя, значок и
+ *  содержимое — в рельсе после разделов панели. Под LuCI их нет, и панель та же, что была. */
+export interface ExtraSection {
+    id: string
+    label: string
+    icon: typeof Check
+    render: (live: Live) => ReactNode
+}
+
+export default function Console({ extra }: { extra?: ExtraSection[] } = {}) {
+    const [section, setSection] = useState<SectionId | string>('home')
     const live = useLive()
     const { spec, savedFlash, loadFailed, retry } = usePending()
     /** Сервис, который попросили «в правило». Живёт здесь, а не в каталоге, потому что переход
@@ -53,12 +62,25 @@ export default function Console() {
      *  кнопка стоит в одном разделе, а заводит правило другой. Считывается разделом правил
      *  один раз и сбрасывается — иначе следующий заход в правила снова заводил бы пустое. */
     const [addRule, setAddRule] = useState(false)
-    const go = (s: SectionId) => setSection(s)
+    const go = (s: SectionId | string) => setSection(s)
+    const ext = extra?.find((e) => e.id === section)
 
     /* Спека нужна рельсу для счётчика правил, а он виден на всех разделах — значит загрузить её
      * обязана оболочка, а не раздел правил. Вызов идемпотентен: кто пришёл раньше, тот и
      * загрузил (lib/pending.ts). */
     useEffect(() => { pending.load().catch(() => {}) }, [])
+
+    /* Переход в раздел снаружи — событием `splify:section` (detail — имя раздела). Нужен
+     * приложению для компьютера: щелчок по уведомлению «выход не отвечает» открывает VPN. Под
+     * LuCI его никто не шлёт. */
+    useEffect(() => {
+        const on = (e: Event) => {
+            const id = (e as CustomEvent<string>).detail
+            if (typeof id === 'string' && id) setSection(id)
+        }
+        window.addEventListener('splify:section', on)
+        return () => window.removeEventListener('splify:section', on)
+    }, [])
 
     /* Движка нет — показываем установку ВМЕСТО разделов. Не «рядом»: без движка ни один из них
      * не может подействовать, и открывать их значило бы дать человеку заполнить настройку,
@@ -96,7 +118,7 @@ export default function Console() {
                 фона. `min-h-full` работает от родителя с известной высотой — им и является
                 .sp-root. */}
             <div className="flex min-h-full flex-col lg:flex-row">
-                <Rail live={live} section={section} onSection={(s) => go(s)} counts={counts} />
+                <Rail live={live} section={section} onSection={(s) => go(s)} counts={counts} extra={extra} />
 
                 {/* Отступ снизу на узком экране — под нижнюю панель разделов: без него последняя
                     карточка уезжает под неё, и человек не видит, что страница кончилась. */}
@@ -123,13 +145,16 @@ export default function Console() {
                     {/* Имя раздела печатает ОБОЛОЧКА, а не сам раздел: оно обязано совпадать
                         с пунктом рельса дословно, а два места с одной строкой расходятся. У
                         обзора заголовок другой — им служит вердикт, и второго над ним не надо. */}
+                    {/* Обёртка с ключом раздела: при смене раздела она новая, и оболочка вне LuCI может
+                        показать смену движением (класс sp-section). Под LuCI у класса нет правил. */}
+                    <div key={section} className="sp-section">
                     {section !== 'home' && (
-                        <h1 className="sp-title mb-3">{SECTION_TITLE[section]}</h1>
+                        <h1 className="sp-title mb-3">{SECTION_TITLE[section as SectionId] ?? ext?.label}</h1>
                     )}
 
                     {/* Спека не загрузилась — разделы, что её правят, не рисуются вовсе: пустой экран
                         читался бы как «настроек нет», а правка поверх него затёрла бы настоящие. */}
-                    {loadFailed && SPEC_SECTIONS.includes(section) && (
+                    {loadFailed && SPEC_SECTIONS.includes(section as SectionId) && (
                         <div role="alert" className="rounded-lg border border-border p-5 text-sm">
                             <p className="font-medium">{S.console.specNeZagruzilas}</p>
                             <p className="mt-1 text-muted-foreground">{S.console.specNeZagruzilasPodpis}</p>
@@ -169,7 +194,9 @@ export default function Console() {
                                 }}
                             />
                         )}
+                        {ext?.render(live)}
                     </Suspense>
+                    </div>
 
                     {/* «Остановить всё» на узком экране — здесь, а не в нижней панели: красной
                         кнопке на всю ширину там не место, а прятать её нельзя (R-017). Под
