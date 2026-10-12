@@ -103,7 +103,10 @@ export default function Console({ extra }: { extra?: ExtraSection[] } = {}) {
             ? {
                   text: String(
                       Object.keys(live.status.outputs || {}).filter(
-                          (n) => live.status?.outputs?.[n]?.kind !== 'direct' && !isPart(spec?.outputs?.[n]),
+                          /* Только записанные в спеке: члены WARP (`<выход>.<n>`) заводит само ядро,
+                             и «VPN · 3» на одном выходе WARP из двух туннелей был бы неправдой. */
+                          (n) => live.status?.outputs?.[n]?.kind !== 'direct' && !isPart(spec?.outputs?.[n]) &&
+                              (!spec || !!spec.outputs[n]),
                       ).length,
                   ),
               }
