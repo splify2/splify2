@@ -24,7 +24,7 @@ export const warpSection: ExtraSection = {
 }
 
 /** Страны выхода, которые чаще всего берут. Остальные — вводом кода. */
-const QUICK = ['NL', 'DE', 'FI', 'SE', 'PL', 'GB', 'FR', 'US']
+const QUICK = ['RU', 'NL', 'DE', 'FI', 'SE', 'PL', 'GB', 'FR', 'US']
 
 type WarpOut = Output & { extra?: Record<string, unknown> }
 
@@ -103,7 +103,8 @@ function Create({ spec, first = false }: { spec: Spec; first?: boolean }) {
         if (!ok) return
         pending.edit({
             ...spec,
-            outputs: { ...spec.outputs, [name]: { name, kind: 'warp' as Output['kind'], extra: { count: 3 } } as WarpOut },
+            /* Без исключения страны: по умолчанию её не исключаем (владелец), а без ключа модуль исключил бы RU. */
+            outputs: { ...spec.outputs, [name]: { name, kind: 'warp' as Output['kind'], extra: { count: 3, exclude_countries: [] } } as WarpOut },
         })
         setOpen(false)
     }
@@ -301,20 +302,23 @@ function Group({ spec, out, live, info }: { spec: Spec; out: WarpOut; live: Live
     )
 }
 
-/** Страны: «любая, кроме…» (по умолчанию модуль сам исключает RU) или «только…». */
+/** Страны: «любая, кроме…» или «только…». */
 function Countries({ only, except, onChange }: {
     only?: string[]
     except?: string[]
     onChange: (only: string[] | undefined, except: string[] | undefined) => void
 }) {
     const mode = only?.length ? 'only' : 'except'
-    // Ключей нет — модуль исключает RU сам (docs/warp.md); показываем это как есть.
+    // Ключей нет (выход заведён руками или прежней версией) — модуль исключает RU сам
+    // (docs/warp.md); показываем это как есть.
     const list = mode === 'only' ? only! : except ?? ['RU']
     const [code, setCode] = useState('')
 
+    /* Исключения пишутся всегда явным списком, пустой — тоже: без ключа модуль исключил бы RU сам,
+     * а владелец решил, что по умолчанию страну не исключаем (сами разберутся). */
     const set = (next: string[]) => (mode === 'only'
         ? onChange(next.length ? next : undefined, undefined)
-        : onChange(undefined, next.length === 1 && next[0] === 'RU' ? undefined : next))
+        : onChange(undefined, next))
     const add = (c: string) => {
         const cc = c.trim().toUpperCase()
         if (!/^[A-Z]{2}$/.test(cc) || list.includes(cc)) return
@@ -327,7 +331,7 @@ function Countries({ only, except, onChange }: {
             <Segmented
                 label="Как выбирать страну"
                 value={mode}
-                onChange={(m) => (m === 'only' ? onChange(['NL'], undefined) : onChange(undefined, undefined))}
+                onChange={(m) => (m === 'only' ? onChange(['NL'], undefined) : onChange(undefined, []))}
                 items={[
                     { value: 'except', label: 'Любая, кроме' },
                     { value: 'only', label: 'Только' },
