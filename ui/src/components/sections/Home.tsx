@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useRef, useState, type HTMLAttributes, type ReactNode } from 'react'
-import { ArrowRight, GripVertical, LoaderCircle, Plus, Search, TriangleAlert, X } from 'lucide-react'
+import { ArrowRight, ChevronDown, GripVertical, LoaderCircle, Plus, Search, TriangleAlert, X } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Switch } from '@/components/ui/switch'
 import { Badge } from '@/components/ui/badge'
@@ -1262,7 +1262,15 @@ function WarpTile({ name, st, facts }: { name: string; st: OutputStatus; facts?:
 
 const SUGGESTED_DOMAINS = ['youtube.com', 'instagram.com', 'discord.com', 'rutracker.org']
 
+/** Развёрнут ли блок «Куда пойдёт трафик» на доске. */
+const EXPLAIN_OPEN = 'board:explain-open'
+
 function ExplainCard({ board = false }: { board?: boolean }) {
+    const [open, setOpenRaw] = useState(() => { try { return localStorage.getItem(EXPLAIN_OPEN) === '1' } catch { return false } })
+    const setOpen = (v: boolean) => {
+        setOpenRaw(v)
+        try { localStorage.setItem(EXPLAIN_OPEN, v ? '1' : '0') } catch { /* без памяти — только на этот раз */ }
+    }
     const [q, setQ] = useState('')
     const [answer, setAnswer] = useState<string | null>(null)
     const [asking, setAsking] = useState(false)
@@ -1342,12 +1350,20 @@ function ExplainCard({ board = false }: { board?: boolean }) {
         </>
     )
     if (board) {
+        /* Сворачивается в полоску (владелец); развёрнут ли — память окна. */
         return (
-            <section className="sp-board-group an-glass space-y-3 rounded-2xl border p-3">
-                <h2 className="sp-sub flex items-center gap-2 px-1 pt-1">
-                    <Search className="h-4 w-4 text-primary" aria-hidden="true" /> {S.home.kudaPoydetTrafik}
-                </h2>
-                <div className="sp-board-tile an-glass space-y-3 rounded-2xl border p-3.5">{inner}</div>
+            <section className={`sp-board-group an-glass rounded-2xl border ${open ? 'space-y-3 p-3' : 'px-3 py-2'}`}>
+                <button
+                    type="button"
+                    aria-expanded={open}
+                    onClick={() => setOpen(!open)}
+                    className="flex w-full items-center gap-2 bg-transparent px-1 py-1 text-left"
+                >
+                    <Search className="h-4 w-4 text-primary" aria-hidden="true" />
+                    <span className="sp-sub flex-1">{S.home.kudaPoydetTrafik}</span>
+                    <ChevronDown className={`h-4 w-4 text-muted-foreground transition-transform duration-200 ${open ? 'rotate-180' : ''}`} aria-hidden="true" />
+                </button>
+                {open && <div className="sp-board-tile an-glass space-y-3 rounded-2xl border p-3.5">{inner}</div>}
             </section>
         )
     }
