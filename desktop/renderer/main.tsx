@@ -7,12 +7,14 @@ import '@/index.css'
 import './desktop.css'
 import './motion.css'
 import './settings/settings.css'
+import './wizard/wizard.css'
 import { StrictMode, useCallback, useEffect, useState } from 'react'
 import { createRoot } from 'react-dom/client'
 import Console, { type ExtraSection } from '@/components/Console'
 import TitleBar from './TitleBar'
 import Connect from './Connect'
 import Settings from './settings/Settings'
+import Wizard from './wizard/Wizard'
 import { desk, lastBase, resetMemory, type ApiState } from './desk'
 import { useSettings } from './hooks'
 
@@ -100,9 +102,11 @@ function Root() {
             />
             <div className="desk-stage">
                 <main className="desk-body" data-behind={settingsOpen ? 'true' : undefined} inert={settingsOpen || undefined}>
-                    {st && (st.connected
+                    {st && prefs && (st.connected
                         ? <Console extra={EXTRA} />
-                        : <Connect initial={lastBase()} note={lost} onConnected={connected} />)}
+                        : !prefs.wizardDone && !lost
+                            ? <Wizard onConnected={connected} />
+                            : <Connect initial={lastBase()} note={lost} onConnected={connected} />)}
                 </main>
                 <Settings open={settingsOpen} onClose={closeSettings} router={st} onDisconnect={disconnect} />
             </div>

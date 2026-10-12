@@ -10,6 +10,8 @@ const {
 const { Router } = require('./router.cjs')
 const { Settings } = require('./backend/settings.cjs')
 const { Monitor } = require('./backend/monitor.cjs')
+const { discover, probe } = require('./backend/discover.cjs')
+const setup = require('./backend/setup.cjs')
 // Служебные запуски установщика Squirrel (Windows): ярлыки и выход; в остальных случаях — false.
 if (require('./squirrel.cjs').handled()) return
 
@@ -305,6 +307,13 @@ function registerIpc() {
         n.show()
         return true
     }))
+    // Мастер первого запуска: поиск роутера, осмотр и установка splify2 по SSH (backend/).
+    ipcMain.handle('wizard:discover', wrap(() => discover()))
+    ipcMain.handle('wizard:probe', wrap((address) => probe(address)))
+    ipcMain.handle('wizard:inspect', wrap((address, password) => setup.inspect(address, password)))
+    ipcMain.handle('wizard:install', wrap((address, password) =>
+        setup.install(address, password, (line) => send('wizard:log', line))))
+
     ipcMain.handle('shell:open', wrap((url) => {
         if (!/^https?:\/\//i.test(url)) throw new Error('Только адреса http(s)')
         return shell.openExternal(url)

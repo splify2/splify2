@@ -51,6 +51,13 @@ contextBridge.exposeInMainWorld('splifyDesktop', {
         state: () => invoke('monitor:state'),
         onState: (cb) => listen('monitor:state', cb),
     },
+    wizard: {
+        discover: () => invoke('wizard:discover'),
+        probe: (address) => invoke('wizard:probe', address),
+        inspect: (address, password) => invoke('wizard:inspect', address, password),
+        install: (address, password) => invoke('wizard:install', address, password),
+        onLog: (cb) => listen('wizard:log', cb),
+    },
     app: {
         info: () => invoke('app:info'),
         testNotification: () => invoke('notify:test'),

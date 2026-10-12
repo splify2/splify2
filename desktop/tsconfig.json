@@ -1,0 +1,19 @@
+{
+  "//": "Проверка типов окна приложения: настройки панели (../ui/tsconfig.app.json), пакеты — из ../ui/node_modules. Запуск: npm run check.",
+  "extends": "../ui/tsconfig.app.json",
+  "compilerOptions": {
+    "tsBuildInfoFile": "../ui/node_modules/.tmp/tsconfig.desktop.tsbuildinfo",
+    "typeRoots": ["../ui/node_modules/@types"],
+    "types": [],
+    "paths": {
+      "@/*": ["../ui/src/*"],
+      "@andromeda/ui": ["../ui/andromeda/index.ts"],
+      "@andromeda/ui/*": ["../ui/andromeda/*"],
+      "react": ["../ui/node_modules/@types/react"],
+      "react/*": ["../ui/node_modules/@types/react/*"],
+      "react-dom/*": ["../ui/node_modules/@types/react-dom/*"],
+      "lucide-react": ["../ui/node_modules/lucide-react"]
+    }
+  },
+  "include": ["renderer", "../ui/src/globals.d.ts", "../ui/src/vite-env.d.ts"]
+}

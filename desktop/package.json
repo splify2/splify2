@@ -14,7 +14,8 @@
     "start": "npm run renderer && electron .",
     "dist:win": "npm run renderer && electron-builder --win squirrel --x64",
     "dist:linux": "npm run renderer && electron-builder --linux AppImage --x64",
-    "dist:win:nsis": "npm run renderer && electron-builder --win nsis --x64"
+    "dist:win:nsis": "npm run renderer && electron-builder --win nsis --x64",
+    "check": "node ../ui/node_modules/typescript/bin/tsc -p tsconfig.json --noEmit"
   },
   "devDependencies": {
     "electron": "44.4.5",
@@ -40,7 +41,9 @@
       "resources/tray-*.png",
       "resources/tray.ico",
       "resources/tray-alert.ico",
-      "package.json"
+      "package.json",
+      "!node_modules/cpu-features/**",
+      "!node_modules/nan/**"
     ],
     "win": {
       "target": [
@@ -77,6 +80,10 @@
       "category": "Network",
       "icon": "resources/icon.png",
       "artifactName": "splify2-desktop-${version}-x86_64.${ext}"
-    }
+    },
+    "npmRebuild": false
+  },
+  "dependencies": {
+    "ssh2": "1.17.0"
   }
 }

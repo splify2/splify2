@@ -59,6 +59,23 @@ export interface RouterInfo {
     hostname: string
 }
 
+/** Найденный в сети роутер (electron/backend/discover.cjs). */
+export interface FoundRouter {
+    address: string
+    kind: 'splify2' | 'openwrt'
+    version?: string
+    hostname: string
+    gateway?: boolean
+}
+
+/** Что стоит на роутере (осмотр по SSH). */
+export interface RouterInventory {
+    release: string
+    arch: string
+    splify2: string | null
+    steer: string | null
+}
+
 type Off = () => void
 type DeepPartial<T> = { [K in keyof T]?: T[K] extends object ? DeepPartial<T[K]> : T[K] }
 
@@ -92,6 +109,13 @@ interface Desk {
     monitor: {
         state(): Promise<MonitorState>
         onState(cb: (s: MonitorState) => void): Off
+    }
+    wizard: {
+        discover(): Promise<FoundRouter[]>
+        probe(address: string): Promise<FoundRouter | null>
+        inspect(address: string, password: string): Promise<RouterInventory>
+        install(address: string, password: string): Promise<{ code: number }>
+        onLog(cb: (line: string) => void): Off
     }
     app: {
         info(): Promise<{ version: string; electron: string; chrome: string; platform: string }>
