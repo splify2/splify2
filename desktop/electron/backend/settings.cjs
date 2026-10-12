@@ -11,9 +11,11 @@ const { EventEmitter } = require('node:events')
 const DEFAULTS = Object.freeze({
     /** system | light | dark */
     theme: 'system',
-    /** Масштаб окна, проценты. 90, а не 100: панель нарисована для страницы браузера, и в окне
-     *  на FHD с масштабом Windows 125–150 % она выходила крупной (замечание владельца). */
-    zoom: 90,
+    /** Масштаб окна, проценты от обычного размера. Обычный (100 %) — 0,9 масштаба браузера
+     *  (BASE_ZOOM): панель нарисована для страницы браузера, и в окне на FHD с масштабом Windows
+     *  125–150 % она выходила крупной; а «90 %» по умолчанию владелец справедливо назвал
+     *  нелогичным — по умолчанию стоит 100. */
+    zoom: 100,
     /** Анимации интерфейса. Системное «уменьшить движение» выключает их и так. */
     motion: true,
     /** Запускаться вместе с системой — иначе уведомлений о сбоях нет, пока программу не откроют. */
@@ -41,10 +43,12 @@ const DEFAULTS = Object.freeze({
     /** Мастер первого запуска пройден. */
     wizardDone: false,
     /** Версия файла настроек — для разовых переводов старых значений (см. migrate). */
-    v: 2,
+    v: 3,
 })
 
 const ZOOMS = [80, 90, 100, 110, 125, 150]
+/** Обычный размер окна — 0,9 масштаба браузера: с ним панель на FHD не выходит крупной. */
+const BASE_ZOOM = 0.9
 const POLLS = [15, 30, 60, 300]
 
 function merge(base, over) {
@@ -70,11 +74,19 @@ function sane(s) {
  *  переводим на новое умолчание, выбранное человеком значение (не 100) оставляем. */
 function migrate(raw) {
     if (!raw || typeof raw !== 'object') return {}
-    if (!raw.v) {
-        if (raw.zoom === 100) raw.zoom = DEFAULTS.zoom
-        raw.v = DEFAULTS.v
+    // v1: zoom — доля масштаба браузера, умолчание 100. v2: та же доля, умолчание 90. v3: проценты
+    // от обычного размера (BASE_ZOOM): 90 из v2 — это и есть обычный размер, 100.
+    if (!raw.v) raw.v = 1
+    if (raw.v < 3 && typeof raw.zoom === 'number') {
+        const factor = raw.v === 1 && raw.zoom === 100 ? 0.9 : raw.zoom / 100
+        raw.zoom = nearest(Math.round((factor / BASE_ZOOM) * 100))
     }
+    raw.v = DEFAULTS.v
     return raw
+}
+
+function nearest(z) {
+    return ZOOMS.reduce((a, b) => (Math.abs(b - z) < Math.abs(a - z) ? b : a), 100)
 }
 
 class Settings extends EventEmitter {
@@ -103,4 +115,4 @@ class Settings extends EventEmitter {
     }
 }
 
-module.exports = { Settings, DEFAULTS, ZOOMS, POLLS }
+module.exports = { Settings, DEFAULTS, ZOOMS, POLLS, BASE_ZOOM }

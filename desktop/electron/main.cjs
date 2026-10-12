@@ -8,7 +8,7 @@ const {
     app, BrowserWindow, Menu, Notification, Tray, ipcMain, nativeImage, nativeTheme, net, protocol, screen, shell,
 } = require('electron')
 const { Router } = require('./router.cjs')
-const { Settings } = require('./backend/settings.cjs')
+const { Settings, BASE_ZOOM } = require('./backend/settings.cjs')
 const { Monitor } = require('./backend/monitor.cjs')
 const { discover, probe } = require('./backend/discover.cjs')
 const setup = require('./backend/setup.cjs')
@@ -82,7 +82,7 @@ function sendWinState() {
 
 function applyLook(s) {
     nativeTheme.themeSource = s.theme
-    if (win && !win.isDestroyed()) win.webContents.setZoomFactor(s.zoom / 100)
+    if (win && !win.isDestroyed()) win.webContents.setZoomFactor((s.zoom / 100) * BASE_ZOOM)
 }
 
 /** Заставка при запуске — как у Discord: маленькое окно с логотипом, пока поднимается главное. */
@@ -148,7 +148,7 @@ function createWindow(showNow) {
             nodeIntegration: false,
             spellcheck: false,
             // Масштаб — с первого кадра, а не после загрузки: иначе окно мелькает крупным.
-            zoomFactor: settings.get().zoom / 100,
+            zoomFactor: (settings.get().zoom / 100) * BASE_ZOOM,
         },
     })
     win.removeMenu()

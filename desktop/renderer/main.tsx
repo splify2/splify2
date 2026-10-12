@@ -52,6 +52,7 @@ function Root() {
     const [settingsOpen, setSettingsOpen] = useState(false)
     const [prefs] = useSettings()
     const [railHost, setRailHost] = useState<HTMLElement | null>(null)
+    const [panelHost, setPanelHost] = useState<HTMLElement | null>(null)
 
     useEffect(() => {
         desk.api.state().then(setSt, () => setSt({ connected: false, base: null, hostname: '', device: null }))
@@ -66,7 +67,10 @@ function Root() {
             window.dispatchEvent(new CustomEvent('splify:section', { detail: section }))
         })
         const offSet = desk.win.onOpenSettings(() => setSettingsOpen(true))
-        return () => { offLost(); offNav(); offSet() }
+        // Из настроек роутера ушли в правило — слой настроек закрывается (Console).
+        const onClose = () => setSettingsOpen(false)
+        window.addEventListener('splify:settings-close', onClose)
+        return () => { offLost(); offNav(); offSet(); window.removeEventListener('splify:settings-close', onClose) }
     }, [])
 
     // Анимации выключены в настройках — правила motion.css смотрят на этот признак.
@@ -129,13 +133,13 @@ function Root() {
                     {st?.connected && <div className="desk-side" ref={setRailHost} />}
                     <main className="desk-body">
                         {st && prefs && (st.connected
-                            ? railHost && <Console extra={EXTRA} railHost={railHost} />
+                            ? railHost && <Console extra={EXTRA} railHost={railHost} board settingsHost={panelHost} />
                             : !prefs.wizardDone && !lost
                                 ? <Wizard onConnected={connected} />
                                 : <Connect initial={lastBase()} note={lost} onConnected={connected} />)}
                     </main>
                 </div>
-                <Settings open={settingsOpen} onClose={closeSettings} router={st} onDisconnect={disconnect} />
+                <Settings open={settingsOpen} onClose={closeSettings} router={st} onDisconnect={disconnect} onPanelHost={setPanelHost} />
             </div>
         </div>
     )

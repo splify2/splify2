@@ -1,12 +1,12 @@
 import { useEffect, useState, type ReactNode } from 'react'
-import { Bell, Info, Laptop, MonitorCog, Palette, Power, Router, X } from 'lucide-react'
+import { Bell, Info, Laptop, MonitorCog, Palette, Power, Router, SlidersHorizontal, X } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Segmented, ToggleRow } from '@/components/ui/layout'
 import { useConfirm } from '@/components/ui/confirm'
 import { desk, type ApiState, type AppSettings, type RouterDevice, type RouterInfo } from '../desk'
 import { ago, useSettings } from '../hooks'
 
-type Page = 'look' | 'startup' | 'notify' | 'router' | 'devices' | 'about'
+type Page = 'look' | 'startup' | 'notify' | 'panel' | 'router' | 'devices' | 'about'
 
 const NAV: ({ group: string } | { id: Page; label: string; icon: typeof Bell })[] = [
     { group: 'Приложение' },
@@ -14,6 +14,7 @@ const NAV: ({ group: string } | { id: Page; label: string; icon: typeof Bell })[
     { id: 'startup', label: 'Запуск и трей', icon: Power },
     { id: 'notify', label: 'Уведомления', icon: Bell },
     { group: 'Роутер' },
+    { id: 'panel', label: 'Настройки роутера', icon: SlidersHorizontal },
     { id: 'router', label: 'Подключение', icon: Router },
     { id: 'devices', label: 'Устройства', icon: Laptop },
     { group: '' },
@@ -22,11 +23,14 @@ const NAV: ({ group: string } | { id: Page; label: string; icon: typeof Bell })[
 
 /** Настройки поверх окна — как у Discord: слой на всё окно под рамкой, разделы слева. Открытие
  *  и закрытие — переходом (data-state), чтобы закрытие посреди открытия шло от текущего кадра. */
-export default function Settings({ open, onClose, router, onDisconnect }: {
+export default function Settings({ open, onClose, router, onDisconnect, onPanelHost }: {
     open: boolean
     onClose: () => void
     router: ApiState | null
     onDisconnect: () => void
+    /** Узел для раздела «Настройки» панели: панель рисует его сюда порталом (Console,
+     *  settingsHost) — настройки роутера живут в этом же слое, а не вторым пунктом рельса. */
+    onPanelHost?: (el: HTMLElement | null) => void
 }) {
     const [page, setPage] = useState<Page>('look')
     const [mounted, setMounted] = useState(open)
@@ -58,7 +62,7 @@ export default function Settings({ open, onClose, router, onDisconnect }: {
         >
             <aside className="desk-settings-nav">
                 <nav className="desk-settings-nav-in" aria-label="Разделы настроек">
-                    {NAV.map((it, i) =>
+                    {NAV.filter((it) => !('id' in it) || it.id !== 'panel' || router?.connected).map((it, i) =>
                         'group' in it ? (
                             it.group ? <div key={i} className="desk-settings-group">{it.group}</div> : <div key={i} className="desk-settings-sep" />
                         ) : (
@@ -81,6 +85,12 @@ export default function Settings({ open, onClose, router, onDisconnect }: {
                     {page === 'look' && <Look s={s} set={set} />}
                     {page === 'startup' && <Startup s={s} set={set} />}
                     {page === 'notify' && <Notify s={s} set={set} />}
+                    {page === 'panel' && (
+                        <>
+                            <Head title="Настройки роутера" />
+                            <div className="desk-panel-settings" ref={onPanelHost} />
+                        </>
+                    )}
                     {page === 'router' && <RouterPage router={router} onDisconnect={onDisconnect} />}
                     {page === 'devices' && <Devices />}
                     {page === 'about' && <About />}
