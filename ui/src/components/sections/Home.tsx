@@ -514,8 +514,11 @@ export default function Home({
                             {S.home.etotInterfeysZapisyvaetNastroyki}</p>
                     </Block>
                 )}
-                {verdictBlock}
-                <section className="sp-board-group sp-board-plate space-y-3 rounded-2xl border p-3">
+                {/* Верх — один блок на стекле: вердикт с находкой диагностики и подключения под ним;
+                    низ — правила на матовой подложке (владелец: «весь блок подключений в стекло,
+                    а низ матовый», вердикт — не отдельно). */}
+                <section className="sp-board-group sp-board-glass space-y-3 rounded-2xl border p-3">
+                    {verdictBlock}
                     <div className="flex items-center justify-between gap-3 px-1 pt-1">
                         <h2 className="sp-sub">{S.home.podklyucheniya}</h2>
                         <button

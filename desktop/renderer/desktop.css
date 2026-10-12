@@ -439,11 +439,25 @@ html:has(.splify-react-root) {
 /* Главная desktop: две колонки, статус над сеткой. Группы разделяет воздух,
  * поверхности остаются только у самостоятельных карточек. */
 .desk .sp-board > * + * { margin-top: 16px; }
-/* Верх — стекло (вердикт, как карточки панели), низ — плотные подложки блоков «Подключения» и
- * «Правила» с плитками на них, как в черновике помощника (владелец: «верх сделать стеклом, а низ
- * как Астра завещала, и всё с подложками»). */
+/* Верх — один блок на явно прозрачном стекле: вердикт с находкой и плитки подключений; низ —
+ * правила на матовой плотной подложке (владелец: «весь блок подключений в стекло, а низ
+ * матовый», «подложки прозрачные явно»). Вердикт внутри стекла — без своей карточки. */
 .desk .sp-board .sp-board-verdict {
-  padding: 16px 18px !important;
+  padding: 4px 4px 2px !important;
+  background: transparent !important;
+  border: 0 !important;
+  box-shadow: none !important;
+  backdrop-filter: none !important;
+}
+.desk .sp-board-glass {
+  background: color-mix(in srgb, var(--an-surface-card) 22%, transparent);
+  border-color: color-mix(in srgb, var(--sp-foreground) 14%, transparent);
+  box-shadow: inset 0 1px 0 color-mix(in srgb, #fff 10%, transparent);
+  backdrop-filter: blur(20px) saturate(1.25);
+}
+.desk .sp-board-glass .sp-board-tile {
+  background: color-mix(in srgb, var(--an-surface-card) 38%, transparent);
+  border-color: color-mix(in srgb, var(--sp-foreground) 12%, transparent);
 }
 .desk .sp-board-plate {
   background: var(--an-surface-rail);
