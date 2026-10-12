@@ -47,7 +47,7 @@ const STATE_TEXT: Record<string, string> = {
 const PROTO_TEXT: Record<string, string> = { udp: 'DNS', tcp: S.dns.dnsPoTcp, dot: 'DoT', doh: 'DoH', doq: 'DoQ', doh3: 'DoH3' }
 
 /** Сколько готовых серверов видно до «Показать все». */
-const PRESET_FOLD = 8
+const PRESET_FOLD = 7
 
 
 /** Лампочка проверки: ответил ли сервер с роутера; 'busy' — проверка идёт. */
@@ -706,9 +706,9 @@ export default function Dns({ live, board = false }: { live?: Live; board?: bool
                                 />
                             </div>
                         )}
-                        <span className="text-xs text-muted-foreground">
-                            {picked.length ? S.dns.vybranoServerov(picked.length) : S.dns.otvechaetDnsRoutera}
-                        </span>
+                        {picked.length > 0 && (
+                            <span className="text-xs text-muted-foreground">{S.dns.vybranoServerov(picked.length)}</span>
+                        )}
                     </div>
                     <div className="grid gap-3 sm:grid-cols-3">
                         {/* Пунктирная «Свой сервер» — первой (владелец). */}
@@ -720,6 +720,22 @@ export default function Dns({ live, board = false }: { live?: Live; board?: bool
                         >
                             <Plus className="h-4 w-4" aria-hidden="true" /> {S.dns.svoyServer}
                         </button>
+                        {/* DNS провайдера — то, что настроено на самом роутере: выбран, когда не отмечено
+                            ни одного сервера; щелчок снимает все отметки. */}
+                        <div
+                            role="button"
+                            tabIndex={0}
+                            aria-pressed={picked.length === 0}
+                            onClick={() => picked.length && setDns(tidy(assign(which, [], dns)))}
+                            onKeyDown={(e) => { if ((e.key === 'Enter' || e.key === ' ') && picked.length) { e.preventDefault(); setDns(tidy(assign(which, [], dns))) } }}
+                            className={[
+                                'sp-board-tile an-glass flex h-[96px] min-w-0 cursor-pointer flex-col gap-1.5 rounded-2xl border p-3.5 transition-[border-color,box-shadow] duration-200 hover:border-primary/50',
+                                picked.length === 0 ? 'border-primary/80 bg-primary/10 shadow-[inset_0_1px_0_var(--an-glass-edge),0_0_0_2px_color-mix(in_srgb,var(--sp-primary)_25%,transparent)]' : '',
+                            ].join(' ')}
+                        >
+                            <div className="truncate text-sm font-semibold">{S.dns.dnsProvaydera}</div>
+                            <div className="truncate text-xs text-muted-foreground">{S.dns.kakNaRoutere}</div>
+                        </div>
                         {shown.map((c) => (
                             <DnsCard
                                 key={c.key}
