@@ -178,6 +178,12 @@ export function activeNodesSupported(status: Status | null | undefined): boolean
     return Array.isArray(status?.features) && status.features.includes('active_nodes')
 }
 
+/** Умеет ли установленное ядро выход «Блок» (`kind: block`, умение `block`): ядро без умения спеку
+ *  с таким выходом отвергает целиком. */
+export function blockSupported(status: Status | null | undefined): boolean {
+    return Array.isArray(status?.features) && status.features.includes('block')
+}
+
 /** Умеет ли установленное ядро группы серверов DNS (`{ servers, mode }` в `dns.upstreams`, умение
  *  `dns_groups`). Ядро без умения спеку с группой отвергает целиком. */
 export function dnsGroupsSupported(status: Status | null | undefined): boolean {

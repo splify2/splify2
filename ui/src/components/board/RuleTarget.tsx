@@ -7,6 +7,8 @@ import { BADGE_ROW, NodePill, PILL, useSubProbe } from '@/components/board/NodeP
 import ConfBadges from '@/components/ConfBadges'
 import { devProto, protoBadge, type ConfBadge } from '@/lib/badges'
 import { rpc } from '@/lib/rpc'
+import { notify } from '@/lib/notify'
+import { blockSupported } from '@/lib/engine'
 import { subsRemember, subsRemembered } from '@/lib/subs'
 import { plainName } from '@/lib/nodename'
 import { devList, isPart, isTunnelKind, type Output, type Spec } from '@/lib/model'
@@ -80,8 +82,10 @@ export default function RuleTarget({ spec, index, live, onSpec }: {
     ]
 
     const shared = sharedWith(spec, index)
-    const empty = !t.direct && !t.subs.picks.length && !t.warp.length && !t.own.picks.length
-    const state = t.direct
+    const empty = !t.direct && !t.block && !t.subs.picks.length && !t.warp.length && !t.own.picks.length
+    const state = t.block
+        ? S.ruleTarget.blok
+        : t.direct
         ? S.ruleTarget.napryamuyu
         : empty
           ? S.ruleTarget.nichegoNeVybrano
@@ -97,25 +101,25 @@ export default function RuleTarget({ spec, index, live, onSpec }: {
         /* «Авто» и узлы той же подписки и протокола вместе не значат ничего: одно заменяет другое. */
         else if (p.idx === undefined) picks = [...t.subs.picks.filter((x) => !(x.sub === p.sub && x.proto === p.proto)), p]
         else picks = [...t.subs.picks.filter((x) => !(x.sub === p.sub && x.proto === p.proto && x.idx === undefined)), p]
-        put({ ...t, direct: false, subs: { ...t.subs, picks } })
+        put({ ...t, direct: false, block: false, subs: { ...t.subs, picks } })
     }
 
     /** «Авто» подписки — все её протоколы разом: отметить заменяет узлы, снять — убирает. */
     function toggleAuto(sub: string, protos: SubPick['proto'][], on: boolean) {
         const rest = t.subs.picks.filter((x) => !(x.sub === sub && protos.includes(x.proto)))
         const picks = on ? rest : t.subs.mode === 'manual' ? [{ sub, proto: protos[0] }] : [...rest, ...protos.map((proto) => ({ sub, proto }))]
-        put({ ...t, direct: false, subs: { ...t.subs, picks } })
+        put({ ...t, direct: false, block: false, subs: { ...t.subs, picks } })
     }
 
     function toggleOwn(key: string) {
         const on = t.own.picks.includes(key)
         const picks = on ? t.own.picks.filter((x) => x !== key) : t.own.mode === 'manual' ? [key] : [...t.own.picks, key]
-        put({ ...t, direct: false, own: { ...t.own, picks } })
+        put({ ...t, direct: false, block: false, own: { ...t.own, picks } })
     }
 
     function toggleWarp(name: string) {
         const warp = t.warp.includes(name) ? t.warp.filter((x) => x !== name) : [...t.warp, name]
-        put({ ...t, direct: false, warp })
+        put({ ...t, direct: false, block: false, warp })
     }
 
     const setMode = (sec: 'subs' | 'own', mode: Mode) => {
@@ -131,26 +135,30 @@ export default function RuleTarget({ spec, index, live, onSpec }: {
                     <h2 className="sp-sub">{S.ruleTarget.kuda}</h2>
                     <div className={`text-xs ${empty ? 'text-warning-fg' : 'text-muted-foreground'}`}>{state}</div>
                 </div>
-                <div className="w-64 max-w-full">
+                <div className="w-80 max-w-full">
                     <Segmented
                         label={S.ruleTarget.kuda}
-                        value={t.direct ? 'direct' : 'tunnel'}
+                        value={t.block ? 'block' : t.direct ? 'direct' : 'tunnel'}
                         onChange={(v) => {
-                            if (v === 'direct') put({ ...t, direct: true })
-                            else setT({ ...t, direct: false })
+                            if (v === 'block') {
+                                if (!blockSupported(live.status)) { notify(S.ruleTarget.blokNuzhnoYadro, 'warning'); return }
+                                put({ ...t, direct: false, block: true })
+                            } else if (v === 'direct') put({ ...t, direct: true, block: false })
+                            else setT({ ...t, direct: false, block: false })
                         }}
                         items={[
-                            { value: 'tunnel', label: S.ruleTarget.cherezTunnel },
+                            { value: 'tunnel', label: S.ruleTarget.tunnel2 },
+                            { value: 'block', label: S.ruleTarget.blok },
                             { value: 'direct', label: S.ruleTarget.napryamuyu },
                         ]}
                     />
                 </div>
             </div>
-            {!parsed && !t.direct && ch.out && outs[ch.out] && (
+            {!parsed && !t.direct && !t.block && ch.out && outs[ch.out] && (
                 <p className="px-1 text-xs text-muted-foreground">{S.ruleTarget.seychasVyhod(ch.out)}</p>
             )}
 
-            {!t.direct && (
+            {!t.direct && !t.block && (
                 <>
                     {subs.length > 0 && (
                         <Part title={S.ruleTarget.podpiski} mode={t.subs.mode} onMode={(m) => setMode('subs', m)}>

@@ -1199,6 +1199,9 @@ export const ru = {
     ruleTarget: {
         kuda: "Куда",
         cherezTunnel: "Через туннель",
+        tunnel2: "Туннель",
+        blok: "Блок",
+        blokNuzhnoYadro: "Блок появится с обновлением ядра steer",
         napryamuyu: "Напрямую",
         nichegoNeVybrano: "Отметьте, через что пустить",
         obschiySPravilom: (p0: string) => `Общий с правилом «${p0}»`,

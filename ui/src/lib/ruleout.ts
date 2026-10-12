@@ -34,6 +34,8 @@ export interface SubPick {
 
 export interface Target {
     direct: boolean
+    /** Блок: трафик правила не пропускается (выход `kind: block`). */
+    block?: boolean
     subs: { mode: Mode; picks: SubPick[] }
     /** Выходы WARP: пилюля — конфигурация целиком, свой выбор узла у неё внутри. */
     warp: string[]
@@ -41,11 +43,11 @@ export interface Target {
     own: { mode: Mode; picks: string[] }
 }
 
-export const EMPTY_TARGET: Target = { direct: false, subs: { mode: 'order', picks: [] }, warp: [], own: { mode: 'order', picks: [] } }
+export const EMPTY_TARGET: Target = { direct: false, block: false, subs: { mode: 'order', picks: [] }, warp: [], own: { mode: 'order', picks: [] } }
 
 /** Виды, которые правило не переписывает и не убирает: у них регистрация, ключи или настройка
  *  человека вне правила. */
-const KEEP = new Set(['direct', 'warp', 'zapret', 'tgws', 'xsteer', 'awg'])
+const KEEP = new Set(['direct', 'block', 'warp', 'zapret', 'tgws', 'xsteer', 'awg'])
 const kept = (o: Output | undefined) => !o || KEEP.has(o.kind as string)
 
 const NAME_MAX = 15
@@ -153,6 +155,7 @@ export function targetOf(spec: Spec, out: string): Target | null {
     const o = outs[out]
     if (!o) return null
     if (o.kind === 'direct') return { ...EMPTY_TARGET, direct: true }
+    if (o.kind === ('block' as Output['kind'])) return { ...EMPTY_TARGET, block: true }
     const t: Target = structuredClone(EMPTY_TARGET)
     const put = (s: Section) => {
         if (s.kind === 'warp') t.warp.push(s.out)
@@ -377,6 +380,15 @@ function directOf(spec: Spec): { spec: Spec; name: string } {
     return { spec: { ...spec, outputs: { ...spec.outputs, [DIRECT]: { name: DIRECT, kind: 'direct' } } }, name: DIRECT }
 }
 
+/** Выход block: есть — его имя, нет — заводится. */
+function blockOf(spec: Spec): { spec: Spec; name: string } {
+    const have = Object.entries(spec.outputs).find(([, o]) => o.kind === ('block' as Output['kind']))?.[0]
+    if (have) return { spec, name: have }
+    let name = 'block'
+    for (let k = 2; spec.outputs[name]; k++) name = `block${k}`
+    return { spec: { ...spec, outputs: { ...spec.outputs, [name]: { name, kind: 'block' as Output['kind'] } } }, name }
+}
+
 /** Кто ещё держит выход, кроме правила `index`. */
 function othersOf(spec: Spec, index: number, name: string): string[] {
     const tree = [...treeOf(spec.outputs, name)]
@@ -402,6 +414,11 @@ export function applyTarget(spec: Spec, index: number, t: Target): Spec {
         if (out === prev) return s
         const next: Spec = { ...s, channels: s.channels.map((c, k) => (k === index ? { ...c, out } : c)) }
         return prev && prev !== out ? prune(next, prev) : next
+    }
+    if (t.block) {
+        const b = blockOf(spec)
+        const s2 = setOut(b.spec, b.name)
+        return { ...s2, channels: s2.channels.map((c, k) => (k === index ? directDomains(c) : c)) }
     }
     if (t.direct) {
         const d = directOf(spec)
