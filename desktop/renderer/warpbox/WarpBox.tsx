@@ -397,7 +397,7 @@ function Scan({ group, applied, initial }: { group: string; applied: boolean; in
                     {scan?.running ? <LoaderCircle className="desk-spin" aria-hidden="true" /> : <Radar aria-hidden="true" />}
                     {scan?.running ? 'Подбираем точки…' : 'Подобрать точки'}
                 </Button>
-                {!applied && <span className="desk-note">После «Применить»</span>}
+                {!applied && <span className="desk-note">После сохранения</span>}
                 {scan?.result && !scan.running && (
                     <span className="desk-note">
                         {scan.result.ok !== false ? `найдено: ${pts.length}` : scan.result.error}

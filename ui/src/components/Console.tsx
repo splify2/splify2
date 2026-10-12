@@ -103,11 +103,11 @@ export default function Console({ extra, railHost, board = false, settingsHost, 
      * загрузил (lib/pending.ts). */
     useEffect(() => { pending.load().catch(() => {}) }, [])
 
-    /* Без кнопки «Применить» (board): сохранённая правка применяется сама, через 0,8 с тишины —
-     * подряд идущие правки уходят одним применением. Только свои: правки, сохранённые и не
-     * применённые ДО открытия (например, в LuCI), молча не применяются — для них остаётся
-     * пилюля. Неудачное применение не повторяется по кругу: следующая попытка — со следующей
-     * правкой. */
+    /* Без кнопки «Применить» (board): всё — через «Сохранить» (владелец), сохранённое применяется
+     * само, через 0,8 с тишины — подряд идущие правки уходят одним применением. Сохранённое и не
+     * применённое ДО открытия (например, в LuCI) применяется так же, сразу после загрузки.
+     * Неудачное применение не повторяется по кругу: следующая попытка — со следующей правкой;
+     * об отказе говорит само хранилище (pending.apply → notify). */
     const autoBase = useRef<unknown>(null)
     const [, bump] = useState(0)
     useEffect(() => {
@@ -116,7 +116,12 @@ export default function Console({ extra, railHost, board = false, settingsHost, 
         const off = pending.subscribe(() => {
             const saved = pending.saved
             if (!saved) return
-            if (autoBase.current === null) { autoBase.current = saved; bump((n) => n + 1); return }
+            if (autoBase.current === null) {
+                autoBase.current = saved
+                bump((n) => n + 1)
+                if (pending.count() > 0 && !pending.hasUnsaved() && !pending.applying) void pending.apply()
+                return
+            }
             if (saved === autoBase.current || pending.hasUnsaved() || pending.applying) return
             if (pending.count() === 0) { autoBase.current = saved; bump((n) => n + 1); return }
             if (t) clearTimeout(t)
@@ -128,7 +133,6 @@ export default function Console({ extra, railHost, board = false, settingsHost, 
         })
         return () => { off(); if (t) clearTimeout(t) }
     }, [board])
-    const leftovers = board && pending.count() > 0 && pending.saved === autoBase.current && !pending.applying
 
     /* Переход в раздел снаружи — событием `splify:section` (detail — имя раздела). Нужен
      * приложению для компьютера: щелчок по уведомлению «выход не отвечает» открывает VPN. Под
@@ -320,7 +324,7 @@ export default function Console({ extra, railHost, board = false, settingsHost, 
                 </main>
             </div>
 
-            {(!board || leftovers) && <ApplyPill />}
+            {!board && <ApplyPill />}
         </div>
     )
 }
