@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef, useState, type ReactNode } from 'react'
-import { LoaderCircle, Search, Trash2 } from 'lucide-react'
+import { LoaderCircle, Plus, Search, Trash2 } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Block, CardHead, FieldRow, ScreenHeader, Segmented } from '@/components/ui/layout'
 import { rpc } from '@/lib/rpc'
@@ -35,8 +35,16 @@ import { pathFor, srsPathFor, ruleFiles, onRouter, srsProbe, mayNarrow, selected
 
 import DnsUpstreamExtras from '@/components/DnsUpstreamExtras'
 import ListPills from '@/components/board/ListPills'
+import { PRESETS, protoOfUrl } from '@/lib/dnspresets'
+import { Switch } from '@/components/ui/switch'
+import ConfBadges from '@/components/ConfBadges'
+import { BADGE_ROW, PILL } from '@/components/board/NodePills'
 import { withUrl } from '@/lib/dnsurl'
 import { S } from '@/copy'
+
+/** Названия готовых серверов DNS — в выборе «Сервер DNS» правила (приложение для ПК). */
+const PRESET_TITLE = new Map(S.dns.presetTitles)
+const DNS_PROTO: Record<string, string> = { udp: 'DNS', tcp: 'TCP', dot: 'DoT', doh: 'DoH', doq: 'DoQ', doh3: 'DoH3' }
 interface Props {
     ch: Channel
     /** Приложение для компьютера: «Куда» — отдельным блоком во всю ширину под остальными
@@ -99,6 +107,9 @@ export default function RuleEditor({
     /** Черновик: выбранные сервисы, которые роутер разберёт на «Сохранить». */
     const deferred = useRef(new Set<string>())
     const [saving, setSaving] = useState(false)
+    /** Блок «Настройка DNS для правила» (приложение для ПК): включён — у правила свой сервер DNS. */
+    const [dnsOn, setDnsOn] = useState(() => !!ch.dns)
+    const [allDns, setAllDns] = useState(false)
     async function save() {
         if (!onSave || saving) return
         setSaving(true)
@@ -122,6 +133,7 @@ export default function RuleEditor({
     /* Серверы DNS из раздела «DNS»: правило может выбрать свой вместо общего. */
     const { spec: fullSpec } = usePending()
     const upstreamNames = Object.keys(fullSpec?.dns?.upstreams || {})
+    const upstreamUrls = new Set(Object.values(fullSpec?.dns?.upstreams || {}).map((u) => u.url))
     /** Группы серверов раздела «DNS» — выбираются так же, как сервер. */
     const groupNames = Object.keys(fullSpec?.dns?.groups || {})
     /** Свой сервер прямо в правиле (`dns: { url, out, ips }` спеки v2): адрес и выход — тем же
@@ -651,6 +663,10 @@ export default function RuleEditor({
                                 {portBad && <p className="text-destructive">{S.ruleEditor.portOt1Do65535}</p>}
                             </div>
                         )}
+        </>
+    )
+    const dnsSelect = (
+        <>
                         {hasDomains && (
                             <label className="flex items-center justify-between gap-3 text-xs">
                                 <span className="text-subtle">{S.ruleEditor.serverDns}</span>
@@ -670,7 +686,12 @@ export default function RuleEditor({
                                     <option value="">{S.ruleEditor.poUmolchaniyu}</option>
                                     {upstreamNames.map((n) => <option key={n} value={n}>{n}</option>)}
                                     {groupNames.map((n) => <option key={n} value={n}>{S.ruleEditor.gruppaDns(n)}</option>)}
-                                    {typeof ch.dns === 'string' && !upstreamNames.includes(ch.dns) && !groupNames.includes(ch.dns) && (
+                                    {/* Приложение для ПК: любой готовый профиль, не отмеченный заранее на вкладке
+                                        DNS, — сервером он станет при сохранении правила (RulesTab). */}
+                                    {defer && PRESETS.filter((p) => !upstreamNames.includes(p.name) && !upstreamUrls.has(p.up.url)).map((p) => (
+                                        <option key={`preset:${p.name}`} value={p.name}>{PRESET_TITLE.get(p.name) ?? p.name}</option>
+                                    ))}
+                                    {typeof ch.dns === 'string' && !upstreamNames.includes(ch.dns) && !groupNames.includes(ch.dns) && !(defer && PRESETS.some((p) => p.name === ch.dns)) && (
                                         <option value={ch.dns}>{ch.dns}</option>
                                     )}
                                     <option value={OWN_DNS}>{S.ruleEditor.svoyAdresDns}</option>
@@ -678,6 +699,10 @@ export default function RuleEditor({
                                 </select>
                             </label>
                         )}
+        </>
+    )
+    const ownDnsFields = (
+        <>
                         {hasDomains && ownDns && (
                             <div className="space-y-1 text-xs">
                                 <FieldRow label={S.ruleEditor.adresDns}>
@@ -722,6 +747,70 @@ export default function RuleEditor({
     /* Приложение для компьютера: сверху вниз «Что» и «Куда» пилюлями, под ними всё остальное
      * правила одним блоком «Настройки» (владелец: «списки тоже в пилюли, и снизу всего этого
      * настройки, что раньше были по окну раскиданы»). */
+    /* Свой DNS правила (приложение для ПК): выключатель; выключен — блок в одну строку и у правила
+     * общий сервер (вкладка DNS), включён — серверы пилюлями: добавленные на роутере и любой готовый
+     * профиль (сервером он станет при сохранении правила, RulesTab), и «Свой адрес». */
+    const upsAll = fullSpec?.dns?.upstreams || {}
+    const dnsChoices: { name: string; title: string; url: string }[] = [
+        ...Object.entries(upsAll).map(([n, u]) => ({ name: n, title: PRESET_TITLE.get(PRESETS.find((p) => p.up.url === u.url)?.name ?? '') ?? n, url: u.url })),
+        ...PRESETS.filter((p) => !upstreamNames.includes(p.name) && !upstreamUrls.has(p.up.url))
+            .map((p) => ({ name: p.name, title: PRESET_TITLE.get(p.name) ?? p.name, url: p.up.url })),
+    ]
+    const dnsShown = allDns ? dnsChoices : dnsChoices.filter((c, i) => i < 8 || ch.dns === c.name)
+    const dnsBlock = (
+        <section className="sp-board-group an-glass space-y-3 rounded-2xl border p-3">
+            <div className="flex items-center justify-between gap-3 px-1 py-0.5">
+                <h2 className="sp-sub">{S.ruleEditor.nastroykaDnsDlyaPravila}</h2>
+                <Switch
+                    on={dnsOn}
+                    label={S.ruleEditor.nastroykaDnsDlyaPravila}
+                    onClick={() => {
+                        if (dnsOn && ch.dns) { const { dns: _d, ...rest } = ch; onChange(rest as Channel) }
+                        setDnsOn(!dnsOn)
+                    }}
+                />
+            </div>
+            {dnsOn && (
+                <>
+                    <div className="grid grid-cols-[repeat(auto-fill,minmax(180px,1fr))] gap-2">
+                        <button
+                            type="button"
+                            onClick={() => onChange({ ...ch, dns: ownDns ?? { url: 'https://' } })}
+                            style={{ borderColor: 'color-mix(in srgb, var(--sp-muted-foreground) 45%, transparent)' }}
+                            className={`flex h-[64px] items-center justify-center gap-2 rounded-xl border border-dashed bg-transparent text-sm transition-colors duration-200 hover:border-primary/50 hover:text-primary ${ownDns ? 'text-primary' : 'text-muted-foreground'}`}
+                        >
+                            <Plus className="h-4 w-4" aria-hidden="true" /> {S.dns.svoyAdres}
+                        </button>
+                        {dnsShown.map((c) => {
+                            const on = ch.dns === c.name
+                            return (
+                                <button
+                                    key={c.name}
+                                    type="button"
+                                    aria-pressed={on}
+                                    onClick={() => onChange({ ...ch, dns: c.name })}
+                                    className={[
+                                        `${PILL} transition-[border-color,box-shadow] duration-200 hover:border-primary/50`,
+                                        on ? 'border-primary/80 bg-primary/10 shadow-[inset_0_1px_0_var(--an-glass-edge),0_0_0_2px_color-mix(in_srgb,var(--sp-primary)_25%,transparent)]' : '',
+                                    ].join(' ')}
+                                >
+                                    <span className="min-w-0 truncate text-[13px] font-semibold">{c.title}</span>
+                                    <ConfBadges list={[{ id: 'proto', text: DNS_PROTO[protoOfUrl(c.url)] ?? 'DNS', group: 'transport' }]} className={BADGE_ROW} />
+                                </button>
+                            )
+                        })}
+                    </div>
+                    {dnsChoices.length > 8 && (
+                        <button type="button" onClick={() => setAllDns((v) => !v)} className="bg-transparent px-1 text-xs text-primary">
+                            {allDns ? S.subsBoard.svernut : S.subsBoard.pokazatVse(dnsChoices.length)}
+                        </button>
+                    )}
+                    {ownDnsFields}
+                </>
+            )}
+        </section>
+    )
+
     if (target) {
         const TILE = 'sp-board-tile an-glass space-y-3 rounded-2xl border p-3.5'
         return (
@@ -761,6 +850,8 @@ export default function RuleEditor({
 
                 {target}
 
+                {hasDomains && dnsBlock}
+
                 <section className="sp-board-group an-glass space-y-3 rounded-2xl border p-3">
                     <h2 className="sp-sub px-1 pt-1">{S.ruleEditor.nastroyki}</h2>
                     <div className="grid gap-3 sm:grid-cols-2 sm:items-start">
@@ -768,7 +859,7 @@ export default function RuleEditor({
                             <div className={TILE}>{nameField}</div>
                             {(hasDomains || isException) && (
                                 <div className={TILE}>
-                                    <div className="text-[13px] font-semibold">{S.ruleEditor.domenyIDns}</div>
+                                    <div className="text-[13px] font-semibold">{S.ruleEditor.domenyZagolovok}</div>
                                     {whereBody}
                                 </div>
                             )}
@@ -871,6 +962,8 @@ export default function RuleEditor({
                             </div>
                         )}
                         {whereBody}
+                        {dnsSelect}
+                        {ownDnsFields}
                     </Block>
                 </div>
             </div>

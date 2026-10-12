@@ -297,6 +297,9 @@ export const ru = {
     },
     dns: {
         proverit: "Проверить",
+        vseZaprosyDns: "Все запросы DNS",
+        vybranoServerov: (n: number) => n === 1 ? "Один сервер" : `Серверов: ${n}, по порядку отметки`,
+        otvechaetDnsRoutera: "Отвечает DNS роутера",
         svoyServer: "Свой сервер",
         nastroit: "Настроить",
         otvechaet: "Отвечает",
@@ -1004,6 +1007,8 @@ export const ru = {
         vybiraetsyaServisEsliU: "Выбирается сервис: если у него есть и домены, и адреса, в правило попадут оба. Домены точнее, адреса работают и когда устройство не спрашивает DNS роутера.",
         kudaNapravlenieVyhod: "Куда направить",
         domenyIDns: "Домены и DNS",
+        domenyZagolovok: "Домены",
+        nastroykaDnsDlyaPravila: "Настройка DNS для правила",
         chto: "Что",
         udalit: "Удалить",
         sohranit: "Сохранить",

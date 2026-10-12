@@ -16,6 +16,7 @@ import ConfBadges from '@/components/ConfBadges'
 import { BADGE_ROW } from '@/components/board/NodePills'
 
 import { S } from '@/copy'
+import { PRESETS, protoOfUrl } from '@/lib/dnspresets'
 /** DNS: какими серверами и через какой выход резолвер движка спрашивает имена под правилами.
  *
  *  Резолвер движка отвечает только на имена, которые попали под правило; остальные спрашивает
@@ -33,36 +34,6 @@ const NAME_RE = /^[A-Za-z0-9_.-]{1,31}$/
  * прокси, а не настоящим. */
 const PRESET_TITLE = new Map(S.dns.presetTitles)
 
-const PRESETS: { name: string; up: Upstream }[] = [
-    { name: 'cloudflare', up: { url: 'https://cloudflare-dns.com/dns-query', ips: ['1.1.1.1', '1.0.0.1'] } },
-    { name: 'cloudflare-dot', up: { url: 'tls://cloudflare-dns.com', ips: ['1.1.1.1', '1.0.0.1'] } },
-    { name: 'cloudflare-sec', up: { url: 'https://security.cloudflare-dns.com/dns-query', ips: ['1.1.1.2', '1.0.0.2'] } },
-    { name: 'cloudflare-fam', up: { url: 'https://family.cloudflare-dns.com/dns-query', ips: ['1.1.1.3', '1.0.0.3'] } },
-    { name: 'google', up: { url: 'https://dns.google/dns-query', ips: ['8.8.8.8', '8.8.4.4'] } },
-    { name: 'google-dot', up: { url: 'tls://dns.google', ips: ['8.8.8.8', '8.8.4.4'] } },
-    { name: 'quad9-doh', up: { url: 'https://dns.quad9.net/dns-query', ips: ['9.9.9.9', '149.112.112.112'] } },
-    { name: 'quad9', up: { url: 'tls://dns.quad9.net', ips: ['9.9.9.9', '149.112.112.112'] } },
-    { name: 'quad9-doq', up: { url: 'quic://dns.quad9.net', ips: ['9.9.9.9', '149.112.112.112'] } },
-    { name: 'adguard-doh', up: { url: 'https://dns.adguard-dns.com/dns-query', ips: ['94.140.14.14', '94.140.15.15'] } },
-    { name: 'adguard-dot', up: { url: 'tls://dns.adguard-dns.com', ips: ['94.140.14.14', '94.140.15.15'] } },
-    { name: 'adguard', up: { url: 'quic://dns.adguard-dns.com', ips: ['94.140.14.14', '94.140.15.15'] } },
-    { name: 'adguard-fam', up: { url: 'https://family.adguard-dns.com/dns-query', ips: ['94.140.14.15', '94.140.15.16'] } },
-    { name: 'adguard-fam-doq', up: { url: 'quic://family.adguard-dns.com', ips: ['94.140.14.15', '94.140.15.16'] } },
-    { name: 'yandex', up: { url: 'https://common.dot.dns.yandex.net/dns-query', ips: ['77.88.8.8', '77.88.8.1'] } },
-    { name: 'yandex-dot', up: { url: 'tls://common.dot.dns.yandex.net', ips: ['77.88.8.8', '77.88.8.1'] } },
-    { name: 'yandex-safe', up: { url: 'https://safe.dot.dns.yandex.net/dns-query', ips: ['77.88.8.88', '77.88.8.2'] } },
-    { name: 'opendns', up: { url: 'https://doh.opendns.com/dns-query', ips: ['208.67.222.222', '208.67.220.220'] } },
-    { name: 'opendns-dot', up: { url: 'tls://dns.opendns.com', ips: ['208.67.222.222', '208.67.220.220'] } },
-    { name: 'controld', up: { url: 'https://freedns.controld.com/p0', ips: ['76.76.2.0', '76.76.10.0'] } },
-    { name: 'comss', up: { url: 'https://dns.comss.one/dns-query', ips: ['83.220.169.155', '212.109.195.93'] } },
-    { name: 'comss-dot', up: { url: 'tls://dns.comss.one', ips: ['83.220.169.155', '212.109.195.93'] } },
-    { name: 'comss-doq', up: { url: 'quic://dns.comss.one', ips: ['83.220.169.155', '212.109.195.93'] } },
-    { name: 'xbox-dns', up: { url: 'https://xbox-dns.ru/dns-query', ips: ['111.88.96.50', '111.88.96.51'] } },
-    { name: 'xbox-dns-dot', up: { url: 'tls://xbox-dns.ru', ips: ['111.88.96.50', '111.88.96.51'] } },
-    { name: 'malw', up: { url: 'https://dns.malw.link/dns-query', ips: ['193.23.209.189'] } },
-    { name: 'yo1nk', up: { url: 'https://dns.yo1nk.app/dns-query', ips: ['109.120.137.190'] } },
-    { name: 'yo1nk-dot', up: { url: 'tls://dns.yo1nk.app', ips: ['109.120.137.190'] } },
-]
 
 const STATE_TEXT: Record<string, string> = {
     ready: S.dns.rabotaet,
@@ -78,15 +49,6 @@ const PROTO_TEXT: Record<string, string> = { udp: 'DNS', tcp: S.dns.dnsPoTcp, do
 /** Сколько готовых серверов видно до «Показать все». */
 const PRESET_FOLD = 8
 
-/** Протокол сервера по адресу — как его называет ядро в `dns_log`. */
-function protoOfUrl(url: string): string {
-    if (url.startsWith('https://')) return 'doh'
-    if (url.startsWith('h3://')) return 'doh3'
-    if (url.startsWith('tls://')) return 'dot'
-    if (url.startsWith('quic://')) return 'doq'
-    if (url.startsWith('tcp://')) return 'tcp'
-    return 'udp'
-}
 
 /** Лампочка проверки: ответил ли сервер с роутера; 'busy' — проверка идёт. */
 type Lamp = { ok: boolean; ms?: number; error?: string } | 'busy'
@@ -99,10 +61,14 @@ function hostOf(url: string): string {
 
 /** Карточка сервера DNS (приложение для ПК), как карточка правила: имя, хост, протокол, справа —
  *  лампочка проверки. Щелчок выбирает сервер или убирает; у выбранного — «Настроить». */
-function DnsCard({ title, up, chosen, lamp, live, onToggle, onEdit, editing }: {
+function DnsCard({ title, up, chosen, rank, where, lamp, live, onToggle, onEdit, editing }: {
     title: string
     up: Upstream
     chosen: boolean
+    /** Место в группе (по порядку отметки), когда серверов больше одного. */
+    rank?: number
+    /** Где сервер используется: «правила», «остальные». */
+    where: string[]
     lamp?: Lamp
     live?: string
     onToggle: () => void
@@ -119,7 +85,7 @@ function DnsCard({ title, up, chosen, lamp, live, onToggle, onEdit, editing }: {
             onClick={onToggle}
             onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); onToggle() } }}
             className={[
-                'sp-board-tile an-glass flex h-[96px] min-w-0 cursor-pointer flex-col gap-1.5 rounded-2xl border p-3.5 transition-[border-color,box-shadow] duration-200 hover:border-primary/50',
+                'sp-board-tile an-glass relative flex h-[96px] min-w-0 cursor-pointer flex-col gap-1.5 rounded-2xl border p-3.5 transition-[border-color,box-shadow] duration-200 hover:border-primary/50',
                 chosen ? 'border-primary/80 bg-primary/10 shadow-[inset_0_1px_0_var(--an-glass-edge),0_0_0_2px_color-mix(in_srgb,var(--sp-primary)_25%,transparent)]' : '',
             ].join(' ')}
         >
@@ -137,7 +103,13 @@ function DnsCard({ title, up, chosen, lamp, live, onToggle, onEdit, editing }: {
             </div>
             <div className="truncate font-mono text-xs text-muted-foreground">{hostOf(up.url)}</div>
             <div className="mt-auto flex min-w-0 items-center gap-2">
-                <ConfBadges list={[{ id: 'proto', text: PROTO_TEXT[protoOfUrl(up.url)], group: 'transport' }]} className={BADGE_ROW} />
+                <ConfBadges
+                    list={[
+                        { id: 'proto', text: PROTO_TEXT[protoOfUrl(up.url)], group: 'transport' },
+                        ...where.map((w) => ({ id: `use:${w}`, text: w, group: 'feature' as const })),
+                    ]}
+                    className={BADGE_ROW}
+                />
                 {chosen && live && live !== 'ready' && live !== 'idle' && (
                     <span className="truncate text-xs text-muted-foreground">{STATE_TEXT[live] || live}</span>
                 )}
@@ -151,6 +123,11 @@ function DnsCard({ title, up, chosen, lamp, live, onToggle, onEdit, editing }: {
                     </button>
                 )}
             </div>
+            {rank !== undefined && (
+                <span className="absolute -right-1.5 -top-1.5 flex h-5 min-w-5 items-center justify-center rounded-full bg-primary px-1 text-[11px] font-semibold text-primary-foreground">
+                    {rank}
+                </span>
+            )}
         </div>
     )
 }
@@ -639,47 +616,102 @@ export default function Dns({ live, board = false }: { live?: Live; board?: bool
     if (board) {
         const GROUP = 'sp-board-group an-glass space-y-3 rounded-2xl border p-3'
         const TILE = 'sp-board-tile an-glass min-w-0 space-y-1 rounded-2xl border p-3.5'
-        /* Карточки: готовые профили и добавленные свои серверы одним списком. Выбранная — сервер
-         * уже среди серверов роутера; щелчок выбирает или убирает. */
+        /* Карточки отмечают, через какие серверы идут ВСЕ запросы DNS (владелец): общий сервер доменов
+         * правил (`dns.upstream`) и сервер остальных имён (`dns.other`) — одно и то же. Один — сервер,
+         * несколько — группа в порядке отметки, ни одного — DNS роутера. Свой сервер у правила — в
+         * самом правиле. Готовый профиль становится сервером роутера при первом выборе и уходит, когда
+         * больше никому не нужен. */
+        const which = 'upstream' as const
+        const listOf2 = (w: 'upstream' | 'other'): string[] => {
+            const cur = dns[w]
+            if (!cur) return []
+            const g = dns.groups?.[cur]
+            return g ? g.servers : [cur]
+        }
+        const picked = listOf2(which)
+        const grp = dns[which] ? dns.groups?.[dns[which]!] : undefined
         const byUrl = new Map(Object.entries(ups).map(([n, u]) => [u.url, n]))
-        const cards: { key: string; title: string; up: Upstream; name?: string }[] = [
-            ...PRESETS.map((p) => ({ key: p.name, title: PRESET_TITLE.get(p.name) ?? p.name, up: byUrl.has(p.up.url) ? ups[byUrl.get(p.up.url)!] : p.up, name: byUrl.get(p.up.url) })),
+        const cards: { key: string; title: string; up: Upstream; name?: string; preset?: string }[] = [
+            ...PRESETS.map((p) => ({ key: p.name, title: PRESET_TITLE.get(p.name) ?? p.name, up: byUrl.has(p.up.url) ? ups[byUrl.get(p.up.url)!] : p.up, name: byUrl.get(p.up.url), preset: p.name })),
             ...names.filter((n) => !PRESETS.some((p) => p.up.url === ups[n].url))
                 .map((n) => ({ key: `own:${n}`, title: n, up: ups[n], name: n })),
         ]
-        const chosen = cards.filter((c) => c.name)
-        const rest = cards.filter((c) => !c.name)
-        const shown = allPresets ? cards : [...chosen, ...rest.slice(0, Math.max(0, PRESET_FOLD - chosen.length))]
+        const used = (n?: string) => !!n && (picked.includes(n))
+        const front = cards.filter((c) => used(c.name) || (c.name && c.key.startsWith('own:')))
+        const rest = cards.filter((c) => !front.includes(c))
+        const shown = allPresets ? cards : [...front, ...rest.slice(0, Math.max(0, PRESET_FOLD - front.length))]
+
+        /** Все запросы — списком серверов: пусто — DNS роутера, один — сервер, больше — группа. Пишется
+         *  в оба назначения (`dns.other` — где ядро его умеет); прежние группы, которые больше никому
+         *  не нужны, уходят. */
+        function assign(_w: 'upstream', list: string[], base: DnsSpec): DnsSpec {
+            const next: DnsSpec = { ...base, groups: { ...(base.groups || {}) } }
+            const targets: ('upstream' | 'other')[] = showOther ? ['upstream', 'other'] : ['upstream']
+            const olds = targets.map((w) => base[w]).filter((g): g is string => !!g && !!base.groups?.[g])
+            let value: string | undefined
+            if (list.length === 1) value = list[0]
+            else if (list.length > 1) {
+                const g = olds[0] ?? freeName('all', next)
+                next.groups![g] = { servers: list, mode: base.groups?.[g]?.mode || 'failover' }
+                value = g
+            }
+            for (const w of targets) { if (value) next[w] = value; else delete next[w] }
+            for (const g of olds) {
+                if (g !== value && !spec!.channels.some((c) => c.dns === g) && next.upstream !== g && next.other !== g) delete next.groups![g]
+            }
+            return next
+        }
+        /** Серверы из готовых профилей, которые больше никому не нужны, — прочь из списка роутера. */
+        function tidy(d: DnsSpec): DnsSpec {
+            const keep = new Set<string>([d.upstream, d.other].filter((x): x is string => !!x))
+            for (const g of Object.values(d.groups || {})) for (const m of g.servers) keep.add(m)
+            for (const c of spec!.channels) if (typeof c.dns === 'string') keep.add(c.dns)
+            const up = { ...(d.upstreams || {}) }
+            for (const [n, u] of Object.entries(up)) if (!keep.has(n) && PRESETS.some((p) => p.up.url === u.url)) delete up[n]
+            return { ...d, upstreams: up }
+        }
+        function toggle(c: (typeof cards)[number]) {
+            let name = c.name
+            let base: DnsSpec = dns
+            if (!name) {
+                if (!c.preset) return
+                name = c.preset
+                for (let k = 2; ups[name]; k++) name = `${c.preset}${k}`
+                base = { ...dns, upstreams: { ...ups, [name]: { ...c.up } } }
+            }
+            const list = picked.includes(name) ? picked.filter((x) => x !== name) : [...picked, name]
+            setDns(tidy(assign(which, list, base)))
+        }
+
         return (
             <div className="space-y-4">
                 <section className={GROUP}>
-                    <div className="flex items-center justify-between gap-2 px-1 pt-1">
-                        <h2 className="sp-sub flex items-center gap-2">
-                            {S.dns.serveryDns}
-                            {names.length > 0 && <span className="rounded-full bg-primary/15 px-2 text-xs font-semibold text-primary">{names.length}</span>}
-                        </h2>
+                    <div className="flex flex-wrap items-center justify-between gap-2 px-1 pt-1">
+                        <h2 className="sp-sub">{S.dns.vseZaprosyDns}</h2>
                         <Button variant="ghost" size="sm" onClick={() => void probeAll()} disabled={probe.busy}>
                             <RefreshCw className={probe.busy ? 'animate-spin' : ''} aria-hidden="true" /> {S.dns.proverit}
                         </Button>
                     </div>
+                    <div className="flex flex-wrap items-center gap-3">
+                        {picked.length > 1 && grp && (
+                            <div className="w-full sm:w-[280px]">
+                                <Segmented
+                                    label={S.dns.vseZaprosyDns}
+                                    value={grp.mode === 'race' ? 'race' : 'failover'}
+                                    onChange={(v) => setDns({ ...dns, groups: { ...(dns.groups || {}), [dns[which]!]: { ...grp, mode: v } } })}
+                                    items={[
+                                        { value: 'failover', label: S.dns.poOcheredi },
+                                        { value: 'race', label: S.dns.srazuVse },
+                                    ]}
+                                />
+                            </div>
+                        )}
+                        <span className="text-xs text-muted-foreground">
+                            {picked.length ? S.dns.vybranoServerov(picked.length) : S.dns.otvechaetDnsRoutera}
+                        </span>
+                    </div>
                     <div className="grid gap-3 sm:grid-cols-3">
-                        {shown.map((c) => (
-                            <DnsCard
-                                key={c.key}
-                                title={c.title}
-                                up={c.up}
-                                chosen={!!c.name}
-                                lamp={probe.busy && !probe.res[c.up.url] ? 'busy' : probe.res[c.up.url]}
-                                live={c.name ? state(c.name)?.state : undefined}
-                                onToggle={() => {
-                                    if (c.name) remove(c.name)
-                                    else if (c.key.startsWith('own:')) return
-                                    else addPreset(c.key)
-                                }}
-                                onEdit={c.name ? () => setEditing(editing === c.name ? null : c.name!) : undefined}
-                                editing={!!c.name && editing === c.name}
-                            />
-                        ))}
+                        {/* Пунктирная «Свой сервер» — первой (владелец). */}
                         <button
                             type="button"
                             onClick={() => setEditing(addCustom())}
@@ -688,8 +720,23 @@ export default function Dns({ live, board = false }: { live?: Live; board?: bool
                         >
                             <Plus className="h-4 w-4" aria-hidden="true" /> {S.dns.svoyServer}
                         </button>
+                        {shown.map((c) => (
+                            <DnsCard
+                                key={c.key}
+                                title={c.title}
+                                up={c.up}
+                                chosen={used(c.name)}
+                                rank={picked.length > 1 && c.name && picked.includes(c.name) ? picked.indexOf(c.name) + 1 : undefined}
+                                where={[]}
+                                lamp={probe.busy && !probe.res[c.up.url] ? 'busy' : probe.res[c.up.url]}
+                                live={c.name ? state(c.name)?.state : undefined}
+                                onToggle={() => toggle(c)}
+                                onEdit={c.name ? () => setEditing(editing === c.name ? null : c.name!) : undefined}
+                                editing={!!c.name && editing === c.name}
+                            />
+                        ))}
                     </div>
-                    {rest.length > PRESET_FOLD - chosen.length && (
+                    {rest.length > PRESET_FOLD - front.length && (
                         <button type="button" onClick={() => setAllPresets((v) => !v)} className="flex items-center gap-1.5 bg-transparent px-1 text-xs text-primary">
                             <ChevronDown className={`h-3.5 w-3.5 transition-transform duration-200 ${allPresets ? 'rotate-180' : ''}`} aria-hidden="true" />
                             {allPresets ? S.subsBoard.svernut : S.subsBoard.pokazatVse(cards.length)}
@@ -701,8 +748,6 @@ export default function Dns({ live, board = false }: { live?: Live; board?: bool
                 <section className={GROUP}>
                     <h2 className="sp-sub px-1 pt-1">{S.dns.kakSprashivat}</h2>
                     <div className="grid gap-3 sm:grid-cols-2 sm:items-start">
-                        <div className={TILE}>{upTarget}</div>
-                        {showOther && <div className={TILE}>{otherTarget}</div>}
                         <div className={TILE}>{modeField}</div>
                         <div className={TILE}>{bootstrapField}</div>
                         <div className={`${TILE} sm:col-span-2`}>{cacheField}</div>
