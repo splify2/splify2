@@ -2,7 +2,7 @@
 //
 // Панель зовёт роутер через window.luci_rpc.declare — мост, который под LuCI отдаёт загрузчик
 // (luci/…/view/splify2/home.js). Здесь мост свой: вызов уходит в главный процесс, а тот — в API
-// роутера по токену устройства (docs/api.md). Сама панель об этом не знает.
+// роутера по токену устройства (SPLIFY2_API.md в хабе). Сама панель об этом не знает.
 import '@/index.css'
 import './desktop.css'
 import { StrictMode, useEffect, useState } from 'react'

@@ -223,7 +223,7 @@ chmod 0755 "$PKG/usr/libexec/rpcd/splify2" "$PKG/usr/sbin/splify2-update-lists" 
 chmod 0644 "$PKG/usr/share/splify2/allow-domains.sh"
 chmod 0644 "$PKG"/usr/lib/splify2/*.sh "$PKG"/usr/lib/splify2/rpcd/*.sh
 
-# API для приложений вне LuCI (docs/api.md): шлюз CGI на ucode с токенами устройств. Версия
+# API для приложений вне LuCI (SPLIFY2_API.md в хабе): шлюз CGI на ucode с токенами устройств. Версия
 # пакета вписывается на сборке — её отдаёт /v1/info, и клиенту не нужен отдельный вызов.
 mkdir -p "$PKG/www/cgi-bin"
 sed "s/@VERSION@/$VERSION/" files/www/cgi-bin/splify2-api > "$PKG/www/cgi-bin/splify2-api"
