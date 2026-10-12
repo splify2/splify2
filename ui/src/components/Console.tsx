@@ -34,6 +34,7 @@ const RulesTab = lazy(() => import('@/components/tabs/RulesTab'))
 const Vpn = lazy(() => import('@/components/sections/Vpn'))
 const Dns = lazy(() => import('@/components/sections/Dns'))
 const Settings = lazy(() => import('@/components/sections/Settings'))
+type SettingsScreen = Exclude<import('@/components/sections/Settings').Screen, 'root'>
 const Diagnostics = lazy(() => import('@/components/sections/Diagnostics'))
 
 /** Разделы, что читают и правят спеку: при отказе загрузки их место занимает «Повторить». */
@@ -56,13 +57,15 @@ export interface ExtraSection {
 /** `board` — оболочка приложения для компьютера: главная «доской» (правила карточками), правила
  *  открываются с неё и вкладки в рельсе нет, а сохранённая правка применяется сама — без кнопки
  *  «Применить» (владелец). Под LuCI ничего этого нет. */
-export default function Console({ extra, railHost, board = false, settingsHost }: {
+export default function Console({ extra, railHost, board = false, settingsHost, settingsScreen }: {
     extra?: ExtraSection[]
     railHost?: Element | null
     board?: boolean
     /** Узел оболочки для раздела «Настройки» (порталом): в приложении для компьютера настройки
      *  роутера живут в общем слое настроек приложения, а не вторым пунктом рельса. */
     settingsHost?: Element | null
+    /** Какой экран настроек рисовать в settingsHost — по пункту слоя настроек оболочки. */
+    settingsScreen?: SettingsScreen
 } = {}) {
     const [section, setSection] = useState<SectionId | string>('home')
     const live = useLive()
@@ -257,6 +260,7 @@ export default function Console({ extra, railHost, board = false, settingsHost }
                             {!loadFailed && (
                                 <Settings
                                     live={live}
+                                    only={settingsScreen}
                                     onUseInRule={(l) => {
                                         setWanted(l)
                                         go('rules')
