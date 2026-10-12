@@ -20,6 +20,9 @@ import { warpSection } from './warpbox/WarpBox'
 import { desk, lastBase, resetMemory, type ApiState } from './desk'
 import { useSettings } from './hooks'
 
+/** Открыть панель на мастере настройки (конец установки) — переживает перезагрузку страницы. */
+const SETUP_KEY = 'desk:setup'
+
 window.luci_rpc = {
     declare: ({ method, params }) => (...args: unknown[]) => {
         // Как у rpc.declare в LuCI: позиционные аргументы ложатся на имена из params.
@@ -49,6 +52,7 @@ let appShown = false
 function Root() {
     const [st, setSt] = useState<ApiState | null>(null)
     const [lost, setLost] = useState('')
+    const [setupNow, setSetupNow] = useState(() => { try { return sessionStorage.getItem(SETUP_KEY) === '1' } catch { return false } })
     const [settingsOpen, setSettingsOpen] = useState(false)
     const [prefs] = useSettings()
     const [railHost, setRailHost] = useState<HTMLElement | null>(null)
@@ -102,8 +106,12 @@ function Root() {
         return () => { clearInterval(t); mo?.disconnect() }
     }, [st?.connected])
 
-    function connected(s: ApiState) {
+    function connected(s: ApiState, setup = false) {
         if (s.base !== lastBase()) resetMemory(s.base)
+        /* «Настроить splify2» в конце установки: панель откроется на мастере настройки. Через
+         * sessionStorage — переподключение ниже перезагружает страницу. */
+        try { if (setup) sessionStorage.setItem(SETUP_KEY, '1') } catch { /* без памяти — мастер на главной сам */ }
+        setSetupNow(setup)
         if (appShown) {
             location.reload()
             return
@@ -135,7 +143,7 @@ function Root() {
                     {st?.connected && <div className="desk-side" ref={setRailHost} />}
                     <main className="desk-body">
                         {st && prefs && (st.connected
-                            ? railHost && <Console extra={EXTRA} railHost={railHost} board settingsHost={panel.host} settingsScreen={panel.screen} />
+                            ? railHost && <Console extra={EXTRA} railHost={railHost} board setup={setupNow} settingsHost={panel.host} settingsScreen={panel.screen} />
                             : !prefs.wizardDone && !lost
                                 ? <Wizard onConnected={connected} />
                                 : <Connect initial={lastBase()} note={lost} onConnected={connected} />)}

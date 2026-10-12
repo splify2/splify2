@@ -89,3 +89,18 @@ export function probeSubNode(path: string, n: SubNode) {
     if (n.proto === 'hysteria2') return rpc.hysteria2ProbeOfSub(path, n.index)
     return rpc.proxyProbeOfSub(path, n.at ?? n.index)
 }
+
+/** Какие протоколы есть в подписке (у каждого — свои узлы): для «Авто» по всей подписке. */
+export async function subProtos(path: string): Promise<SubNode['proto'][]> {
+    type R = VlessNodesReply | null
+    const [v, h, p] = await Promise.all([
+        rpc.vlessNodesOfSub(path).catch((): R => null),
+        rpc.hysteria2NodesOfSub(path).catch((): R => null),
+        rpc.proxyNodesOfSub(path).catch((): R => null),
+    ])
+    const out: SubNode['proto'][] = []
+    if ((v?.nodes || []).some((n) => !n.excluded)) out.push('vless')
+    if ((h?.nodes || []).some((n) => !n.excluded)) out.push('hysteria2')
+    for (const x of pxSplit(p?.nodes)) if (!out.includes(x.proto)) out.push(x.proto)
+    return out
+}

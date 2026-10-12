@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState, type FormEvent } from 'react'
 import { ArrowLeft, Check, LoaderCircle, RefreshCw, Router, Search } from 'lucide-react'
 import { Button } from '@/components/ui/button'
+import { markSetupDone } from '@/components/board/SetupWizard'
 import { Field, inputCls } from '@/components/formbits'
 import { ToggleRow } from '@/components/ui/layout'
 import { desk, type ApiState, type FoundRouter, type RouterInventory } from '../desk'
@@ -9,7 +10,7 @@ import { useSettings } from '../hooks'
 type Step = 'welcome' | 'find' | 'password' | 'install' | 'done'
 
 /** Мастер первого запуска: найти роутер, подключить, при нужде — поставить splify2. */
-export default function Wizard({ onConnected }: { onConnected: (s: ApiState) => void }) {
+export default function Wizard({ onConnected }: { onConnected: (s: ApiState, setup?: boolean) => void }) {
     const [step, setStep] = useState<Step>('welcome')
     const [target, setTarget] = useState<FoundRouter | null>(null)
     const [password, setPassword] = useState('')
@@ -38,7 +39,7 @@ export default function Wizard({ onConnected }: { onConnected: (s: ApiState) => 
                         onBack={() => setStep('password')}
                     />
                 )}
-                {step === 'done' && connected && <Done state={connected} onFinish={() => onConnected(connected)} />}
+                {step === 'done' && connected && <Done state={connected} onFinish={(setup) => onConnected(connected, setup)} />}
             </div>
         </div>
     )
@@ -284,7 +285,7 @@ function Install({ target, password, onConnected, onBack }: {
     )
 }
 
-function Done({ state, onFinish }: { state: ApiState; onFinish: () => void }) {
+function Done({ state, onFinish }: { state: ApiState; onFinish: (setup: boolean) => void }) {
     const [s, set] = useSettings()
     return (
         <div className="desk-step">
@@ -307,9 +308,18 @@ function Done({ state, onFinish }: { state: ApiState; onFinish: () => void }) {
                     />
                 </div>
             )}
-            <Button className="desk-wizard-main" onClick={() => { set({ wizardDone: true }); onFinish() }}>
-                Открыть панель
+            {/* Мастер настройки splify2 — часть установки: пройти (панель откроется на нём) или
+                пропустить (отметка «пройден» — в памяти интерфейса на роутере). */}
+            <Button className="desk-wizard-main" onClick={() => { set({ wizardDone: true }); onFinish(true) }}>
+                Настроить splify2
             </Button>
+            <button
+                type="button"
+                className="desk-wizard-link"
+                onClick={() => { set({ wizardDone: true }); void markSetupDone().finally(() => onFinish(false)) }}
+            >
+                Пропустить
+            </button>
         </div>
     )
 }

@@ -7,6 +7,7 @@ import { isPart, type ServiceEntry } from '@/lib/model'
 import { SECTION_TITLE, type SectionId } from '@/lib/sections'
 import Rail from '@/components/Rail'
 import FirstRun from '@/components/FirstRun'
+import SetupWizard, { setupDone } from '@/components/board/SetupWizard'
 import ApplyPill from '@/components/ApplyPill'
 import { Button } from '@/components/ui/button'
 import Home from '@/components/sections/Home'
@@ -58,8 +59,10 @@ export interface ExtraSection {
 /** `board` — оболочка приложения для компьютера: главная «доской» (правила карточками), правила
  *  открываются с неё и вкладки в рельсе нет, а сохранённая правка применяется сама — без кнопки
  *  «Применить» (владелец). Под LuCI ничего этого нет. */
-export default function Console({ extra, railHost, board = false, settingsHost, settingsScreen }: {
+export default function Console({ extra, railHost, board = false, settingsHost, settingsScreen, setup = false }: {
     extra?: ExtraSection[]
+    /** Открыть сразу мастер настройки (приложение для ПК: «Настроить splify2» в конце установки). */
+    setup?: boolean
     railHost?: Element | null
     board?: boolean
     /** Узел оболочки для раздела «Настройки» (порталом): в приложении для компьютера настройки
@@ -71,6 +74,17 @@ export default function Console({ extra, railHost, board = false, settingsHost, 
     const [section, setSection] = useState<SectionId | string>('home')
     const live = useLive()
     const { spec, savedFlash, loadFailed, retry } = usePending()
+    /* Мастер первоначальной настройки (приложение для ПК): по просьбе установки — сразу; роутер без
+     * единого правила, где мастер не пройден и не пропущен, — один раз сам. */
+    const [setupShow, setSetupShow] = useState(board && setup)
+    const hasSpec = !!spec
+    useEffect(() => {
+        if (!board || setup || !spec || spec.channels.length) return
+        let stop = false
+        void setupDone().then((d) => { if (!stop && !d) setSetupShow(true) })
+        return () => { stop = true }
+        // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [board, setup, hasSpec])
     /** Сервис, который попросили «в правило». Живёт здесь, а не в каталоге, потому что переход
      *  между разделами — дело оболочки; каталог только просит. Считывается разделом правил один
      *  раз и сбрасывается: иначе повторный заход снова открывал бы редактор, которого человек
@@ -168,7 +182,7 @@ export default function Console({ extra, railHost, board = false, settingsHost, 
                 .sp-root. */}
             <div className="flex min-h-full flex-col lg:flex-row">
                 {railHost
-                    ? createPortal(<Rail live={live} section={section} onSection={(s) => go(s)} counts={counts} extra={extra} hide={board ? ['rules', 'settings'] : undefined} />, railHost)
+                    ? (setupShow ? null : createPortal(<Rail live={live} section={section} onSection={(s) => go(s)} counts={counts} extra={extra} hide={board ? ['rules', 'settings'] : undefined} />, railHost))
                     : <Rail live={live} section={section} onSection={(s) => go(s)} counts={counts} extra={extra} hide={board ? ['rules', 'settings'] : undefined} />}
 
                 {/* Отступ снизу на узком экране — под нижнюю панель разделов: без него последняя
@@ -214,7 +228,10 @@ export default function Console({ extra, railHost, board = false, settingsHost, 
                         </div>
                     )}
                     <Suspense fallback={FALLBACK}>
-                        {section === 'home' && (
+                        {section === 'home' && setupShow && !loadFailed && (
+                            <SetupWizard live={live} railHost={railHost} onDone={() => setSetupShow(false)} />
+                        )}
+                        {section === 'home' && !setupShow && (
                             <Home
                                 live={live}
                                 onSection={go}
