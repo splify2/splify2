@@ -439,10 +439,16 @@ html:has(.splify-react-root) {
 /* Главная desktop: две колонки, статус над сеткой. Группы разделяет воздух,
  * поверхности остаются только у самостоятельных карточек. */
 .desk .sp-board > * + * { margin-top: 16px; }
-/* Вердикт — на своей подложке, как и блоки «Подключения» и «Правила» (владелец: «верни
- * подложки»): три отдельных блока, а не плитки на голом фоне. */
+/* Верх — стекло (вердикт, как карточки панели), низ — плотные подложки блоков «Подключения» и
+ * «Правила» с плитками на них, как в черновике помощника (владелец: «верх сделать стеклом, а низ
+ * как Астра завещала, и всё с подложками»). */
 .desk .sp-board .sp-board-verdict {
   padding: 16px 18px !important;
+}
+.desk .sp-board-plate {
+  background: var(--an-surface-rail);
+  border-color: var(--sp-border);
+  box-shadow: none;
 }
 .desk .sp-board-verdict .sp-verdict { font-size: 23px; line-height: 1.3; }
 .desk .sp-board-grid { align-items: stretch; }
