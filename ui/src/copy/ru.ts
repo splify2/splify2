@@ -202,6 +202,8 @@ export const ru = {
         sohranitZapisi: "Сохранить записи",
     },
     diagnostics: {
+        trafikSeychas: "Трафик сейчас",
+        ispravnyh: (n: number) => `Исправных проверок: ${n}`,
         proverkaSostoyaniyaNedostupna: "Проверка состояния недоступна",
         proverokSOtkazom: (p0: unknown) => `проверок с отказом: ${p0}`,
         proverokSPreduprezhdeniem: (p0: unknown) => `проверок с предупреждением: ${p0}`,

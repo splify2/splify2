@@ -1,10 +1,11 @@
 import { useEffect, useState, type FormEvent } from 'react'
-import { Cloud, LoaderCircle, Plus, Radar, Route, Trash2, X } from 'lucide-react'
+import { Cloud, LoaderCircle, Plus, Radar, Trash2, X } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Segmented } from '@/components/ui/layout'
 import { useConfirm } from '@/components/ui/confirm'
 import { inputCls } from '@/components/formbits'
 import Flag from '@/components/Flag'
+import { PILL } from '@/components/board/NodePills'
 import { pending, usePending } from '@/lib/pending'
 import type { Live } from '@/lib/live'
 import type { Output, Spec } from '@/lib/model'
@@ -109,13 +110,18 @@ function Create({ spec, first = false }: { spec: Spec; first?: boolean }) {
 
     if (!open) {
         return (
-            <Button variant="outline" className="desk-warp-add" onClick={() => setOpen(true)}>
-                <Plus aria-hidden="true" /> Ещё один выход WARP
-            </Button>
+            <button
+                type="button"
+                onClick={() => setOpen(true)}
+                style={{ borderColor: 'color-mix(in srgb, var(--sp-muted-foreground) 45%, transparent)' }}
+                className="flex h-[64px] w-full items-center justify-center gap-2 rounded-2xl border border-dashed bg-transparent text-sm text-muted-foreground transition-colors duration-200 hover:border-primary/50 hover:text-primary"
+            >
+                <Plus className="h-4 w-4" aria-hidden="true" /> Ещё один выход WARP
+            </button>
         )
     }
     return (
-        <form className="desk-warp-card an-glass desk-warp-create" onSubmit={add}>
+        <form className="sp-board-group an-glass desk-warp-create space-y-3 rounded-2xl border p-4" onSubmit={add}>
             <div className="desk-warp-hero">
                 <Cloud aria-hidden="true" />
                 <div>
@@ -170,96 +176,26 @@ function Group({ spec, out, live, info }: { spec: Spec; out: WarpOut; live: Live
         : selected ? `Работает · через ${selected}${hold}`
         : 'Ни один туннель не отвечает'
 
+    const GROUP = 'sp-board-group an-glass space-y-3 rounded-2xl border p-3'
+    const TILE = 'sp-board-tile an-glass min-w-0 space-y-3 rounded-2xl border p-3.5'
+    const tileHead = (t: string) => <div className="text-[13px] font-semibold">{t}</div>
+
+    /* Блоками, как главная и правило: выход — блок, внутри плитки — туннели пилюлями, подбор
+     * точек и по плитке на настройку. */
     return (
-        <section className="desk-warp-card an-glass">
-            <header className="desk-warp-head">
+        <section className={GROUP}>
+            <header className="flex flex-wrap items-center gap-3 px-1 pt-1">
                 <span className="desk-warp-dot" data-state={!st ? 'wait' : selected ? 'ok' : 'bad'} aria-hidden="true" />
-                <div className="desk-warp-head-text">
-                    <div className="desk-warp-title">{out.name}</div>
+                <div className="min-w-0 flex-1">
+                    <h2 className="sp-sub truncate">{out.name}</h2>
                     <div className="desk-note">{head}{used ? ` · правил: ${used}` : ''}</div>
                 </div>
                 <Button
                     variant="ghost"
                     size="sm"
-                    onClick={() => window.dispatchEvent(new CustomEvent('splify:section', { detail: 'rules' }))}
-                >
-                    <Route aria-hidden="true" /> {used ? 'Правила' : 'Направить сервисы'}
-                </Button>
-            </header>
-
-            <div className="desk-warp-body">
-            <div className="desk-warp-main">
-            {wst?.why && <div className="desk-error">{wst.why}</div>}
-            <div className="desk-warp-members">
-                {members.map((m) => {
-                    const w = winfo?.members.find((mm) => mm.name === m)
-                    const ws = wst?.members?.find((mm) => mm.out === m)
-                    const ep = ws?.ip ? hostPort(ws.ip, ws.port) : w?.endpoint
-                    const lat = g?.latency?.[m]
-                    const state = !st ? 'wait' : alive.has(m) ? 'ok' : 'bad'
-                    return (
-                        <div key={m} className="desk-warp-member" data-active={m === selected || undefined}>
-                            <span className="desk-warp-dot" data-state={state} aria-hidden="true" />
-                            <span className="desk-warp-mname">{m}</span>
-                            <span className="desk-warp-mep">{ep ?? (w?.reg ? 'подбирается точка' : 'регистрация')}</span>
-                            <span className="desk-warp-mcolo">
-                                {ws?.seen && <Flag cc={ws.seen} />} {ws?.colo ?? ''}
-                            </span>
-                            <span className="desk-warp-mlat">{typeof lat === 'number' ? `${lat} мс` : ''}</span>
-                            {m === selected ? <span className="desk-badge">несёт трафик</span> : <span />}
-                        </div>
-                    )
-                })}
-            </div>
-            <Scan group={out.name} applied={!!winfo} initial={info?.scans?.[out.name]} />
-            </div>
-
-            <div className="desk-warp-side">
-            <div className="desk-warp-grid">
-                <div className="desk-block-title">Туннелей</div>
-                <Segmented
-                    label="Сколько туннелей"
-                    value={String(count)}
-                    onChange={(v) => editOut(spec, out.name, { count: Number(v) === 3 ? undefined : Number(v) })}
-                    items={['1', '2', '3', '4', '5'].map((v) => ({ value: v, label: v }))}
-                />
-                <div className="desk-block-title">Какой туннель брать</div>
-                <Segmented
-                    label="Какой туннель брать"
-                    value={pick}
-                    onChange={(v) => editOut(spec, out.name, { pick: v === 'latency' ? undefined : v })}
-                    items={[
-                        { value: 'latency', label: 'Самый быстрый' },
-                        { value: 'order', label: 'По порядку' },
-                    ]}
-                />
-                <div className="desk-block-title">Страна выхода</div>
-                <Countries
-                    only={only}
-                    except={except}
-                    onChange={(o, e) => editOut(spec, out.name, { countries: o, exclude_countries: e })}
-                />
-                <div className="desk-block-title">Протокол</div>
-                <Segmented
-                    label="Протокол"
-                    value={transport}
-                    onChange={(v) => editOut(spec, out.name, { transport: v === 'awg' ? undefined : v })}
-                    items={[
-                        { value: 'awg', label: 'AmneziaWG' },
-                        { value: 'masque', label: 'MASQUE' },
-                    ]}
-                />
-            </div>
-            </div>
-            </div>
-
-            <footer className="desk-warp-foot">
-                <Button
-                    variant="ghost"
-                    size="sm"
-                    className="desk-warp-del"
                     disabled={used > 0}
                     title={used ? 'Сначала уберите этот выход из правил' : undefined}
+                    className="text-destructive"
                     onClick={async () => {
                         const ok = await ask({
                             title: `Удалить выход «${out.name}»?`,
@@ -272,9 +208,94 @@ function Group({ spec, out, live, info }: { spec: Spec; out: WarpOut; live: Live
                         pending.edit({ ...spec, outputs })
                     }}
                 >
-                    <Trash2 aria-hidden="true" /> Удалить выход
+                    <Trash2 aria-hidden="true" /> Удалить
                 </Button>
-            </footer>
+            </header>
+
+            {wst?.why && <div className="desk-error">{wst.why}</div>}
+
+            <div className={TILE}>
+                {tileHead('Туннели')}
+                <div className="grid grid-cols-[repeat(auto-fill,minmax(180px,1fr))] gap-2">
+                    {members.map((m) => {
+                        const w = winfo?.members.find((mm) => mm.name === m)
+                        const ws = wst?.members?.find((mm) => mm.out === m)
+                        const ep = ws?.ip ? hostPort(ws.ip, ws.port) : w?.endpoint
+                        const lat = g?.latency?.[m]
+                        const state = !st ? 'wait' : alive.has(m) ? 'ok' : 'bad'
+                        const on = m === selected
+                        return (
+                            <div
+                                key={m}
+                                className={`${PILL} ${on ? 'border-primary/80 bg-primary/10' : ''}`}
+                                title={on ? 'Несёт трафик' : undefined}
+                            >
+                                <span className="flex min-w-0 items-center gap-1.5 text-[13px] font-semibold">
+                                    <span className="desk-warp-dot" data-state={state} aria-hidden="true" />
+                                    <span className="min-w-0 truncate">{m}</span>
+                                    <span className="ml-auto shrink-0 text-[11.5px] tabular-nums text-muted-foreground">
+                                        {typeof lat === 'number' ? `${lat} мс` : ''}
+                                    </span>
+                                </span>
+                                <span className="flex min-w-0 items-center gap-1.5 text-[11.5px] text-muted-foreground">
+                                    {ws?.seen && <Flag cc={ws.seen} />}
+                                    {ws?.colo && <span className="shrink-0">{ws.colo}</span>}
+                                    <span className="min-w-0 truncate font-mono">{ep ?? (w?.reg ? 'подбирается точка' : 'регистрация')}</span>
+                                </span>
+                            </div>
+                        )
+                    })}
+                </div>
+            </div>
+
+            <div className="grid gap-3 sm:grid-cols-2 sm:items-start">
+                <div className={TILE}>
+                    {tileHead('Туннелей')}
+                    <Segmented
+                        label="Сколько туннелей"
+                        value={String(count)}
+                        onChange={(v) => editOut(spec, out.name, { count: Number(v) === 3 ? undefined : Number(v) })}
+                        items={['1', '2', '3', '4', '5'].map((v) => ({ value: v, label: v }))}
+                    />
+                </div>
+                <div className={TILE}>
+                    {tileHead('Какой туннель брать')}
+                    <Segmented
+                        label="Какой туннель брать"
+                        value={pick}
+                        onChange={(v) => editOut(spec, out.name, { pick: v === 'latency' ? undefined : v })}
+                        items={[
+                            { value: 'latency', label: 'Самый быстрый' },
+                            { value: 'order', label: 'По порядку' },
+                        ]}
+                    />
+                </div>
+                <div className={TILE}>
+                    {tileHead('Протокол')}
+                    <Segmented
+                        label="Протокол"
+                        value={transport}
+                        onChange={(v) => editOut(spec, out.name, { transport: v === 'awg' ? undefined : v })}
+                        items={[
+                            { value: 'awg', label: 'AmneziaWG' },
+                            { value: 'masque', label: 'MASQUE' },
+                        ]}
+                    />
+                </div>
+                <div className={TILE}>
+                    {tileHead('Страна выхода')}
+                    <Countries
+                        only={only}
+                        except={except}
+                        onChange={(o, e) => editOut(spec, out.name, { countries: o, exclude_countries: e })}
+                    />
+                </div>
+            </div>
+
+            <div className={TILE}>
+                {tileHead('Точки входа')}
+                <Scan group={out.name} applied={!!winfo} initial={info?.scans?.[out.name]} />
+            </div>
             {dialog}
         </section>
     )

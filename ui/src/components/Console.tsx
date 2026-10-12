@@ -245,7 +245,7 @@ export default function Console({ extra, railHost, board = false, settingsHost, 
                         )}
                         {section === 'vpn' && !loadFailed && (board ? <SubsBoard /> : <Vpn live={live} />)}
                         {section === 'dns' && !loadFailed && <Dns live={live} board={board} />}
-                        {section === 'diag' && <Diagnostics live={live} />}
+                        {section === 'diag' && <Diagnostics live={live} board={board} />}
                         {section === 'settings' && !loadFailed && (
                             <Settings
                                 live={live}
