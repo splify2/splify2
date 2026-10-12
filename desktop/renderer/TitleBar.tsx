@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react'
-import { ChevronDown, Copy, Minus, Settings as Gear, Square, X } from 'lucide-react'
+import { ChevronDown, Minus, Settings as Gear, X } from 'lucide-react'
 import { useConfirm } from '@/components/ui/confirm'
 import { desk, type ApiState } from './desk'
 import { useMonitor } from './hooks'
@@ -11,7 +11,6 @@ export default function TitleBar({ state, onDisconnect, onSettings, settingsOpen
     onSettings: () => void
     settingsOpen: boolean
 }) {
-    const [max, setMax] = useState(false)
     const [focused, setFocused] = useState(true)
     const [menu, setMenu] = useState(false)
     const [ask, dialog] = useConfirm()
@@ -27,8 +26,8 @@ export default function TitleBar({ state, onDisconnect, onSettings, settingsOpen
         : health === 'ok' ? 'Всё работает' : 'Проверяем роутер'
 
     useEffect(() => {
-        desk.win.state().then((s) => { setMax(s.maximized); setFocused(s.focused) })
-        return desk.win.onState((s) => { setMax(s.maximized); setFocused(s.focused) })
+        desk.win.state().then((s) => setFocused(s.focused))
+        return desk.win.onState((s) => setFocused(s.focused))
     }, [])
 
     const host = state?.base ? state.base.replace(/^https?:\/\//, '') : ''
@@ -62,9 +61,6 @@ export default function TitleBar({ state, onDisconnect, onSettings, settingsOpen
                 <button type="button" aria-label="Настройки" aria-pressed={settingsOpen} className="desk-gear" onClick={onSettings}><Gear /></button>
                 <span className="desk-ctl-sep" aria-hidden="true" />
                 <button type="button" aria-label="Свернуть" onClick={() => desk.win.minimize()}><Minus /></button>
-                <button type="button" aria-label={max ? 'Восстановить' : 'Развернуть'} onClick={() => desk.win.toggleMaximize()}>
-                    {max ? <Copy className="desk-restore" /> : <Square />}
-                </button>
                 <button type="button" aria-label="Закрыть" className="desk-close" onClick={() => desk.win.close()}><X /></button>
             </div>
             {menu && (

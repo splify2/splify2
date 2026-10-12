@@ -254,11 +254,6 @@ html:has(.splify-react-root) {
   stroke-width: 1.75;
 }
 
-.desk-ctl button svg.desk-restore {
-  width: 13px;
-  height: 13px;
-}
-
 .desk-ctl button:hover {
   background-color: var(--an-glass-tint);
   color: var(--sp-foreground);

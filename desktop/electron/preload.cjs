@@ -22,7 +22,6 @@ contextBridge.exposeInMainWorld('splifyDesktop', {
     platform: process.platform,
     win: {
         minimize: () => ipcRenderer.send('win:minimize'),
-        toggleMaximize: () => ipcRenderer.send('win:toggle-maximize'),
         close: () => ipcRenderer.send('win:close'),
         state: () => ipcRenderer.invoke('win:state'),
         onState: (cb) => listen('win:state', cb),

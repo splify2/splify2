@@ -119,7 +119,6 @@ interface Desk {
     platform: string
     win: {
         minimize(): void
-        toggleMaximize(): void
         close(): void
         state(): Promise<WinState>
         onState(cb: (s: WinState) => void): Off

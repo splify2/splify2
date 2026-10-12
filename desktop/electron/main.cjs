@@ -113,7 +113,9 @@ function closeSplash() {
 
 function createWindow(showNow) {
     const started = Date.now()
-    // Размер — один и тот же при каждом открытии, но не больше 85 % рабочей области: в логических
+    // Размер окна ФИКСИРОВАННЫЙ (владелец: «у окна всё ещё можно менять размер, кнопку
+    // полноэкрана надо убрать»): без растягивания, развёртывания и полного экрана — раскладка
+    // всегда одна, широкая, с рельсом слева. Не больше 85 % рабочей области: в логических
     // пикселях 1280×820 на FHD с масштабом Windows 150 % — это 1920×1230 точек, больше экрана.
     const wa = screen.getPrimaryDisplay().workAreaSize
     const width = Math.min(1120, Math.round(wa.width * 0.85))
@@ -122,8 +124,9 @@ function createWindow(showNow) {
         width,
         height,
         center: true,
-        minWidth: Math.min(900, width),
-        minHeight: Math.min(560, height),
+        resizable: false,
+        maximizable: false,
+        fullscreenable: false,
         frame: false,
         show: false,
         title: 'splify2',
@@ -269,11 +272,6 @@ function applyLoginItem(s) {
 
 function registerIpc() {
     ipcMain.on('win:minimize', () => win?.minimize())
-    ipcMain.on('win:toggle-maximize', () => {
-        if (!win) return
-        if (win.isMaximized()) win.unmaximize()
-        else win.maximize()
-    })
     ipcMain.on('win:close', () => win?.close())
     ipcMain.handle('win:state', () => ({ maximized: !!win?.isMaximized(), focused: !!win?.isFocused() }))
 
