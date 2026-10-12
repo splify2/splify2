@@ -12,6 +12,7 @@ const { Settings } = require('./backend/settings.cjs')
 const { Monitor } = require('./backend/monitor.cjs')
 const { discover, probe } = require('./backend/discover.cjs')
 const setup = require('./backend/setup.cjs')
+const { Updater } = require('./backend/updater.cjs')
 // Служебные запуски установщика Squirrel (Windows): ярлыки и выход; в остальных случаях — false.
 if (require('./squirrel.cjs').handled()) return
 
@@ -45,6 +46,8 @@ let router
 let settings
 /** @type {Monitor} */
 let monitor
+/** @type {Updater} */
+let updater
 /** Раздел, который окно должно открыть, когда загрузится (щелчок по уведомлению при закрытом окне). */
 let pendingNav = null
 
@@ -102,6 +105,12 @@ function createSplash() {
     splash.loadURL('app://splify/splash.html')
     splash.once('ready-to-show', () => splash?.show())
     splash.on('closed', () => { splash = null })
+}
+
+/** Строка состояния на заставке («Проверяем обновления…»). */
+function splashSay(text) {
+    if (!splash || splash.isDestroyed()) return
+    splash.webContents.executeJavaScript(`document.querySelector('.state').textContent = ${JSON.stringify(text)}`).catch(() => {})
 }
 
 function closeSplash() {
@@ -370,7 +379,30 @@ app.whenReady().then(() => {
 
     // Запуск вместе с системой — в трей, без окна: сторож и уведомления работают и так. Окно
     // создаётся при первом открытии.
-    if (HIDDEN_START && settings.get().startHidden) return
+    updater = new Updater()
+    updater.on('state', (st) => {
+        // Обновление скачалось, пока программа работала, — поставится при следующем запуске
+        // (Squirrel переключает ярлык на новую версию); предлагаем перезапуск сейчас.
+        if (st === 'ready' && win && !splash) send('update:ready', null)
+    })
+    ipcMain.handle('update:install', () => updater.install())
+
+    if (HIDDEN_START && settings.get().startHidden) {
+        updater.startup().then((r) => { if (r === 'ready') updater.install() })
+        return
+    }
     createSplash()
-    createWindow(true)
+    splash.webContents.once('did-finish-load', () => { if (updater.enabled) splashSay('Проверяем обновления…') })
+    updater.on('state', (st) => {
+        if (st === 'downloading') splashSay('Загружаем обновление…')
+        if (st === 'ready' && splash) splashSay('Перезапускаем…')
+    })
+    updater.startup().then((r) => {
+        if (r === 'ready') {
+            updater.install()
+            return
+        }
+        splashSay('Запуск…')
+        createWindow(true)
+    })
 })

@@ -214,6 +214,24 @@ html:has(.splify-react-root) {
   color: var(--an-warn-ink);
 }
 
+.desk-ctl button.desk-update {
+  display: inline-flex;
+  gap: 6px;
+  width: auto;
+  padding: 0 10px;
+  margin-right: 4px;
+  background-color: var(--an-success-soft);
+  color: var(--an-success-ink);
+  font: inherit;
+  font-size: 12px;
+  font-weight: 600;
+}
+
+.desk-ctl button.desk-update:hover {
+  background-color: var(--an-success);
+  color: #fff;
+}
+
 .desk-ctl-sep {
   width: 1px;
   height: 16px;

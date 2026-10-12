@@ -157,6 +157,10 @@ interface Desk {
         install(address: string, password: string): Promise<{ code: number }>
         onLog(cb: (line: string) => void): Off
     }
+    update: {
+        onReady(cb: () => void): Off
+        install(): Promise<void>
+    }
     app: {
         info(): Promise<{ version: string; electron: string; chrome: string; platform: string }>
         testNotification(): Promise<boolean>

@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react'
-import { ChevronDown, Minus, Settings as Gear, X } from 'lucide-react'
+import { ChevronDown, Download, Minus, Settings as Gear, X } from 'lucide-react'
 import { useConfirm } from '@/components/ui/confirm'
 import { desk, type ApiState } from './desk'
 import { useMonitor } from './hooks'
@@ -14,6 +14,8 @@ export default function TitleBar({ state, onDisconnect, onSettings, settingsOpen
     const [focused, setFocused] = useState(true)
     const [menu, setMenu] = useState(false)
     const [ask, dialog] = useConfirm()
+    const [update, setUpdate] = useState(false)
+    useEffect(() => desk.update.onReady(() => setUpdate(true)), [])
     const mon = useMonitor()
     const downs = Object.entries(mon?.outputs ?? {}).filter(([, v]) => v === 'down').map(([k]) => k)
     // Точка у имени роутера — сводка сторожа: связь, ядро, выходы.
@@ -58,6 +60,11 @@ export default function TitleBar({ state, onDisconnect, onSettings, settingsOpen
             </div>
             <div className="desk-fill" />
             <div className="desk-ctl">
+                {update && (
+                    <button type="button" className="desk-update" onClick={() => desk.update.install()} title="Перезапустить в новой версии">
+                        <Download aria-hidden="true" /> Обновить
+                    </button>
+                )}
                 <button type="button" aria-label="Настройки" aria-pressed={settingsOpen} className="desk-gear" onClick={onSettings}><Gear /></button>
                 <span className="desk-ctl-sep" aria-hidden="true" />
                 <button type="button" aria-label="Свернуть" onClick={() => desk.win.minimize()}><Minus /></button>

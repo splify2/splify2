@@ -62,6 +62,10 @@ contextBridge.exposeInMainWorld('splifyDesktop', {
         install: (address, password) => invoke('wizard:install', address, password),
         onLog: (cb) => listen('wizard:log', cb),
     },
+    update: {
+        onReady: (cb) => listen('update:ready', cb),
+        install: () => ipcRenderer.invoke('update:install'),
+    },
     app: {
         info: () => invoke('app:info'),
         testNotification: () => invoke('notify:test'),

@@ -22,6 +22,10 @@ IMAGE=${DESKTOP_BUILDER_IMAGE:-electronuserland/builder:wine-mono}
 [ -d node_modules ] || npm ci
 npm run renderer
 
+# Лента обновлений внутри приложения (electron/backend/updater.cjs): адрес каталога с RELEASES и
+# .nupkg. Пусто — программа обновлений не ищет.
+FEED=${DESKTOP_UPDATE_FEED:-}
+
 docker_build() { # $1 — цель electron-builder
     owner="$(stat -c %u:%g .)"
     mkdir -p "${HOME}/.cache/electron" "${HOME}/.cache/electron-builder"
@@ -29,13 +33,15 @@ docker_build() { # $1 — цель electron-builder
         -v "$PWD/..":/project -w /project/desktop \
         -v "${HOME}/.cache/electron":/root/.cache/electron \
         -v "${HOME}/.cache/electron-builder":/root/.cache/electron-builder \
-        "$IMAGE" sh -c "npx electron-builder --win $1 --x64; rc=\$?; chown -R $owner release dist 2>/dev/null; exit \$rc"
+        "$IMAGE" sh -c "npx electron-builder --win $1 --x64 -c.extraMetadata.updateFeed='$FEED'; rc=\$?; chown -R $owner release dist 2>/dev/null; exit \$rc"
 }
 
 case "$TARGET" in
     win)
         # Squirrel называет Setup.exe «<продукт> Setup <версия>.exe» без возможности это поменять —
         # переименовываем в имя, как у остальных установщиков.
+        # Окно установки — сразу, а не через 4 секунды (scripts/squirrel-splash.py).
+        python3 scripts/squirrel-splash.py
         docker_build squirrel
         v="$(node -p 'require("./package.json").version')"
         mv "release/squirrel-windows/splify2 Setup $v.exe" "release/squirrel-windows/splify2-desktop-$v-setup-x64.exe"
