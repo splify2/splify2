@@ -24,12 +24,12 @@
 
 /* ── настройки поверх окна: панель уходит вглубь, настройки выходят навстречу ─── */
 
-.desk-body {
+.desk-app {
   transform-origin: 50% 40%;
   transition: opacity var(--an-dur-control) var(--an-ease-out), transform var(--an-dur-control) var(--an-ease-out);
 }
 
-.desk-body[data-behind] {
+.desk-app[data-behind] {
   opacity: 0;
   transform: scale(0.96);
 }
@@ -99,7 +99,7 @@
 
 @media (prefers-reduced-motion: reduce) {
   .desk .sp-section,
-  .desk-body,
+  .desk-app,
   .desk-settings,
   .desk-menu,
   .desk-card,
@@ -109,7 +109,7 @@
 }
 
 html[data-motion="off"] .desk .sp-section,
-html[data-motion="off"] .desk-body,
+html[data-motion="off"] .desk-app,
 html[data-motion="off"] .desk-settings,
 html[data-motion="off"] .desk-settings-content,
 html[data-motion="off"] .desk-menu,

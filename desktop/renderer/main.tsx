@@ -51,6 +51,7 @@ function Root() {
     const [lost, setLost] = useState('')
     const [settingsOpen, setSettingsOpen] = useState(false)
     const [prefs] = useSettings()
+    const [railHost, setRailHost] = useState<HTMLElement | null>(null)
 
     useEffect(() => {
         desk.api.state().then(setSt, () => setSt({ connected: false, base: null, hostname: '', device: null }))
@@ -75,6 +76,26 @@ function Root() {
 
     const closeSettings = useCallback(() => setSettingsOpen(false), [])
 
+    /* Смена раздела — раздел снова сверху. Под LuCI прокрутка общая со страницей темы; здесь у
+     * раздела своя (.desk-body), и без сброса новый раздел открывался бы с середины. Раздел
+     * сменился — значит его обёртка (.sp-section с ключом раздела) заменена прямо в main панели. */
+    useEffect(() => {
+        if (!st?.connected) return
+        let mo: MutationObserver | null = null
+        const t = setInterval(() => {
+            const body = document.querySelector<HTMLElement>('.desk-body')
+            const main = body?.querySelector<HTMLElement>('.sp-root main')
+            if (!body || !main || mo) return
+            mo = new MutationObserver((list) => {
+                if (list.some((m) => [...m.addedNodes].some((n) => n instanceof HTMLElement && n.classList.contains('sp-section'))))
+                    body.scrollTop = 0
+            })
+            mo.observe(main, { childList: true })
+            clearInterval(t)
+        }, 200)
+        return () => { clearInterval(t); mo?.disconnect() }
+    }, [st?.connected])
+
     function connected(s: ApiState) {
         if (s.base !== lastBase()) resetMemory(s.base)
         if (appShown) {
@@ -95,7 +116,7 @@ function Root() {
     if (st?.connected) appShown = true
 
     return (
-        <div className="splify-react-root desk an-backdrop">
+        <div className="splify-react-root desk an-backdrop" data-rail={st?.connected ? '' : undefined}>
             <TitleBar
                 state={st}
                 onDisconnect={disconnect}
@@ -103,13 +124,17 @@ function Root() {
                 settingsOpen={settingsOpen}
             />
             <div className="desk-stage">
-                <main className="desk-body" data-behind={settingsOpen ? 'true' : undefined} inert={settingsOpen || undefined}>
-                    {st && prefs && (st.connected
-                        ? <Console extra={EXTRA} />
-                        : !prefs.wizardDone && !lost
-                            ? <Wizard onConnected={connected} />
-                            : <Connect initial={lastBase()} note={lost} onConnected={connected} />)}
-                </main>
+                {/* Приложение — рельс отдельной колонкой и раздел; настройки накрывают обоих. */}
+                <div className="desk-app" data-behind={settingsOpen ? 'true' : undefined} inert={settingsOpen || undefined}>
+                    {st?.connected && <div className="desk-side" ref={setRailHost} />}
+                    <main className="desk-body">
+                        {st && prefs && (st.connected
+                            ? railHost && <Console extra={EXTRA} railHost={railHost} />
+                            : !prefs.wizardDone && !lost
+                                ? <Wizard onConnected={connected} />
+                                : <Connect initial={lastBase()} note={lost} onConnected={connected} />)}
+                    </main>
+                </div>
                 <Settings open={settingsOpen} onClose={closeSettings} router={st} onDisconnect={disconnect} />
             </div>
         </div>

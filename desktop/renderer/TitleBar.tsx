@@ -44,7 +44,7 @@ export default function TitleBar({ state, onDisconnect, onSettings, settingsOpen
     }
 
     return (
-        <header className={'desk-bar' + (state?.connected ? ' desk-bar-rail' : '') + (focused ? '' : ' desk-bar-idle')}>
+        <header className={'desk-bar' + (state?.connected && !settingsOpen ? ' desk-bar-rail' : '') + (focused ? '' : ' desk-bar-idle')}>
             {/* Над рельсом — его же стекло: рельс панели доходит до верхнего края окна. */}
             <div className="desk-cap">
                 <img src="/favicon.svg" alt="" aria-hidden="true" className="desk-logo" draggable={false} />

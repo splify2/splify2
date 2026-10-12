@@ -31,6 +31,44 @@ html:has(.splify-react-root) {
   flex-direction: column;
 }
 
+/* Рельс разделов — отдельная колонка окна под рамкой, вне прокрутки раздела (владелец:
+ * «рельс вообще должен быть отдельным элементом в приложении»). Панель рисует его сюда
+ * порталом (Console, railHost); на узком окне её рельс прячется сам, и колонка пуста — разделы
+ * тогда в нижней панели. */
+.desk-side {
+  flex: none;
+  display: flex;
+  height: 100%;
+}
+
+.desk-side > aside {
+  height: 100%;
+  overflow-y: auto;
+}
+
+.desk-side > aside::-webkit-scrollbar {
+  width: 0;
+}
+
+/* Окно таскают и за верх рельса — за логотип, как за рамку. */
+.desk-side > aside > div:first-child {
+  -webkit-app-region: drag;
+}
+
+/* «Применить» и прочее плавающее — по центру раздела, а не окна вместе с рельсом. */
+@media (min-width: 1024px) {
+  .desk[data-rail] {
+    --sp-inset-l: 236px;
+  }
+}
+
+.desk-app {
+  flex: 1;
+  min-width: 0;
+  min-height: 0;
+  display: flex;
+}
+
 /* ── рамка ─────────────────────────────────────────────────────────────── */
 
 /* Рамка — без своей заливки и без линии: под ней та же подложка окна (an-backdrop на .desk),
@@ -58,7 +96,7 @@ html:has(.splify-react-root) {
   align-items: center;
   gap: 8px;
   min-width: 0;
-  padding: 0 10px 0 14px;
+  padding: 0 10px 0 16px;
   transition: opacity 150ms ease;
 }
 
@@ -74,14 +112,13 @@ html:has(.splify-react-root) {
   letter-spacing: -0.01em;
 }
 
-/* Логотип и имя на широком окне — в рельсе панели; повторять их над ним незачем. Пока панели
- * нет (экран подключения), нет и рельса — шапка остаётся прозрачной, с логотипом. */
+/* Над рельсом — его же стекло: рельс читается колонкой от верха окна до низа. Логотип и имя —
+ * в самом рельсе; повторять их в рамке незачем. */
 @media (min-width: 1024px) {
   .desk-bar-rail .desk-cap {
     flex: none;
     box-sizing: border-box;
     width: 236px;
-    padding-left: 16px;
     border-right: 1px solid var(--an-glass-border);
     background-color: var(--an-glass-chrome);
   }
@@ -290,18 +327,18 @@ html:has(.splify-react-root) {
 
 /* ── содержимое ────────────────────────────────────────────────────────── */
 
-/* Сцена под рамкой: панель и поверх неё — слой настроек. */
+/* Сцена под рамкой: приложение (рельс и раздел) и поверх него — слой настроек. */
 .desk-stage {
   position: relative;
   flex: 1;
   min-height: 0;
   display: flex;
-  flex-direction: column;
 }
 
 .desk-body {
   position: relative;
   flex: 1;
+  min-width: 0;
   min-height: 0;
   overflow-y: auto;
   overflow-x: hidden;
