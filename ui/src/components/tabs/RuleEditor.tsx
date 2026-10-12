@@ -34,6 +34,7 @@ import { pathFor, srsPathFor, ruleFiles, onRouter, srsProbe, mayNarrow, selected
 
 
 import DnsUpstreamExtras from '@/components/DnsUpstreamExtras'
+import ListPills from '@/components/board/ListPills'
 import { withUrl } from '@/lib/dnsurl'
 import { S } from '@/copy'
 interface Props {
@@ -292,17 +293,9 @@ export default function RuleEditor({
      *  Внизу «Готово» во всю ширину и «Удалить правило» обведённой красной кнопкой: первое —
      *  то, что делают почти всегда, второе — то, что нельзя нажать нечаянно вместо первого. */
     const someone = !!ch.from?.length
-    return (
-        <div className="space-y-4">
-            <ScreenHeader
-                title={S.ruleEditor.praviloIz(index + 1, rulesTotal)}
-                back={onClose}
-                backLabel={S.ruleEditor.vsePravila}
-            />
-
-            <div className="grid gap-4 lg:grid-cols-2 lg:items-start">
-                <div className="min-w-0 space-y-4">
-                    <Block>
+    /* Куски экрана: одни и те же в раскладке LuCI и в раскладке приложения для компьютера. */
+    const nameField = (
+        <>
                         <label className="flex flex-col gap-1.5 text-xs text-subtle">
                             {S.ruleEditor.nazvaniePravila}<input
                                 value={ch.name}
@@ -310,10 +303,10 @@ export default function RuleEditor({
                                 className="rounded-lg border border-border bg-background px-3 py-2 text-sm text-foreground"
                             />
                         </label>
-                    </Block>
-
-                    <Block>
-                        <CardHead title={S.ruleEditor.kogoKasaetsya} />
+        </>
+    )
+    const whoBody = (
+        <>
                         {/* Два варианта — сегментами, как «Кому» в приложении. Значение то же,
                             что у прежних переключателей: пустой `from` — все устройства,
                             непустой — только перечисленные. */}
@@ -403,11 +396,10 @@ export default function RuleEditor({
                                 })()}
                             </>
                         )}
-                    </Block>
-                </div>
-
-                <div className="min-w-0 space-y-4">
-                    <Block>
+        </>
+    )
+    const whatTop = (
+        <>
                         <CardHead
                             title={S.ruleEditor.chtoPerenapravlyaem}
                             meta={chosen.length
@@ -443,6 +435,10 @@ export default function RuleEditor({
                             </div>
                         )}
 
+
+        </>
+    )
+    const searchField = (
                         <div className="flex items-center gap-2 rounded-xl border border-border bg-background px-3">
                             <Search className="h-4 w-4 shrink-0 text-muted-foreground" aria-hidden="true" />
                             <input
@@ -454,7 +450,9 @@ export default function RuleEditor({
                             <span className="shrink-0 text-xs text-muted-foreground">
                                 {S.ruleEditor.zapisey2(shown.length)}</span>
                         </div>
-
+    )
+    const catalogRows = (
+        <>
                         {/* Каталог — строками через волосяную линию, галочка у правого края, как
                             выбор списков в приложении. Прокрутка своя: каталог длиннее экрана,
                             а блок «Куда» должен оставаться в пределах досягаемости. */}
@@ -507,7 +505,10 @@ export default function RuleEditor({
                                 )
                             })}
                         </div>
-
+        </>
+    )
+    const whatBottom = (
+        <>
                         {foreign.length > 0 && (
                             /* ФАЙЛЫ, КОТОРЫХ НЕТ В КАТАЛОГЕ, но которые в этом правиле стоят.
                                Появляются они у того, кто выбирал списки до смены издателя, и у
@@ -539,68 +540,10 @@ export default function RuleEditor({
                         <p className="text-xs text-muted-foreground">
                             {S.ruleEditor.vybiraetsyaServisEsliU}</p>
                         {clash && <p className="text-xs text-warning-fg">{clash}</p>}
-                    </Block>
-
-                    {(!target || hasDomains || isException) && <Block>
-                        <CardHead title={target ? S.ruleEditor.domenyIDns : S.ruleEditor.kudaNapravlenieVyhod} />
-                        {!target && (<>
-                        {outNames.length === 0 && (
-                            <p className="text-xs text-warning-fg">
-                                {S.ruleEditor.vyhodovNetPraviluNekuda}</p>
-                        )}
-                        {orphans.map((d) => (
-                            <p key={d.name} className="text-xs text-warning-fg">
-                                {S.ruleEditor.tunnel}{d.name} {S.ruleEditor.podnyatNoNePrivyazan}</p>
-                        ))}
-                        {/* Радиосписок с точкой состояния выхода, как «Куда» в приложении:
-                            кружок выбора, точка, имя, справа — чем выход является. */}
-                        {outNames.length > 0 && (
-                            <div>
-                                {outNames.map((n) => {
-                                    const o = outputs[n]
-                                    return (
-                                        <label key={n} className="flex min-h-[44px] cursor-pointer items-center gap-3 text-sm">
-                                            <input
-                                                type="radio"
-                                                checked={ch.out === n}
-                                                onChange={() => onChange({ ...ch, out: n })}
-                                                className="shrink-0"
-                                            />
-                                            <span
-                                                className={`h-2 w-2 shrink-0 rounded-full ${
-                                                    o.kind === 'direct'
-                                                        ? 'bg-muted-foreground'
-                                                        : o.up
-                                                          ? 'bg-success'
-                                                          : 'bg-destructive'
-                                                }`}
-                                                aria-hidden="true"
-                                            />
-                                            {/* Постоянный выход называется словом, а не ключом
-                                                спеки: «direct» в списке целей читалось как чьё-то
-                                                имя выхода, а не как «никуда не уводить». */}
-                                            <span className="min-w-0 flex-1 truncate">
-                                                {o.kind === 'direct' ? S.ruleEditor.napryamuyu : n}
-                                            </span>
-                                            <span className="shrink-0 text-xs text-muted-foreground">
-                                                {/* «нет NAT» — только у своего устройства: у туннеля
-                                                    подписки (и у пула, где активна часть подписки)
-                                                    masquerade не нужен вовсе, и метка пугала зря. */}
-                                                {o.kind === 'direct'
-                                                    ? S.ruleEditor.mimoTunnelya
-                                                    : o.nat === false && o.kind === 'interface' && !isPart(outputs[o.device || ''])
-                                                          && !(o.device && isTunnelKind(outputs[o.device]?.kind))
-                                                      ? S.ruleEditor.netNat
-                                                      : o.kind === 'interface' && o.device && isPart(outputs[o.device])
-                                                        ? S.ruleEditor.podpiska
-                                                        : o.device || ''}
-                                            </span>
-                                        </label>
-                                    )
-                                })}
-                            </div>
-                        )}
-                        </>)}
+        </>
+    )
+    const whereBody = (
+        <>
                         {/* Исключение называется словом ровно там, где оно задаётся. Механизм в
                             продукте был всегда — канал в direct выше туннельных, — но нигде так не
                             назывался, и запрос «Spotify без VPN работает лучше» (splify2#3) не
@@ -723,11 +666,161 @@ export default function RuleEditor({
                                 </FieldRow>
                             </div>
                         )}
-                    </Block>}
+        </>
+    )
+    /* Приложение для компьютера: сверху вниз «Что» и «Куда» пилюлями, под ними всё остальное
+     * правила одним блоком «Настройки» (владелец: «списки тоже в пилюли, и снизу всего этого
+     * настройки, что раньше были по окну раскиданы»). */
+    if (target) {
+        const TILE = 'sp-board-tile an-glass space-y-3 rounded-2xl border p-3.5'
+        return (
+            <div className="space-y-4">
+                <ScreenHeader
+                    title={S.ruleEditor.praviloIz(index + 1, rulesTotal)}
+                    back={onClose}
+                    backLabel={S.ruleEditor.vsePravila}
+                />
+
+                <section className="sp-board-group an-glass space-y-3 rounded-2xl border p-3">
+                    <div className="px-1 pt-1">
+                        <h2 className="sp-sub">{S.ruleEditor.chto}</h2>
+                        <div className="text-xs text-muted-foreground">
+                            {chosenEntries.length
+                                ? S.ruleEditor.servisov(chosenEntries.length)
+                                : ch.match.any ? S.rulesTab.vesTrafik : S.ruleEditor.servisNeVybran}
+                            {total ? S.ruleEditor.zapisey(total.toLocaleString('ru-RU')) : ''}
+                        </div>
+                    </div>
+                    {searchField}
+                    <ListPills shown={shown} chosen={chosen} probing={probing} searching={!!q.trim()} onPick={pick} />
+                    {whatBottom}
+                </section>
+
+                {target}
+
+                <section className="sp-board-group an-glass space-y-3 rounded-2xl border p-3">
+                    <h2 className="sp-sub px-1 pt-1">{S.ruleEditor.nastroyki}</h2>
+                    <div className="grid gap-3 sm:grid-cols-2 sm:items-start">
+                        <div className="min-w-0 space-y-3">
+                            <div className={TILE}>{nameField}</div>
+                            {(hasDomains || isException) && (
+                                <div className={TILE}>
+                                    <div className="text-[13px] font-semibold">{S.ruleEditor.domenyIDns}</div>
+                                    {whereBody}
+                                </div>
+                            )}
+                        </div>
+                        <div className={TILE}>
+                            <div className="text-[13px] font-semibold">{S.ruleEditor.kogoKasaetsya}</div>
+                            {whoBody}
+                        </div>
+                    </div>
+                </section>
+
+                <div className="space-y-2">
+                    <Button onClick={onClose} className="w-full">{S.ruleEditor.gotovo}</Button>
+                    <Button
+                        variant="outline"
+                        onClick={onDelete}
+                        className="w-full border-destructive text-destructive hover:bg-destructive/10 hover:text-destructive"
+                    >
+                        <Trash2 className="mr-1 h-4 w-4" aria-hidden="true" /> {S.ruleEditor.udalitPravilo}</Button>
                 </div>
             </div>
+        )
+    }
 
-            {target}
+    return (
+        <div className="space-y-4">
+            <ScreenHeader
+                title={S.ruleEditor.praviloIz(index + 1, rulesTotal)}
+                back={onClose}
+                backLabel={S.ruleEditor.vsePravila}
+            />
+
+            <div className="grid gap-4 lg:grid-cols-2 lg:items-start">
+                <div className="min-w-0 space-y-4">
+                    <Block>
+                        {nameField}
+                    </Block>
+
+                    <Block>
+                        <CardHead title={S.ruleEditor.kogoKasaetsya} />
+                        {whoBody}
+                    </Block>
+                </div>
+
+                <div className="min-w-0 space-y-4">
+                    <Block>
+                        {whatTop}
+                        {searchField}
+                        {catalogRows}
+
+                        {whatBottom}
+                    </Block>
+
+                    <Block>
+                        <CardHead title={S.ruleEditor.kudaNapravlenieVyhod} />
+                        {outNames.length === 0 && (
+                            <p className="text-xs text-warning-fg">
+                                {S.ruleEditor.vyhodovNetPraviluNekuda}</p>
+                        )}
+                        {orphans.map((d) => (
+                            <p key={d.name} className="text-xs text-warning-fg">
+                                {S.ruleEditor.tunnel}{d.name} {S.ruleEditor.podnyatNoNePrivyazan}</p>
+                        ))}
+                        {/* Радиосписок с точкой состояния выхода, как «Куда» в приложении:
+                            кружок выбора, точка, имя, справа — чем выход является. */}
+                        {outNames.length > 0 && (
+                            <div>
+                                {outNames.map((n) => {
+                                    const o = outputs[n]
+                                    return (
+                                        <label key={n} className="flex min-h-[44px] cursor-pointer items-center gap-3 text-sm">
+                                            <input
+                                                type="radio"
+                                                checked={ch.out === n}
+                                                onChange={() => onChange({ ...ch, out: n })}
+                                                className="shrink-0"
+                                            />
+                                            <span
+                                                className={`h-2 w-2 shrink-0 rounded-full ${
+                                                    o.kind === 'direct'
+                                                        ? 'bg-muted-foreground'
+                                                        : o.up
+                                                          ? 'bg-success'
+                                                          : 'bg-destructive'
+                                                }`}
+                                                aria-hidden="true"
+                                            />
+                                            {/* Постоянный выход называется словом, а не ключом
+                                                спеки: «direct» в списке целей читалось как чьё-то
+                                                имя выхода, а не как «никуда не уводить». */}
+                                            <span className="min-w-0 flex-1 truncate">
+                                                {o.kind === 'direct' ? S.ruleEditor.napryamuyu : n}
+                                            </span>
+                                            <span className="shrink-0 text-xs text-muted-foreground">
+                                                {/* «нет NAT» — только у своего устройства: у туннеля
+                                                    подписки (и у пула, где активна часть подписки)
+                                                    masquerade не нужен вовсе, и метка пугала зря. */}
+                                                {o.kind === 'direct'
+                                                    ? S.ruleEditor.mimoTunnelya
+                                                    : o.nat === false && o.kind === 'interface' && !isPart(outputs[o.device || ''])
+                                                          && !(o.device && isTunnelKind(outputs[o.device]?.kind))
+                                                      ? S.ruleEditor.netNat
+                                                      : o.kind === 'interface' && o.device && isPart(outputs[o.device])
+                                                        ? S.ruleEditor.podpiska
+                                                        : o.device || ''}
+                                            </span>
+                                        </label>
+                                    )
+                                })}
+                            </div>
+                        )}
+                        {whereBody}
+                    </Block>
+                </div>
+            </div>
 
             <div className="space-y-2">
                 <Button onClick={onClose} className="w-full">{S.ruleEditor.gotovo}</Button>
