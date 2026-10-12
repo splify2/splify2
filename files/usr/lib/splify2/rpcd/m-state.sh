@@ -574,7 +574,23 @@ case "$2" in
             done
         fi
         # Последние слова движка. Дословно и без разбора — см. пояснение выше.
-        lines="$(logread -l 300 2>/dev/null | grep 'steer' | tail -12)"
+        #
+        # logread — СО СТОРОЖЕМ. Упал logd (segfault, пойман на стенде 25.12.5) — и logread
+        # остаётся ждать на сокете вечно, а с ним метод: процесс висит до тайм-аута rpcd, и
+        # страница не получает ответа. `timeout` в OpenWrt нет, поэтому сторож — sleep и kill.
+        # Его потоки уходят в /dev/null: унаследуй он трубу rpcd, тот ждал бы её закрытия, то
+        # есть каждый вызов длился бы весь срок сторожа.
+        lines=''
+        if _lf="$(mktemp /tmp/splify2-logread.XXXXXX 2>/dev/null)"; then
+            logread -l 300 > "$_lf" 2>/dev/null </dev/null &
+            _lp=$!
+            ( sleep 3; kill "$_lp" ) >/dev/null 2>&1 </dev/null &
+            _wp=$!
+            wait "$_lp" 2>/dev/null
+            kill "$_wp" 2>/dev/null
+            lines="$(grep 'steer' "$_lf" 2>/dev/null | tail -12)"
+            rm -f "$_lf"
+        fi
 
         json_init
         json_add_object instances
