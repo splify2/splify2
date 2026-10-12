@@ -477,3 +477,30 @@ describe('правило и на адреса, и на MAC', () => {
     })
 })
 
+
+describe('вид выхода, которого модель не знает', () => {
+    // kind: warp (модуль steer-warpbox) правит приложение для компьютера через ту же модель.
+    // Выход уезжал на роутер без kind — ядро отвергало всю спеку («outputs.cf: нет kind»).
+    it('kind: warp проходит круг целиком — вид, свои ключи и общие ключи модели', () => {
+        const raw = {
+            version: 2,
+            outputs: {
+                cf: {
+                    kind: 'warp', count: 2, url: 'https://www.google.com/generate_204', interval: 30,
+                    exclude_countries: ['RU', 'BY'], ipv6: 'nat', over: 'wg0', on_fail: 'direct',
+                },
+                wg0: { kind: 'interface', device: 'wg0' },
+            },
+        }
+        const d = encodeSpec(decodeSpec(raw)) as { outputs: Record<string, Record<string, unknown>> }
+        expect(d.outputs.cf).toEqual(raw.outputs.cf)
+    })
+
+    it('правка ключа в extra сохраняет вид', () => {
+        const spec = decodeSpec({ version: 2, outputs: { cf: { kind: 'warp', count: 2 } } })
+        const cf = spec.outputs.cf
+        spec.outputs.cf = { ...cf, extra: { ...(cf.extra || {}), count: 4 } }
+        const d = encodeSpec(spec) as { outputs: Record<string, Record<string, unknown>> }
+        expect(d.outputs.cf).toEqual({ kind: 'warp', count: 4 })
+    })
+})
