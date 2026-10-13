@@ -67,7 +67,7 @@ FW_LEGACY_ZONES=${FW_LEGACY_ZONES:-"steer_vless steer_iface"}
 # и init-скрипт, то есть снять таблицу больше нечем, и она осталась бы метить трафик в никуда
 # до перезагрузки. Существование каждой таблицы проверяется перед удалением, так что лишнего
 # здесь не происходит.
-NFT_TABLES=${NFT_TABLES:-"splify2_doh splify2_zm splify2_ztest steer"}
+NFT_TABLES=${NFT_TABLES:-"splify2_doh splify2_zm splify2_ztest splify2_recheck steer"}
 # Таблица маршрутов и приоритет правила для «DoH через туннель» — те же числа, что в
 # common.sh (doh_rules_sync), иначе снималось бы не то, что ставилось.
 DOH_RT=${DOH_RT:-290}
@@ -239,6 +239,23 @@ purge_firewall() {
     # зону значило бы дважды уронить транзит (тот же довод, что у fw_sync).
     say "правила фаервола перезагружаются"
     fw4 reload >/dev/null 2>&1 || "$FW_INITD" reload >/dev/null 2>&1
+    return 0
+}
+
+# ---- ReCheck ------------------------------------------------------------------------
+# Служба splify2-recheck и её движок (пакет recheck сам по себе не запускается). Таблица уходит
+# с остановкой службы, а без init-скрипта — в purge_nft; процесс без таблицы пакетов не получает,
+# но и висеть ему незачем.
+RECHECK_INITD=${RECHECK_INITD:-/etc/init.d/splify2-recheck}
+purge_recheck() {
+    if [ -x "$RECHECK_INITD" ] && "$RECHECK_INITD" enabled 2>/dev/null; then
+        plan "служба splify2-recheck выключается"
+        [ "$DO" = 1 ] && { "$RECHECK_INITD" stop >/dev/null 2>&1; "$RECHECK_INITD" disable >/dev/null 2>&1; }
+    fi
+    if pidof steer-dpi-live >/dev/null 2>&1; then
+        plan "движок ReCheck останавливается"
+        [ "$DO" = 1 ] && killall steer-dpi-live 2>/dev/null
+    fi
     return 0
 }
 
@@ -445,6 +462,7 @@ say_packages() {
 }
 
 purge_engine
+purge_recheck
 purge_firewall
 purge_nft
 purge_doh_rules

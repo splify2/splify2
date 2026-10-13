@@ -655,6 +655,14 @@ list)
     json_close_object
     # Модули ядра 2.0: перечень с состоянием и установка или снятие одного модуля.
     json_add_object steer_modules; json_close_object
+    # ReCheck — обход DPI на прямом трафике (служба splify2-recheck, движок — пакет recheck):
+    # состояние с изученным и настройки. Поле, которого в recheck_set нет, остаётся прежним.
+    json_add_object recheck_info; json_close_object
+    json_add_object recheck_set
+        json_add_boolean enabled; json_add_string interface; json_add_boolean persist
+        json_add_boolean watch_active; json_add_array resources; json_close_array
+        json_add_boolean epoch_bump; json_add_boolean forget
+    json_close_object
     json_add_object steer_module_add; json_add_string module; json_close_object
     json_add_object steer_module_del; json_add_string module; json_close_object
     json_dump
@@ -674,6 +682,7 @@ call)
         backup_get|backup_put) _grp=backup ;;
         xsteer_link|xsteer_link_put) _grp=xsteer ;;
         telemetry_state|telemetry_set) _grp=telemetry ;;
+        recheck_info|recheck_set) _grp=recheck ;;
         *) fail "неизвестный метод" ;;
     esac
     . "$RPCD_LIB/common.sh"

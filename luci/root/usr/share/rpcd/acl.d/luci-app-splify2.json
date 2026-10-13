@@ -32,6 +32,7 @@
           "proxy_probe",
           "dns_log",
           "dns_probe",
+          "recheck_info",
           "conns",
           "helper",
           "live",
@@ -87,7 +88,8 @@
           "sub_auto",
           "sub_refresh",
           "steer_module_add",
-          "steer_module_del"
+          "steer_module_del",
+          "recheck_set"
         ]
       }
     }

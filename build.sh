@@ -174,6 +174,10 @@ cp files/usr/sbin/splify2-update-subs "$PKG/usr/sbin/splify2-update-subs"
 # удаление плюс установка, поэтому чистка в postrm сносила бы настройки человека при каждом
 # обновлении. Поэтому — отдельная команда, которую зовут осознанно (см. шапку скрипта).
 cp files/usr/sbin/splify2-purge "$PKG/usr/sbin/splify2-purge"
+# ReCheck — обход DPI на прямом трафике: служба запускает движок из отдельного пакета recheck,
+# если тот стоит и обход включён (/etc/splify2/recheck.conf); иначе ничего не делает.
+cp files/etc/init.d/splify2-recheck "$PKG/etc/init.d/splify2-recheck"
+chmod 0755 "$PKG/etc/init.d/splify2-recheck"
 # Отклик для счётчика роутеров на сайте: своё задание крона раз в час (post-install ниже).
 cp files/usr/sbin/splify2-ping "$PKG/usr/sbin/splify2-ping"
 mkdir -p "$PKG/usr/share/splify2"
@@ -423,7 +427,7 @@ chmod +x build/scripts/post-install
 # опроса). Теперь добавить подключение и забыть укладку нельзя.
 for _need in $(grep -ho '/usr/lib/splify2/[a-z0-9_-]*\.sh' \
                     files/usr/libexec/rpcd/splify2 files/usr/sbin/splify2-update-lists \
-                    files/usr/sbin/splify2-ping |
+                    files/usr/sbin/splify2-ping files/etc/init.d/splify2-recheck files/usr/lib/splify2/rpcd/*.sh |
                sort -u); do
     test -s "$PKG$_need" || {
         echo "в пакете нет ${_need#/} — подключающая его половина не запустится"; exit 1; }
