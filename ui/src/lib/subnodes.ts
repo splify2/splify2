@@ -60,10 +60,15 @@ function node(proto: SubNode['proto'], n: VlessNode, at?: number): SubNode {
 
 /** Все конфигурации подписки по пути к её файлу. null — ещё не спросили или файла нет;
  *  пустой список — подписка есть, пригодных узлов нет. */
+/** Узлы подписок по пути файла — память окна: пилюли показываются сразу, свежие — по ответу. */
+const nodesMem = new Map<string, SubNode[]>()
+
 export function useSubNodes(path: string, present: boolean, key: unknown = null): SubNode[] | null {
-    const [nodes, setNodes] = useState<SubNode[] | null>(null)
+    const [nodes, setNodesRaw] = useState<SubNode[] | null>(() => (present ? nodesMem.get(path) ?? null : null))
+    const setNodes = (v: SubNode[] | null) => { if (v) nodesMem.set(path, v); setNodesRaw(v) }
     useEffect(() => {
         if (!present) { setNodes(null); return }
+        if (nodesMem.has(path)) setNodesRaw(nodesMem.get(path)!)
         let stop = false
         type R = VlessNodesReply | null
         Promise.all([

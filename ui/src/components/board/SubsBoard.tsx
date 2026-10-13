@@ -5,7 +5,7 @@ import { useConfirm } from '@/components/ui/confirm'
 import { inputCls } from '@/components/formbits'
 import { rpc } from '@/lib/rpc'
 import { notify } from '@/lib/notify'
-import { subsRemember } from '@/lib/subs'
+import { subsRemember, subsRemembered } from '@/lib/subs'
 import { isSubSource } from '@/lib/validate'
 import { S } from '@/copy'
 
@@ -16,7 +16,7 @@ import { S } from '@/copy'
 type Sub = Awaited<ReturnType<typeof rpc.subList>>['subs'][number]
 
 export default function SubsBoard() {
-    const [subs, setSubs] = useState<Sub[] | null>(null)
+    const [subs, setSubs] = useState<Sub[] | null>(() => (subsRemembered() as Sub[] | null))
     const [adding, setAdding] = useState(false)
 
     const load = useCallback(async () => {

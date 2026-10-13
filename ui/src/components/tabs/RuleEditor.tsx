@@ -5,6 +5,7 @@ import { Block, CardHead, FieldRow, ScreenHeader, Segmented } from '@/components
 import { rpc } from '@/lib/rpc'
 import { isClientAddr } from '@/lib/validate'
 import { usePending } from '@/lib/pending'
+import { useRemembered } from '@/lib/cache'
 import { type Channel, type Narrow, type OutputStatus, type ServiceEntry, type Upstream, devList, isPart, isTunnelKind, isUpstreamGroup } from '@/lib/model'
 
 /** Редактор правила — на месте таблицы, а не в модальном окне.
@@ -117,16 +118,12 @@ export default function RuleEditor({
     }
     /** Аренды DHCP — чтобы устройства выбирали по имени, а не набирали MAC руками. Опечатка в
      *  MAC не совпадёт ни с чем и не пожалуется: правило просто не будет действовать. */
-    const [leases, setLeases] = useState<{ mac: string; ip: string; name: string }[]>([])
+    const leases = useRemembered('leases', () => rpc.leases().then((r) => r.leases || [])) ?? []
     /** Туннельные устройства роутера. Правило ведёт в ВЫХОД, а не в устройство, — но
      *  человек ищет здесь именно устройство (splify2#12), и молчать про поднятый туннель,
      *  которого нет ни в одном выходе, значит подтверждать вывод «второй туннель не
-     *  поддерживается». */
-    const [devices, setDevices] = useState<{ name: string; up: boolean; kind: string }[]>([])
-    useEffect(() => {
-        rpc.leases().then((r) => setLeases(r.leases || [])).catch(() => setLeases([]))
-        rpc.devices().then((d) => setDevices(d.devices || [])).catch(() => setDevices([]))
-    }, [])
+     *  поддерживается». Оба — сразу из памяти (lib/cache.ts), свежие — по ответу. */
+    const devices = useRemembered('devices', () => rpc.devices().then((d) => d.devices || [])) ?? []
     const chosen = selectedIds(ch, services)
     const chosenEntries = services.filter((sv) => chosen.includes(sv.id))
     const outNames = Object.keys(outputs)

@@ -3,14 +3,11 @@ import { ArrowDown, ArrowUp, Pencil, Plus, Search, Trash2, X } from 'lucide-reac
 import { Button } from '@/components/ui/button'
 import { Switch } from '@/components/ui/switch'
 import { notify } from '@/lib/notify'
-import { rpc } from '@/lib/rpc'
 import { mergeSpec, pending } from '@/lib/pending'
 import { useSpecCopy } from '@/lib/speccopy'
 import {
-    toAllowDomainsServices,
     customServices,
     DIRECT,
-    toCatalog,
     isPart,
     routedOutputs,
     type Channel,
@@ -24,6 +21,7 @@ import { dnsFragmentSupported, dnsH3Supported } from '@/lib/engine'
 import { Hint } from '@/components/ui/hint'
 import { Block, Group } from '@/components/ui/layout'
 import RuleEditor from '@/components/tabs/RuleEditor'
+import { useCatalog, useLocalLists } from '@/lib/catalog'
 import RuleTarget from '@/components/board/RuleTarget'
 import { dropRule } from '@/lib/ruleout'
 import { PRESETS } from '@/lib/dnspresets'
@@ -122,8 +120,11 @@ export default function RulesTab({
      * что вкладка Outbounds уже успела поменять. Подмену после применения копия получает
      * оттуда же (useSpecCopy). */
     const [spec, setSpec] = useSpecCopy()
-    const [catalogServices, setServices] = useState<ServiceEntry[]>([])
-    const [local, setLocal] = useState<Record<string, { count: number; mtime: number }>>({})
+    /* Каталог и свои списки — сразу из памяти (lib/catalog.ts), свежие — когда ответит роутер:
+     * пилюли и кнопки правила не ждут опроса. Каталог у выбора списков ТОТ ЖЕ, что на вкладке
+     * каталога: сначала каталог выбранного источника, без него — зашитая таблица издателя. */
+    const catalogServices = useCatalog() ?? []
+    const local = useLocalLists() ?? {}
     const services = useMemo(
         () => [...catalogServices, ...customServices(local)],
         [catalogServices, local],
@@ -135,26 +136,6 @@ export default function RulesTab({
     const [draft, setDraft] = useState<{ base: Spec; spec: Spec; isNew: boolean } | null>(null)
     const [search, setSearch] = useState('')
 
-    useEffect(() => {
-        /* Каталог у выбора списков ТОТ ЖЕ, что на вкладке каталога, и это не экономия: два
-         * источника означали бы, что человек видит в справке одно, а выбрать может другое.
-         * Поэтому и способ добыть его тот же: сначала каталог выбранного источника, и только
-         * если его нечем скачать — зашитая в пакет таблица издателя. Файлы прежнего каталога,
-         * уже стоящие в правилах, отсюда не пропадают: `pick` трогает только файлы своей
-         * записи, а незнакомые оставляет в спеке нетронутыми. */
-        rpc.manifest()
-            .then((m) => {
-                const c = toCatalog(m)
-                if (!c.services.length) throw new Error(S.rulesTab.pustoyKatalog)
-                setServices(c.services)
-            })
-            .catch(() =>
-                rpc.allowDomains()
-                    .then((a) => setServices(toAllowDomainsServices(a)))
-                    .catch(() => setServices([])),
-            )
-        rpc.localLists().then((d) => setLocal(d.files || {})).catch(() => setLocal({}))
-    }, [])
 
     /** Правка: в свой стейт для мгновенной перерисовки и в хранилище для автосохранения. */
     function edit(next: Spec) {

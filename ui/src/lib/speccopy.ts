@@ -15,7 +15,8 @@ import type { Spec } from '@/lib/model'
  *
  *  Загрузка — общая (`pending.load`: кто пришёл раньше, тот и загрузил), отказ загрузки даёт `null`. */
 export function useSpecCopy() {
-    const [spec, setSpec] = useState<Spec | null>(null)
+    /* Спека уже в хранилище (её грузит оболочка) — сразу она, а не «Загрузка» до следующего тика. */
+    const [spec, setSpec] = useState<Spec | null>(() => pending.saved)
     useEffect(() => {
         pending.load().then(setSpec).catch(() => setSpec(null))
         return pending.onReplaced(setSpec)

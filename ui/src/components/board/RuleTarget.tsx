@@ -10,6 +10,7 @@ import { rpc } from '@/lib/rpc'
 import { notify } from '@/lib/notify'
 import { blockSupported, poolLatencySupported } from '@/lib/engine'
 import { subsRemember, subsRemembered } from '@/lib/subs'
+import { useRemembered } from '@/lib/cache'
 import { plainName } from '@/lib/nodename'
 import { devList, isPart, isTunnelKind, type Output, type Spec } from '@/lib/model'
 import { type Live } from '@/lib/live'
@@ -51,10 +52,10 @@ export default function RuleTarget({ spec, index, live, onSpec }: {
     useEffect(() => { if (parsed) setT(parsed) }, [parsed])
 
     const [subs, setSubs] = useState<Sub[]>(() => subsRemembered() ?? [])
-    const [devices, setDevices] = useState<{ name: string; up: boolean; kind: string; owner?: string }[]>([])
+    /* Устройства — сразу из памяти (lib/cache.ts): пилюли своих туннелей не ждут опроса. */
+    const devices = useRemembered('devices', () => rpc.devices().then((d) => d.devices || [])) ?? []
     useEffect(() => {
         rpc.subList().then((r) => { setSubs(r.subs || []); subsRemember(r.subs) }).catch(() => {})
-        rpc.devices().then((d) => setDevices(d.devices || [])).catch(() => setDevices([]))
     }, [])
 
     function put(next: Target) {

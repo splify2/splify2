@@ -1,3 +1,4 @@
+import { useEffect, useState } from 'react'
 /** Память браузера для того, что роутер отдаёт не мгновенно.
  *
  *  ЗАЧЕМ. Страница splify2 открывается внутри LuCI: сначала грузится сама LuCI, потом наш
@@ -32,4 +33,30 @@ export function cacheSet(key: string, value: unknown): void {
     } catch {
         /* приватное окно, запрет хранения, переполнение — не наша беда */
     }
+}
+
+/** Память окна: последний ответ роутера по ключу — сразу, без localStorage-разбора. */
+const mem = new Map<string, unknown>()
+
+/** Ответ роутера, который экран показывает СРАЗУ из памяти (окна, затем браузера), а свежий
+ *  подставляет, когда придёт. Кнопки и пилюли не ждут опроса: открытие правила, вкладки DNS —
+ *  с тем, что роутер отдавал прошлый раз. `null` — ни ответа, ни памяти. `persist` — класть ли
+ *  в localStorage (большие и частые ответы — только в память окна). */
+export function useRemembered<T>(key: string, fetch: () => Promise<T>, opts: { persist?: boolean; deps?: unknown[] } = {}): T | null {
+    const persist = opts.persist ?? true
+    const [v, setV] = useState<T | null>(() => (mem.has(key) ? (mem.get(key) as T) : persist ? cacheGet<T>(key) : null))
+    useEffect(() => {
+        let stop = false
+        if (mem.has(key)) setV(mem.get(key) as T)
+        else if (persist) { const c = cacheGet<T>(key); if (c !== null) setV(c) }
+        fetch().then((r) => {
+            if (stop) return
+            mem.set(key, r)
+            if (persist) cacheSet(key, r)
+            setV(r)
+        }).catch(() => undefined)
+        return () => { stop = true }
+        // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [key, ...(opts.deps || [])])
+    return v
 }
