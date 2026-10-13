@@ -243,6 +243,11 @@ function trayImage(alert) {
 }
 
 let trayAlert = false
+let trayTimer = null
+function scheduleTray() {
+    if (trayTimer) return
+    trayTimer = setTimeout(() => { trayTimer = null; updateTray() }, 300)
+}
 
 function updateTray() {
     if (!tray) return
@@ -267,15 +272,72 @@ function updateTray() {
     tray.setToolTip(`splify2 — ${line}`)
     tray.setContextMenu(Menu.buildFromTemplate([
         { label: 'Открыть splify2', click: showWindow },
-        { label: 'Настройки', click: () => { showWindow(); send('settings:open', null) } },
         ...(updater?.state === 'ready'
             ? [{ label: 'Перезапустить в новой версии', click: () => updater.install() }]
             : []),
         { type: 'separator' },
         { label: line, enabled: false },
+        ...trayRules(),
+        ...trayEngine(m),
+        ...trayRouters(),
         { type: 'separator' },
+        { label: 'Настройки', click: () => { showWindow(); send('settings:open', null) } },
         { label: 'Выход', click: () => { quitting = true; app.quit() } },
     ]))
+}
+
+/** Правила активного роутера в трее — выключатель на каждом, куда ведёт и в каком оно состоянии.
+ *  Правило знает окно (память по роутеру — спека, которую положила панель): переключение уходит
+ *  окну, и оно правит спеку тем же путём, что выключатель на главной (сохранение и применение). */
+function trayRules() {
+    const spec = memory?.all()?.spec
+    const outs = memory?.all()?.live?.status?.outputs || {}
+    const rules = Array.isArray(spec?.channels) ? spec.channels : []
+    if (!router.state.connected || !rules.length) return []
+    return [
+        { type: 'separator' },
+        ...rules.map((c, i) => {
+            const o = outs[c.out]
+            const kind = spec.outputs?.[c.out]?.kind
+            const where = kind === 'direct' ? 'напрямую' : kind === 'block' ? 'блок'
+                : !o ? c.out : o.up === false ? `${c.out} — не отвечает` : c.out
+            return {
+                label: `${c.name}  →  ${where}`,
+                type: 'checkbox',
+                checked: c.enabled !== false,
+                click: () => send('tray:rule', i),
+            }
+        }),
+    ]
+}
+
+/** Остановить всё / запустить — то же, что кнопка в рельсе: служба ядра на роутере. */
+function trayEngine(m) {
+    if (!router.state.connected || m?.reachable === false) return []
+    const running = m?.engine !== false
+    return [{
+        label: running ? 'Остановить всё' : 'Запустить',
+        click: async () => {
+            try { await router.call(running ? 'engine_stop' : 'engine_start', {}) } catch { /* ответ увидит сторож */ }
+            void activeMonitor()?.now()
+            send('api:event', { ev: 'engine' })
+        },
+    }]
+}
+
+/** Роутеры: переход на другой — окно перезагрузится на нём. */
+function trayRouters() {
+    const list = router.routers()
+    if (list.length < 2) return []
+    return [
+        { type: 'separator' },
+        ...list.map((r) => ({
+            label: r.hostname ? `${r.hostname} (${(r.base || '').replace(/^https?:\/\//, '')})` : r.base,
+            type: 'radio',
+            checked: r.active,
+            click: () => { if (!r.active) { router.use(r.id); send('router:switched', r.base) } },
+        })),
+    ]
 }
 
 // ── уведомления ───────────────────────────────────────────────────────────────
@@ -338,7 +400,11 @@ function registerIpc() {
     // Память по роутеру (backend/memory.cjs): окно читает её синхронно при запуске — первый кадр уже
     // с данными; пишет — по каждому ответу роутера.
     ipcMain.on('memory:load', (e) => { memory.use(router.state.base); e.returnValue = memory.all() })
-    ipcMain.on('memory:set', (_e, key, value) => memory.set(key, value))
+    ipcMain.on('memory:set', (_e, key, value) => {
+        memory.set(key, value)
+        // Трей показывает правила и их состояние — по свежей спеке и свежему состоянию.
+        if (key === 'spec' || key === 'live') scheduleTray()
+    })
     ipcMain.handle('api:connect', wrap((address, password) => router.connect(address, password)))
     ipcMain.handle('api:disconnect', wrap(() => router.disconnect()))
     ipcMain.handle('api:routers', wrap(() => router.routers()))

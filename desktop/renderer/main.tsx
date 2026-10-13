@@ -12,6 +12,7 @@ import './warpbox/warpbox.css'
 import { StrictMode, useCallback, useEffect, useState } from 'react'
 import { createRoot } from 'react-dom/client'
 import Console, { type ExtraSection } from '@/components/Console'
+import { pending } from '@/lib/pending'
 import TitleBar from './TitleBar'
 import Connect from './Connect'
 import Settings from './settings/Settings'
@@ -64,6 +65,16 @@ function Root() {
 
     useEffect(() => {
         desk.api.state().then(setSt, () => setSt({ connected: false, base: null, hostname: '', device: null }))
+        /* Трей: выключатель правила — тем же путём, что на главной (сохранение и применение). */
+        const offTrayRule = desk.win.onTrayRule((i) => {
+            const real = pending.saved
+            const c = real?.channels[i]
+            if (!real || !c) return
+            const { enabled: _e, ...on } = c
+            pending.edit({ ...real, channels: real.channels.map((x, k) => (k === i ? (c.enabled === false ? on : { ...c, enabled: false }) : x)) })
+        })
+        /* Трей: другой роутер — окно перезагружается на нём. */
+        const offSwitched = desk.win.onRouterSwitched((base) => { resetMemory(base); location.reload() })
         /* Событие ядра — панели (lib/live.ts): состояние перечитывается сразу. */
         const offEvent = desk.api.onEvent((ev) => window.dispatchEvent(new CustomEvent('splify:router-event', { detail: ev })))
         const offLost = desk.api.onLost((msg) => {
@@ -80,7 +91,7 @@ function Root() {
         // Из настроек роутера ушли в правило — слой настроек закрывается (Console).
         const onClose = () => setSettingsOpen(false)
         window.addEventListener('splify:settings-close', onClose)
-        return () => { offEvent(); offLost(); offNav(); offSet(); window.removeEventListener('splify:settings-close', onClose) }
+        return () => { offTrayRule(); offSwitched(); offEvent(); offLost(); offNav(); offSet(); window.removeEventListener('splify:settings-close', onClose) }
     }, [])
 
     // Анимации выключены в настройках — правила motion.css смотрят на этот признак.

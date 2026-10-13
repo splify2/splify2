@@ -134,6 +134,8 @@ interface Desk {
         onState(cb: (s: WinState) => void): Off
         onNav(cb: (section: string) => void): Off
         onOpenSettings(cb: () => void): Off
+        onTrayRule(cb: (index: number) => void): Off
+        onRouterSwitched(cb: (base: string | null) => void): Off
     }
     api: {
         state(): Promise<ApiState>

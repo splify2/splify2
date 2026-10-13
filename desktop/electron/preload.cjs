@@ -35,6 +35,9 @@ contextBridge.exposeInMainWorld('splifyDesktop', {
         onNav: (cb) => listen('nav', cb),
         /** …или настройки (пункт меню трея). */
         onOpenSettings: (cb) => listen('settings:open', cb),
+        /** Трей: переключить правило с этим номером; перейти на другой роутер (адрес). */
+        onTrayRule: (cb) => listen('tray:rule', cb),
+        onRouterSwitched: (cb) => listen('router:switched', cb),
     },
     api: {
         state: () => invoke('api:state'),
