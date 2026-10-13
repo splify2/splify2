@@ -631,11 +631,11 @@ case "$2" in
             # применённым: applied_get при отсутствии снимка отдаёт саму спеку, и пилюля
             # «Применить · N» показала бы ноль на только что заменённой настройке.
             if [ ! -s "$APPLIED" ]; then
-                if [ -s "$SPEC" ]; then cp "$SPEC" "$APPLIED" 2>/dev/null
+                if spec_have; then cp "$(spec_json)" "$APPLIED" 2>/dev/null
                 else printf '{"version":2}\n' > "$APPLIED"
                 fi
             fi
-            cp "$D/spec" "$SPEC.new.$$" && mv "$SPEC.new.$$" "$SPEC" ||
+            cp "$D/spec" "$SPEC.new.$$" && spec_put "$SPEC.new.$$" ||
                 { rm -f "$SPEC.new.$$"; backup_giveup "спека не записалась — кончилось место?"; }
             spec_done=1
         fi

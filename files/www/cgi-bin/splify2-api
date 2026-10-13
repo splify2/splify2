@@ -39,6 +39,7 @@ const FAILS = RUN + '/fails.json';
 // steer-warpbox кладёт рядом со спекой, в {etc}/warp/<выход>-<n>.conf, а состояние подбора — в
 // каталог состояния ядра (на OpenWrt /var/lib/steer). Бинарники ядра и его модулей лежат вместе.
 const SPEC = '/etc/steer/spec.json';
+const SPEC_YAML = '/etc/steer/spec.yaml';
 const WARP_ETC = '/etc/steer/warp';
 const STEER_STATE = '/var/lib/steer';
 const STEER_BIN = '/usr/sbin/steer';
@@ -459,10 +460,22 @@ function warp_name_ok(n) {
 	return type(n) == 'string' && match(n, /^[A-Za-z0-9_-]{1,27}$/) != null;
 }
 
-// Выходы kind: warp из спеки. Нет спеки или она не JSON (человек ведёт spec.yaml) — пусто:
+// Спека JSON-ом: spec.json как есть, spec.yaml (ядро 2.1) — переводом самого ядра
+// (`steer spec convert --json`, тот же разбор, что у splify2: lib/splify2/spec.sh).
+function read_spec() {
+	if (fs.access(SPEC)) return read_json(SPEC);
+	if (!fs.access(SPEC_YAML)) return null;
+	let p = fs.popen(`${STEER_BIN} spec convert --json --spec ${SPEC_YAML} 2>/dev/null`, 'r');
+	if (!p) return null;
+	let s = p.read('all');
+	p.close();
+	try { return json(s); } catch (e) { return null; }
+}
+
+// Выходы kind: warp из спеки. Нет спеки или ядро не переводит spec.yaml в JSON — пусто:
 // страница покажет «выходов нет», а не ошибку.
 function warp_outputs() {
-	let spec = read_json(SPEC);
+	let spec = read_spec();
 	let out = {};
 	if (type(spec?.outputs) != 'object') return out;
 	for (let name, o in spec.outputs)

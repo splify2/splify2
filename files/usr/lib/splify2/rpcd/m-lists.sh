@@ -716,7 +716,7 @@ AD_EOF
                 [ -f "$dest" ] || dest="$(custom_path "$name" prefixes)"
             fi
             [ -f "$dest" ] || fail "своего списка $name нет"
-            if [ -s "$SPEC" ] && grep -q "$dest" "$SPEC"; then
+            if spec_have && grep -q "$dest" "$(spec_json)"; then
                 fail "список используется каналом — сначала снимите галочку"
             fi
             # Вместе со списком снимается и запись о его происхождении: оставленная, она
@@ -775,7 +775,7 @@ AD_EOF
                 # Проверка «занят каналом» — ПРО СПЕКУ, а не про издателя, и второму издателю
                 # нужна ровно так же: движок читает список при сборке правил и падает на
                 # отсутствующем.
-                if [ -s "$SPEC" ] && grep -q "$dest" "$SPEC"; then
+                if spec_have && grep -q "$dest" "$(spec_json)"; then
                     fail "список используется каналом — сначала снимите галочку"
                 fi
                 rm -f "$dest"
@@ -811,8 +811,8 @@ AD_EOF
             . "$AD_SH"
             sdest="$(local_path "$(ad_srs_rel "$file")")" || sdest=""
         fi
-        if [ -s "$SPEC" ] && { grep -q "$dest" "$SPEC" ||
-            { [ -n "$sdest" ] && grep -qF "\"$sdest\"" "$SPEC"; }; }; then
+        if spec_have && { grep -q "$dest" "$(spec_json)" ||
+            { [ -n "$sdest" ] && grep -qF "\"$sdest\"" "$(spec_json)"; }; }; then
             fail "список используется каналом — сначала снимите галочку"
         fi
         rm -f "$dest" ${sdest:+"$sdest"}

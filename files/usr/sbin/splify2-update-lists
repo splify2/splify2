@@ -17,6 +17,10 @@ set -u
 # tests/listsmatch.sh.
 STEER=${STEER:-/usr/sbin/steer}
 SPEC=${SPEC:-/etc/steer/spec.json}
+# /usr/lib/splify2/spec.sh — рядом с fetch.sh (стенды подставляют FETCH_SH).
+_spec_dir=/usr/lib/splify2
+[ -n "${FETCH_SH:-}" ] && _spec_dir="${FETCH_SH%/*}"
+. "${SPEC_SH:-$_spec_dir/spec.sh}"
 LISTS=${LISTS:-/etc/steer/lists}
 MANIFEST=${MANIFEST:-/etc/splify2/manifest.json}
 STAMP=${STAMP:-/var/lib/splify2/last-update}
@@ -40,7 +44,7 @@ log() {
     return 0
 }
 
-[ -s "$SPEC" ] || { log "спеки нет — обновлять нечего"; exit 0; }
+spec_have || { log "спеки нет — обновлять нечего"; exit 0; }
 
 # Одновременно два прогона перезапишут друг другу файлы, и канал в этот момент увидит
 # полупустой список. Блокировка каталогом: mkdir атомарен и работает без flock.
@@ -169,12 +173,12 @@ used_files() {  # ip|domains|srs
     # Спека v2 (`lists`) и прежняя v1 (`channels`): до первого сохранения интерфейсом на
     # диске может лежать любая. Наборы файлом (`srs`) — только v2.
     if [ "$1" = srs ]; then
-        jsonfilter -i "$SPEC" -e '@.lists[*].srs[*]' 2>/dev/null
+        jsonfilter -i "$(spec_json)" -e '@.lists[*].srs[*]' 2>/dev/null
     elif [ "$1" = ip ]; then
-        jsonfilter -i "$SPEC" -e '@.lists[*].prefixes_file[*]' \
+        jsonfilter -i "$(spec_json)" -e '@.lists[*].prefixes_file[*]' \
             -e '@.channels[*].match.prefixes_files[*]' 2>/dev/null
     else
-        jsonfilter -i "$SPEC" -e '@.lists[*].domains_file[*]' \
+        jsonfilter -i "$(spec_json)" -e '@.lists[*].domains_file[*]' \
             -e '@.channels[*].match.domains_files[*]' 2>/dev/null
     fi
 }

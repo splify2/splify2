@@ -74,8 +74,8 @@ fw_zone_devices() {  # ИДЕНТИФИКАТОР_СЕКЦИИ
 # которых зону заводим мы (fw_client_devices_unzoned). Два списка, выведенных по-разному, рано
 # или поздно разошлись бы ровно на том устройстве, из-за которого всё и заводилось.
 fw_client_devices() {
-    _fcd="$(jsonfilter -i "$SPEC" -e '@.lan.devices[*]' -e '@.lan_devices[*]' 2>/dev/null)"
-    [ -n "$_fcd" ] || _fcd="$(jsonfilter -i "$SPEC" -e '@.lan_device' 2>/dev/null)"
+    _fcd="$(jsonfilter -i "$(spec_json)" -e '@.lan.devices[*]' -e '@.lan_devices[*]' 2>/dev/null)"
+    [ -n "$_fcd" ] || _fcd="$(jsonfilter -i "$(spec_json)" -e '@.lan_device' 2>/dev/null)"
     [ -n "$_fcd" ] || _fcd="br-lan"
     printf '%s\n' $_fcd | grep . | sort -u
 }
@@ -490,8 +490,8 @@ fw_sync() {
 # Спека v1 — верхний ключ `schema` без `version`. Слово «schema» глубже (имя выхода или списка)
 # v1 не делает, поэтому поиском по тексту это не определяется.
 spec_is_v1() {
-    [ -n "$(jsonfilter -i "$SPEC" -e '@.schema' 2>/dev/null)" ] &&
-        [ -z "$(jsonfilter -i "$SPEC" -e '@.version' 2>/dev/null)" ]
+    [ -n "$(jsonfilter -i "$(spec_json)" -e '@.schema' 2>/dev/null)" ] &&
+        [ -z "$(jsonfilter -i "$(spec_json)" -e '@.version' 2>/dev/null)" ]
 }
 
 # САМОЛЕЧЕНИЕ: выходу-интерфейсу без ключа `ipv6` в нашей зоне без masq6 записывается `ipv6: nat`
@@ -532,8 +532,7 @@ spec_is_v1() {
 # Идемпотентна: после правки у выхода ключ есть. Печатает по строке «РЕЖИМ ВЫХОД» на каждый
 # записанный ключ; код 0 — спека изменена, 1 — менять нечего.
 spec_heal_ipv6() {
-    [ -s "$SPEC" ] || return 1
-    [ -s "${SPEC%/*}/spec.yaml" ] && return 1
+    [ -s "$(spec_json)" ] || return 1
     spec_is_v1 && return 1
     _sh_devs=""
     for _sh_d in $(fw_devices_of interface,awg); do
@@ -629,7 +628,7 @@ spec_heal_ipv6() {
         printf "%s%s", out, substr(s, last)
     }'
     # Первый проход: выходы-кандидаты — «имя|вид|устройство|файл настройки».
-    _sh_cand="$(awk -v mode=scan -v devs="$_sh_devs" "$_sh_awk" "$SPEC" 2>/dev/null)"
+    _sh_cand="$(awk -v mode=scan -v devs="$_sh_devs" "$_sh_awk" "$(spec_json)" 2>/dev/null)"
     [ -n "$_sh_cand" ] || return 1
     _sh_tbl="$(net_v6_table)"
     _sh_nat=""; _sh_off=""
@@ -648,14 +647,14 @@ EOF
     _sh_tmp="$SPEC.new.$$"
     _sh_names="$_sh_tmp.names"
     awk -v mode=apply -v devs="$_sh_devs" -v nat="$_sh_nat" -v off="$_sh_off" -v namesf="$_sh_names" \
-        "$_sh_awk" "$SPEC" > "$_sh_tmp" 2>/dev/null || { rm -f "$_sh_tmp" "$_sh_names"; return 1; }
+        "$_sh_awk" "$(spec_json)" > "$_sh_tmp" 2>/dev/null || { rm -f "$_sh_tmp" "$_sh_names"; return 1; }
     # Компилятор — судья и здесь: не принял — спека остаётся прежней, жалоба диагностики
     # остаётся жалобой, а не превращается в отказ загрузки.
     if ! engine_check "$_sh_tmp" >/dev/null 2>&1; then
         rm -f "$_sh_tmp" "$_sh_names"
         return 1
     fi
-    mv "$_sh_tmp" "$SPEC" || { rm -f "$_sh_tmp" "$_sh_names"; return 1; }
+    spec_put "$_sh_tmp" || { rm -f "$_sh_names"; return 1; }
     cat "$_sh_names" 2>/dev/null
     rm -f "$_sh_names"
     return 0
@@ -685,11 +684,10 @@ case "$2" in
         json_load "$input" 2>/dev/null || fail "неразбираемый запрос"
         json_get_var spec spec
         [ -n "$spec" ] || fail "пустая спецификация"
-        # Рядом с нашим файлом лежит spec.yaml: человек ведёт спеку руками. Движок при двух
-        # спеках отказывается читать обе («две спеки»), поэтому второй файл мы не заводим —
-        # говорим словами, что делать.
-        if [ -s "${SPEC%/*}/spec.yaml" ]; then
-            fail "рядом со spec.json лежит spec.yaml — ядро не читает две спеки сразу; уберите один из файлов"
+        # Спека в spec.yaml, а ядро прежнее: JSON-вида оно не печатает, писать YAML нечем, а
+        # второй файл рядом ядро не прочтёт («две спеки»).
+        if [ -s "$SPEC_YAML" ] && ! spec_yaml_ok; then
+            fail "спека ведётся в spec.yaml, а это ядро не переводит её в JSON — обновите ядро до 2.1"
         fi
         # Временный файл РЯДОМ с целевым, а не в /tmp, и это не мелочь. /tmp на OpenWrt —
         # tmpfs, а спека лежит на overlay; mv между разными файловыми системами busybox
@@ -725,7 +723,8 @@ case "$2" in
         fi
         # Код возврата mv проверяется: без этого «Сохранено» печаталось независимо от
         # того, легла спека на диск или нет.
-        mv "$tmp" "$SPEC" || { rm -f "$tmp"; fail "не удалось заменить спецификацию"; }
+        # spec_put (spec.sh): на ядре 2.1 — spec.yaml (переводом), на прежнем — spec.json.
+        spec_put "$tmp" || fail "не удалось заменить спецификацию"
         # Предупреждение о нескачанном списке едет В ОТВЕТЕ, а не в журнал: сохранение
         # прошло, спека верна, но канал, ссылающийся на недоступный список, не поднимется —
         # и узнать об этом человек должен там же, где нажимал, а не догадываться позже по
@@ -757,7 +756,7 @@ case "$2" in
         # То же доскачивание, что и при сохранении: спеку могли положить на диск в обход
         # интерфейса (splify2 spec_set — не единственный способ), да и файл мог быть удалён
         # уборкой между сохранением и применением.
-        fetch_warn="$(fetch_missing_lists "$SPEC")"
+        fetch_warn="$(fetch_missing_lists "$(spec_json)")"
         out="$("$STEER" apply --spec "$SPEC" 2>&1)"; rc=$?
         # Снимок — только на успехе: неудавшийся apply ничего не изменил в ядре, и счётчик
         # обязан продолжать это показывать.
@@ -767,7 +766,7 @@ case "$2" in
         # снимок, из которого applied_get и проверки движка читали полспеки. mv внутри одного
         # каталога атомарен: снимок либо прежний, либо новый целиком.
         if [ "$rc" -eq 0 ]; then
-            if cp "$SPEC" "$APPLIED.new.$$" 2>/dev/null; then
+            if cp "$(spec_json)" "$APPLIED.new.$$" 2>/dev/null; then
                 mv "$APPLIED.new.$$" "$APPLIED" 2>/dev/null || rm -f "$APPLIED.new.$$"
             else
                 rm -f "$APPLIED.new.$$"

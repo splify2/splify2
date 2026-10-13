@@ -29,6 +29,9 @@
 
 STEER="${STEER:-/usr/sbin/steer}"
 SPEC="${SPEC:-/etc/steer/spec.json}"
+# /usr/lib/splify2/spec.sh — рядом с этим файлом (стенды подставляют FAST_SH).
+_spec_lib="${FAST_SH:-/usr/lib/splify2/fast.sh}"
+. "${SPEC_SH:-${_spec_lib%/*}/spec.sh}"
 
 # Спека по умолчанию — ровно то, что пишет /etc/uci-defaults/99-splify2 при установке.
 #
@@ -62,10 +65,8 @@ SPEC_EMPTY='{"version":2,"outputs":{"direct":{"kind":"direct"}}}'
 # спека появляется в первую же секунду после открытия страницы. Проверка стоит одну встроенную
 # `test`: файл на месте — выходим, ничего не запуская.
 spec_ensure() {
-    [ -s "$SPEC" ] && return 0
-    # Рядом лежит spec.yaml — спека ведётся руками; движок при двух файлах отказывается
-    # читать обе, и заводить второй нельзя.
-    [ -s "${SPEC%/*}/spec.yaml" ] && return 0
+    # Спека есть — в spec.json или spec.yaml (spec.sh); второй файл рядом ядро не прочтёт.
+    spec_have && return 0
     # Ядро ведёт steer-box-connector (podkop, forkop) — тот же признак, что box_busy в
     # rpcd/common.sh. Своей спеки тогда не заводим и службу steer не поднимаем: она делила бы с
     # его steerd таблицы и метки, а сам коннектор при следующем запуске отказался бы работать
@@ -332,12 +333,13 @@ fast_live() {
 # и снимок применённого): 246 мс из которых 250 — плата за разбор объекта. Отсюда и переезд.
 fast_spec_get() {
     spec_ensure
-    [ -s "$SPEC" ] && { cat "$SPEC"; return; }
-    # Спека ведётся руками в spec.yaml — spec.json нет, а пустую заготовку отдавать нельзя:
+    _fs="$(spec_json)"
+    [ -s "$_fs" ] && { cat "$_fs"; return; }
+    # spec.yaml, а ядро прежнее и JSON-ом её не печатает — пустую заготовку отдавать нельзя:
     # экран показал бы «выходов нет, правил нет» про роутер с настоящей настройкой. Отказ
     # (код 1) экран показывает как «не загрузилось» и ничего не пишет.
-    if [ -s "${SPEC%/*}/spec.yaml" ]; then
-        echo "спека ведётся в spec.yaml, spec.json нет" >&2
+    if spec_is_yaml; then
+        echo "спека ведётся в spec.yaml, а ядро не переводит её в JSON — обновите ядро до 2.1" >&2
         return 1
     fi
     printf '%s\n' "$SPEC_EMPTY"
@@ -386,7 +388,7 @@ fast_diag_spec() {
 fast_applied_get() {
     spec_ensure
     if [ -s "${APPLIED:-/etc/steer/spec.applied.json}" ]; then cat "${APPLIED:-/etc/steer/spec.applied.json}"
-    elif [ -s "$SPEC" ]; then cat "$SPEC"
+    elif [ -s "$(spec_json)" ]; then cat "$(spec_json)"
     else printf '%s\n' "$SPEC_EMPTY"
     fi
 }

@@ -685,6 +685,9 @@ call)
         recheck_info|recheck_set) _grp=recheck ;;
         *) fail "неизвестный метод" ;;
     esac
+    # Где спека и как её читать (spec.yaml ядра 2.1 или spec.json): читать — `spec_json`, писать —
+    # `spec_put`. Файл — /usr/lib/splify2/spec.sh, рядом с каталогом групп.
+    . "${SPEC_SH:-${RPCD_LIB%/rpcd}/spec.sh}"
     . "$RPCD_LIB/common.sh"
     . "$RPCD_LIB/m-$_grp.sh"
     ;;

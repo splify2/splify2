@@ -240,8 +240,8 @@ spec_list_files() {  # ФАЙЛ_СПЕКИ -> пути по одному в ст
 
 # Файл подписки выхода: v2 — `subscription`, v1 — `sub_file`.
 spec_out_sub() {  # ИМЯ_ВЫХОДА -> путь
-    _sos="$(jsonfilter -i "$SPEC" -e "@.outputs['$1'].subscription" 2>/dev/null)"
-    [ -n "$_sos" ] || _sos="$(jsonfilter -i "$SPEC" -e "@.outputs['$1'].sub_file" 2>/dev/null)"
+    _sos="$(jsonfilter -i "$(spec_json)" -e "@.outputs['$1'].subscription" 2>/dev/null)"
+    [ -n "$_sos" ] || _sos="$(jsonfilter -i "$(spec_json)" -e "@.outputs['$1'].sub_file" 2>/dev/null)"
     printf '%s' "$_sos"
 }
 
@@ -449,7 +449,7 @@ fetch_missing_srs() {  # «СЕРВИС ВИД» ОТН_ПУТЬ ПУТЬ_НА_�
 # потому что содержимое файла подписки и так входит в его подпись. Код 0 — перезагрузка была.
 engine_reload_clean() {
     [ -x "$STEER" ] || return 1
-    if [ -s "$APPLIED" ] && ! cmp -s "$SPEC" "$APPLIED" 2>/dev/null; then
+    if [ -s "$APPLIED" ] && ! cmp -s "$(spec_json)" "$APPLIED" 2>/dev/null; then
         return 1
     fi
     "$STEER" reload --spec "$SPEC" >/dev/null 2>&1
@@ -887,11 +887,11 @@ backup_build() {
     printf '# ВНИМАНИЕ: внутри ссылки vless:// и приватные ключи туннелей — то же, что\n'
     printf '# пароль от всех подключений. Кто получил этот файл, тот получил доступ.\n'
     printf '# Не выкладывайте его в чат поддержки и не храните в общей папке.\n'
-    if [ -s "$SPEC" ]; then
+    if spec_have; then
         printf '[spec]\n'
         # awk 1, а не cat: файл без завершающего перевода строки склеил бы свою последнюю
         # строку с заголовком следующего раздела.
-        awk 1 "$SPEC"
+        awk 1 "$(spec_json)"
     fi
     if [ -s "$SUB" ]; then
         printf '[sub]\n'

@@ -32,10 +32,11 @@ recheck_wan() {
     printf '%s' "$_w"
 }
 
-# Устройства сети: из спеки ядра (lan.devices), иначе br-lan.
+# Устройства сети: из спеки ядра (lan.devices), иначе br-lan. Спека — JSON-видом (spec.sh).
 recheck_lan() {
-    _l=""
-    [ -s /etc/steer/spec.json ] && _l="$(jsonfilter -i /etc/steer/spec.json -e '@.lan.devices[*]' 2>/dev/null | tr '\n' ' ')"
+    STEER="${STEER:-/usr/sbin/steer}"
+    . "${SPEC_SH:-/usr/lib/splify2/spec.sh}"
+    _l="$(jsonfilter -i "$(spec_json)" -e '@.lan.devices[*]' 2>/dev/null | tr '\n' ' ')"
     printf '%s' "${_l:-br-lan}"
 }
 
