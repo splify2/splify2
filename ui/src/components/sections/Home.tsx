@@ -1,5 +1,7 @@
 import { useCallback, useEffect, useRef, useState, type HTMLAttributes, type ReactNode } from 'react'
-import { ArrowRight, ChevronDown, GripVertical, LoaderCircle, Plus, Search, TriangleAlert, X } from 'lucide-react'
+import { ArrowRight, ChevronDown, GripVertical, LoaderCircle, Plus, Search, Trash2, TriangleAlert, X } from 'lucide-react'
+import { useConfirm } from '@/components/ui/confirm'
+import { dropRule } from '@/lib/ruleout'
 import { Button } from '@/components/ui/button'
 import { Switch } from '@/components/ui/switch'
 import { Badge } from '@/components/ui/badge'
@@ -544,7 +546,7 @@ export default function Home({
                             </span>
                         )}
                     </h2>
-                    <RuleCards live={live} facts={facts} onSection={onSection} onEdit={onEditRule} onAdd={onAddRule} />
+                    <RuleCards live={live} facts={facts} onEdit={onEditRule} onAdd={onAddRule} />
                 </section>
                 {/* Своим блоком, а не свёрнутой строчкой внизу: её не замечали (владелец). */}
                 <ExplainCard board />
@@ -587,11 +589,10 @@ export default function Home({
  *  блок с + по центру»). Порядок — тот же приоритет, что в спеке: карточки идут слева направо,
  *  сверху вниз. Счётчик — у набора, как в RulesBoard ниже: где набор общий, сказано словом. */
 function RuleCards({
-    live, facts, onSection, onEdit, onAdd,
+    live, facts, onEdit, onAdd,
 }: {
     live: Live
     facts: Record<string, Facts>
-    onSection: (s: SectionId) => void
     onEdit?: (index: number) => void
     onAdd?: () => void
 }) {
@@ -617,6 +618,17 @@ function RuleCards({
                 return { ...c, enabled: false }
             }),
         })
+    }
+
+    const [ask, dialog] = useConfirm()
+    /** Удалить правило — с подтверждением; выход, который после этого никому не нужен, уходит с ним. */
+    async function remove(i: number) {
+        const real = pending.saved
+        const c = real?.channels[i]
+        if (!real || !c) return
+        const ok = await ask({ title: S.home.udalitPravilo(c.name), body: S.home.udalitPraviloTelo, confirmLabel: S.home.udalit })
+        if (!ok || pending.saved !== real) return
+        pending.edit(dropRule(real, i))
     }
 
     /** Порядок — это приоритет: правило переносится мышью (или ↑/↓ на ручке) на место другого. */
@@ -657,7 +669,7 @@ function RuleCards({
                     phase={live.phase}
                     onOpen={() => onEdit?.(i)}
                     onToggle={() => toggle(i)}
-                    onSection={onSection}
+                    onDelete={() => void remove(i)}
                 />
             ))}
             <button
@@ -677,6 +689,7 @@ function RuleCards({
                 <Plus className="h-5 w-5" aria-hidden="true" />
                 {S.home.dobavitPravilo}
             </button>
+            {dialog}
         </div>
     )
 }
@@ -692,8 +705,9 @@ function ruleLabels(ch: Channel, services: ReturnType<typeof useServices>): stri
 }
 
 function RuleCard({
-    ch, labels, set, st, facts, phase, onOpen, onToggle, onSection, index, total, dragging, target, dnd, onMove,
+    ch, labels, set, st, facts, phase, onOpen, onToggle, onDelete, index, total, dragging, target, dnd, onMove,
 }: {
+    onDelete: () => void
     index: number
     total: number
     dragging: boolean
@@ -708,7 +722,6 @@ function RuleCard({
     phase: Live['phase']
     onOpen: () => void
     onToggle: () => void
-    onSection: (s: SectionId) => void
 }) {
     const on = ch.enabled !== false
     const grp = st?.group
@@ -753,15 +766,27 @@ function RuleCard({
                 </div>
                 <div className="sp-board-rule-control"><Switch on={on} label={on ? S.rulesTab.vyklyuchitPravilo(ch.name) : S.rulesTab.vklyuchitPravilo(ch.name)} onClick={onToggle} /></div>
             </div>
-            <button type="button" onClick={() => onSection('vpn')} className="sp-board-rule-control flex min-w-0 items-center gap-1.5 bg-transparent text-left">
+            {/* Куда ведёт — бейджем (владелец), без перехода в VPN: выход правится в самом правиле. */}
+            <span className="sp-board-route inline-flex min-w-0 max-w-full items-center gap-1.5 self-start rounded-lg border border-border bg-muted/60 px-2 py-0.5">
                 <ArrowRight className="h-3.5 w-3.5 shrink-0 text-muted-foreground" aria-hidden="true" />
                 <Flag cc={facts?.geo?.cc} />
                 <span className="shrink-0 text-[13px] font-medium">{ch.out}</span>
                 <span className="min-w-0 truncate text-xs text-muted-foreground">{where}</span>
-            </button>
+            </span>
             <BoardLabels labels={labels} />
             <div className="sp-board-rule-foot text-[11px] tabular-nums text-muted-foreground">
-                <span>{!on ? S.home.vyklyucheno : set && !set.live && !phase ? S.home.netVYadreLinux : ''}</span>
+                <span className="flex min-w-0 items-center gap-2">
+                    <button
+                        type="button"
+                        onClick={onDelete}
+                        aria-label={S.home.udalitPravilo(ch.name)}
+                        title={S.home.udalitPravilo(ch.name)}
+                        className="sp-board-rule-control -ml-1 flex h-6 w-6 shrink-0 items-center justify-center rounded-md bg-transparent p-0 text-muted-foreground transition-colors hover:text-destructive"
+                    >
+                        <Trash2 className="h-3.5 w-3.5" aria-hidden="true" />
+                    </button>
+                    <span className="truncate">{!on ? S.home.vyklyucheno : set && !set.live && !phase ? S.home.netVYadreLinux : ''}</span>
+                </span>
                 <span title={shared ? S.home.schetchikObschiy : undefined}>{shared ? S.home.schetchikObschiy + ' · ' : ''}↓ {down ?? '—'} ↑ {up ?? '—'}</span>
             </div>
         </article>

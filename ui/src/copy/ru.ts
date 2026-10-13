@@ -583,6 +583,9 @@ export const ru = {
         udalit: " Удалить",
     },
     home: {
+        udalitPravilo: (n: string) => `Удалить правило «${n}»?`,
+        udalitPraviloTelo: "Правило уйдёт с роутера вместе с выходом, если он больше никому не нужен.",
+        udalit: "Удалить",
         poryadokPravila: (n: number, all: number) => `Правило ${n} из ${all}: перетащите или ↑/↓, чтобы поменять порядок`,
         peretaschite: "Перетащите, чтобы поменять порядок: верхнее правило главнее",
         escheSpiskov: (n: number) => `ещё ${n}`,

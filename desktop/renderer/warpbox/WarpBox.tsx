@@ -273,16 +273,8 @@ function Group({ spec, out, live, info }: { spec: Spec; out: WarpOut; live: Live
                     />
                 </div>
                 <div className={TILE}>
-                    {tileHead('Протокол')}
-                    <Segmented
-                        label="Протокол"
-                        value={transport}
-                        onChange={(v) => editOut(spec, out.name, { transport: v === 'awg' ? undefined : v })}
-                        items={[
-                            { value: 'awg', label: 'AmneziaWG' },
-                            { value: 'masque', label: 'MASQUE' },
-                        ]}
-                    />
+                    {tileHead('Точки входа')}
+                    <Scan group={out.name} applied={!!winfo} initial={info?.scans?.[out.name]} />
                 </div>
                 <div className={TILE}>
                     {tileHead('Страна выхода')}
@@ -295,8 +287,16 @@ function Group({ spec, out, live, info }: { spec: Spec; out: WarpOut; live: Live
             </div>
 
             <div className={TILE}>
-                {tileHead('Точки входа')}
-                <Scan group={out.name} applied={!!winfo} initial={info?.scans?.[out.name]} />
+                {tileHead('Протокол')}
+                <Segmented
+                    label="Протокол"
+                    value={transport}
+                    onChange={(v) => editOut(spec, out.name, { transport: v === 'awg' ? undefined : v })}
+                    items={[
+                        { value: 'awg', label: 'AmneziaWG' },
+                        { value: 'masque', label: 'MASQUE' },
+                    ]}
+                />
             </div>
             {dialog}
         </section>
