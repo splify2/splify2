@@ -554,3 +554,21 @@ body :is(button, [role="button"], a, label, summary) :is(*, .font-mono, .desk-mo
 .desk [draggable="true"] {
   -webkit-user-drag: element;
 }
+
+/* Меню роутера: другие роутеры приложения — переход щелчком (electron/routers.cjs). */
+.desk-menu-label {
+  padding: 6px 10px 2px;
+  color: var(--sp-muted-foreground);
+  font-size: 11px;
+}
+.desk-menu-router {
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+  text-align: left;
+}
+.desk-menu-sep {
+  height: 1px;
+  margin: 4px 6px;
+  background: var(--an-glass-border);
+}

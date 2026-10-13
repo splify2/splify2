@@ -52,6 +52,8 @@ let appShown = false
 function Root() {
     const [st, setSt] = useState<ApiState | null>(null)
     const [lost, setLost] = useState('')
+    /** Подключается ещё один роутер (меню роутера в рамке). */
+    const [adding, setAdding] = useState(false)
     const [setupNow, setSetupNow] = useState(() => { try { return sessionStorage.getItem(SETUP_KEY) === '1' } catch { return false } })
     const [settingsOpen, setSettingsOpen] = useState(false)
     const [prefs] = useSettings()
@@ -136,6 +138,8 @@ function Root() {
             <TitleBar
                 state={st}
                 onDisconnect={disconnect}
+                onAddRouter={() => { setSettingsOpen(false); setAdding(true) }}
+                onUseRouter={(id, base) => void desk.api.use(id).then(() => { resetMemory(base); location.reload() })}
                 onSettings={() => setSettingsOpen((v) => !v)}
                 settingsOpen={settingsOpen}
             />
@@ -144,7 +148,9 @@ function Root() {
                 <div className="desk-app" data-behind={settingsOpen ? 'true' : undefined} inert={settingsOpen || undefined}>
                     {st?.connected && <div className="desk-side" ref={setRailHost} />}
                     <main className="desk-body">
-                        {st && prefs && (st.connected
+                        {st && prefs && (adding
+                            ? <Connect initial="" note="" title="Ещё один роутер" onConnected={connected} onCancel={() => setAdding(false)} />
+                            : st.connected
                             ? railHost && <Console extra={EXTRA} railHost={railHost} board setup={setupNow} settingsHost={panel.host} settingsScreen={panel.screen} />
                             : !prefs.wizardDone && !lost
                                 ? <Wizard onConnected={connected} />

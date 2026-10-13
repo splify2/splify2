@@ -8,6 +8,12 @@ export interface ApiState {
     device: { id: string; name: string } | null
 }
 
+/** Роутер приложения (electron/routers.cjs). */
+export interface RouterEntry extends ApiState {
+    id: string
+    active: boolean
+}
+
 export interface WinState {
     maximized: boolean
     focused: boolean
@@ -133,6 +139,9 @@ interface Desk {
         state(): Promise<ApiState>
         connect(address: string, password: string): Promise<ApiState>
         disconnect(): Promise<void>
+        routers(): Promise<RouterEntry[]>
+        use(id: string): Promise<ApiState>
+        onRouters(cb: (list: RouterEntry[]) => void): Off
         call(method: string, params: Record<string, unknown>): Promise<unknown>
         devices(): Promise<RouterDevice[]>
         revoke(id: string): Promise<void>

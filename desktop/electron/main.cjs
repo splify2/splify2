@@ -7,7 +7,7 @@ const { pathToFileURL } = require('node:url')
 const {
     app, BrowserWindow, Menu, Notification, Tray, ipcMain, nativeImage, nativeTheme, net, protocol, screen, shell,
 } = require('electron')
-const { Router } = require('./router.cjs')
+const { Routers } = require('./routers.cjs')
 const { Settings, BASE_ZOOM } = require('./backend/settings.cjs')
 const { Monitor } = require('./backend/monitor.cjs')
 const { discover, probe } = require('./backend/discover.cjs')
@@ -46,7 +46,9 @@ let router
 /** @type {Settings} */
 let settings
 /** @type {Monitor} */
-let monitor
+/** Сторож по роутеру (id → Monitor); в трее и в окне — сторож активного. */
+const monitors = new Map()
+const activeMonitor = () => monitors.get(router?.activeId)
 /** @type {Updater} */
 let updater
 /** Память по роутеру: последние ответы роутера для мгновенного открытия окна. */
@@ -245,7 +247,7 @@ let trayAlert = false
 function updateTray() {
     if (!tray) return
     const st = router.state
-    const m = monitor?.state
+    const m = activeMonitor()?.state
     const bad = !!st.connected && (m?.reachable === false || m?.engine === false ||
         Object.values(m?.outputs || {}).includes('down'))
     if (bad !== trayAlert) {
@@ -291,6 +293,8 @@ function notify(ev) {
         icon: path.join(RES, 'icon.png'),
     })
     note.on('click', () => {
+        // Уведомление с другого роутера — сначала перейти на него.
+        if (ev.router && ev.router !== router.activeId) router.use(ev.router)
         showWindow()
         navigate(ev.section)
     })
@@ -336,7 +340,9 @@ function registerIpc() {
     ipcMain.on('memory:load', (e) => { memory.use(router.state.base); e.returnValue = memory.all() })
     ipcMain.on('memory:set', (_e, key, value) => memory.set(key, value))
     ipcMain.handle('api:connect', wrap((address, password) => router.connect(address, password)))
-    ipcMain.handle('api:disconnect', wrap(() => { memory.forget(router.state.base); return router.disconnect() }))
+    ipcMain.handle('api:disconnect', wrap(() => router.disconnect()))
+    ipcMain.handle('api:routers', wrap(() => router.routers()))
+    ipcMain.handle('api:use', wrap((id) => router.use(id)))
     ipcMain.handle('api:call', wrap((method, params) => router.call(method, params)))
     ipcMain.handle('api:devices', wrap(() => router.devices()))
     ipcMain.handle('api:revoke', wrap((id) => router.revoke(id)))
@@ -347,7 +353,7 @@ function registerIpc() {
 
     ipcMain.handle('settings:get', wrap(() => settings.get()))
     ipcMain.handle('settings:set', wrap((patch) => settings.set(patch)))
-    ipcMain.handle('monitor:state', wrap(() => monitor.state))
+    ipcMain.handle('monitor:state', wrap(() => activeMonitor()?.state ?? null))
     ipcMain.handle('app:info', wrap(() => ({
         version: app.getVersion(),
         electron: process.versions.electron,
@@ -388,10 +394,27 @@ app.on('window-all-closed', () => {})
 
 app.whenReady().then(() => {
     settings = new Settings(path.join(app.getPath('userData'), 'settings.json'))
-    router = new Router(path.join(app.getPath('userData'), 'connection.json'))
+    // Роутеры (routers.cjs): `router` — фасад активного, у каждого роутера свой сторож.
+    router = new Routers(path.join(app.getPath('userData'), 'routers'), path.join(app.getPath('userData'), 'connection.json'))
     memory = new Memory(path.join(app.getPath('userData'), 'memory'))
     memory.use(router.state.base)
-    monitor = new Monitor(router, settings)
+    const watch = (id, r) => {
+        const m = new Monitor(r, settings)
+        monitors.set(id, m)
+        m.on('state', (st) => { if (id === router.activeId) { updateTray(); send('monitor:state', st) } })
+        // Уведомления — с любого роутера; когда роутеров несколько, в заголовке — чей.
+        m.on('event', (ev) => notify(router.list.size > 1 ? { ...ev, title: `${r.state.hostname || r.state.base}: ${ev.title}`, router: id } : ev))
+        // События ядра: окно перечитывает состояние активного; остальные — сторож спрашивает сам.
+        r.on('event', (ev) => {
+            if (ev?.ev === 'node' || ev?.ev === 'health') return
+            if (id === router.activeId && win && !win.isDestroyed() && win.isVisible()) send('api:event', ev)
+            else void m.now()
+        })
+        r.startEvents()
+    }
+    for (const [id, r] of router.list) watch(id, r)
+    router.on('added', watch)
+    router.on('removed', (id, r) => { monitors.get(id)?.stop(); monitors.delete(id); memory.forget(r.state.base) })
 
     nativeTheme.themeSource = settings.get().theme
     applyLoginItem(settings.get())
@@ -403,21 +426,11 @@ app.whenReady().then(() => {
 
     router.on('changed', () => {
         memory.use(router.state.base)
-        if (router.state.connected) router.startEvents(); else router.stopEvents()
         updateTray()
         send('api:changed', router.state)
     })
-    // События ядра: окно перечитывает состояние; скрытое окно — сторож спрашивает сам. Перебор узлов
-    // подписки (`node`) и пути моста (`health`) идут часто и состояния выходов не меняют — мимо.
-    router.on('event', (ev) => {
-        if (ev?.ev === 'node' || ev?.ev === 'health') return
-        if (win && !win.isDestroyed() && win.isVisible()) send('api:event', ev)
-        else void monitor.now()
-    })
-    if (router.state.connected) router.startEvents()
+    router.on('list', () => send('api:routers', router.routers()))
     router.on('lost', (msg) => send('api:lost', msg))
-    monitor.on('state', (st) => { updateTray(); send('monitor:state', st) })
-    monitor.on('event', notify)
 
     protocol.handle('app', (req) => {
         const u = new URL(req.url)

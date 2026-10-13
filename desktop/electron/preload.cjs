@@ -40,6 +40,10 @@ contextBridge.exposeInMainWorld('splifyDesktop', {
         state: () => invoke('api:state'),
         connect: (address, password) => invoke('api:connect', address, password),
         disconnect: () => invoke('api:disconnect'),
+        /** Роутеры приложения: перечень, переход на другой, перемены перечня. */
+        routers: () => invoke('api:routers'),
+        use: (id) => invoke('api:use', id),
+        onRouters: (cb) => listen('api:routers', cb),
         call: (method, params) => invoke('api:call', method, params),
         devices: () => invoke('api:devices'),
         revoke: (id) => invoke('api:revoke', id),

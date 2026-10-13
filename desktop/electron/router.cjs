@@ -338,4 +338,4 @@ class Router extends EventEmitter {
     }
 }
 
-module.exports = { Router, ApiError }
+module.exports = { Router, ApiError, normalizeBase }
