@@ -25,6 +25,6 @@ export function useCatalog(): ServiceEntry[] | null {
 }
 
 /** Свои списки роутера (имя → число записей, время) — сразу из памяти. */
-export function useLocalLists(): Record<string, { count: number; mtime: number }> | null {
-    return useRemembered('local-lists', () => rpc.localLists().then((d) => d.files || {}))
+export function useLocalLists(nonce: unknown = 0): Record<string, { count: number; mtime: number }> | null {
+    return useRemembered('local-lists', () => rpc.localLists().then((d) => d.files || {}), { deps: [nonce] })
 }

@@ -124,7 +124,9 @@ export default function RulesTab({
      * пилюли и кнопки правила не ждут опроса. Каталог у выбора списков ТОТ ЖЕ, что на вкладке
      * каталога: сначала каталог выбранного источника, без него — зашитая таблица издателя. */
     const catalogServices = useCatalog() ?? []
-    const local = useLocalLists() ?? {}
+    /** Свои списки поменялись (добавлен, поправлен, удалён из правила) — перечитать их. */
+    const [listsNonce, setListsNonce] = useState(0)
+    const local = useLocalLists(listsNonce) ?? {}
     const services = useMemo(
         () => [...catalogServices, ...customServices(local)],
         [catalogServices, local],
@@ -390,6 +392,7 @@ export default function RulesTab({
                 }}
                 target={board ? <RuleTarget spec={view} index={open} live={live} onSpec={(next) => setDraft((d) => d && { ...d, spec: next })} /> : undefined}
                 defer={board}
+                onListsChanged={() => setListsNonce((n) => n + 1)}
                 isNew={!!draft?.isNew}
                 onSave={(next) => {
                     if (!draft) return closeEditor()

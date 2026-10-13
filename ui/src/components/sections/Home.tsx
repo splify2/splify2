@@ -767,7 +767,7 @@ function RuleCard({
                 <div className="sp-board-rule-control"><Switch on={on} label={on ? S.rulesTab.vyklyuchitPravilo(ch.name) : S.rulesTab.vklyuchitPravilo(ch.name)} onClick={onToggle} /></div>
             </div>
             {/* Куда ведёт — бейджем (владелец), без перехода в VPN: выход правится в самом правиле. */}
-            <span className="sp-board-route inline-flex min-w-0 max-w-full items-center gap-1.5 self-start rounded-lg border border-border bg-muted/60 px-2 py-0.5">
+            <span className="sp-board-route inline-flex min-w-0 max-w-full items-center gap-1.5 self-start rounded-md border border-border bg-muted/60 px-1.5 leading-5">
                 <ArrowRight className="h-3.5 w-3.5 shrink-0 text-muted-foreground" aria-hidden="true" />
                 <Flag cc={facts?.geo?.cc} />
                 <span className="shrink-0 text-[13px] font-medium">{ch.out}</span>
@@ -781,7 +781,7 @@ function RuleCard({
                         onClick={onDelete}
                         aria-label={S.home.udalitPravilo(ch.name)}
                         title={S.home.udalitPravilo(ch.name)}
-                        className="sp-board-rule-control -ml-1 flex h-6 w-6 shrink-0 items-center justify-center rounded-md bg-transparent p-0 text-muted-foreground transition-colors hover:text-destructive"
+                        className="sp-board-rule-control flex h-4 w-4 shrink-0 items-center justify-center bg-transparent p-0 text-muted-foreground transition-colors hover:text-destructive"
                     >
                         <Trash2 className="h-3.5 w-3.5" aria-hidden="true" />
                     </button>

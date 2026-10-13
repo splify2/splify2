@@ -156,6 +156,7 @@ const listPutRaw = declare<unknown>('list_put',
     ['name', 'kind', 'text', 'url', 'append', 'source', 'filename'])
 const listGetRaw = declare<unknown>('list_get', ['name', 'kind', 'offset'])
 const listRemoveByName = declare<unknown>('list_remove', ['name', 'kind'])
+const listSrsPutRaw = declare<unknown>('list_srs_put', ['name', 'url', 'data', 'append', 'final', 'filename'])
 const backupGetRaw = declare<unknown>('backup_get', ['offset'])
 const backupPutRaw = declare<unknown>('backup_put', ['text', 'append', 'final'])
 
@@ -406,6 +407,20 @@ export const rpc = {
             next?: number
             eof?: boolean
             text?: string
+        }>,
+
+    /** Что лежит в списке (только чтение, каталог списков на роутере): до 300 записей и число всех;
+     *  `q` — поиск по записям. Набор sing-box (.srs) раскладывает ядро. */
+    listPeek: declare<{ ok: boolean; error?: string; total?: number; found?: number; text?: string }>('list_peek', ['path', 'q']),
+
+    /** Свой список из набора sing-box (.srs): base64 порциями (`append`, последняя — `final`) или
+     *  ссылкой. Ядро раскладывает набор на домены и подсети — каждая половина своим списком. */
+    listSrsPut: (p: { name: string; url?: string; data?: string; append?: boolean; final?: boolean; filename?: string }) =>
+        listSrsPutRaw(p.name, p.url ?? '', p.data ?? '', p.append ?? false, p.final ?? false, p.filename ?? '') as Promise<{
+            ok: boolean
+            error?: string
+            domains?: number
+            prefixes?: number
         }>,
 
     /** Devices that could serve as an interface output — tunnels first.

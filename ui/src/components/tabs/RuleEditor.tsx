@@ -36,6 +36,9 @@ import { pathFor, srsPathFor, ruleFiles, onRouter, srsProbe, mayNarrow, selected
 
 import DnsUpstreamExtras from '@/components/DnsUpstreamExtras'
 import ListPills from '@/components/board/ListPills'
+import { ListViewer, OwnListDialog } from '@/components/board/ListDialogs'
+import { useConfirm } from '@/components/ui/confirm'
+import { notify } from '@/lib/notify'
 import { PRESETS, protoOfUrl } from '@/lib/dnspresets'
 import { Switch } from '@/components/ui/switch'
 import ConfBadges from '@/components/ConfBadges'
@@ -55,6 +58,8 @@ interface Props {
      *  чём не спрашивается — наборы каталога разбираются на «Сохранить». Стрелка назад — выйти без
      *  сохранения. `onSave` получает правило, каким его надо записать. */
     defer?: boolean
+    /** Свои списки на роутере поменялись — перечитать их (RulesTab). */
+    onListsChanged?: () => void
     isNew?: boolean
     onSave?: (ch: Channel) => void
     /** Умеет ли ядро steer `fragment` у DoT/DoH и адрес `h3://` — без умения выключатель скрыт. */
@@ -96,7 +101,7 @@ function serviceName(service: string, current: string, taken: string[]): string 
 }
 
 export default function RuleEditor({
-    dnsFragmentOk = false, dnsH3Ok = false, ch, target, defer = false, isNew = false, onSave, index, services, local, outputs, clash, rulesTotal, coveredBy, onChange, onClose, onDelete,
+    dnsFragmentOk = false, dnsH3Ok = false, ch, target, defer = false, isNew = false, onSave, onListsChanged, index, services, local, outputs, clash, rulesTotal, coveredBy, onChange, onClose, onDelete,
 }: Props) {
     const [q, setQ] = useState('')
     /** Наборы каталога, о которых сейчас спрашиваем роутер (pick → srsOf). */
@@ -108,6 +113,45 @@ export default function RuleEditor({
     /** Черновик: выбранные сервисы, которые роутер разберёт на «Сохранить». */
     const deferred = useRef(new Set<string>())
     const [saving, setSaving] = useState(false)
+    /* Списки: посмотреть содержимое, свой — завести, поправить, удалить (приложение для ПК). */
+    const [viewing, setViewing] = useState<ServiceEntry | null>(null)
+    const [ownDlg, setOwnDlg] = useState<{ edit?: { name: string; kind: 'domains' | 'prefixes' } } | null>(null)
+    const [askList, listDialog] = useConfirm()
+    /** Только что заведённый свой список — встанет в правило, как только появится среди списков. */
+    const [toPick, setToPick] = useState<string[]>([])
+    useEffect(() => {
+        if (!toPick.length) return
+        const ready = toPick.filter((id) => services.some((sv) => sv.id === id))
+        if (!ready.length) return
+        let next = latest.current
+        for (const id of ready) {
+            const sv = services.find((x) => x.id === id)!
+            if (!selectedIds(next, services).includes(id)) next = withService(next, sv, false)
+        }
+        onChange(next)
+        setToPick((p) => p.filter((id) => !ready.includes(id)))
+        // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [services, toPick])
+    const ownKind = (sv: ServiceEntry): 'domains' | 'prefixes' => (sv.domains.length ? 'domains' : 'prefixes')
+    const listActions = {
+        onView: (sv: ServiceEntry) => setViewing(sv),
+        onAdd: () => setOwnDlg({}),
+        onEdit: (sv: ServiceEntry) => setOwnDlg({ edit: { name: sv.name, kind: ownKind(sv) } }),
+        onDelete: async (sv: ServiceEntry) => {
+            const ok = await askList({ title: S.listDialogs.udalitSpisok(sv.name), body: S.listDialogs.udalitSpisokTelo, confirmLabel: S.listDialogs.udalit })
+            if (!ok) return
+            /* Из черновика правила — сразу; с роутера — отказ, если список держит сохранённое правило. */
+            if (chosen.includes(sv.id)) onChange(withService(latest.current, sv, true))
+            try {
+                const r = await rpc.listRemoveCustom(sv.name, ownKind(sv))
+                if (!r.ok) throw new Error(r.error || S.customLists.neUdalosUdalit)
+                notify(S.customLists.spisokUdalen(sv.name))
+                onListsChanged?.()
+            } catch (e) {
+                notify(String(e instanceof Error ? e.message : e), 'error')
+            }
+        },
+    }
     /** Блок «Настройка DNS для правила» (приложение для ПК): включён — у правила свой сервер DNS. */
     const [dnsOn, setDnsOn] = useState(() => !!ch.dns)
     const [allDns, setAllDns] = useState(false)
@@ -857,7 +901,19 @@ export default function RuleEditor({
                         </div>
                     </div>
                     {searchField}
-                    <ListPills shown={shown} chosen={chosen} probing={probing} searching={!!q.trim()} onPick={pick} />
+                    <ListPills shown={shown} chosen={chosen} probing={probing} searching={!!q.trim()} onPick={pick} actions={listActions} />
+                    {viewing && <ListViewer sv={viewing} onClose={() => setViewing(null)} />}
+                    {ownDlg && (
+                        <OwnListDialog
+                            edit={ownDlg.edit}
+                            onClose={() => setOwnDlg(null)}
+                            onSaved={(name, kinds) => {
+                                onListsChanged?.()
+                                if (!ownDlg.edit) setToPick(kinds.map((k) => `custom:${k}:${name}`))
+                            }}
+                        />
+                    )}
+                    {listDialog}
                     {whatBottom}
                 </section>
 

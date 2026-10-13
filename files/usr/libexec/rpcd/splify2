@@ -393,6 +393,8 @@ LIST_MAX_BYTES=1048576
 # шестнадцать килобайт списка было бы проверкой размера фикстуры, а не логики. rpcd запускает
 # объект с чистым окружением, так что на роутере ветка `:-` не выбирается никогда.
 LIST_CHUNK="${LIST_CHUNK:-16384}"
+# Сколько записей списка показывает list_peek («глазик» у списка в правиле).
+PEEK_LINES="${PEEK_LINES:-300}"
 
 # ---- архив настроек: экспорт и восстановление (R-005) -------------------------
 #
@@ -546,6 +548,15 @@ list)
     json_add_object list_get
         json_add_string name; json_add_string kind; json_add_int offset
     json_close_object
+    # Что лежит в списке (только чтение, каталог списков): `q` — поиск по записям.
+    json_add_object list_peek
+        json_add_string path; json_add_string q
+    json_close_object
+    # Свой список из набора sing-box (.srs): base64 порциями (append, final) или ссылкой.
+    json_add_object list_srs_put
+        json_add_string name; json_add_string url; json_add_string data
+        json_add_boolean append; json_add_boolean final; json_add_string filename
+    json_close_object
     json_add_object engine; json_close_object
     # `name` — какая из подписок. Поля нет — первая (main), и это же значение приходит от
     # интерфейсов, которые про несколько подписок ещё не знают.
@@ -655,7 +666,7 @@ call)
     case "$2" in
         status|diag|dev_stats|net_info|devices|client_nets|leases|engine_state|outbound_geo|outbound_probe|explain|xsteer_state|vless_nodes|vless_probe|hysteria2_nodes|hysteria2_probe|proxy_nodes|proxy_probe|dns_log|dns_probe|conns|helper|support_report) _grp=state ;;
         spec_set|apply|group_select|spec_heal) _grp=spec ;;
-        lists|list_fetch|lists_update|list_put|list_remove|list_custom|list_get|local_lists|allow_domains|fetch_mode|fetch_mode_set|\
+        lists|list_fetch|lists_update|list_put|list_remove|list_custom|list_get|list_peek|list_srs_put|local_lists|allow_domains|fetch_mode|fetch_mode_set|\
         lists_source|lists_source_set) _grp=lists ;;
         engine|engine_stop|engine_start|steer_versions|splify2_versions|splify2_install|steer_install|ui_get|ui_set|\
         steer_modules|steer_module_add|steer_module_del) _grp=engine ;;
