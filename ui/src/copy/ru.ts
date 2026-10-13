@@ -1013,7 +1013,8 @@ export const ru = {
         domenyIDns: "Домены и DNS",
         domenyZagolovok: "Домены",
         nastroykaDnsDlyaPravila: "Настройка DNS для правила",
-        chto: "Что",
+        dnsNetDomenov: "В правиле нет доменных списков",
+        chto: "Списки",
         udalit: "Удалить",
         sohranit: "Сохранить",
         sozdat: "Создать",
@@ -1200,7 +1201,7 @@ export const ru = {
         proverit: "Проверить",
     },
     ruleTarget: {
-        kuda: "Куда",
+        kuda: "Туннели",
         cherezTunnel: "Через туннель",
         tunnel2: "Туннель",
         blok: "Блок",

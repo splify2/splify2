@@ -768,9 +768,14 @@ export default function RuleEditor({
     const dnsBlock = (
         <section className="sp-board-group an-glass space-y-3 rounded-2xl border p-3">
             <div className="flex items-center justify-between gap-3 px-1 py-0.5">
-                <h2 className="sp-sub">{S.ruleEditor.nastroykaDnsDlyaPravila}</h2>
+                <div className="min-w-0">
+                    <h2 className="sp-sub">{S.ruleEditor.nastroykaDnsDlyaPravila}</h2>
+                    {/* Свой DNS действует на домены правила: без доменных списков включать нечего. */}
+                    {!hasDomains && <div className="text-xs text-muted-foreground">{S.ruleEditor.dnsNetDomenov}</div>}
+                </div>
                 <Switch
-                    on={dnsOn}
+                    on={dnsOn && hasDomains}
+                    disabled={!hasDomains}
                     label={S.ruleEditor.nastroykaDnsDlyaPravila}
                     onClick={() => {
                         if (dnsOn && ch.dns) { const { dns: _d, ...rest } = ch; onChange(rest as Channel) }
@@ -778,7 +783,7 @@ export default function RuleEditor({
                     }}
                 />
             </div>
-            {dnsOn && (
+            {dnsOn && hasDomains && (
                 <>
                     <div className="grid grid-cols-[repeat(auto-fill,minmax(180px,1fr))] gap-2">
                         <button
@@ -858,7 +863,7 @@ export default function RuleEditor({
 
                 {target}
 
-                {hasDomains && dnsBlock}
+                {dnsBlock}
 
                 <section className="sp-board-group an-glass space-y-3 rounded-2xl border p-3">
                     <h2 className="sp-sub px-1 pt-1">{S.ruleEditor.nastroyki}</h2>
