@@ -1,6 +1,7 @@
 import { DIRECT, isPart, isTunnelKind, type Output, type ProxyKind, type Spec } from '@/lib/model'
 import { outputUsers } from '@/lib/outrefs'
 import { directDomains } from '@/lib/rulefiles'
+import { pruneDnsPresets } from '@/lib/dnspresets'
 
 /** Выход правила в приложении для компьютера: «на одно правило — один выход (набор)».
  *
@@ -488,6 +489,6 @@ export function applyTarget(spec: Spec, index: number, t: Target, caps: Caps = {
 /** Убрать правило `index` вместе с выходом, который после этого никому не нужен (его частями). */
 export function dropRule(spec: Spec, index: number): Spec {
     const out = spec.channels[index]?.out
-    const next: Spec = { ...spec, channels: spec.channels.filter((_, k) => k !== index) }
+    const next: Spec = pruneDnsPresets({ ...spec, channels: spec.channels.filter((_, k) => k !== index) })
     return out ? prune(next, out) : next
 }

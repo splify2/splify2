@@ -24,7 +24,7 @@ import RuleEditor from '@/components/tabs/RuleEditor'
 import { useCatalog, useLocalLists } from '@/lib/catalog'
 import RuleTarget from '@/components/board/RuleTarget'
 import { dropRule } from '@/lib/ruleout'
-import { PRESETS } from '@/lib/dnspresets'
+import { PRESETS, pruneDnsPresets } from '@/lib/dnspresets'
 import { pathFor, ruleFiles, selectedIds, srsProbe } from '@/lib/rulefiles'
 
 import { S } from '@/copy'
@@ -401,7 +401,7 @@ export default function RulesTab({
                     const preset = typeof next.dns === 'string' && !mine.dns?.upstreams?.[next.dns] && !mine.dns?.groups?.[next.dns]
                         ? PRESETS.find((p) => p.name === next.dns) : undefined
                     if (preset) mine = { ...mine, dns: { ...(mine.dns || {}), upstreams: { ...(mine.dns?.upstreams || {}), [preset.name]: { ...preset.up } } } }
-                    edit(mergeSpec(draft.base, mine, spec))
+                    edit(pruneDnsPresets(mergeSpec(draft.base, mine, spec)))
                     closeEditor()
                 }}
                 onClose={closeEditor}

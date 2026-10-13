@@ -1,4 +1,4 @@
-import { type Upstream } from '@/lib/model'
+import { type Channel, type DnsSpec, type Spec, type Upstream } from '@/lib/model'
 
 /** Готовые серверы DNS: карточки вкладки DNS и выбор «Сервер DNS» в правиле (приложение для ПК).
  *  Имя — ключ сервера в dns.upstreams, когда профиль выбран; название для человека — в
@@ -42,4 +42,26 @@ export function protoOfUrl(url: string): string {
     if (url.startsWith('quic://')) return 'doq'
     if (url.startsWith('tcp://')) return 'tcp'
     return 'udp'
+}
+
+/** Готовые серверы, на которые никто не ссылается (ни общий, ни «для остальных», ни группа, ни
+ *  правило), из `dns.upstreams` убираются. Такой сервер нигде не работает, а вкладка DNS и правило
+ *  показывают его невыбранным готовым профилем — то есть так же, как если бы его не было: спека и
+ *  экран расходились (поймал владелец). Свои серверы, набранные руками, остаются. */
+export function pruneDnsUpstreams(dns: DnsSpec, channels: Channel[]): DnsSpec {
+    const keep = new Set<string>([dns.upstream, dns.other].filter((x): x is string => !!x))
+    for (const g of Object.values(dns.groups || {})) for (const m of g.servers) keep.add(m)
+    for (const c of channels) if (typeof c.dns === 'string') keep.add(c.dns)
+    const up = { ...(dns.upstreams || {}) }
+    for (const [n, u] of Object.entries(up)) if (!keep.has(n) && PRESETS.some((p) => p.up.url === u.url)) delete up[n]
+    return { ...dns, upstreams: up }
+}
+
+/** То же для всей спеки — при сохранении правила и его удалении. */
+export function pruneDnsPresets(spec: Spec): Spec {
+    if (!spec.dns?.upstreams) return spec
+    const dns = pruneDnsUpstreams(spec.dns, spec.channels)
+    if (Object.keys(dns.upstreams || {}).length === Object.keys(spec.dns.upstreams).length) return spec
+    if (!Object.keys(dns.upstreams || {}).length) delete dns.upstreams
+    return { ...spec, dns: Object.keys(dns).length ? dns : undefined }
 }

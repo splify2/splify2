@@ -16,7 +16,7 @@ import ConfBadges from '@/components/ConfBadges'
 import { BADGE_ROW } from '@/components/board/NodePills'
 
 import { S } from '@/copy'
-import { PRESETS, protoOfUrl } from '@/lib/dnspresets'
+import { PRESETS, pruneDnsUpstreams, protoOfUrl } from '@/lib/dnspresets'
 /** DNS: какими серверами и через какой выход резолвер движка спрашивает имена под правилами.
  *
  *  Резолвер движка отвечает только на имена, которые попали под правило; остальные спрашивает
@@ -674,14 +674,7 @@ export default function Dns({ live, board = false }: { live?: Live; board?: bool
             return next
         }
         /** Серверы из готовых профилей, которые больше никому не нужны, — прочь из списка роутера. */
-        function tidy(d: DnsSpec): DnsSpec {
-            const keep = new Set<string>([d.upstream, d.other].filter((x): x is string => !!x))
-            for (const g of Object.values(d.groups || {})) for (const m of g.servers) keep.add(m)
-            for (const c of spec!.channels) if (typeof c.dns === 'string') keep.add(c.dns)
-            const up = { ...(d.upstreams || {}) }
-            for (const [n, u] of Object.entries(up)) if (!keep.has(n) && PRESETS.some((p) => p.up.url === u.url)) delete up[n]
-            return { ...d, upstreams: up }
-        }
+        const tidy = (d: DnsSpec): DnsSpec => pruneDnsUpstreams(d, spec!.channels)
         function toggle(c: (typeof cards)[number]) {
             let name = c.name
             let base: DnsSpec = dns
