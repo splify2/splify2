@@ -73,7 +73,7 @@ export default function Console({ extra, railHost, board = false, settingsHost, 
 } = {}) {
     const [section, setSection] = useState<SectionId | string>('home')
     const live = useLive()
-    const { spec, savedFlash, loadFailed, retry } = usePending()
+    const { spec, shown, savedFlash, loadFailed, retry } = usePending()
     /* Мастер первоначальной настройки (приложение для ПК): по просьбе установки — сразу; роутер без
      * единого правила, где мастер не пройден и не пропущен, — один раз сам. */
     const [setupShow, setSetupShow] = useState(board && setup)
@@ -158,7 +158,7 @@ export default function Console({ extra, railHost, board = false, settingsHost, 
        описывают стройплощадку, а не роутер (см. Live.phase). */
     const warnings = live.phase ? 0 : (live.diag?.fail ?? 0) + (live.diag?.warn ?? 0)
     const counts = {
-        rules: spec ? { text: String(spec.channels.length) } : undefined,
+        rules: shown ? { text: String(shown.channels.length) } : undefined,
         /* Служебные части пулов — не выходы для человека (Output.part_of): пул из двух
            подписок в рельсе считается одним выходом, а не тремя. Постоянный выход `direct`
            не считается тоже: он есть у всех и всегда, и «VPN · 1» на роутере без единого

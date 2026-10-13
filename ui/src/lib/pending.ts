@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react'
 import { notify } from '@/lib/notify'
 import { rpc } from '@/lib/rpc'
+import { cacheGet, cacheSet } from '@/lib/cache'
 import type { Channel, Spec } from '@/lib/model'
 import { encodeSpec, wasV1 } from '@/lib/specv2'
 import { cmpVersion } from '@/lib/engine'
@@ -88,8 +89,14 @@ export function applyText(output: string | undefined): string {
 
 type Listener = () => void
 
+/** Ключ памяти спеки — то, что лежит на роутере, по последним сведениям. */
+const SPEC_MEMORY = 'spec'
+
 class PendingStore {
     saved: Spec | null = null
+    /** Спека из памяти прошлого открытия (lib/cache.ts) — только чтобы показать сразу, пока роутер не
+     *  ответил: правки до настоящей загрузки не принимаются (edit), а после неё она не нужна. */
+    remembered: Spec | null = cacheGet<Spec>(SPEC_MEMORY)
     applied: Spec | null = null
     /** Что лежит на роутере, по нашим сведениям: прочитанное при загрузке, записанное последним
      *  удавшимся spec_set, перечитанное после применения. Без черновиков — они туда не едут.
@@ -135,7 +142,15 @@ class PendingStore {
         this.listeners.add(fn)
         return () => { this.listeners.delete(fn) }
     }
-    private emit() { for (const fn of this.listeners) fn() }
+    private emit() {
+        /* Что лежит на роутере — в память, чтобы следующее открытие показало это сразу. */
+        if (this.written && this.written !== this.rememberedWritten) {
+            this.rememberedWritten = this.written
+            cacheSet(SPEC_MEMORY, this.written)
+        }
+        for (const fn of this.listeners) fn()
+    }
+    private rememberedWritten: Spec | null = null
 
     /** Хранилище подменило спеку НЕ по правке человека, а по тому, что лежит на роутере (после
      *  применения). Нужна разделам, которые правят спеку на месте со своей копией в состоянии:
@@ -552,6 +567,9 @@ export function usePending() {
          *  спрашивать её отдельным вызовом значило бы показать в рельсе одно число, а в
          *  разделе рядом другое. null, пока не загружена. */
         spec: pending.saved,
+        /** Спека для показа: загруженная, а до её прихода — из памяти прошлого открытия. Писать по
+         *  ней нельзя — для правок есть `spec`. */
+        shown: pending.saved ?? pending.remembered,
         loadFailed: pending.loadFailed,
         retry: () => pending.retry(),
         count: pending.count(),

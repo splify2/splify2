@@ -308,7 +308,7 @@ export default function Home({
     onEditRule?: (index: number) => void
 }) {
     const v = verdictNow(live)
-    const { spec } = usePending()
+    const { shown: spec } = usePending()
     const { facts, busy, noCurl, refresh } = useFacts(live)
     const outputs = Object.entries(live.status?.outputs || {})
 
@@ -595,7 +595,7 @@ function RuleCards({
     onEdit?: (index: number) => void
     onAdd?: () => void
 }) {
-    const { spec } = usePending()
+    const { shown: spec } = usePending()
     const services = useServices()
     const sets = live.status?.channels || []
     const setOf = (name: string): ChannelStatus | undefined =>
@@ -603,10 +603,12 @@ function RuleCards({
     const channels = spec?.channels ?? []
 
     function toggle(i: number) {
-        if (!spec) return
+        /* Правится только загруженная спека — не та, что из памяти прошлого открытия. */
+        const real = pending.saved
+        if (!real) return
         pending.edit({
-            ...spec,
-            channels: spec.channels.map((c, k) => {
+            ...real,
+            channels: real.channels.map((c, k) => {
                 if (k !== i) return c
                 if (c.enabled === false) {
                     const { enabled: _off, ...rest } = c
@@ -621,11 +623,12 @@ function RuleCards({
     const [drag, setDrag] = useState<number | null>(null)
     const [over, setOver] = useState<number | null>(null)
     function move(from: number, to: number) {
-        if (!spec || from === to || to < 0 || to >= spec.channels.length) return
-        const next = spec.channels.slice()
+        const real = pending.saved
+        if (!real || from === to || to < 0 || to >= real.channels.length) return
+        const next = real.channels.slice()
         const [x] = next.splice(from, 1)
         next.splice(to, 0, x)
-        pending.edit({ ...spec, channels: next })
+        pending.edit({ ...real, channels: next })
     }
 
     return (
@@ -876,7 +879,7 @@ function RuleRow({
     const cands = grp ? grp.members : st?.devices?.length ? st.devices : st?.device ? [st.device] : []
     const active = grp ? (grp.selected ?? undefined) : st?.device || (isTunnelKind(st?.kind) ? undefined : cands[0])
     /* Части пула зовутся подписками, а не «vpn-2»: имя части — служебное, человек его не давал. */
-    const { spec } = usePending()
+    const { shown: spec } = usePending()
     const remembered = subsRemembered() ?? []
     const label = (d: string) => {
         const p = spec?.outputs?.[d]
@@ -987,7 +990,7 @@ function OutputsColumn({
     /* Какой выход к какой подписке относится — знает СПЕКА, а не состояние: `steer status`
      * поля `sub_file` не печатает вовсе. Пока группировка шла по состоянию, ни одна локация
      * не попадала ни в один блок — на экране оставался голый остаток. */
-    const { spec } = usePending()
+    const { shown: spec } = usePending()
     const outputs = Object.entries(live.status?.outputs || {})
     const vless = outputs.filter(([, o]) => isTunnelKind(o.kind))
     const tunnels = outputs.filter(([, o]) => o.kind === 'interface')

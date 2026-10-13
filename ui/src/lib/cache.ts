@@ -18,7 +18,21 @@ import { useEffect, useState } from 'react'
 
 const PREFIX = 'splify2:'
 
+/** Память приложения для ПК (главный процесс, desktop/electron/backend/memory.cjs): переживает
+ *  закрытие без сохранения, которое теряет localStorage. Снимок берётся один раз при загрузке модуля
+ *  и дальше живёт здесь — объекты моста при каждом обращении приходят копией. Под LuCI её нет. */
+type DeskMemory = { snapshot: Record<string, unknown> | null; set(k: string, v: unknown): void }
+const desk = (globalThis as { splifyDesktop?: { memory?: DeskMemory } }).splifyDesktop?.memory
+const deskSnap: Record<string, unknown> | null = desk ? { ...(desk.snapshot || {}) } : null
+
+/** Забыть память окна (смена роутера): файл роутера ведёт главный процесс. */
+export function cacheClear(): void {
+    if (deskSnap) for (const k of Object.keys(deskSnap)) delete deskSnap[k]
+    mem.clear()
+}
+
 export function cacheGet<T>(key: string): T | null {
+    if (deskSnap) return key in deskSnap ? (deskSnap[key] as T) : null
     try {
         const raw = window.localStorage.getItem(PREFIX + key)
         return raw ? (JSON.parse(raw) as T) : null
@@ -28,6 +42,11 @@ export function cacheGet<T>(key: string): T | null {
 }
 
 export function cacheSet(key: string, value: unknown): void {
+    if (deskSnap && desk) {
+        deskSnap[key] = value
+        try { desk.set(key, value) } catch { /* неклонируемое значение — не беда */ }
+        return
+    }
     try {
         window.localStorage.setItem(PREFIX + key, JSON.stringify(value))
     } catch {

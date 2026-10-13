@@ -1,4 +1,5 @@
 // Мост к главному процессу (electron/preload.cjs). Токенов здесь нет — только действия.
+import { cacheClear } from '@/lib/cache'
 
 export interface ApiState {
     connected: boolean
@@ -190,6 +191,7 @@ export function lastBase(): string {
 /** Память панели (снимки состояния, lib/cache.ts) принадлежит роутеру: у другого роутера она
  *  показала бы чужие правила до первого ответа. Стирается при смене роутера и отключении. */
 export function resetMemory(base: string | null) {
+    cacheClear()
     try {
         localStorage.clear()
         if (base) localStorage.setItem(LAST, base)

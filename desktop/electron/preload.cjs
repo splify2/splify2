@@ -20,6 +20,12 @@ function listen(ch, cb) {
 
 contextBridge.exposeInMainWorld('splifyDesktop', {
     platform: process.platform,
+    /** Память по роутеру в главном процессе (backend/memory.cjs): снимок — синхронно, один раз при
+     *  загрузке окна, чтобы первый кадр уже был с данными; запись — по каждому ответу роутера. */
+    memory: {
+        snapshot: ipcRenderer.sendSync('memory:load'),
+        set: (key, value) => ipcRenderer.send('memory:set', key, value),
+    },
     win: {
         minimize: () => ipcRenderer.send('win:minimize'),
         close: () => ipcRenderer.send('win:close'),

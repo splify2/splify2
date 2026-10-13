@@ -13,6 +13,7 @@ const { Monitor } = require('./backend/monitor.cjs')
 const { discover, probe } = require('./backend/discover.cjs')
 const setup = require('./backend/setup.cjs')
 const { Updater } = require('./backend/updater.cjs')
+const { Memory } = require('./backend/memory.cjs')
 // Служебные запуски установщика Squirrel (Windows): ярлыки и выход; в остальных случаях — false.
 if (require('./squirrel.cjs').handled()) return
 
@@ -48,6 +49,8 @@ let settings
 let monitor
 /** @type {Updater} */
 let updater
+/** Память по роутеру: последние ответы роутера для мгновенного открытия окна. */
+let memory
 /** Раздел, который окно должно открыть, когда загрузится (щелчок по уведомлению при закрытом окне). */
 let pendingNav = null
 
@@ -328,8 +331,12 @@ function registerIpc() {
         }
     }
     ipcMain.handle('api:state', wrap(() => router.state))
+    // Память по роутеру (backend/memory.cjs): окно читает её синхронно при запуске — первый кадр уже
+    // с данными; пишет — по каждому ответу роутера.
+    ipcMain.on('memory:load', (e) => { memory.use(router.state.base); e.returnValue = memory.all() })
+    ipcMain.on('memory:set', (_e, key, value) => memory.set(key, value))
     ipcMain.handle('api:connect', wrap((address, password) => router.connect(address, password)))
-    ipcMain.handle('api:disconnect', wrap(() => router.disconnect()))
+    ipcMain.handle('api:disconnect', wrap(() => { memory.forget(router.state.base); return router.disconnect() }))
     ipcMain.handle('api:call', wrap((method, params) => router.call(method, params)))
     ipcMain.handle('api:devices', wrap(() => router.devices()))
     ipcMain.handle('api:revoke', wrap((id) => router.revoke(id)))
@@ -374,7 +381,7 @@ function registerIpc() {
 
 app.on('second-instance', showWindow)
 
-app.on('before-quit', () => { quitting = true })
+app.on('before-quit', () => { quitting = true; memory?.flush() })
 
 // Окно прячется в трей, поэтому закрытие всех окон программу не завершает.
 app.on('window-all-closed', () => {})
@@ -382,6 +389,8 @@ app.on('window-all-closed', () => {})
 app.whenReady().then(() => {
     settings = new Settings(path.join(app.getPath('userData'), 'settings.json'))
     router = new Router(path.join(app.getPath('userData'), 'connection.json'))
+    memory = new Memory(path.join(app.getPath('userData'), 'memory'))
+    memory.use(router.state.base)
     monitor = new Monitor(router, settings)
 
     nativeTheme.themeSource = settings.get().theme
@@ -392,7 +401,7 @@ app.whenReady().then(() => {
         send('settings:changed', s)
     })
 
-    router.on('changed', () => { updateTray(); send('api:changed', router.state) })
+    router.on('changed', () => { memory.use(router.state.base); updateTray(); send('api:changed', router.state) })
     router.on('lost', (msg) => send('api:lost', msg))
     monitor.on('state', (st) => { updateTray(); send('monitor:state', st) })
     monitor.on('event', notify)
