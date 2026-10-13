@@ -62,6 +62,8 @@ function Root() {
 
     useEffect(() => {
         desk.api.state().then(setSt, () => setSt({ connected: false, base: null, hostname: '', device: null }))
+        /* Событие ядра — панели (lib/live.ts): состояние перечитывается сразу. */
+        const offEvent = desk.api.onEvent((ev) => window.dispatchEvent(new CustomEvent('splify:router-event', { detail: ev })))
         const offLost = desk.api.onLost((msg) => {
             resetMemory(lastBase())
             setLost(msg)
@@ -76,7 +78,7 @@ function Root() {
         // Из настроек роутера ушли в правило — слой настроек закрывается (Console).
         const onClose = () => setSettingsOpen(false)
         window.addEventListener('splify:settings-close', onClose)
-        return () => { offLost(); offNav(); offSet(); window.removeEventListener('splify:settings-close', onClose) }
+        return () => { offEvent(); offLost(); offNav(); offSet(); window.removeEventListener('splify:settings-close', onClose) }
     }, [])
 
     // Анимации выключены в настройках — правила motion.css смотрят на этот признак.

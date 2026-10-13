@@ -44,6 +44,8 @@ contextBridge.exposeInMainWorld('splifyDesktop', {
         devices: () => invoke('api:devices'),
         revoke: (id) => invoke('api:revoke', id),
         info: () => invoke('api:info'),
+        /** Событие ядра роутера (выход переключился, отказал, ожил; спека применена). */
+        onEvent: (cb) => listen('api:event', cb),
         onLost: (cb) => listen('api:lost', cb),
         onChanged: (cb) => listen('api:changed', cb),
     },

@@ -393,6 +393,64 @@ function run_job(id) {
 	exit(0);
 }
 
+// ── Пакет вызовов и события ядра (приложение для ПК) ────────────────────────
+
+// Несколько методов одним запросом: один процесс шлюза и одно соединение ubus вместо стольких,
+// сколько вызовов. Приложение собирает в пакет вызовы, ушедшие одновременно (открытие раздела —
+// спека, применённая спека, подписки, устройства, каталог…). Долгие методы — не сюда: им нужен
+// ?async=1 и задание. Ответ — по вызову, в том же порядке: `{ok: true, result}` или
+// `{ok: false, status, error, message}` — отказ одного не роняет остальные.
+function batch(b) {
+	if (type(b?.calls) != 'array') fail(400, 'bad_request', 'Нужен список calls');
+	let c = ubus.connect(null, WAIT);
+	if (!c) fail(502, 'no_backend', 'ubus недоступен');
+	let out = [];
+	for (let x in b.calls) {
+		let name = x?.method;
+		if (type(name) != 'string' || !match(name, /^[a-z][a-z0-9_]{0,63}$/)) {
+			push(out, { ok: false, status: 404, error: 'no_method', message: 'Метода нет' });
+			continue;
+		}
+		let res = c.call('splify2', name, type(x.params) == 'object' ? x.params : {});
+		let err = ubus.error();
+		if (err) {
+			let f = ubus_fail(err);
+			push(out, { ok: false, status: f[0], error: f[1], message: f[2] });
+		}
+		else
+			push(out, { ok: true, result: res ?? {} });
+	}
+	reply(200, { results: out });
+}
+
+// События ядра длинным запросом: подписка демона (`steer subscribe`, steer docs/ctl.md) до первого
+// события или до EVENT_WAIT секунд — и ответ. Приложение по событию сразу перечитывает состояние, а
+// сторож — уведомляет: выход переключился, отказал, ожил, помощник упал, спека применена. Без этого
+// о падении выхода узнавали только следующим опросом.
+//
+// Срок — свой сторож в оболочке (`timeout` на роутере нет): спящий подпроцесс гасит подписку. По
+// событию гасятся оба, сначала сторож — чтобы его `kill` не попал в чужой процесс с тем же номером.
+const EVENT_WAIT = 25;
+
+function events() {
+	let p = fs.popen(`sh -c 'echo $$; (sleep ${EVENT_WAIT}; kill $$) & echo $!; exec ${STEER_BIN} subscribe 2>&1'`, 'r');
+	if (!p) reply(200, { events: [], unsupported: true });
+	let pid = int(trim(p.read('line') ?? ''));
+	let dog = int(trim(p.read('line') ?? ''));
+	let got = [], ok = false;
+	for (let line = p.read('line'); line != null && length(line) > 0; line = p.read('line')) {
+		let j = null;
+		try { j = json(line); } catch (e) { j = null; }
+		if (type(j) != 'object') continue;
+		if (j.cmd == 'subscribe') { ok = (j.code == 0); continue; }
+		if (j.ev) { push(got, j); break; }
+	}
+	if (dog > 0) system(`kill ${dog} 2>/dev/null`);
+	if (pid > 0) system(`kill ${pid} 2>/dev/null`);
+	p.close();
+	reply(200, ok ? { events: got } : { events: [], unsupported: true });
+}
+
 // ── WarpBox ─────────────────────────────────────────────────────────────────
 
 // Имя выхода уходит в путь файла и в командную строку, поэтому для подбора годятся только
@@ -583,6 +641,16 @@ else if ((m = match(path, /^\/v1\/call\/([^\/]+)$/))) {
 	only('POST');
 	let me = authorize();
 	call(me, m[1], read_body(), match(getenv('QUERY_STRING') ?? '', /(^|&)async=1(&|$)/) != null);
+}
+else if (path == '/v1/batch') {
+	only('POST');
+	authorize();
+	batch(read_body());
+}
+else if (path == '/v1/events') {
+	only('GET');
+	authorize();
+	events();
 }
 else if ((m = match(path, /^\/v1\/jobs\/([^\/]+)$/))) {
 	only('GET');

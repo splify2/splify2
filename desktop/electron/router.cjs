@@ -21,6 +21,9 @@ const LONG = new Set([
     'list_fetch', 'lists_update', 'sub_set', 'sub_refresh', 'backup_put',
 ])
 
+// Сколько ждать, собирая одновременные вызовы в пакет (/v1/batch).
+const BATCH_MS = 8
+
 // Токен доступа обновляется заранее, за минуту до конца срока, — чтобы вызов не упирался в 401.
 const EARLY_MS = 60_000
 const TIMEOUT_MS = 70_000
@@ -215,20 +218,95 @@ class Router extends EventEmitter {
         return r
     }
 
-    /** Вызов метода ubus-объекта splify2 — ровно то, что панель LuCI зовёт через rpc.declare. */
+    /** Вызов метода ubus-объекта splify2 — ровно то, что панель LuCI зовёт через rpc.declare.
+     *
+     *  Короткие вызовы, ушедшие в одну и ту же минуту окна (BATCH_MS), едут одним пакетом
+     *  (/v1/batch): у роутера это один процесс шлюза и одно соединение ubus вместо стольких, сколько
+     *  вызовов, — открытие раздела спрашивает пять-семь методов разом. Шлюз постарше пакета не знает
+     *  (404) — тогда по одному, как раньше. */
     async call(method, params) {
-        const q = LONG.has(method) ? '?async=1' : ''
         try {
-            let r = await this.request('POST', `/v1/call/${encodeURIComponent(method)}${q}`, params ?? {})
-            while (r.status === 202) r = await this.request('GET', `/v1/jobs/${r.data.job}`)
-            this.emit('call', method, r.data, null)
-            return r.data
+            const data = LONG.has(method) ? await this.callOne(method, params, true) : await this.enqueue(method, params)
+            this.emit('call', method, data, null)
+            return data
         } catch (e) {
             // Ответы видит сторож (backend/monitor.cjs): по ним он судит о роутере, не спрашивая сам.
             this.emit('call', method, null, e)
             throw e
         }
     }
+
+    async callOne(method, params, long = false) {
+        let r = await this.request('POST', `/v1/call/${encodeURIComponent(method)}${long ? '?async=1' : ''}`, params ?? {})
+        while (r.status === 202) r = await this.request('GET', `/v1/jobs/${r.data.job}`)
+        return r.data
+    }
+
+    enqueue(method, params) {
+        if (this.noBatch) return this.callOne(method, params)
+        return new Promise((resolve, reject) => {
+            (this.queue ??= []).push({ method, params: params ?? {}, resolve, reject })
+            if (!this.queueTimer) this.queueTimer = setTimeout(() => void this.flushQueue(), BATCH_MS)
+        })
+    }
+
+    async flushQueue() {
+        const q = this.queue ?? []
+        this.queue = []
+        this.queueTimer = null
+        if (q.length === 1) {
+            const [x] = q
+            this.callOne(x.method, x.params).then(x.resolve, x.reject)
+            return
+        }
+        let r
+        try {
+            r = await this.request('POST', '/v1/batch', { calls: q.map((x) => ({ method: x.method, params: x.params })) })
+        } catch (e) {
+            if (e?.status === 404) {
+                this.noBatch = true
+                for (const x of q) this.callOne(x.method, x.params).then(x.resolve, x.reject)
+                return
+            }
+            for (const x of q) x.reject(e)
+            return
+        }
+        const res = r.data?.results ?? []
+        q.forEach((x, i) => {
+            const v = res[i]
+            if (v?.ok) x.resolve(v.result)
+            else x.reject(new ApiError(v?.status ?? 502, v?.error ?? 'error', v?.message ?? 'Роутер не ответил'))
+        })
+    }
+
+    /** События ядра (/v1/events, длинный запрос): цикл, пока устройство подключено. На каждое
+     *  событие — `event`; шлюз постарше или ядро без подписки — цикл засыпает и пробует реже. */
+    startEvents() {
+        if (this.eventsOn) return
+        this.eventsOn = true
+        const loop = async () => {
+            let pause = 0
+            while (this.eventsOn && this.base) {
+                if (pause) await new Promise((r) => setTimeout(r, pause))
+                if (!this.eventsOn || !this.base) break
+                const t0 = Date.now()
+                try {
+                    const r = await this.request('GET', '/v1/events')
+                    const evs = r.data?.events ?? []
+                    for (const ev of evs) this.emit('event', ev)
+                    /* Нет подписки (ядро без демона, старое ядро) или ответ подозрительно быстрый без
+                     * событий — не долбить роутер: следующая попытка через полминуты. */
+                    pause = r.data?.unsupported || (!evs.length && Date.now() - t0 < 2000) ? 30_000 : 0
+                } catch (e) {
+                    pause = e?.status === 404 ? 300_000 : 10_000
+                }
+            }
+            this.eventsOn = false
+        }
+        void loop()
+    }
+
+    stopEvents() { this.eventsOn = false }
 
     /** Подключённые к роутеру устройства (GET /v1/devices) и отключение одного из них. */
     async devices() {

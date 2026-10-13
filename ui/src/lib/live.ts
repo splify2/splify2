@@ -219,6 +219,17 @@ export function useLive(): Live {
     } | null>(null)
     /** Счётчик «перечитай сейчас». Меняется — эффект перезапускается. */
     const [nonce, setNonce] = useState(0)
+    /* Приложение для ПК: событие ядра (выход переключился, отказал, ожил; спека применена) —
+     * перечитать состояние сразу, не дожидаясь круга опроса. Под LuCI события никто не шлёт. */
+    useEffect(() => {
+        let t: ReturnType<typeof setTimeout> | null = null
+        const on = () => {
+            if (t) clearTimeout(t)
+            t = setTimeout(() => setNonce((n) => n + 1), 150)
+        }
+        window.addEventListener('splify:router-event', on)
+        return () => { window.removeEventListener('splify:router-event', on); if (t) clearTimeout(t) }
+    }, [])
     /** Память движка спрашивалась ли уже. Ссылкой, а не переменной внутри эффекта: эффект
      *  перезапускается на каждый refresh() — после «Применить», после установки пакета, — и
      *  переменная внутри него означала бы «память на первом круге ПОСЛЕ КАЖДОГО обновления».

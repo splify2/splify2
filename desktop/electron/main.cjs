@@ -401,7 +401,20 @@ app.whenReady().then(() => {
         send('settings:changed', s)
     })
 
-    router.on('changed', () => { memory.use(router.state.base); updateTray(); send('api:changed', router.state) })
+    router.on('changed', () => {
+        memory.use(router.state.base)
+        if (router.state.connected) router.startEvents(); else router.stopEvents()
+        updateTray()
+        send('api:changed', router.state)
+    })
+    // События ядра: окно перечитывает состояние; скрытое окно — сторож спрашивает сам. Перебор узлов
+    // подписки (`node`) и пути моста (`health`) идут часто и состояния выходов не меняют — мимо.
+    router.on('event', (ev) => {
+        if (ev?.ev === 'node' || ev?.ev === 'health') return
+        if (win && !win.isDestroyed() && win.isVisible()) send('api:event', ev)
+        else void monitor.now()
+    })
+    if (router.state.connected) router.startEvents()
     router.on('lost', (msg) => send('api:lost', msg))
     monitor.on('state', (st) => { updateTray(); send('monitor:state', st) })
     monitor.on('event', notify)

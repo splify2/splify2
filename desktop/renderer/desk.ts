@@ -137,6 +137,7 @@ interface Desk {
         devices(): Promise<RouterDevice[]>
         revoke(id: string): Promise<void>
         info(): Promise<RouterInfo | null>
+        onEvent(cb: (ev: { ev: string; [k: string]: unknown }) => void): Off
         onLost(cb: (message: string) => void): Off
         onChanged(cb: (s: ApiState) => void): Off
     }

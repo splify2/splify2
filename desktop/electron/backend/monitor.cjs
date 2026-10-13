@@ -55,6 +55,18 @@ class Monitor extends EventEmitter {
         clearInterval(this.timer)
     }
 
+    /** Событие ядра (/v1/events): состояние спрашивается сразу, не дожидаясь своего круга, — так
+     *  уведомление об упавшем выходе приходит через секунду, а не через опрос. Окно, если открыто,
+     *  перечитает его само (api:event), и сторож увидит ответ в observe. */
+    async now() {
+        if (!this.router.state.connected || this.polling) return
+        this.polling = true
+        try {
+            await this.router.call('live', this.settings.get().notify.diag ? { diag: true } : {})
+        } catch { /* ответ уже пришёл в observe как ошибка */ }
+        finally { this.polling = false }
+    }
+
     async tick() {
         if (!this.router.state.connected || this.polling) return
         const quiet = Date.now() - this.lastLiveAt
