@@ -2846,6 +2846,18 @@ for _kv in 'sub_url=https://panel.example.net/sub/1' 'sub_kind=url' 'wizard=step
     uci_set "splify2.main.${_kv%%=*}" "${_kv#*=}"
 done
 
+# ui_set: состояние мастера непрозрачно, но длина ограничена (I-329) — отказ называет число и
+# прежнее значение не трогает.
+_big="$(head -c 5000 /dev/zero | tr '\0' x)"
+out="$(rpcd ui_set "{\"state\":\"$_big\"}")"
+check "ui_set: состояние длиннее 4096 — отказ" "false" "$(printf '%s' "$out" | jget ok)"
+check "ui_set: отказ называет число" "yes" "$(printf '%s' "$out" | grep -q 4096 && echo yes || echo no)"
+check "ui_set: прежнее состояние не тронуто" "step3" "$(rpcd ui_get | jget state)"
+out="$(rpcd ui_set '{"state":"step4"}')"
+check "ui_set: обычное состояние пишется" "true" "$(printf '%s' "$out" | jget ok)"
+check "ui_set: и читается" "step4" "$(rpcd ui_get | jget state)"
+rpcd ui_set '{"state":"step3"}' >/dev/null
+
 # АРХИВ НАСТРОЕК С ПРИВАТНЫМИ КЛЮЧАМИ СОБИРАЕТСЯ ЗАКРЫТЫМ, ДАЖЕ ЕСЛИ ФАЙЛ ПОДЛОЖИЛИ. umask действует
 # только при создании: чужой процесс, создавший /tmp/splify2-backup.out заранее с правами 0644,
 # читал архив (ключи xsteer, ссылки vless с ключами) весь срок выгрузки, а fs.protected_regular на
@@ -4644,7 +4656,7 @@ line_has() {  # ТЕКСТ ОБРАЗЕЦ_СТРОКИ СЛОВО...
 # менять перечень туннелей, на который смотрят проверки выше.
 OUT_HEAL="$T/outnet-heal"
 rm -rf "$OUT_HEAL"; mkdir -p "$OUT_HEAL"
-for _d in warp wgv4 wgpfx wgll wg_r wg_o wg_n wgp1 wgp2 wgnet wg_d wg_f wg_i; do mkdir -p "$OUT_HEAL/$_d"; done
+for _d in warp wglate wgv4 wgpfx wgll wg_r wg_o wg_n wgp1 wgp2 wgnet wg_d wg_f wg_i; do mkdir -p "$OUT_HEAL/$_d"; done
 heal_apply() { OUT_SYSNET_FIXTURE="$OUT_HEAL" rpcd "$@"; }
 # Живые адреса: warp — один global (ULA), wgll — только link-local (адресом выхода не считается).
 printf '%s\n' \
@@ -4670,6 +4682,7 @@ heal_spec() {
   "wgcfg":{"kind":"interface","device":"wgcfg"},
   "wgdown":{"kind":"interface","device":"wgdown"},
   "ghost":{"kind":"interface","device":"ghost"},
+  "late":{"kind":"interface","device":"wglate"},
   "pfx":{"kind":"interface","device":"wgpfx"},
   "ll":{"kind":"interface","device":"wgll"},
   "keep_routed":{"kind":"interface","device":"wg_r","ipv6":"routed"},
@@ -4724,7 +4737,7 @@ heal_zones() {  # [masq6]
     heal_net
     if [ -n "${1:-}" ]; then
         uci_set 'firewall.@zone[2]' zone; uci_set 'firewall.@zone[2].name' steer_iface
-        uci_set 'firewall.@zone[2].device' 'warp wgv4 wgcfg wgdown ghost wgpfx wgll wg_r wg_o wg_n amn amn4 amn_def wgp1 wgp2'
+        uci_set 'firewall.@zone[2].device' 'warp wgv4 wgcfg wgdown ghost wglate wgpfx wgll wg_r wg_o wg_n amn amn4 amn_def wgp1 wgp2'
         uci_set 'firewall.@zone[2].masq6' 1
     fi
 }
@@ -4748,6 +4761,7 @@ check "heal: awg, где IPv6 только в закомментированно
 # --- решать не нам ---
 check "heal: у интерфейса задан ip6prefix — человек раздаёт префикс, ключ не пишется" "-" "$(v6of pfx)"
 check "heal: устройства нет нигде — ничего не известно, ключ не пишется" "-" "$(v6of ghost)"
+check "heal: устройство есть, адреса и настройки нет (DHCPv6 придёт позже) — off навсегда не пишется" "-" "$(v6of late)"
 # --- явное остаётся ---
 check "heal: явный routed не тронут" "routed" "$(v6of keep_routed)"
 check "heal: явный off не тронут" "off" "$(v6of keep_off)"
@@ -4863,7 +4877,7 @@ else: print("НЕТ УСТРОЙСТВА")' "$1"
 check "devices: у устройства с живым адресом IPv6 подсказка nat" "nat" "$(printf '%s' "$out" | d6of wgA)"
 check "devices: у туннеля с одним IPv4 подсказка off" "off" "$(printf '%s' "$out" | d6of wgB)"
 check "devices: при ip6prefix подсказки нет — решать человеку" "-" "$(printf '%s' "$out" | d6of wgC)"
-check "devices: устройство есть, а адреса нет нигде — off" "off" "$(printf '%s' "$out" | d6of wgD)"
+check "devices: устройство есть, а адреса нет нигде (DHCPv6 может прийти позже) — подсказки нет" "-" "$(printf '%s' "$out" | d6of wgD)"
 check "devices: устройству, которое поднимает ядро, подсказка не нужна" "-" "$(printf '%s' "$out" | d6of tun)"
 # Клиенты: интерфейс WireGuard (устройство называется как интерфейс) в зоне человека списком
 # network — не беззонный, своей зоны клиентов ему не заводим; нужен только проброс из его зоны.
