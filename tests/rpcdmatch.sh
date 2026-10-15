@@ -2708,7 +2708,7 @@ check "в spec_set загрузка идёт ДО проверки движко�
 # «Illegal number». Расхождение такого рода стенд однажды уже прятал.
 apply_body="$(sed -n '/^    apply)/,/^        ;;/p' "$RPCD_DIR/m-spec.sh")"
 apply_fetch=$(printf '%s\n' "$apply_body" | grep -n 'fetch_missing_lists' | head -1 | cut -d: -f1)
-apply_run=$(printf '%s\n' "$apply_body" | grep -n 'apply --spec "$SPEC" 2>&1)"; rc=' | head -1 | cut -d: -f1)
+apply_run=$(printf '%s\n' "$apply_body" | grep -n 'apply --spec "$SPEC" 8>&- 2>&1)"; rc=' | head -1 | cut -d: -f1)
 check "в apply загрузка идёт ДО применения" "yes" \
       "$([ -n "$apply_fetch" ] && [ -n "$apply_run" ] && [ "$apply_fetch" -lt "$apply_run" ] && echo yes || echo no)"
 put_body="$(sed -n '/^    backup_put)/,/^        ;;/p' "$RPCD_DIR/m-backup.sh")"
@@ -4836,6 +4836,32 @@ check "spec_heal: повторно — healed=false, apply не зовётся" 
 heal_zones; printf '%s\n' '{"schema":1,"outputs":{"warp":{"kind":"interface","device":"warp"}},"channels":[]}' > "$T/etc/spec.json"
 heal_apply apply >/dev/null
 check "heal: спека v1 не правится (ключ ей неизвестен)" "-" "$(v6of warp)"
+# I-473: писатели спеки под замком. Чужой держатель замка (flock в фоне) — spec_set ждёт и не
+# пишет, пока замок не отпущен; после отпускания запись проходит. Повторный вход (spec_heal ->
+# apply) замок заново не берёт и не виснет.
+if command -v flock >/dev/null 2>&1; then
+    export SPEC_LOCK="$T/spec.lock"
+    heal_spec
+    _before="$(cksum < "$T/etc/spec.json")"
+    ( flock 9; sleep 2 ) 9>"$SPEC_LOCK" &
+    _holder=$!
+    sleep 0.5
+    heal_apply spec_set '{"spec":"{\"version\":2,\"outputs\":{\"lockw\":{\"kind\":\"direct\"}}}"}' > "$T/lock-w.out" &
+    _writer=$!
+    sleep 0.7
+    check "замок спеки: пока замок у другого, spec_set спеку не меняет" "$_before" "$(cksum < "$T/etc/spec.json")"
+    wait "$_holder"; wait "$_writer"
+    check "замок спеки: после отпускания spec_set записал" "yes" \
+          "$(grep -q lockw "$T/etc/spec.json" && echo yes || echo no)"
+    heal_spec; heal_zones
+    heal_apply apply >/dev/null
+    heal_spec
+    : > "$T/steer.log"
+    out="$(heal_apply spec_heal)"
+    check "замок спеки: spec_heal зовёт apply без зависания" "true;yes" \
+          "$(printf '%s' "$out" | jget ok);$(grep -q '^apply --spec' "$T/steer.log" && echo yes || echo no)"
+    unset SPEC_LOCK
+fi
 # Перечень устройств для выхода: панель получает ту же подсказку, что пишет самолечение, и пишет
 # её новому выходу сама — так спека в памяти страницы и на диске не расходится с лечением при
 # apply, и лечить такому выходу уже нечего. (Расхождение у выходов без подсказки страница после

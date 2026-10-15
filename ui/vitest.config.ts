@@ -23,6 +23,10 @@ export default mergeConfig(
             globals: true,
             include: ['tests/**/*.test.{ts,tsx}'],
             setupFiles: ['./tests/setup.ts'],
+            // Таймаут по умолчанию (5 с) не выдерживает прогон на 2 ядрах под нагрузкой очереди проверок:
+            // hub-crash и pool-active падали по времени, а не по смыслу.
+            testTimeout: 30000,
+            hookTimeout: 30000,
         },
     }),
 )
