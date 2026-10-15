@@ -3,6 +3,7 @@ import EngineToggle from '@/components/EngineToggle'
 import { type Live } from '@/lib/live'
 import { assetUrl } from '@/lib/assets'
 import { type SectionId } from '@/lib/sections'
+import type { ExtraSection } from '@/components/Console'
 
 import { S } from '@/copy'
 /** Рельс разделов: шесть пунктов, у каждого своя роль.
@@ -25,7 +26,7 @@ import { S } from '@/copy'
  *  В нижней панели их нет: там на пункт приходится 60 пикселей, и число в них читается как
  *  часть подписи. */
 
-const ITEMS: { id: SectionId; label: string; icon: typeof House }[] = [
+const ITEMS: { id: SectionId | string; label: string; icon: typeof House }[] = [
     { id: 'home', label: S.rail.glavnaya, icon: House },
     { id: 'rules', label: S.rail.pravila, icon: Route },
     { id: 'vpn', label: 'VPN', icon: ShieldCheck },
@@ -36,11 +37,15 @@ const ITEMS: { id: SectionId; label: string; icon: typeof House }[] = [
 
 export interface RailProps {
     live: Live
-    section: SectionId
-    onSection: (s: SectionId) => void
+    section: SectionId | string
+    onSection: (s: SectionId | string) => void
     /** Числа у пунктов. Приходят снаружи: рельс не должен спрашивать роутер сам — тогда на
      *  экране оказались бы два разных мгновения, его и разделов. */
     counts: Partial<Record<SectionId, { text: string; alarm?: boolean }>>
+    /** Разделы оболочки вне LuCI — после своих (Console, ExtraSection). */
+    extra?: ExtraSection[]
+    /** Свои разделы, которых оболочке в рельсе не нужно (правила у главной-«доски»). */
+    hide?: SectionId[]
 }
 
 
@@ -50,7 +55,9 @@ function releaseSuffix(): string {
     return typeof __RELEASE_SUFFIX__ === 'string' ? __RELEASE_SUFFIX__ : ''
 }
 
-export default function Rail({ live, section, onSection, counts }: RailProps) {
+export default function Rail({ live, section, onSection, counts, extra, hide }: RailProps) {
+    const own = hide?.length ? ITEMS.filter((it) => !hide.includes(it.id as SectionId)) : ITEMS
+    const items = extra?.length ? [...own, ...extra.map(({ id, label, icon }) => ({ id, label, icon }))] : own
     return (
         <>
             {/* ── широкий экран: колонка слева ─────────────────────────────────────── */}
@@ -80,9 +87,9 @@ export default function Rail({ live, section, onSection, counts }: RailProps) {
                 </div>
 
                 <nav className="flex flex-col gap-0.5" aria-label={S.rail.razdely}>
-                    {ITEMS.map(({ id, label, icon: Icon }) => {
+                    {items.map(({ id, label, icon: Icon }) => {
                         const on = section === id
-                        const c = counts[id]
+                        const c = counts[id as SectionId]
                         return (
                             <button
                                 key={id}
@@ -129,9 +136,9 @@ export default function Rail({ live, section, onSection, counts }: RailProps) {
                 aria-label={S.rail.razdely}
                 className="an-glass-chrome an-glass-float sp-bottom-bar fixed bottom-0 z-40 flex border-t lg:hidden"
             >
-                {ITEMS.map(({ id, label, icon: Icon }) => {
+                {items.map(({ id, label, icon: Icon }) => {
                     const on = section === id
-                    const c = counts[id]
+                    const c = counts[id as SectionId]
                     return (
                         <button
                             key={id}

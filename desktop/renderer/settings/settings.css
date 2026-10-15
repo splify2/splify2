@@ -1,0 +1,261 @@
+/* Настройки поверх окна — раскладка Discord: слева колонка разделов, прижатая к середине,
+ * справа страница ограниченной ширины и кнопка закрытия с подписью ESC. */
+
+.desk-settings {
+  position: absolute;
+  inset: 0;
+  z-index: 900;
+  display: flex;
+}
+
+.desk-settings-nav {
+  /* Колонка разделов — постоянной ширины, страница — во всё остальное место. Окно фиксированного
+   * размера, и раскладка Discord с колонками по долям оставляла справа пустую полосу, а таблица
+   * каталога упиралась в край страницы (владелец: «я ж про это уже говорил»). */
+  flex: 0 0 236px;
+  display: flex;
+  justify-content: flex-end;
+  overflow-y: auto;
+  border-right: 1px solid var(--an-glass-border);
+  background-color: var(--an-glass-chrome);
+}
+
+.desk-settings-nav-in {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  width: 100%;
+  padding: 32px 12px 24px 16px;
+}
+
+.desk-settings-group {
+  padding: 14px 10px 6px;
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: var(--sp-muted-foreground);
+}
+
+.desk-settings-group:first-child {
+  padding-top: 0;
+}
+
+.desk-settings-sep {
+  height: 1px;
+  margin: 10px 10px;
+  background: var(--an-glass-border);
+}
+
+.desk-settings-item {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 8px 10px;
+  border: 0;
+  border-radius: var(--an-radius-inner);
+  background: transparent;
+  color: var(--sp-muted-foreground);
+  font: inherit;
+  font-size: 14px;
+  text-align: left;
+  cursor: pointer;
+  transition: background-color var(--an-dur-hover) var(--an-ease), color var(--an-dur-hover) var(--an-ease);
+}
+
+.desk-settings-item svg {
+  width: 17px;
+  height: 17px;
+  flex: none;
+}
+
+.desk-settings-item:hover {
+  background-color: var(--an-glass-tint);
+  color: var(--sp-foreground);
+}
+
+.desk-settings-item[aria-current="page"] {
+  background-color: var(--an-accent-soft);
+  color: var(--sp-primary);
+  font-weight: 500;
+}
+
+.desk-settings-main {
+  position: relative;
+  flex: 1 1 auto;
+  min-width: 0;
+  overflow-y: auto;
+}
+
+.desk-settings-content {
+  padding: 32px 76px 48px 32px;
+}
+
+.desk-settings-close {
+  position: absolute;
+  top: 28px;
+  right: 20px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 6px;
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--sp-muted-foreground);
+}
+
+.desk-settings-close button {
+  display: grid;
+  place-items: center;
+  width: 36px;
+  height: 36px;
+  border: 2px solid var(--an-glass-border);
+  border-radius: 50%;
+  background: transparent;
+  color: var(--sp-muted-foreground);
+  cursor: pointer;
+  transition: border-color var(--an-dur-hover) var(--an-ease), color var(--an-dur-hover) var(--an-ease), background-color var(--an-dur-hover) var(--an-ease);
+}
+
+.desk-settings-close button svg {
+  width: 18px;
+  height: 18px;
+}
+
+.desk-settings-close button:hover {
+  border-color: var(--sp-muted-foreground);
+  background-color: var(--an-glass-tint);
+  color: var(--sp-foreground);
+}
+
+/* ── страница ─────────────────────────────────────────────────────────────── */
+
+.desk-page-head {
+  margin-bottom: 20px;
+}
+
+.desk-page-head .sp-sub {
+  margin-top: 4px;
+  color: var(--sp-muted-foreground);
+}
+
+.desk-block {
+  margin-bottom: 20px;
+}
+
+.desk-block-title {
+  margin: 0 0 8px 2px;
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: var(--sp-muted-foreground);
+}
+
+.desk-block-body {
+  padding: 8px 16px;
+  /* Ширина и вид рамки — здесь, цвет — у стекла (.an-glass): сокращение `border` его бы затёрло. */
+  border-width: 1px;
+  border-style: solid;
+  border-radius: var(--an-radius-block);
+}
+
+.desk-block-body > [role="group"] {
+  margin: 6px 0;
+}
+
+.desk-row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 10px;
+  margin-bottom: 20px;
+}
+
+.desk-note {
+  font-size: 13px;
+  color: var(--sp-muted-foreground);
+}
+
+.desk-kv {
+  display: grid;
+  grid-template-columns: max-content 1fr;
+  gap: 8px 24px;
+  margin: 8px 0;
+  font-size: 14px;
+}
+
+.desk-kv dt {
+  color: var(--sp-muted-foreground);
+}
+
+.desk-kv dd {
+  margin: 0;
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+
+.desk-device {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  min-height: 56px;
+  padding: 6px 0;
+}
+
+.desk-device + .desk-device {
+  border-top: 1px solid var(--an-glass-border);
+}
+
+.desk-device > svg {
+  width: 20px;
+  height: 20px;
+  flex: none;
+  color: var(--sp-muted-foreground);
+}
+
+.desk-device-text {
+  flex: 1;
+  min-width: 0;
+}
+
+.desk-device-name {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+  font-size: 14px;
+  font-weight: 500;
+  overflow-wrap: anywhere;
+}
+
+.desk-device-sub {
+  font-size: 12px;
+  color: var(--sp-muted-foreground);
+}
+
+.desk-badge {
+  padding: 1px 8px;
+  border-radius: var(--an-radius-pill);
+  background: var(--an-accent-soft);
+  color: var(--sp-primary);
+  font-size: 11px;
+  font-weight: 500;
+}
+
+.desk-about {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  margin-bottom: 24px;
+}
+
+.desk-about img {
+  width: 56px;
+  height: 56px;
+}
+
+.desk-about-name {
+  font-size: 18px;
+  font-weight: 600;
+}

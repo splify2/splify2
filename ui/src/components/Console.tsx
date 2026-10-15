@@ -1,11 +1,13 @@
-import { lazy, Suspense, useEffect, useState } from 'react'
+import { lazy, Suspense, useEffect, useRef, useState, type ReactNode } from 'react'
+import { createPortal } from 'react-dom'
 import { Check } from 'lucide-react'
-import { useLive } from '@/lib/live'
+import { useLive, type Live } from '@/lib/live'
 import { pending, usePending } from '@/lib/pending'
 import { isPart, type ServiceEntry } from '@/lib/model'
 import { SECTION_TITLE, type SectionId } from '@/lib/sections'
 import Rail from '@/components/Rail'
 import FirstRun from '@/components/FirstRun'
+import SetupWizard, { setupDone } from '@/components/board/SetupWizard'
 import ApplyPill from '@/components/ApplyPill'
 import { Button } from '@/components/ui/button'
 import Home from '@/components/sections/Home'
@@ -31,8 +33,10 @@ import { S } from '@/copy'
 
 const RulesTab = lazy(() => import('@/components/tabs/RulesTab'))
 const Vpn = lazy(() => import('@/components/sections/Vpn'))
+const SubsBoard = lazy(() => import('@/components/board/SubsBoard'))
 const Dns = lazy(() => import('@/components/sections/Dns'))
 const Settings = lazy(() => import('@/components/sections/Settings'))
+type SettingsScreen = Exclude<import('@/components/sections/Settings').Screen, 'root'>
 const Diagnostics = lazy(() => import('@/components/sections/Diagnostics'))
 
 /** Разделы, что читают и правят спеку: при отказе загрузки их место занимает «Повторить». */
@@ -40,10 +44,47 @@ const SPEC_SECTIONS: SectionId[] = ['rules', 'vpn', 'dns', 'settings']
 
 const FALLBACK = <div className="p-5 text-sm text-muted-foreground">{S.console.zagruzka}</div>
 
-export default function Console() {
-    const [section, setSection] = useState<SectionId>('home')
+/** Раздел, который приносит оболочка вне LuCI (приложение для компьютера): своё имя, значок и
+ *  содержимое — в рельсе после разделов панели. Под LuCI их нет, и панель та же, что была. */
+export interface ExtraSection {
+    id: string
+    label: string
+    icon: typeof Check
+    render: (live: Live) => ReactNode
+}
+
+/** `railHost` — узел оболочки, куда рисуется рельс разделов (порталом): в приложении для
+ *  компьютера рельс — отдельная колонка окна вне прокрутки раздела. Нет — рельс рядом с
+ *  разделом, как под LuCI. */
+/** `board` — оболочка приложения для компьютера: главная «доской» (правила карточками), правила
+ *  открываются с неё и вкладки в рельсе нет, а сохранённая правка применяется сама — без кнопки
+ *  «Применить» (владелец). Под LuCI ничего этого нет. */
+export default function Console({ extra, railHost, board = false, settingsHost, settingsScreen, setup = false }: {
+    extra?: ExtraSection[]
+    /** Открыть сразу мастер настройки (приложение для ПК: «Настроить splify2» в конце установки). */
+    setup?: boolean
+    railHost?: Element | null
+    board?: boolean
+    /** Узел оболочки для раздела «Настройки» (порталом): в приложении для компьютера настройки
+     *  роутера живут в общем слое настроек приложения, а не вторым пунктом рельса. */
+    settingsHost?: Element | null
+    /** Какой экран настроек рисовать в settingsHost — по пункту слоя настроек оболочки. */
+    settingsScreen?: SettingsScreen
+} = {}) {
+    const [section, setSection] = useState<SectionId | string>('home')
     const live = useLive()
-    const { spec, savedFlash, loadFailed, retry } = usePending()
+    const { spec, shown, savedFlash, loadFailed, retry } = usePending()
+    /* Мастер первоначальной настройки (приложение для ПК): по просьбе установки — сразу; роутер без
+     * единого правила, где мастер не пройден и не пропущен, — один раз сам. */
+    const [setupShow, setSetupShow] = useState(board && setup)
+    const hasSpec = !!spec
+    useEffect(() => {
+        if (!board || setup || !spec || spec.channels.length) return
+        let stop = false
+        void setupDone().then((d) => { if (!stop && !d) setSetupShow(true) })
+        return () => { stop = true }
+        // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [board, setup, hasSpec])
     /** Сервис, который попросили «в правило». Живёт здесь, а не в каталоге, потому что переход
      *  между разделами — дело оболочки; каталог только просит. Считывается разделом правил один
      *  раз и сбрасывается: иначе повторный заход снова открывал бы редактор, которого человек
@@ -53,12 +94,57 @@ export default function Console() {
      *  кнопка стоит в одном разделе, а заводит правило другой. Считывается разделом правил
      *  один раз и сбрасывается — иначе следующий заход в правила снова заводил бы пустое. */
     const [addRule, setAddRule] = useState(false)
-    const go = (s: SectionId) => setSection(s)
+    const [editRule, setEditRule] = useState<number | null>(null)
+    const go = (s: SectionId | string) => setSection(s)
+    const ext = extra?.find((e) => e.id === section)
 
     /* Спека нужна рельсу для счётчика правил, а он виден на всех разделах — значит загрузить её
      * обязана оболочка, а не раздел правил. Вызов идемпотентен: кто пришёл раньше, тот и
      * загрузил (lib/pending.ts). */
     useEffect(() => { pending.load().catch(() => {}) }, [])
+
+    /* Без кнопки «Применить» (board): всё — через «Сохранить» (владелец), сохранённое применяется
+     * само, через 0,8 с тишины — подряд идущие правки уходят одним применением. Сохранённое и не
+     * применённое ДО открытия (например, в LuCI) применяется так же, сразу после загрузки.
+     * Неудачное применение не повторяется по кругу: следующая попытка — со следующей правкой;
+     * об отказе говорит само хранилище (pending.apply → notify). */
+    const autoBase = useRef<unknown>(null)
+    const [, bump] = useState(0)
+    useEffect(() => {
+        if (!board) return
+        let t: ReturnType<typeof setTimeout> | null = null
+        const off = pending.subscribe(() => {
+            const saved = pending.saved
+            if (!saved) return
+            if (autoBase.current === null) {
+                autoBase.current = saved
+                bump((n) => n + 1)
+                if (pending.count() > 0 && !pending.hasUnsaved() && !pending.applying) void pending.apply()
+                return
+            }
+            if (saved === autoBase.current || pending.hasUnsaved() || pending.applying) return
+            if (pending.count() === 0) { autoBase.current = saved; bump((n) => n + 1); return }
+            if (t) clearTimeout(t)
+            t = setTimeout(() => {
+                autoBase.current = pending.saved
+                bump((n) => n + 1)
+                void pending.apply()
+            }, 800)
+        })
+        return () => { off(); if (t) clearTimeout(t) }
+    }, [board])
+
+    /* Переход в раздел снаружи — событием `splify:section` (detail — имя раздела). Нужен
+     * приложению для компьютера: щелчок по уведомлению «выход не отвечает» открывает VPN. Под
+     * LuCI его никто не шлёт. */
+    useEffect(() => {
+        const on = (e: Event) => {
+            const id = (e as CustomEvent<string>).detail
+            if (typeof id === 'string' && id) setSection(id)
+        }
+        window.addEventListener('splify:section', on)
+        return () => window.removeEventListener('splify:section', on)
+    }, [])
 
     /* Движка нет — показываем установку ВМЕСТО разделов. Не «рядом»: без движка ни один из них
      * не может подействовать, и открывать их значило бы дать человеку заполнить настройку,
@@ -72,7 +158,7 @@ export default function Console() {
        описывают стройплощадку, а не роутер (см. Live.phase). */
     const warnings = live.phase ? 0 : (live.diag?.fail ?? 0) + (live.diag?.warn ?? 0)
     const counts = {
-        rules: spec ? { text: String(spec.channels.length) } : undefined,
+        rules: shown ? { text: String(shown.channels.length) } : undefined,
         /* Служебные части пулов — не выходы для человека (Output.part_of): пул из двух
            подписок в рельсе считается одним выходом, а не тремя. Постоянный выход `direct`
            не считается тоже: он есть у всех и всегда, и «VPN · 1» на роутере без единого
@@ -99,11 +185,13 @@ export default function Console() {
                 фона. `min-h-full` работает от родителя с известной высотой — им и является
                 .sp-root. */}
             <div className="flex min-h-full flex-col lg:flex-row">
-                <Rail live={live} section={section} onSection={(s) => go(s)} counts={counts} />
+                {railHost
+                    ? (setupShow ? null : createPortal(<Rail live={live} section={section} onSection={(s) => go(s)} counts={counts} extra={extra} hide={board ? ['rules', 'settings'] : undefined} />, railHost))
+                    : <Rail live={live} section={section} onSection={(s) => go(s)} counts={counts} extra={extra} hide={board ? ['rules', 'settings'] : undefined} />}
 
                 {/* Отступ снизу на узком экране — под нижнюю панель разделов: без него последняя
                     карточка уезжает под неё, и человек не видит, что страница кончилась. */}
-                <main className="min-w-0 flex-1 px-3 pb-24 pt-3 lg:p-6">
+                <main className={board ? 'relative min-w-0 flex-1 px-3 pb-24 pt-3 lg:px-6 lg:pb-6 lg:pt-3' : 'min-w-0 flex-1 px-3 pb-24 pt-3 lg:p-6'}>
                     {/* «Сохранено» — вспышка на полторы секунды после каждой УДАВШЕЙСЯ записи, а
                         не после правки: взамен кнопки эта галочка — единственное, по чему человек
                         судит, уехало ли что-нибудь на роутер. */}
@@ -111,7 +199,8 @@ export default function Console() {
                         были шестнадцать пустых пикселей над вердиктом на каждом разделе, и
                         читались они как незаполненная дырка. Место под неё резервируется только
                         на широком, где оно есть. */}
-                    <div className="relative flex justify-end lg:mb-1 lg:h-4">
+                    {/* В приложении для ПК вспышка лежит поверх, без своей строки: раздел начинается выше. */}
+                    <div className={board ? 'pointer-events-none absolute right-6 top-2 z-10 flex justify-end' : 'relative flex justify-end lg:mb-1 lg:h-4'}>
                         <span
                             aria-hidden={!savedFlash}
                             className={[
@@ -126,13 +215,17 @@ export default function Console() {
                     {/* Имя раздела печатает ОБОЛОЧКА, а не сам раздел: оно обязано совпадать
                         с пунктом рельса дословно, а два места с одной строкой расходятся. У
                         обзора заголовок другой — им служит вердикт, и второго над ним не надо. */}
-                    {section !== 'home' && (
-                        <h1 className="sp-title mb-3">{SECTION_TITLE[section]}</h1>
+                    {/* Обёртка с ключом раздела: при смене раздела она новая, и оболочка вне LuCI может
+                        показать смену движением (класс sp-section). Под LuCI у класса нет правил. */}
+                    <div key={section} className="sp-section">
+                    {/* Правило в приложении для ПК открывается с главной, и шапка редактора — его заголовок. */}
+                    {section !== 'home' && !(board && section === 'rules') && (
+                        <h1 className="sp-title mb-3">{SECTION_TITLE[section as SectionId] ?? ext?.label}</h1>
                     )}
 
                     {/* Спека не загрузилась — разделы, что её правят, не рисуются вовсе: пустой экран
                         читался бы как «настроек нет», а правка поверх него затёрла бы настоящие. */}
-                    {loadFailed && SPEC_SECTIONS.includes(section) && (
+                    {loadFailed && SPEC_SECTIONS.includes(section as SectionId) && (
                         <div role="alert" className="rounded-lg border border-border p-5 text-sm">
                             <p className="font-medium">{S.console.specNeZagruzilas}</p>
                             <p className="mt-1 text-muted-foreground">{S.console.specNeZagruzilasPodpis}</p>
@@ -140,12 +233,20 @@ export default function Console() {
                         </div>
                     )}
                     <Suspense fallback={FALLBACK}>
-                        {section === 'home' && (
+                        {section === 'home' && setupShow && !loadFailed && (
+                            <SetupWizard live={live} railHost={railHost} onDone={() => setSetupShow(false)} />
+                        )}
+                        {section === 'home' && !setupShow && (
                             <Home
                                 live={live}
                                 onSection={go}
                                 onAddRule={() => {
                                     setAddRule(true)
+                                    setSection('rules')
+                                }}
+                                board={board}
+                                onEditRule={(i) => {
+                                    setEditRule(i)
                                     setSection('rules')
                                 }}
                             />
@@ -158,11 +259,15 @@ export default function Console() {
                                 addNow={addRule}
                                 onAddUsed={() => setAddRule(false)}
                                 onGoOutbounds={() => go('vpn')}
+                                editNow={editRule}
+                                onEditUsed={() => setEditRule(null)}
+                                onClosed={board ? () => go('home') : undefined}
+                                board={board}
                             />
                         )}
-                        {section === 'vpn' && !loadFailed && <Vpn live={live} />}
-                        {section === 'dns' && !loadFailed && <Dns live={live} />}
-                        {section === 'diag' && <Diagnostics live={live} />}
+                        {section === 'vpn' && !loadFailed && (board ? <SubsBoard /> : <Vpn live={live} />)}
+                        {section === 'dns' && !loadFailed && <Dns live={live} board={board} />}
+                        {section === 'diag' && <Diagnostics live={live} board={board} />}
                         {section === 'settings' && !loadFailed && (
                             <Settings
                                 live={live}
@@ -172,7 +277,26 @@ export default function Console() {
                                 }}
                             />
                         )}
+                        {ext?.render(live)}
                     </Suspense>
+                    </div>
+                    {settingsHost && createPortal(
+                        <Suspense fallback={FALLBACK}>
+                            {!loadFailed && (
+                                <Settings
+                                    live={live}
+                                    only={settingsScreen}
+                                    onUseInRule={(l) => {
+                                        setWanted(l)
+                                        go('rules')
+                                        // Слой настроек оболочки закрывается: правило открыто под ним.
+                                        window.dispatchEvent(new CustomEvent('splify:settings-close'))
+                                    }}
+                                />
+                            )}
+                        </Suspense>,
+                        settingsHost,
+                    )}
 
                     {/* «Остановить всё» на узком экране — здесь, а не в нижней панели: красной
                         кнопке на всю ширину там не место, а прятать её нельзя (R-017). Под
@@ -200,7 +324,7 @@ export default function Console() {
                 </main>
             </div>
 
-            <ApplyPill />
+            {!board && <ApplyPill />}
         </div>
     )
 }

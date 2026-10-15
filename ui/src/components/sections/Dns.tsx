@@ -1,5 +1,5 @@
-import { useEffect, useState } from 'react'
-import { ArrowDown, ArrowUp, Plus, Trash2, X } from 'lucide-react'
+import { useEffect, useRef, useState } from 'react'
+import { ArrowDown, ArrowUp, ChevronDown, Plus, RefreshCw, Settings2, Trash2, X } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Block, CardHead, FieldRow, KV, Segmented } from '@/components/ui/layout'
 import { inputCls } from '@/components/formbits'
@@ -9,14 +9,19 @@ import { useSpecCopy } from '@/lib/speccopy'
 import { rpc, type DnsLog } from '@/lib/rpc'
 import { isPart, type DomainMode, type DnsSpec, type Spec, type Upstream, type UpstreamGroup } from '@/lib/model'
 import { type Live } from '@/lib/live'
-import { dnsGroupsSupported, dnsOtherSupported } from '@/lib/engine'
+import { dnsFragmentSupported, dnsGroupsSupported, dnsH3Supported, dnsOtherSupported } from '@/lib/engine'
+import { withUrl } from '@/lib/dnsurl'
+import DnsUpstreamExtras from '@/components/DnsUpstreamExtras'
+import ConfBadges from '@/components/ConfBadges'
+import { BADGE_ROW } from '@/components/board/NodePills'
 
 import { S } from '@/copy'
+import { PRESETS, pruneDnsUpstreams, protoOfUrl } from '@/lib/dnspresets'
 /** DNS: какими серверами и через какой выход резолвер движка спрашивает имена под правилами.
  *
  *  Резолвер движка отвечает только на имена, которые попали под правило; остальные спрашивает
  *  системный DNS роутера, как раньше. Здесь выбирается, КУДА уходят вопросы о тех именах: DoH,
- *  DoT, DoQ или обычный DNS, напрямую или через выход. Серверы, которые уже настроены на самом
+ *  DoT, DoQ, DoH3 или обычный DNS, напрямую или через выход. Серверы, которые уже настроены на самом
  *  роутере (dnsmasq, https-dns-proxy), этот раздел не трогает. */
 
 const NAME_RE = /^[A-Za-z0-9_.-]{1,31}$/
@@ -29,36 +34,6 @@ const NAME_RE = /^[A-Za-z0-9_.-]{1,31}$/
  * прокси, а не настоящим. */
 const PRESET_TITLE = new Map(S.dns.presetTitles)
 
-const PRESETS: { name: string; up: Upstream }[] = [
-    { name: 'cloudflare', up: { url: 'https://cloudflare-dns.com/dns-query', ips: ['1.1.1.1', '1.0.0.1'] } },
-    { name: 'cloudflare-dot', up: { url: 'tls://cloudflare-dns.com', ips: ['1.1.1.1', '1.0.0.1'] } },
-    { name: 'cloudflare-sec', up: { url: 'https://security.cloudflare-dns.com/dns-query', ips: ['1.1.1.2', '1.0.0.2'] } },
-    { name: 'cloudflare-fam', up: { url: 'https://family.cloudflare-dns.com/dns-query', ips: ['1.1.1.3', '1.0.0.3'] } },
-    { name: 'google', up: { url: 'https://dns.google/dns-query', ips: ['8.8.8.8', '8.8.4.4'] } },
-    { name: 'google-dot', up: { url: 'tls://dns.google', ips: ['8.8.8.8', '8.8.4.4'] } },
-    { name: 'quad9-doh', up: { url: 'https://dns.quad9.net/dns-query', ips: ['9.9.9.9', '149.112.112.112'] } },
-    { name: 'quad9', up: { url: 'tls://dns.quad9.net', ips: ['9.9.9.9', '149.112.112.112'] } },
-    { name: 'quad9-doq', up: { url: 'quic://dns.quad9.net', ips: ['9.9.9.9', '149.112.112.112'] } },
-    { name: 'adguard-doh', up: { url: 'https://dns.adguard-dns.com/dns-query', ips: ['94.140.14.14', '94.140.15.15'] } },
-    { name: 'adguard-dot', up: { url: 'tls://dns.adguard-dns.com', ips: ['94.140.14.14', '94.140.15.15'] } },
-    { name: 'adguard', up: { url: 'quic://dns.adguard-dns.com', ips: ['94.140.14.14', '94.140.15.15'] } },
-    { name: 'adguard-fam', up: { url: 'https://family.adguard-dns.com/dns-query', ips: ['94.140.14.15', '94.140.15.16'] } },
-    { name: 'adguard-fam-doq', up: { url: 'quic://family.adguard-dns.com', ips: ['94.140.14.15', '94.140.15.16'] } },
-    { name: 'yandex', up: { url: 'https://common.dot.dns.yandex.net/dns-query', ips: ['77.88.8.8', '77.88.8.1'] } },
-    { name: 'yandex-dot', up: { url: 'tls://common.dot.dns.yandex.net', ips: ['77.88.8.8', '77.88.8.1'] } },
-    { name: 'yandex-safe', up: { url: 'https://safe.dot.dns.yandex.net/dns-query', ips: ['77.88.8.88', '77.88.8.2'] } },
-    { name: 'opendns', up: { url: 'https://doh.opendns.com/dns-query', ips: ['208.67.222.222', '208.67.220.220'] } },
-    { name: 'opendns-dot', up: { url: 'tls://dns.opendns.com', ips: ['208.67.222.222', '208.67.220.220'] } },
-    { name: 'controld', up: { url: 'https://freedns.controld.com/p0', ips: ['76.76.2.0', '76.76.10.0'] } },
-    { name: 'comss', up: { url: 'https://dns.comss.one/dns-query', ips: ['83.220.169.155', '212.109.195.93'] } },
-    { name: 'comss-dot', up: { url: 'tls://dns.comss.one', ips: ['83.220.169.155', '212.109.195.93'] } },
-    { name: 'comss-doq', up: { url: 'quic://dns.comss.one', ips: ['83.220.169.155', '212.109.195.93'] } },
-    { name: 'xbox-dns', up: { url: 'https://xbox-dns.ru/dns-query', ips: ['111.88.96.50', '111.88.96.51'] } },
-    { name: 'xbox-dns-dot', up: { url: 'tls://xbox-dns.ru', ips: ['111.88.96.50', '111.88.96.51'] } },
-    { name: 'malw', up: { url: 'https://dns.malw.link/dns-query', ips: ['193.23.209.189'] } },
-    { name: 'yo1nk', up: { url: 'https://dns.yo1nk.app/dns-query', ips: ['109.120.137.190'] } },
-    { name: 'yo1nk-dot', up: { url: 'tls://dns.yo1nk.app', ips: ['109.120.137.190'] } },
-]
 
 const STATE_TEXT: Record<string, string> = {
     ready: S.dns.rabotaet,
@@ -69,7 +44,96 @@ const STATE_TEXT: Record<string, string> = {
     'no-tls': S.dns.nuzhnaSborkaSTls,
 }
 
-const PROTO_TEXT: Record<string, string> = { udp: 'DNS', tcp: S.dns.dnsPoTcp, dot: 'DoT', doh: 'DoH', doq: 'DoQ' }
+const PROTO_TEXT: Record<string, string> = { udp: 'DNS', tcp: S.dns.dnsPoTcp, dot: 'DoT', doh: 'DoH', doq: 'DoQ', doh3: 'DoH3' }
+
+/** Сколько готовых серверов видно до «Показать все». */
+const PRESET_FOLD = 7
+
+
+/** Лампочка проверки: ответил ли сервер с роутера; 'busy' — проверка идёт. */
+type Lamp = { ok: boolean; ms?: number; error?: string } | 'busy'
+
+/** Последние ответы проверки (по адресу) — на всё окно, между заходами на вкладку. */
+let lastProbe: Record<string, Lamp> = {}
+
+/** Хост сервера из адреса — подписью на карточке. */
+function hostOf(url: string): string {
+    const m = /^[a-z0-9]+:\/\/([^/?#]+)/i.exec(url)
+    return m ? m[1] : url
+}
+
+/** Карточка сервера DNS (приложение для ПК), как карточка правила: имя, хост, протокол, справа —
+ *  лампочка проверки. Щелчок выбирает сервер или убирает; у выбранного — «Настроить». */
+function DnsCard({ title, up, chosen, rank, where, lamp, live, onToggle, onEdit, editing }: {
+    title: string
+    up: Upstream
+    chosen: boolean
+    /** Место в группе (по порядку отметки), когда серверов больше одного. */
+    rank?: number
+    /** Где сервер используется: «правила», «остальные». */
+    where: string[]
+    lamp?: Lamp
+    live?: string
+    onToggle: () => void
+    onEdit?: () => void
+    editing: boolean
+}) {
+    const busy = lamp === 'busy'
+    const res = lamp && lamp !== 'busy' ? lamp : undefined
+    return (
+        <div
+            role="button"
+            tabIndex={0}
+            aria-pressed={chosen}
+            onClick={onToggle}
+            onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); onToggle() } }}
+            className={[
+                'sp-board-tile an-glass relative flex h-[96px] min-w-0 cursor-pointer flex-col gap-1.5 rounded-2xl border p-3.5 transition-[border-color,box-shadow] duration-200 hover:border-primary/50',
+                chosen ? 'border-primary/80 bg-primary/10 shadow-[inset_0_1px_0_var(--an-glass-edge),0_0_0_2px_color-mix(in_srgb,var(--sp-primary)_25%,transparent)]' : '',
+            ].join(' ')}
+        >
+            <div className="flex min-w-0 items-center gap-2">
+                <span className="min-w-0 flex-1 truncate text-sm font-semibold">{title}</span>
+                {res?.ok && res.ms !== undefined && <span className="shrink-0 text-xs tabular-nums text-muted-foreground">{S.subsBoard.ms(res.ms)}</span>}
+                <span
+                    title={res ? (res.ok ? S.dns.otvechaet : res.error || S.dns.neOtvechaetLampa) : busy ? S.dns.proveryaetsya : S.dns.neProveren}
+                    aria-label={res ? (res.ok ? S.dns.otvechaet : S.dns.neOtvechaetLampa) : S.dns.neProveren}
+                    className={[
+                        'h-2.5 w-2.5 shrink-0 rounded-full',
+                        busy ? 'animate-pulse bg-muted-foreground' : res ? (res.ok ? 'bg-success' : 'bg-destructive') : 'bg-muted-foreground/50',
+                    ].join(' ')}
+                />
+            </div>
+            <div className="truncate font-mono text-xs text-muted-foreground">{hostOf(up.url)}</div>
+            <div className="mt-auto flex min-w-0 items-center gap-2">
+                <ConfBadges
+                    list={[
+                        { id: 'proto', text: PROTO_TEXT[protoOfUrl(up.url)], group: 'transport' },
+                        ...where.map((w) => ({ id: `use:${w}`, text: w, group: 'feature' as const })),
+                    ]}
+                    className={BADGE_ROW}
+                />
+                {chosen && live && live !== 'ready' && live !== 'idle' && (
+                    <span className="truncate text-xs text-muted-foreground">{STATE_TEXT[live] || live}</span>
+                )}
+                {onEdit && (
+                    <button
+                        type="button"
+                        onClick={(e) => { e.stopPropagation(); onEdit() }}
+                        className={`ml-auto flex shrink-0 items-center gap-1 bg-transparent p-0 text-xs ${editing ? 'text-primary' : 'text-muted-foreground hover:text-foreground'}`}
+                    >
+                        <Settings2 className="h-3.5 w-3.5" aria-hidden="true" /> {S.dns.nastroit}
+                    </button>
+                )}
+            </div>
+            {rank !== undefined && (
+                <span className="absolute -right-1.5 -top-1.5 flex h-5 min-w-5 items-center justify-center rounded-full bg-primary px-1 text-[11px] font-semibold text-primary-foreground">
+                    {rank}
+                </span>
+            )}
+        </div>
+    )
+}
 
 const listOf = (s: string) => s.split(/[\s,]+/).map((x) => x.trim()).filter(Boolean)
 
@@ -218,10 +282,21 @@ function DnsTarget({ spec, dns, which, label, names, canGroup, log, onDns }: {
     )
 }
 
-export default function Dns({ live }: { live?: Live }) {
+export default function Dns({ live, board = false }: { live?: Live; board?: boolean }) {
     const [spec, setSpec] = useSpecCopy()
     const [log, setLog] = useState<DnsLog | null>(null)
     const [preset, setPreset] = useState(PRESETS[0].name)
+    const [allPresets, setAllPresets] = useState(false)
+    /** Сервер, чьи поля открыты под карточками. */
+    const [editing, setEditing] = useState<string | null>(null)
+    /** Проверка серверов с роутера: по адресу — ответил ли и за сколько. */
+    const [probe, setProbeRaw] = useState<{ busy: boolean; res: Record<string, Lamp>; unsupported?: boolean }>(() => ({ busy: false, res: { ...lastProbe } }))
+    /** Последний ответ запоминается на всё окно: при возврате на вкладку лампочки видны сразу. */
+    const setProbe: typeof setProbeRaw = (v) => setProbeRaw((cur) => {
+        const next = typeof v === 'function' ? v(cur) : v
+        if (!next.busy && Object.keys(next.res).length) lastProbe = { ...next.res }
+        return next
+    })
 
     useEffect(() => {
         let stop = false
@@ -231,6 +306,15 @@ export default function Dns({ live }: { live?: Live }) {
         return () => { stop = true; clearInterval(id) }
     }, [])
 
+    /* Проверка — при открытии вкладки (приложение для ПК), когда спека уже есть. */
+    const probeRef = useRef<() => void>(() => {})
+    const probed = useRef(false)
+    useEffect(() => {
+        if (!board || !spec || probed.current) return
+        probed.current = true
+        probeRef.current()
+    }, [board, spec])
+
     if (!spec) return <div className="p-5 text-sm text-muted-foreground">{S.dns.zagruzka}</div>
 
     const dns: DnsSpec = spec.dns || {}
@@ -239,6 +323,9 @@ export default function Dns({ live }: { live?: Live }) {
     const groups = dns.groups || {}
     /* Группы и сервер для остальных — по умению ядра; записанное в спеке видно и снимается и без него. */
     const canGroup = dnsGroupsSupported(live?.status)
+    const coreVersion = live?.build?.version
+    const fragmentOk = dnsFragmentSupported(live?.status, coreVersion)
+    const h3Ok = dnsH3Supported(live?.status, coreVersion)
     const showOther = dnsOtherSupported(live?.status) || !!dns.other
     const outs = Object.entries(spec.outputs)
         .filter(([, o]) => !isPart(o) && o.kind !== 'direct' && o.kind !== 'zapret' && o.kind !== 'tgws' && o.kind !== 'group')
@@ -294,20 +381,40 @@ export default function Dns({ live }: { live?: Live }) {
             other: dns.other === name ? undefined : dns.other,
         })
     }
-    function addPreset() {
-        const p = PRESETS.find((x) => x.name === preset)
+    function addPreset(which = preset) {
+        const p = PRESETS.find((x) => x.name === which)
         if (!p) return
         let name = p.name
         let k = 2
         while (ups[name]) name = `${p.name}${k++}`
         setUp(name, { ...p.up })
     }
-    function addCustom() {
+    function addCustom(): string {
         let name = 'dns'
         let k = 2
         while (ups[name]) name = `dns${k++}`
         setUp(name, { url: 'https://' })
+        return name
     }
+
+    /** Проверить с роутера все карточки: готовые профили и свои серверы, каждый адрес один раз. */
+    async function probeAll() {
+        const list = [...new Map([...PRESETS.map((p) => p.up), ...Object.values(ups)]
+            .filter((u) => /^[a-z0-9]+:\/\/[^/]/i.test(u.url) || /^[0-9.:]+$/.test(u.url))
+            .map((u) => [u.url, u])).values()]
+        if (!list.length) return
+        setProbe((p) => ({ ...p, busy: true }))
+        try {
+            const r = await rpc.dnsProbe(list.map((u) => (u.ips?.length ? `${u.url}=${u.ips.join(',')}` : u.url)))
+            if (r.unsupported) { setProbe({ busy: false, res: {}, unsupported: true }); return }
+            const res: Record<string, Lamp> = {}
+            for (const x of r.results || []) res[x.url.split('=')[0]] = { ok: x.ok, ms: x.ms, error: x.error }
+            setProbe({ busy: false, res })
+        } catch {
+            setProbe((p) => ({ ...p, busy: false }))
+        }
+    }
+    probeRef.current = () => void probeAll()
 
     /** Срок записи кэша (`dns.cache_ttl`): поле пустое — умолчание ядра (`def`). */
     type TtlKey = 'min' | 'max' | 'negative'
@@ -346,24 +453,12 @@ export default function Dns({ live }: { live?: Live }) {
             : st === 'ready' || st === 'idle' ? 'bg-success'
                 : st === 'connecting' ? 'bg-warning' : 'bg-destructive'
 
-    /* Bode: раскладка приложения. Серверы — строками одной карточки через линию, у каждого
-     * шапка «точка · имя · состояние · убрать» и поля строками «подпись — поле»; режим — двумя
-     * сегментами вместо двух радиокнопок столбиком. */
-    return (
-        <div className="space-y-4">
-            <Block>
-                <CardHead title={S.dns.serveryDns} meta={names.length ? S.dns.serverov(names.length) : undefined} />
-                {names.length === 0 && (
-                    <p className="text-sm text-muted-foreground">
-                        {S.dns.serverovNetImenaPod}</p>
-                )}
-                {names.length > 0 && (
-                    <div className="divide-y divide-border">
-                        {names.map((n) => {
+    /** Сервер: шапка «точка · имя · состояние · убрать» и поля строками «подпись — поле». */
+    const server = (n: string, cls: string) => {
                             const u = ups[n]
                             const s = state(n)
                             return (
-                                <div key={n} className="space-y-1 py-3 first:pt-0">
+                                <div key={n} className={cls}>
                                     <div className="flex flex-wrap items-center gap-2">
                                         <span className={`h-2 w-2 shrink-0 rounded-full ${dotOf(s?.state)}`} aria-hidden="true" />
                                         <input
@@ -388,11 +483,12 @@ export default function Dns({ live }: { live?: Live }) {
                                     <FieldRow label={S.dns.adres}>
                                         <input
                                             value={u.url}
-                                            onChange={(e) => setUp(n, { ...u, url: e.currentTarget.value.trim() })}
+                                            onChange={(e) => setUp(n, withUrl(u, e.currentTarget.value.trim()))}
                                             placeholder="https://dns.example/dns-query"
                                             className={`${inputCls} w-full font-mono`}
                                         />
                                     </FieldRow>
+                                    <DnsUpstreamExtras up={u} onChange={(next) => setUp(n, next)} fragmentOk={fragmentOk} h3Ok={h3Ok} />
                                     <FieldRow label={S.dns.cherezVyhod}>
                                         <select
                                             value={u.out || ''}
@@ -432,28 +528,16 @@ export default function Dns({ live }: { live?: Live }) {
                                         <p className="text-xs text-destructive">{s.error}</p>}
                                 </div>
                             )
-                        })}
-                    </div>
-                )}
-                <div className="flex flex-wrap items-center gap-2 border-t border-border pt-3">
-                    <select
-                        value={preset}
-                        aria-label={S.dns.dobavit}
-                        onChange={(e) => setPreset(e.currentTarget.value)}
-                        className={`${inputCls} min-w-0 flex-1`}
-                    >
-                        {PRESETS.map((p) => <option key={p.name} value={p.name}>{PRESET_TITLE.get(p.name) ?? p.name}</option>)}
-                    </select>
-                    <Button onClick={addPreset}><Plus className="h-4 w-4" aria-hidden="true" /> {S.dns.dobavit2}</Button>
-                    <Button variant="secondary" onClick={addCustom}>{S.dns.svoyAdres}</Button>
-                </div>
-            </Block>
+    }
 
-            <Block>
-                <CardHead title={S.dns.kakSprashivat} />
-                <div className="divide-y divide-border">
+    const upTarget = (
+        <>
                     <DnsTarget spec={spec} dns={dns} which="upstream" label={S.dns.dlyaImenPodPravilami}
                         names={names} canGroup={canGroup} log={log} onDns={setDns} />
+        </>
+    )
+    const otherTarget = (
+        <>
                     {showOther && (
                         <>
                             <DnsTarget spec={spec} dns={dns} which="other" label={S.dns.dlyaOstalnyhSaytov}
@@ -463,6 +547,10 @@ export default function Dns({ live }: { live?: Live }) {
                             )}
                         </>
                     )}
+        </>
+    )
+    const bootstrapField = (
+        <>
                     <FieldRow label={S.dns.serveryDlyaRazresheniyaImen}>
                         <input
                             defaultValue={(dns.bootstrap || []).join(', ')}
@@ -471,6 +559,10 @@ export default function Dns({ live }: { live?: Live }) {
                             className={`${inputCls} w-full font-mono`}
                         />
                     </FieldRow>
+        </>
+    )
+    const modeField = (
+        <>
                     <div className="space-y-2 py-3">
                         <div className="text-sm text-subtle">{S.dns.rezhimDomennyhPravil}</div>
                         <Segmented
@@ -488,6 +580,10 @@ export default function Dns({ live }: { live?: Live }) {
                                 : S.dns.trassirovkaViditNastoyaschieUzly}
                         </p>
                     </div>
+        </>
+    )
+    const cacheField = (
+        <>
                     <FieldRow label={S.dns.zapiseyVKesheOtvetov}>
                         <input
                             type="number"
@@ -521,6 +617,205 @@ export default function Dns({ live }: { live?: Live }) {
                             />
                         </div>
                     )}
+        </>
+    )
+
+    /* Приложение для компьютера — блоками, как главная и правило: серверы плитками, готовые серверы
+     * пилюлями, «как спрашивать» — плитками по вопросу. */
+    if (board) {
+        const GROUP = 'sp-board-group an-glass space-y-3 rounded-2xl border p-3'
+        const TILE = 'sp-board-tile an-glass min-w-0 space-y-1 rounded-2xl border p-3.5'
+        /* Карточки отмечают, через какие серверы идут ВСЕ запросы DNS (владелец): общий сервер доменов
+         * правил (`dns.upstream`) и сервер остальных имён (`dns.other`) — одно и то же. Один — сервер,
+         * несколько — группа в порядке отметки, ни одного — DNS роутера. Свой сервер у правила — в
+         * самом правиле. Готовый профиль становится сервером роутера при первом выборе и уходит, когда
+         * больше никому не нужен. */
+        const which = 'upstream' as const
+        const listOf2 = (w: 'upstream' | 'other'): string[] => {
+            const cur = dns[w]
+            if (!cur) return []
+            const g = dns.groups?.[cur]
+            return g ? g.servers : [cur]
+        }
+        /* Отметки — по серверу доменов правил, а если он не задан — по серверу остальных имён:
+         * старая форма вкладки записывала назначения порознь, и «DNS провайдера» горел при
+         * заданном `dns.other`. Следующий щелчок пишет оба назначения одинаково (assign). */
+        const picked = listOf2('upstream').length ? listOf2('upstream') : showOther ? listOf2('other') : []
+        const grp = dns[which] ? dns.groups?.[dns[which]!] : undefined
+        const byUrl = new Map(Object.entries(ups).map(([n, u]) => [u.url, n]))
+        const cards: { key: string; title: string; up: Upstream; name?: string; preset?: string }[] = [
+            ...PRESETS.map((p) => ({ key: p.name, title: PRESET_TITLE.get(p.name) ?? p.name, up: byUrl.has(p.up.url) ? ups[byUrl.get(p.up.url)!] : p.up, name: byUrl.get(p.up.url), preset: p.name })),
+            ...names.filter((n) => !PRESETS.some((p) => p.up.url === ups[n].url))
+                .map((n) => ({ key: `own:${n}`, title: n, up: ups[n], name: n })),
+        ]
+        const used = (n?: string) => !!n && (picked.includes(n))
+        const front = cards.filter((c) => used(c.name) || (c.name && c.key.startsWith('own:')))
+        const rest = cards.filter((c) => !front.includes(c))
+        const shown = allPresets ? cards : [...front, ...rest.slice(0, Math.max(0, PRESET_FOLD - front.length))]
+
+        /** Все запросы — списком серверов: пусто — DNS роутера, один — сервер, больше — группа. Пишется
+         *  в оба назначения (`dns.other` — где ядро его умеет); прежние группы, которые больше никому
+         *  не нужны, уходят. */
+        function assign(_w: 'upstream', list: string[], base: DnsSpec): DnsSpec {
+            const next: DnsSpec = { ...base, groups: { ...(base.groups || {}) } }
+            const targets: ('upstream' | 'other')[] = showOther ? ['upstream', 'other'] : ['upstream']
+            const olds = targets.map((w) => base[w]).filter((g): g is string => !!g && !!base.groups?.[g])
+            let value: string | undefined
+            if (list.length === 1) value = list[0]
+            else if (list.length > 1) {
+                const g = olds[0] ?? freeName('all', next)
+                next.groups![g] = { servers: list, mode: base.groups?.[g]?.mode || 'failover' }
+                value = g
+            }
+            for (const w of targets) { if (value) next[w] = value; else delete next[w] }
+            for (const g of olds) {
+                if (g !== value && !spec!.channels.some((c) => c.dns === g) && next.upstream !== g && next.other !== g) delete next.groups![g]
+            }
+            return next
+        }
+        /** Серверы из готовых профилей, которые больше никому не нужны, — прочь из списка роутера. */
+        const tidy = (d: DnsSpec): DnsSpec => pruneDnsUpstreams(d, spec!.channels)
+        function toggle(c: (typeof cards)[number]) {
+            let name = c.name
+            let base: DnsSpec = dns
+            if (!name) {
+                if (!c.preset) return
+                name = c.preset
+                for (let k = 2; ups[name]; k++) name = `${c.preset}${k}`
+                base = { ...dns, upstreams: { ...ups, [name]: { ...c.up } } }
+            }
+            const list = picked.includes(name) ? picked.filter((x) => x !== name) : [...picked, name]
+            setDns(tidy(assign(which, list, base)))
+        }
+
+        return (
+            <div className="space-y-4">
+                <section className={GROUP}>
+                    <div className="flex flex-wrap items-center justify-between gap-2 px-1 pt-1">
+                        <h2 className="sp-sub">{S.dns.vseZaprosyDns}</h2>
+                        <Button variant="ghost" size="sm" onClick={() => void probeAll()} disabled={probe.busy}>
+                            <RefreshCw className={probe.busy ? 'animate-spin' : ''} aria-hidden="true" /> {S.dns.proverit}
+                        </Button>
+                    </div>
+                    <div className="flex flex-wrap items-center gap-3">
+                        {picked.length > 1 && grp && (
+                            <div className="w-full sm:w-[280px]">
+                                <Segmented
+                                    label={S.dns.vseZaprosyDns}
+                                    value={grp.mode === 'race' ? 'race' : 'failover'}
+                                    onChange={(v) => setDns({ ...dns, groups: { ...(dns.groups || {}), [dns[which]!]: { ...grp, mode: v } } })}
+                                    items={[
+                                        { value: 'failover', label: S.dns.poOcheredi },
+                                        { value: 'race', label: S.dns.srazuVse },
+                                    ]}
+                                />
+                            </div>
+                        )}
+                        {picked.length > 0 && (
+                            <span className="text-xs text-muted-foreground">{S.dns.vybranoServerov(picked.length)}</span>
+                        )}
+                    </div>
+                    <div className="grid gap-3 sm:grid-cols-3">
+                        {/* Пунктирная «Свой сервер» — первой (владелец). */}
+                        <button
+                            type="button"
+                            onClick={() => setEditing(addCustom())}
+                            style={{ borderColor: 'color-mix(in srgb, var(--sp-muted-foreground) 45%, transparent)' }}
+                            className="flex h-[96px] items-center justify-center gap-2 rounded-2xl border border-dashed bg-transparent text-sm text-muted-foreground transition-colors duration-200 hover:border-primary/50 hover:text-primary"
+                        >
+                            <Plus className="h-4 w-4" aria-hidden="true" /> {S.dns.svoyServer}
+                        </button>
+                        {/* DNS провайдера — то, что настроено на самом роутере: выбран, когда не отмечено
+                            ни одного сервера; щелчок снимает все отметки. */}
+                        <div
+                            role="button"
+                            tabIndex={0}
+                            aria-pressed={picked.length === 0}
+                            onClick={() => picked.length && setDns(tidy(assign(which, [], dns)))}
+                            onKeyDown={(e) => { if ((e.key === 'Enter' || e.key === ' ') && picked.length) { e.preventDefault(); setDns(tidy(assign(which, [], dns))) } }}
+                            className={[
+                                'sp-board-tile an-glass flex h-[96px] min-w-0 cursor-pointer flex-col gap-1.5 rounded-2xl border p-3.5 transition-[border-color,box-shadow] duration-200 hover:border-primary/50',
+                                picked.length === 0 ? 'border-primary/80 bg-primary/10 shadow-[inset_0_1px_0_var(--an-glass-edge),0_0_0_2px_color-mix(in_srgb,var(--sp-primary)_25%,transparent)]' : '',
+                            ].join(' ')}
+                        >
+                            <div className="truncate text-sm font-semibold">{S.dns.dnsProvaydera}</div>
+                            <div className="truncate text-xs text-muted-foreground">{S.dns.kakNaRoutere}</div>
+                        </div>
+                        {shown.map((c) => (
+                            <DnsCard
+                                key={c.key}
+                                title={c.title}
+                                up={c.up}
+                                chosen={used(c.name)}
+                                rank={picked.length > 1 && c.name && picked.includes(c.name) ? picked.indexOf(c.name) + 1 : undefined}
+                                where={[]}
+                                lamp={probe.res[c.up.url] ?? (probe.busy ? 'busy' : undefined)}
+                                live={c.name ? state(c.name)?.state : undefined}
+                                onToggle={() => toggle(c)}
+                                onEdit={c.name ? () => setEditing(editing === c.name ? null : c.name!) : undefined}
+                                editing={!!c.name && editing === c.name}
+                            />
+                        ))}
+                    </div>
+                    {rest.length > PRESET_FOLD - front.length && (
+                        <button type="button" onClick={() => setAllPresets((v) => !v)} className="flex items-center gap-1.5 bg-transparent px-1 text-xs text-primary">
+                            <ChevronDown className={`h-3.5 w-3.5 transition-transform duration-200 ${allPresets ? 'rotate-180' : ''}`} aria-hidden="true" />
+                            {allPresets ? S.subsBoard.svernut : S.subsBoard.pokazatVse(cards.length)}
+                        </button>
+                    )}
+                    {editing && ups[editing] && server(editing, TILE)}
+                </section>
+
+                <section className={GROUP}>
+                    <h2 className="sp-sub px-1 pt-1">{S.dns.kakSprashivat}</h2>
+                    <div className="grid gap-3 sm:grid-cols-2 sm:items-start">
+                        <div className={TILE}>{modeField}</div>
+                        <div className={TILE}>{bootstrapField}</div>
+                        <div className={`${TILE} sm:col-span-2`}>{cacheField}</div>
+                    </div>
+                </section>
+            </div>
+        )
+    }
+
+    /* Bode: раскладка приложения. Серверы — строками одной карточки через линию, у каждого
+     * шапка «точка · имя · состояние · убрать» и поля строками «подпись — поле»; режим — двумя
+     * сегментами вместо двух радиокнопок столбиком. */
+    return (
+        <div className="space-y-4">
+            <Block>
+                <CardHead title={S.dns.serveryDns} meta={names.length ? S.dns.serverov(names.length) : undefined} />
+                {names.length === 0 && (
+                    <p className="text-sm text-muted-foreground">
+                        {S.dns.serverovNetImenaPod}</p>
+                )}
+                {names.length > 0 && (
+                    <div className="divide-y divide-border">
+                        {names.map((n) => server(n, 'space-y-1 py-3 first:pt-0'))}
+                    </div>
+                )}
+                <div className="flex flex-wrap items-center gap-2 border-t border-border pt-3">
+                    <select
+                        value={preset}
+                        aria-label={S.dns.dobavit}
+                        onChange={(e) => setPreset(e.currentTarget.value)}
+                        className={`${inputCls} min-w-0 flex-1`}
+                    >
+                        {PRESETS.map((p) => <option key={p.name} value={p.name}>{PRESET_TITLE.get(p.name) ?? p.name}</option>)}
+                    </select>
+                    <Button onClick={() => addPreset()}><Plus className="h-4 w-4" aria-hidden="true" /> {S.dns.dobavit2}</Button>
+                    <Button variant="secondary" onClick={addCustom}>{S.dns.svoyAdres}</Button>
+                </div>
+            </Block>
+
+            <Block>
+                <CardHead title={S.dns.kakSprashivat} />
+                <div className="divide-y divide-border">
+                    {upTarget}
+                    {otherTarget}
+                    {bootstrapField}
+                    {modeField}
+                    {cacheField}
                 </div>
             </Block>
         </div>

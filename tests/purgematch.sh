@@ -432,6 +432,23 @@ check "наши остальные зоны удалены, и снова пос
       "forwarding forwarding zone forwarding zone " "$(del_seq)"
 check "о чужой зоне сказано" "yes" "$(outhas 'steer_vless')"
 
+# ---- текущая зона steer_zone ---------------------------------------------------------
+# После слияния зон выходы стоят в steer_zone; прежние steer_vless и steer_iface (если обновление
+# ещё не дошло до apply) убираются так же, как и она, — по расписке.
+setup
+cat >> "$T/uci.store" <<'EOF2'
+firewall.@zone[4]=zone
+firewall.@zone[4].name=steer_zone
+firewall.@zone[4].device=tun-new
+firewall.@forwarding[5]=forwarding
+firewall.@forwarding[5].src=lan
+firewall.@forwarding[5].dest=steer_zone
+EOF2
+printf '%s\n' 'zone steer_zone' 'dev steer_zone tun-new' >> "$T/etc/splify2/fw-owned"
+run_purge --yes
+check "steer_zone и прежние зоны удалены, чужая lan осталась" "lan " "$(zones)"
+check "проброс в steer_zone удалён" "wan " "$(fwds)"
+
 # ---- --keep-config -----------------------------------------------------------------
 # Смысл флага: снести правила и зоны, оставив настройки. Спека и /etc/config/splify2 при этом
 # обязаны выжить, иначе флаг есть, а верить ему нельзя.

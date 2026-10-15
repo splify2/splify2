@@ -124,9 +124,9 @@ sub_used_by() {  # PATH -> ЧИСЛО
     # ветка `||`. Дальше это уезжало в json_add_int и роняло весь ответ — метод отдавал
     # пустоту, а интерфейс показывал «подписок нет».
     _u=0
-    if [ -s "$SPEC" ]; then
+    if spec_have; then
         # `subscription` — ключ спеки v2, `sub_file` — прежней v1 (до переноса интерфейсом).
-        _u="$(jsonfilter -i "$SPEC" -e '@.outputs[*].subscription' -e '@.outputs[*].sub_file' 2>/dev/null |
+        _u="$(jsonfilter -i "$(spec_json)" -e '@.outputs[*].subscription' -e '@.outputs[*].sub_file' 2>/dev/null |
               grep -Fx -c -- "$1" 2>/dev/null)"
     fi
     case "${_u:-}" in ''|*[!0-9]*) _u=0 ;; esac
@@ -154,9 +154,9 @@ sub_used_by() {  # PATH -> ЧИСЛО
 # ни одного выхода. jsonfilter ключей не печатает, поэтому jshn, и в подсобной оболочке: звать
 # эти функции будут посреди сборки ответа через тот же jshn, и его состояние трогать нельзя.
 spec_output_names() {  # -> имена выходов по одному на строку
-    [ -s "$SPEC" ] || return 0
+    spec_have || return 0
     (
-        json_load "$(cat "$SPEC" 2>/dev/null)" 2>/dev/null || exit 0
+        json_load "$(cat "$(spec_json)" 2>/dev/null)" 2>/dev/null || exit 0
         json_select outputs 2>/dev/null || exit 0
         json_get_keys _son_k
         for _son in $_son_k; do printf '%s\n' "$_son"; done
@@ -164,7 +164,7 @@ spec_output_names() {  # -> имена выходов по одному на с�
 }
 
 sub_outputs_using() {  # PATH -> имена выходов по одному на строку
-    [ -s "$SPEC" ] || return 0
+    spec_have || return 0
     for _oo in $(spec_output_names); do
         [ "$(spec_out_sub "$_oo")" = "$1" ] || continue
         printf '%s\n' "$_oo"
@@ -173,10 +173,10 @@ sub_outputs_using() {  # PATH -> имена выходов по одному н�
 
 sub_nodes_used() {  # PATH -> ЧИСЛО
     _un=0
-    [ -s "$SPEC" ] || { printf '0'; return; }
+    spec_have || { printf '0'; return; }
     for _uo in $(spec_output_names); do
         [ "$(spec_out_sub "$_uo")" = "$1" ] || continue
-        _uc="$(jsonfilter -i "$SPEC" -e "@.outputs['$_uo'].nodes[*]" 2>/dev/null | grep -c .)"
+        _uc="$(jsonfilter -i "$(spec_json)" -e "@.outputs['$_uo'].nodes[*]" 2>/dev/null | grep -c .)"
         case "${_uc:-}" in ''|*[!0-9]*) _uc=0 ;; esac
         _un=$((_un + _uc))
     done

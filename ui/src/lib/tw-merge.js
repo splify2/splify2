@@ -85,7 +85,7 @@ const SIMPLE_PREFIXES = [
   ['opacity-', 'opacity'], ['z-', 'z'],
   ['duration-', 'duration'], ['delay-', 'delay'], ['ease-', 'ease'],
   ['transition-', 'transition'], ['animate-', 'animate'],
-  ['cursor-', 'cursor'], ['select-', 'select'], ['pointer-events-', 'pointer-events'],
+  ['cursor-', 'cursor'], ['resize-', 'resize'], ['select-', 'select'], ['pointer-events-', 'pointer-events'],
   ['translate-x-', 'translate-x'], ['translate-y-', 'translate-y'],
   ['scale-x-', 'scale-x'], ['scale-y-', 'scale-y'], ['scale-', 'scale'], ['rotate-', 'rotate'],
   ['underline-offset-', 'underline-offset'], ['decoration-', 'decoration'],

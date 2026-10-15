@@ -579,6 +579,123 @@ AD_EOF
         json_dump
         ;;
 
+    list_peek)
+        # Что лежит в списке — для показа («глазик» у пилюли списка в правиле). Только читать и
+        # только в каталоге списков: путь приходит снаружи и без этой рамки читал бы что угодно.
+        # Набор sing-box (.srs) раскладывает ядро (`steer srs-read`) — в нём двоичные данные.
+        # `q` — поиск по записям (без учёта регистра), ответ — до PEEK_LINES строк и число всех.
+        read -r input
+        json_load "$input" 2>/dev/null || fail "неразбираемый запрос"
+        json_get_var path path
+        json_get_var q q
+        case "$path" in
+            "$LISTS"/*) ;;
+            *) fail "список не из каталога списков" ;;
+        esac
+        case "$path" in *..*|*[!A-Za-z0-9_./:-]*) fail "недопустимый путь списка" ;; esac
+        [ -f "$path" ] || fail "этого списка на роутере нет — он скачается при сохранении правила"
+        pk_tmp=""
+        case "$path" in
+            *.srs)
+                pk_tmp="$(mktemp -d /tmp/splify2-peek.XXXXXX)" || fail "не удалось завести временный каталог — кончилось место?"
+                "$STEER" srs-read "$path" --out "$pk_tmp/d" --prefixes-out "$pk_tmp/p" --meta-out "$pk_tmp/m" 2>/dev/null ||
+                    { rm -rf "$pk_tmp"; fail "набор не читается"; }
+                cat "$pk_tmp/d" "$pk_tmp/p" 2>/dev/null > "$pk_tmp/all"
+                pk_src="$pk_tmp/all" ;;
+            *) pk_src="$path" ;;
+        esac
+        pk_total="$(grep -c . "$pk_src" 2>/dev/null || echo 0)"
+        if [ -n "$q" ]; then
+            pk_found="$(grep -i -F -c -- "$q" "$pk_src" 2>/dev/null || echo 0)"
+            pk_text="$(grep -i -F -- "$q" "$pk_src" 2>/dev/null | head -n "$PEEK_LINES")"
+        else
+            pk_found="$pk_total"
+            pk_text="$(grep . "$pk_src" 2>/dev/null | head -n "$PEEK_LINES")"
+        fi
+        [ -n "$pk_tmp" ] && rm -rf "$pk_tmp"
+        json_init
+        json_add_boolean ok 1
+        json_add_int total "${pk_total:-0}"
+        json_add_int found "${pk_found:-0}"
+        json_add_string text "$pk_text"
+        json_dump
+        ;;
+
+    list_srs_put)
+        # Свой список из набора sing-box (.srs): файлом (base64 порциями, как list_put — без
+        # второго транспорта) или по ссылке. Ядро раскладывает набор на домены и подсети
+        # (`steer srs-read`), и каждая непустая половина ложится своим списком, как у list_put;
+        # половина, которой в наборе больше нет, у списка с этим именем убирается.
+        read -r input
+        json_load "$input" 2>/dev/null || fail "неразбираемый запрос"
+        json_get_var name name
+        json_get_var url url
+        json_get_var data data
+        json_get_var append append
+        json_get_var final final
+        json_get_var filename filename
+        case "$name" in
+            ''|*[!A-Za-z0-9_-]*) fail "имя списка: латиница, цифры, дефис и подчёркивание" ;;
+        esac
+        sp_dir=/tmp/splify2-srsup
+        mkdir -p "$sp_dir" || fail "не удалось завести временный каталог — кончилось место?"
+        sp_part="$sp_dir/$name.b64"; sp_bin="$sp_dir/$name.srs"; sp_out="$sp_dir/$name.out"
+        if [ -n "$url" ]; then
+            case "$url" in
+                http://*|https://*) ;;
+                *) fail "ссылка должна начинаться с http:// или https://" ;;
+            esac
+            download "$url" "$sp_bin" || fail "не скачалось: $url${FETCH_NOTE:+ ($FETCH_NOTE)}"
+            sp_source=url
+        else
+            case "$append" in 1|true) ;; *) : > "$sp_part" ;; esac
+            printf '%s' "$data" >> "$sp_part" || fail "не дописалось — кончилось место?"
+            # base64 — четыре знака на три байта: предел по итоговому файлу, как у list_put.
+            if [ "$(wc -c < "$sp_part")" -gt $((LIST_MAX_BYTES * 4 / 3 + 4)) ]; then
+                rm -f "$sp_part"
+                fail "набор больше $((LIST_MAX_BYTES / 1024)) КБ — столько на роутер не кладём"
+            fi
+            case "$final" in
+                1|true) ;;
+                *) json_init; json_add_boolean ok 1; json_dump; exit 0 ;;
+            esac
+            ucode -e 'import * as fs from "fs"; let b = b64dec(trim(fs.readfile(ARGV[0]) ?? "")); if (b == null) exit(1); fs.writefile(ARGV[1], b);' \
+                "$sp_part" "$sp_bin" || { rm -f "$sp_part" "$sp_bin"; fail "файл набора пришёл испорченным"; }
+            rm -f "$sp_part"
+            sp_source=file
+        fi
+        rm -rf "$sp_out"; mkdir -p "$sp_out"
+        if ! "$STEER" srs-read "$sp_bin" --out "$sp_out/domains" --prefixes-out "$sp_out/prefixes" \
+                --meta-out "$sp_out/meta" 2>"$sp_out/err"; then
+            sp_why="$(head -1 "$sp_out/err" 2>/dev/null | sed -e 's/^steer: //' -e 's/^srs: //')"
+            rm -rf "$sp_out" "$sp_bin"
+            fail "набор не читается${sp_why:+: $sp_why}"
+        fi
+        rm -f "$sp_bin"
+        if [ ! -s "$sp_out/domains" ] && [ ! -s "$sp_out/prefixes" ]; then
+            rm -rf "$sp_out"
+            fail "в наборе нет ни доменов, ни подсетей"
+        fi
+        filename="$(printf '%s' "$filename" | tr -d '\r\n\t"\\/' | head -c 64)"
+        json_init
+        json_add_boolean ok 1
+        for sp_k in domains prefixes; do
+            sp_dest="$(custom_path "$name" "$sp_k")"
+            if [ -s "$sp_out/$sp_k" ]; then
+                mkdir -p "$(dirname "$sp_dest")"
+                mv "$sp_out/$sp_k" "$sp_dest.new.$$" && mv "$sp_dest.new.$$" "$sp_dest" ||
+                    { rm -rf "$sp_out" "$sp_dest.new.$$"; fail "не записалось — кончилось место?"; }
+                custom_meta_put "$name" "$sp_k" "$sp_source" "$([ "$sp_source" = url ] && printf '%s' "$url")" "$filename"
+                json_add_int "$sp_k" "$(grep -c . "$sp_dest")"
+            else
+                rm -f "$sp_dest" "$(custom_meta_path "$name" "$sp_k")"
+                json_add_int "$sp_k" 0
+            fi
+        done
+        rm -rf "$sp_out"
+        json_dump
+        ;;
+
     list_remove)
         read -r input
         json_load "$input" 2>/dev/null || fail "неразбираемый запрос"
@@ -599,7 +716,7 @@ AD_EOF
                 [ -f "$dest" ] || dest="$(custom_path "$name" prefixes)"
             fi
             [ -f "$dest" ] || fail "своего списка $name нет"
-            if [ -s "$SPEC" ] && grep -q "$dest" "$SPEC"; then
+            if spec_have && grep -q "$dest" "$(spec_json)"; then
                 fail "список используется каналом — сначала снимите галочку"
             fi
             # Вместе со списком снимается и запись о его происхождении: оставленная, она
@@ -658,7 +775,7 @@ AD_EOF
                 # Проверка «занят каналом» — ПРО СПЕКУ, а не про издателя, и второму издателю
                 # нужна ровно так же: движок читает список при сборке правил и падает на
                 # отсутствующем.
-                if [ -s "$SPEC" ] && grep -q "$dest" "$SPEC"; then
+                if spec_have && grep -q "$dest" "$(spec_json)"; then
                     fail "список используется каналом — сначала снимите галочку"
                 fi
                 rm -f "$dest"
@@ -694,8 +811,8 @@ AD_EOF
             . "$AD_SH"
             sdest="$(local_path "$(ad_srs_rel "$file")")" || sdest=""
         fi
-        if [ -s "$SPEC" ] && { grep -q "$dest" "$SPEC" ||
-            { [ -n "$sdest" ] && grep -qF "\"$sdest\"" "$SPEC"; }; }; then
+        if spec_have && { grep -q "$dest" "$(spec_json)" ||
+            { [ -n "$sdest" ] && grep -qF "\"$sdest\"" "$(spec_json)"; }; }; then
             fail "список используется каналом — сначала снимите галочку"
         fi
         rm -f "$dest" ${sdest:+"$sdest"}

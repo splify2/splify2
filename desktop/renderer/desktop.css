@@ -1,0 +1,574 @@
+/* Окно приложения: своя рамка сверху, под ней — панель splify2 во всю высоту.
+ *
+ * Классы desk-* — только здесь, обычным CSS, а не утилитами Tailwind: утилиты собирает сборка
+ * панели по ui/src, и классы из desktop/ в неё не попадают. Цвета — токены панели (--sp-*,
+ * --an-*), тема переключается тем же классом .dark. */
+
+html,
+body {
+  margin: 0;
+  height: 100%;
+  overflow: hidden;
+  background: var(--sp-background);
+}
+
+/* Панель под LuCI резервирует место под полосу прокрутки документа (index.css, `scrollbar-gutter`).
+ * Документ окна не прокручивается — прокручивается .desk-body, — и резерв был бы пустой полосой
+ * справа. */
+html:has(.splify-react-root) {
+  scrollbar-gutter: auto;
+}
+
+#root {
+  height: 100%;
+}
+
+/* Приложение, а не страница. Текст не выделяется и курсор над ним — обычная стрелка: протянутая
+ * мышь по кнопке, плитке или подписи не синит её (владелец). Выделяется то, что копируют: поля ввода,
+ * журнал и адреса моноширинным; на кнопках и плитках-кнопках — никогда. Картинки и ссылки не
+ * перетаскиваются. */
+body,
+body * {
+  -webkit-user-select: none;
+  user-select: none;
+  -webkit-user-drag: none;
+}
+body {
+  cursor: default;
+}
+body :is(input, textarea, select, [contenteditable]:not([contenteditable="false"]), code, pre, .font-mono, .desk-mono, .sp-selectable) {
+  -webkit-user-select: text;
+  user-select: text;
+}
+body :is(input, textarea, [contenteditable]:not([contenteditable="false"])) {
+  cursor: text;
+}
+body :is(button, [role="button"], a, label, summary) :is(*, .font-mono, .desk-mono, code) {
+  -webkit-user-select: none;
+  user-select: none;
+}
+
+.desk {
+  position: fixed;
+  overflow: hidden;
+  inset: 0;
+  display: flex;
+  flex-direction: column;
+}
+
+/* Рельс разделов — отдельная колонка окна под рамкой, вне прокрутки раздела (владелец:
+ * «рельс вообще должен быть отдельным элементом в приложении»). Панель рисует его сюда
+ * порталом (Console, railHost); на узком окне её рельс прячется сам, и колонка пуста — разделы
+ * тогда в нижней панели. */
+.desk-side {
+  flex: none;
+  display: flex;
+  height: 100%;
+}
+
+.desk-side > aside {
+  height: 100%;
+  overflow-y: auto;
+}
+
+.desk-side > aside::-webkit-scrollbar {
+  width: 0;
+}
+
+/* Окно таскают и за верх рельса — за логотип, как за рамку. */
+.desk-side > aside > div:first-child {
+  -webkit-app-region: drag;
+}
+
+/* «Применить» и прочее плавающее — по центру раздела, а не окна вместе с рельсом. */
+@media (min-width: 1024px) {
+  .desk[data-rail] {
+    --sp-inset-l: 236px;
+  }
+}
+
+.desk-app {
+  flex: 1;
+  min-width: 0;
+  min-height: 0;
+  display: flex;
+}
+
+/* ── рамка ─────────────────────────────────────────────────────────────── */
+
+/* Рамка — без своей заливки и без линии: под ней та же подложка окна (an-backdrop на .desk),
+ * что и под панелью. Над рельсом стоит его же стекло (.desk-cap), и рельс доходит до верхнего
+ * края окна. На узком окне рельса нет (панель переходит на нижнюю полосу разделов) — и шапка
+ * над ним тоже прозрачная. */
+.desk-bar {
+  position: relative;
+  z-index: 2000;
+  flex: none;
+  display: flex;
+  align-items: stretch;
+  height: 40px;
+  -webkit-app-region: drag;
+  user-select: none;
+}
+
+.desk-bar-idle .desk-cap,
+.desk-bar-idle .desk-ctl {
+  opacity: 0.55;
+}
+
+.desk-cap {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+  padding: 0 10px 0 16px;
+  transition: opacity 150ms ease;
+}
+
+.desk-logo {
+  width: 18px;
+  height: 18px;
+  flex: none;
+}
+
+.desk-name {
+  font-size: 13px;
+  font-weight: 600;
+  letter-spacing: -0.01em;
+}
+
+/* Над рельсом — его же стекло: рельс читается колонкой от верха окна до низа. Логотип и имя —
+ * в самом рельсе; повторять их в рамке незачем. */
+@media (min-width: 1024px) {
+  .desk-bar-rail .desk-cap {
+    flex: none;
+    box-sizing: border-box;
+    width: 236px;
+    border-right: 1px solid var(--an-glass-border);
+    background-color: var(--an-glass-chrome);
+  }
+
+  .desk-bar-rail .desk-cap .desk-logo,
+  .desk-bar-rail .desk-cap .desk-name {
+    display: none;
+  }
+
+  .desk-bar-rail .desk-cap .desk-chip {
+    margin-left: 0;
+  }
+}
+
+.desk-fill {
+  flex: 1;
+}
+
+.desk-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  min-width: 0;
+  height: 26px;
+  margin-left: 4px;
+  padding: 0 8px 0 10px;
+  border: 1px solid var(--an-glass-border);
+  border-radius: var(--an-radius-pill);
+  background-color: var(--an-glass-surface);
+  box-shadow: inset 0 1px 0 var(--an-glass-edge);
+  color: var(--sp-foreground);
+  font: inherit;
+  font-size: 12px;
+  font-weight: 500;
+  cursor: pointer;
+  transition: background-color 150ms ease;
+  -webkit-app-region: no-drag;
+}
+
+.desk-chip:hover,
+.desk-chip[aria-expanded="true"] {
+  background-color: var(--an-glass-tint);
+}
+
+.desk-chip svg {
+  width: 14px;
+  height: 14px;
+  flex: none;
+  color: var(--sp-muted-foreground);
+}
+
+.desk-chip-text {
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+
+.desk-dot {
+  width: 7px;
+  height: 7px;
+  flex: none;
+  border-radius: var(--an-radius-dot);
+  background: var(--sp-muted-foreground);
+  transition: background-color var(--an-dur-control) var(--an-ease), box-shadow var(--an-dur-control) var(--an-ease);
+}
+
+.desk-dot[data-health="ok"] {
+  background: var(--an-success);
+  box-shadow: 0 0 0 3px var(--an-success-soft);
+}
+
+.desk-dot[data-health="warn"] {
+  background: var(--an-warn);
+  box-shadow: 0 0 0 3px var(--an-warn-soft);
+}
+
+.desk-dot[data-health="bad"] {
+  background: var(--an-danger);
+  box-shadow: 0 0 0 3px var(--an-danger-soft);
+}
+
+.desk-menu-health {
+  margin-top: 6px;
+  font-size: 12px;
+  color: var(--sp-muted-foreground);
+}
+
+.desk-menu-health[data-health="bad"] {
+  color: var(--an-danger-ink);
+}
+
+.desk-menu-health[data-health="warn"] {
+  color: var(--an-warn-ink);
+}
+
+.desk-ctl button.desk-update {
+  display: inline-flex;
+  gap: 6px;
+  width: auto;
+  padding: 0 10px;
+  margin-right: 4px;
+  background-color: var(--an-success-soft);
+  color: var(--an-success-ink);
+  font: inherit;
+  font-size: 12px;
+  font-weight: 600;
+}
+
+.desk-ctl button.desk-update:hover {
+  background-color: var(--an-success);
+  color: #fff;
+}
+
+.desk-ctl-sep {
+  width: 1px;
+  height: 16px;
+  margin: 0 4px;
+  background: var(--an-glass-border);
+}
+
+.desk-ctl button.desk-gear[aria-pressed="true"] {
+  background-color: var(--an-glass-tint);
+  color: var(--sp-foreground);
+}
+
+.desk-ctl {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  padding-right: 6px;
+  transition: opacity 150ms ease;
+  -webkit-app-region: no-drag;
+}
+
+.desk-ctl button {
+  display: grid;
+  place-items: center;
+  width: 36px;
+  height: 28px;
+  border: 0;
+  border-radius: 8px;
+  background: transparent;
+  color: var(--sp-muted-foreground);
+  cursor: default;
+  transition: background-color 150ms ease, color 150ms ease;
+}
+
+.desk-ctl button svg {
+  width: 15px;
+  height: 15px;
+  stroke-width: 1.75;
+}
+
+.desk-ctl button:hover {
+  background-color: var(--an-glass-tint);
+  color: var(--sp-foreground);
+}
+
+.desk-ctl button.desk-close:hover {
+  background-color: var(--an-danger);
+  color: #fff;
+}
+
+/* ── меню роутера ──────────────────────────────────────────────────────── */
+
+.desk-scrim {
+  position: fixed;
+  inset: 0;
+  -webkit-app-region: no-drag;
+}
+
+.desk-menu {
+  position: absolute;
+  top: 38px;
+  left: 12px;
+  min-width: 240px;
+  padding: 6px;
+  border-width: 1px;
+  border-style: solid;
+  border-radius: var(--an-radius-block);
+  -webkit-app-region: no-drag;
+}
+
+.desk-menu-head {
+  padding: 8px 10px 10px;
+  border-bottom: 1px solid var(--an-glass-border);
+  margin-bottom: 6px;
+}
+
+.desk-menu-title {
+  font-weight: 600;
+}
+
+.desk-menu-sub {
+  font-size: 12px;
+  color: var(--sp-muted-foreground);
+}
+
+.desk-menu-item {
+  display: block;
+  width: 100%;
+  padding: 8px 10px;
+  border: 0;
+  border-radius: var(--an-radius-inner);
+  background: transparent;
+  color: var(--sp-foreground);
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+
+.desk-menu-item:hover {
+  background-color: var(--an-glass-tint);
+}
+
+.desk-menu-item.desk-danger {
+  color: var(--an-danger-ink);
+}
+
+/* ── содержимое ────────────────────────────────────────────────────────── */
+
+/* Сцена под рамкой: приложение (рельс и раздел) и поверх него — слой настроек. */
+.desk-stage {
+  position: relative;
+  flex: 1;
+  min-height: 0;
+  display: flex;
+}
+
+.desk-body {
+  position: relative;
+  flex: 1;
+  min-width: 0;
+  min-height: 0;
+  overflow-y: auto;
+  overflow-x: hidden;
+  display: flex;
+  flex-direction: column;
+}
+
+/* Подложка одна на всё окно (.desk): своя у панели (.sp-root.an-backdrop) легла бы второй,
+ * со швом под рамкой и полосой другого фона под дорожкой прокрутки. */
+.desk .sp-root.an-backdrop {
+  background: transparent;
+}
+
+/* Подложка панели в LuCI — карточка внутри страницы темы (скругление, высота «экран минус шапка
+ * LuCI»). В окне она и есть экран: во всю высоту, без скругления. */
+.desk-body > .sp-root {
+  flex: 1 0 auto;
+  min-height: 100%;
+  border-radius: 0;
+}
+
+.desk-body::-webkit-scrollbar {
+  width: 10px;
+}
+
+.desk-body::-webkit-scrollbar-thumb {
+  border: 3px solid transparent;
+  border-radius: 999px;
+  background: color-mix(in srgb, var(--sp-foreground) 22%, transparent);
+  background-clip: padding-box;
+}
+
+.desk-body::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+/* ── подключение ───────────────────────────────────────────────────────── */
+
+.desk-connect {
+  flex: 1;
+  display: grid;
+  place-items: center;
+  padding: 24px 16px;
+}
+
+.desk-card {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+  width: 100%;
+  max-width: 380px;
+  padding: 28px;
+  border-radius: 16px;
+}
+
+.desk-card-logo {
+  width: 44px;
+  height: 44px;
+  margin-bottom: 4px;
+}
+
+.desk-card-sub {
+  margin-top: -8px;
+  color: var(--sp-muted-foreground);
+}
+
+.desk-input {
+  width: 100%;
+}
+
+.desk-error {
+  padding: 8px 12px;
+  border: 1px solid var(--an-danger-border);
+  border-radius: 8px;
+  background: var(--an-danger-soft);
+  color: var(--an-danger-ink);
+  font-size: 13px;
+}
+
+.desk-submit {
+  width: 100%;
+  margin-top: 4px;
+}
+
+/* Главная desktop: две колонки, статус над сеткой. Группы разделяет воздух,
+ * поверхности остаются только у самостоятельных карточек. */
+.desk .sp-board > * + * { margin-top: 16px; }
+/* Блоки «доски» — на стекле Andromeda (an-glass), как карточки панели. Вердикт — внутри
+ * верхнего блока, без своей карточки. */
+.desk .sp-board .sp-board-verdict {
+  padding: 4px 4px 2px !important;
+  background: transparent !important;
+  border: 0 !important;
+  box-shadow: none !important;
+  backdrop-filter: none !important;
+}
+.desk .sp-board-verdict .sp-verdict { font-size: 23px; line-height: 1.3; }
+.desk .sp-board-grid { align-items: stretch; }
+.desk .sp-board-tile {
+  /* Плитки — на стекле, как было до черновика помощника (an-glass; вложенное в стекло блока —
+   * тоном Andromeda): «и блоки, и плитки» в стекло (владелец). */
+  position: relative;
+}
+.desk .sp-board-tile-name,
+.desk .sp-board-rule-open { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.desk .sp-board-tile-name { line-height: 1.4; }
+.desk .sp-board-tile > :first-child > :last-child:not(:first-child) { flex-shrink: 0; }
+.desk .sp-board-rule-open::after { content: ''; position: absolute; inset: 0; border-radius: 16px; }
+.desk .sp-board-rule-open:focus-visible { outline: none; }
+.desk .sp-board-rule:has(.sp-board-rule-open:focus-visible) { outline: 2px solid var(--sp-primary); outline-offset: 2px; }
+.desk .sp-board-rule-control,
+.desk .sp-board-labels { position: relative; z-index: 1; }
+.desk .sp-board-rule-off > :not(:first-child) { color: var(--sp-muted-foreground); }
+.desk .sp-board-rule-off .sp-board-route-name { opacity: .6; }
+.desk .sp-board-rule-foot {
+  display: flex;
+  justify-content: space-between;
+  gap: 4px 8px;
+  margin-top: auto;
+  white-space: nowrap;
+}
+.desk .sp-board-labels { min-width: 0; }
+.desk .sp-board-label-line { display: flex; align-items: center; gap: 4px; min-height: 24px; }
+.desk .sp-board-label-line > span,
+.desk .sp-board-label-measure > span[data-label-measure] {
+  max-width: 150px;
+  overflow: hidden;
+  white-space: nowrap;
+  flex: none;
+}
+.desk .sp-board-label-measure {
+  position: absolute;
+  display: flex;
+  gap: 4px;
+  width: 0;
+  height: 0;
+  overflow: hidden;
+  visibility: hidden;
+  pointer-events: none;
+  contain: layout;
+}
+.desk .sp-board-label-measure [data-count-measure],
+.desk .sp-board-more { flex: none; font-size: 12px; padding: 3px 7px; white-space: nowrap; }
+.desk .sp-board-more { color: var(--sp-primary); border-radius: 6px; }
+.desk .sp-board-labels:has(.sp-board-list-panel) { z-index: 5; }
+.desk .sp-board-rule:has(.sp-board-list-panel) { z-index: 5; }
+.desk .sp-board-list-panel {
+  position: absolute;
+  top: calc(100% + 6px);
+  left: 0;
+  width: 100%;
+  min-width: 0;
+  padding: 12px;
+  border: 1px solid var(--sp-border);
+  border-radius: 12px;
+  background: var(--an-surface-card);
+  box-shadow: 0 8px 24px #0003;
+}
+.desk .sp-board-list-panel ul { max-height: 200px; overflow-y: auto; overscroll-behavior: contain; margin: 8px 0 0; padding: 0; list-style: none; }
+.desk .sp-board-list-panel li { padding: 7px 0; font-size: 12px; overflow-wrap: anywhere; }
+.desk .sp-board-list-panel li + li { border-top: 1px solid var(--sp-border); }
+.desk .sp-board-address { display: flex; flex-wrap: wrap; align-items: center; gap: 3px; margin-top: auto; color: var(--sp-muted-foreground); }
+.desk .sp-board-address-value { min-width: 0; flex: 1; font: 12px/1.5 var(--an-font-mono, monospace); overflow-wrap: anywhere; }
+.desk .sp-board-icon { display: inline-flex; justify-content: center; align-items: center; flex: none; width: 26px; height: 26px; color: var(--sp-muted-foreground); border-radius: 6px; }
+.desk .sp-board-copy-error { flex-basis: 100%; font-size: 12px; }
+@media (hover: hover) {
+  .desk .sp-board-rule:hover { border-color: color-mix(in srgb, var(--sp-primary) 40%, var(--sp-border)); }
+  .desk .sp-board-more:hover, .desk .sp-board-icon:hover { background: var(--sp-accent); color: var(--sp-foreground); }
+}
+
+.desk .sp-board-list-panel[data-above] { top: auto; bottom: calc(100% + 6px); }
+
+
+/* Перетаскивание там, где его ждут (порядок правил, состав пула): общий запрет выше гасил бы и его. */
+.desk [draggable="true"] {
+  -webkit-user-drag: element;
+}
+
+/* Меню роутера: другие роутеры приложения — переход щелчком (electron/routers.cjs). */
+.desk-menu-label {
+  padding: 6px 10px 2px;
+  color: var(--sp-muted-foreground);
+  font-size: 11px;
+}
+.desk-menu-router {
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+  text-align: left;
+}
+.desk-menu-sep {
+  height: 1px;
+  margin: 4px 6px;
+  background: var(--an-glass-border);
+}

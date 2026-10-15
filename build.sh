@@ -174,6 +174,10 @@ cp files/usr/sbin/splify2-update-subs "$PKG/usr/sbin/splify2-update-subs"
 # удаление плюс установка, поэтому чистка в postrm сносила бы настройки человека при каждом
 # обновлении. Поэтому — отдельная команда, которую зовут осознанно (см. шапку скрипта).
 cp files/usr/sbin/splify2-purge "$PKG/usr/sbin/splify2-purge"
+# ReCheck — обход DPI на прямом трафике: служба запускает движок из отдельного пакета recheck,
+# если тот стоит и обход включён (/etc/splify2/recheck.conf); иначе ничего не делает.
+cp files/etc/init.d/splify2-recheck "$PKG/etc/init.d/splify2-recheck"
+chmod 0755 "$PKG/etc/init.d/splify2-recheck"
 # Отклик для счётчика роутеров на сайте: своё задание крона раз в час (post-install ниже).
 cp files/usr/sbin/splify2-ping "$PKG/usr/sbin/splify2-ping"
 mkdir -p "$PKG/usr/share/splify2"
@@ -222,6 +226,14 @@ chmod 0755 "$PKG/usr/libexec/rpcd/splify2" "$PKG/usr/sbin/splify2-update-lists" 
            "$PKG/usr/sbin/splify2-purge" "$PKG/usr/sbin/splify2-ping"
 chmod 0644 "$PKG/usr/share/splify2/allow-domains.sh"
 chmod 0644 "$PKG"/usr/lib/splify2/*.sh "$PKG"/usr/lib/splify2/rpcd/*.sh
+
+# API для приложений вне LuCI (SPLIFY2_API.md в хабе): шлюз CGI на ucode с токенами устройств. Версия
+# пакета вписывается на сборке — её отдаёт /v1/info, и клиенту не нужен отдельный вызов.
+mkdir -p "$PKG/www/cgi-bin"
+sed "s/@VERSION@/$VERSION/" files/www/cgi-bin/splify2-api > "$PKG/www/cgi-bin/splify2-api"
+chmod 0755 "$PKG/www/cgi-bin/splify2-api"
+grep -q "^const VERSION = '$VERSION';" "$PKG/www/cgi-bin/splify2-api" || {
+    echo "в www/cgi-bin/splify2-api не вписана версия — /v1/info назовёт заглушку"; exit 1; }
 
 # Протокол xsteer: обработчик netifd и страница LuCI.
 #
@@ -415,7 +427,7 @@ chmod +x build/scripts/post-install
 # опроса). Теперь добавить подключение и забыть укладку нельзя.
 for _need in $(grep -ho '/usr/lib/splify2/[a-z0-9_-]*\.sh' \
                     files/usr/libexec/rpcd/splify2 files/usr/sbin/splify2-update-lists \
-                    files/usr/sbin/splify2-ping |
+                    files/usr/sbin/splify2-ping files/etc/init.d/splify2-recheck files/usr/lib/splify2/rpcd/*.sh |
                sort -u); do
     test -s "$PKG$_need" || {
         echo "в пакете нет ${_need#/} — подключающая его половина не запустится"; exit 1; }
@@ -458,7 +470,7 @@ docker run --rm -v "$PWD":/w -w /w alpine:latest sh -c \
     "apk add --no-cache apk-tools >/dev/null 2>&1 && apk mkpkg \
        --info name:luci-app-splify2 --info version:$VERSION-r1 \
        --info description:'splify2: правила, выходы и списки поверх ядра steer' \
-       --info arch:noarch --info depends:'luci-base ip-full curl' \
+       --info arch:noarch --info depends:'luci-base ip-full curl ucode ucode-mod-fs ucode-mod-ubus' \
        --script post-install:build/scripts/post-install \
        --script post-upgrade:build/scripts/post-install \
        -F $PKG -o $OUT/luci-app-splify2-$VERSION-1_noarch.apk" > "$BUILD_LOG" 2>&1 \
@@ -500,7 +512,7 @@ mkdir -p "$PKG/CONTROL"
 cat > "$PKG/CONTROL/control" <<EOF
 Package: luci-app-splify2
 Version: $VERSION-1
-Depends: luci-base, ip-full, curl
+Depends: luci-base, ip-full, curl, ucode, ucode-mod-fs, ucode-mod-ubus
 Architecture: all
 Maintainer: xyzmean
 Section: luci

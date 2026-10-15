@@ -32,8 +32,8 @@ const services = toCatalog(MANIFEST).services
 const adguard = services.find((s) => s.name === 'Реклама (AdGuard)')!
 const telegram = services.find((s) => s.name === 'Telegram')!
 
-const OUTPUTS = { direct: { kind: 'direct', up: true } } as never
-const EMPTY: Channel = { name: 'Реклама', out: 'direct', match: {} } as Channel
+const OUTPUTS = { vpn: { kind: 'interface', device: 'wg0', up: true } } as never
+const EMPTY: Channel = { name: 'Реклама', out: 'vpn', match: {} } as Channel
 
 function mount(ch: Channel, local: Record<string, { count: number; mtime: number }> = {}) {
     const changes: Channel[] = []
@@ -84,10 +84,10 @@ describe('набор каталога, который списком не выр
 
     it('в спеке v2 — ключ `srs` списка, и обратно правило читается тем же', () => {
         const ch: Channel = { ...EMPTY, match: { srs_files: [SET], mode: 'fakeip' } } as Channel
-        const doc = encodeSpec({ outputs: { direct: { name: 'direct', kind: 'direct' } }, channels: [ch] } as Spec)
+        const doc = encodeSpec({ outputs: { vpn: { name: 'vpn', kind: 'interface', device: 'wg0' } }, channels: [ch] } as Spec)
         const lists = doc.lists as Record<string, Record<string, unknown>>
         expect(Object.values(lists)).toEqual([{ srs: [SET] }])
-        expect((doc.rules as Record<string, unknown>[])[0]).toMatchObject({ out: 'direct', resolve: 'fakeip' })
+        expect((doc.rules as Record<string, unknown>[])[0]).toMatchObject({ out: 'vpn', resolve: 'fakeip' })
         const back = decodeSpec(doc).channels[0]
         expect(back.match.srs_files).toEqual([SET])
         // И выбранным он показывается: галочка стоит у записи каталога.

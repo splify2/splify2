@@ -1,0 +1,96 @@
+<!doctype html>
+<html lang="ru">
+  <head>
+    <meta charset="UTF-8" />
+    <meta http-equiv="Content-Security-Policy" content="default-src 'self'; style-src 'self' 'unsafe-inline'" />
+    <title>splify2</title>
+    <!-- Заставка запуска, как у Discord: пока поднимается главное окно. Без скриптов: штрих «S»
+         рисуется сам (stroke-dashoffset), закрытие — класс out от главного процесса. -->
+    <style>
+      :root {
+        --ease-out: cubic-bezier(0.23, 1, 0.32, 1);
+        color-scheme: dark;
+      }
+      html, body {
+        margin: 0;
+        height: 100%;
+        background: transparent;
+        overflow: hidden;
+        font-family: "Segoe UI", system-ui, sans-serif;
+        -webkit-app-region: drag;
+        user-select: none;
+      }
+      .card {
+        position: absolute;
+        inset: 10px;
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        justify-content: center;
+        gap: 18px;
+        border-radius: 22px;
+        background:
+          radial-gradient(ellipse 80% 60% at 80% 0%, rgba(139, 124, 246, 0.28), transparent 70%),
+          radial-gradient(ellipse 70% 60% at 10% 100%, rgba(45, 180, 210, 0.16), transparent 70%),
+          #16121f;
+        box-shadow: 0 12px 32px rgba(0, 0, 0, 0.35), inset 0 1px 0 rgba(255, 255, 255, 0.06);
+        transition: opacity 200ms var(--ease-out), transform 200ms var(--ease-out);
+      }
+      html.out .card {
+        opacity: 0;
+        transform: scale(0.97);
+      }
+      svg {
+        width: 96px;
+        height: 96px;
+        overflow: visible;
+      }
+      .s {
+        fill: none;
+        stroke: #8b7cf6;
+        stroke-width: 7;
+        stroke-linecap: round;
+        stroke-dasharray: 100;
+        stroke-dashoffset: 100;
+        animation: draw 900ms var(--ease-out) 120ms forwards, glow 2400ms ease-in-out 1100ms infinite;
+      }
+      @keyframes draw {
+        to { stroke-dashoffset: 0; }
+      }
+      @keyframes glow {
+        0%, 100% { opacity: 1; }
+        50% { opacity: 0.55; }
+      }
+      .name {
+        font-size: 17px;
+        font-weight: 600;
+        letter-spacing: -0.01em;
+        color: #ece9f7;
+        animation: rise 400ms var(--ease-out) 300ms both;
+      }
+      .state {
+        font-size: 12px;
+        color: rgba(236, 233, 247, 0.55);
+        animation: rise 400ms var(--ease-out) 420ms both;
+      }
+      @keyframes rise {
+        from { opacity: 0; transform: translateY(4px); }
+        to { opacity: 1; transform: none; }
+      }
+      @media (prefers-reduced-motion: reduce) {
+        .s { stroke-dashoffset: 0; animation: none; }
+        .name, .state { animation: none; }
+        .card { transition-duration: 1ms; }
+      }
+    </style>
+  </head>
+  <body>
+    <div class="card">
+      <svg viewBox="8 8 48 48" aria-hidden="true">
+        <path class="s" pathLength="100" d="M46 13 H31 a9.5 9.5 0 0 0 0 19 h2 a9.5 9.5 0 0 1 0 19 H18" />
+      </svg>
+      <div class="name">splify2</div>
+      <div class="state">Запуск…</div>
+    </div>
+  </body>
+</html>

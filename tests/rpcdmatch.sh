@@ -4396,26 +4396,26 @@ uci_set 'firewall.@forwarding[0]' forwarding; uci_set 'firewall.@forwarding[0].s
 printf '%s\n' '{"schema":1,"lan_devices":["br-lan","tailscale0"],"outputs":{"direct":{"kind":"direct"},"vpn":{"kind":"interface","device":"wg0","on_fail":"direct"}},"channels":[]}' > "$T/etc/spec.json"
 out="$(rpcd apply)"
 check "apply с устройством клиентов из чужой зоны прошёл" "true" "$(printf '%s' "$out" | jget ok)"
-check "проброс в зону туннелей заведён и из lan, и из зоны tailscale0" "lan ts" "$(fwd_srcs steer_iface)"
+check "проброс в зону туннелей заведён и из lan, и из зоны tailscale0" "lan ts" "$(fwd_srcs steer_zone)"
 check "проброс из чужой зоны записан за нами" "yes" \
-      "$(grep -qx 'fwd steer_iface ts' "$T/etc/fw-owned" 2>/dev/null && echo yes || echo no)"
+      "$(grep -qx 'fwd steer_zone ts' "$T/etc/fw-owned" 2>/dev/null && echo yes || echo no)"
 check "и назван в ответе apply" "yes" \
-      "$(printf '%s' "$out" | grep -q 'проброс ts -> steer_iface' && echo yes || echo no)"
+      "$(printf '%s' "$out" | grep -q 'проброс ts -> steer_zone' && echo yes || echo no)"
 # Повторный apply ничего не дублирует.
 out="$(rpcd apply)"
-check "второй apply проброс не дублирует" "lan ts" "$(fwd_srcs steer_iface)"
+check "второй apply проброс не дублирует" "lan ts" "$(fwd_srcs steer_zone)"
 # Устройство из зоны ts ушло из спеки — наш проброс убирается, расписка снимается, lan остаётся.
 printf '%s\n' '{"schema":1,"lan_devices":["br-lan"],"outputs":{"direct":{"kind":"direct"},"vpn":{"kind":"interface","device":"wg0","on_fail":"direct"}},"channels":[]}' > "$T/etc/spec.json"
 out="$(rpcd apply)"
-check "устройств из зоны ts в спеке нет — наш проброс убран" "lan" "$(fwd_srcs steer_iface)"
+check "устройств из зоны ts в спеке нет — наш проброс убран" "lan" "$(fwd_srcs steer_zone)"
 check "и расписка снята" "no" \
-      "$(grep -qx 'fwd steer_iface ts' "$T/etc/fw-owned" 2>/dev/null && echo yes || echo no)"
+      "$(grep -qx 'fwd steer_zone ts' "$T/etc/fw-owned" 2>/dev/null && echo yes || echo no)"
 # Зона объявлена через network, а не device: интерфейс tailscale с устройством tailscale0.
 uci_set 'network.tailscale' interface; uci_set 'network.tailscale.device' 'tailscale0'
 uci_set 'firewall.@zone[2].device' ''; uci_set 'firewall.@zone[2].network' 'tailscale'
 printf '%s\n' '{"schema":1,"lan_devices":["br-lan","tailscale0"],"outputs":{"direct":{"kind":"direct"},"vpn":{"kind":"interface","device":"wg0","on_fail":"direct"}},"channels":[]}' > "$T/etc/spec.json"
 out="$(rpcd apply)"
-check "зона, заданная через network, тоже узнаётся" "lan ts" "$(fwd_srcs steer_iface)"
+check "зона, заданная через network, тоже узнаётся" "lan ts" "$(fwd_srcs steer_zone)"
 # Зона — ИМЕНОВАННАЯ секция (`config zone 'ts'`): так её пишут руками по руководствам, и uci
 # зовёт её не «@zone[N]», а именем. До правки такая зона для нас не существовала: устройство
 # клиентов считалось ничьим, проброс не заводился — то есть H-206 для неё не работал вовсе.
@@ -4426,23 +4426,23 @@ uci_set 'firewall.ts' zone;        uci_set 'firewall.ts.name' ts;        uci_set
 uci_set 'firewall.ts_rule' rule;   uci_set 'firewall.ts_rule.name' ts;   uci_set 'firewall.ts_rule.src' ts
 printf '%s\n' '{"schema":1,"lan_devices":["br-lan","tailscale0"],"outputs":{"direct":{"kind":"direct"},"vpn":{"kind":"interface","device":"wg0","on_fail":"direct"}},"channels":[]}' > "$T/etc/spec.json"
 out="$(rpcd apply)"
-check "именованная зона с устройством клиентов узнаётся — проброс заведён" "lan ts" "$(fwd_srcs steer_iface)"
+check "именованная зона с устройством клиентов узнаётся — проброс заведён" "lan ts" "$(fwd_srcs steer_zone)"
 # Проброс в нашу зону человек дописал сам именованной секцией — второго не заводим и чужой не трогаем.
 rm -f "$T/uci.store" "$T/etc/fw-owned"; : > "$T/uci.store"
 uci_set 'firewall.@zone[0]' zone;  uci_set 'firewall.@zone[0].name' lan; uci_set 'firewall.@zone[0].device' 'br-lan'
 uci_set 'firewall.ts' zone;        uci_set 'firewall.ts.name' ts;        uci_set 'firewall.ts.device' 'tailscale0'
-uci_set 'firewall.@zone[1]' zone;  uci_set 'firewall.@zone[1].name' steer_iface; uci_set 'firewall.@zone[1].device' 'wg0'
-uci_set 'firewall.ts2vpn' forwarding; uci_set 'firewall.ts2vpn.src' ts; uci_set 'firewall.ts2vpn.dest' steer_iface
+uci_set 'firewall.@zone[1]' zone;  uci_set 'firewall.@zone[1].name' steer_zone; uci_set 'firewall.@zone[1].device' 'wg0'
+uci_set 'firewall.ts2vpn' forwarding; uci_set 'firewall.ts2vpn.src' ts; uci_set 'firewall.ts2vpn.dest' steer_zone
 out="$(rpcd apply)"
 check "чужой именованный проброс ts -> зона туннелей не дублируется" "1" \
-      "$(grep -c '^firewall\.[^.]*\.dest=steer_iface$' "$T/uci.store" | { read -r n; echo $((n - $(grep -c '^firewall\.@forwarding\[[0-9]*\]\.src=lan$' "$T/uci.store"))); })"
+      "$(grep -c '^firewall\.[^.]*\.dest=steer_zone$' "$T/uci.store" | { read -r n; echo $((n - $(grep -c '^firewall\.@forwarding\[[0-9]*\]\.src=lan$' "$T/uci.store"))); })"
 check "и за нами не записан" "no" \
-      "$(grep -qx 'fwd steer_iface ts' "$T/etc/fw-owned" 2>/dev/null && echo yes || echo no)"
+      "$(grep -qx 'fwd steer_zone ts' "$T/etc/fw-owned" 2>/dev/null && echo yes || echo no)"
 # Оба устройства в lan — лишних пробросов нет.
 rm -f "$T/uci.store" "$T/etc/fw-owned"; : > "$T/uci.store"
 uci_set 'firewall.@zone[0]' zone;  uci_set 'firewall.@zone[0].name' lan; uci_set 'firewall.@zone[0].device' 'br-lan tailscale0'
 out="$(rpcd apply)"
-check "оба устройства в lan — проброс один" "lan" "$(fwd_srcs steer_iface)"
+check "оба устройства в lan — проброс один" "lan" "$(fwd_srcs steer_zone)"
 rm -f "$T/uci.store"; : > "$T/uci.store"
 
 # ---- устройство клиентов БЕЗ ЗОНЫ ВОВСЕ: зону заводим мы -----------------------------------
@@ -4486,8 +4486,8 @@ check "forward ACCEPT — иначе смысла в зоне нет" "ACCEPT" "
 check "NAT у зоны клиентов не включается" "0" "$(uci_get "firewall.$(zone_id_by_name steer_clients).masq")"
 # Пробросы — ИЗ зоны: в зону туннелей (её заводит синхронизация той зоны) и в wan, без которого
 # всё, что не названо в правилах, продолжало бы молча падать.
-check "из зоны клиентов пробрасывается и в туннель, и в wan" "steer_iface wan" "$(fwd_dests steer_clients)"
-check "в зону туннелей пробрасывается и из lan, и из зоны клиентов" "lan steer_clients" "$(fwd_srcs steer_iface)"
+check "из зоны клиентов пробрасывается и в туннель, и в wan" "steer_zone wan" "$(fwd_dests steer_clients)"
+check "в зону туннелей пробрасывается и из lan, и из зоны клиентов" "lan steer_clients" "$(fwd_srcs steer_zone)"
 # Обратных пробросов не заводим ВОВСЕ: `lan -> зона клиентов` открыл бы локальной сети доступ
 # к пирам чужого туннеля, а об этом нас никто не просил.
 check "в зону клиентов не пробрасывается ниоткуда" "" "$(fwd_srcs steer_clients)"
@@ -4496,14 +4496,14 @@ check "зона и проброс в wan записаны за нами" "yes" \
          grep -qx 'fwd wan steer_clients' "$T/etc/fw-owned" 2>/dev/null && echo yes || echo no)"
 # Повторный apply ничего не дублирует.
 out="$(rpcd apply)"
-check "второй apply зону и пробросы не дублирует" "steer_iface wan" "$(fwd_dests steer_clients)"
+check "второй apply зону и пробросы не дублирует" "steer_zone wan" "$(fwd_dests steer_clients)"
 # Устройство ушло из спеки — зона уходит вместе с ОБОИМИ пробросами. Оставленный проброс с
 # `src` на удалённую зону fw4 отвергает так же, как с `dest`, — роутер остался бы без фаервола.
 printf '%s\n' '{"schema":1,"lan_devices":["br-lan"],"outputs":{"direct":{"kind":"direct"},"vpn":{"kind":"interface","device":"wg0","on_fail":"direct"}},"channels":[]}' > "$T/etc/spec.json"
 out="$(rpcd apply)"
 check "устройства беззонных клиентов ушли — зоны нет" "" "$(zone_id_by_name steer_clients)"
 check "и ни одного проброса, её касающегося" "" "$(fwd_dests steer_clients)$(fwd_srcs steer_clients)"
-check "а проброс lan -> зона туннелей остался" "lan" "$(fwd_srcs steer_iface)"
+check "а проброс lan -> зона туннелей остался" "lan" "$(fwd_srcs steer_zone)"
 # Человек положил tailscale0 в свою зону — своей мы больше не заводим, только проброс.
 rm -f "$T/uci.store" "$T/etc/fw-owned"; : > "$T/uci.store"
 uci_set 'firewall.@zone[0]' zone;  uci_set 'firewall.@zone[0].name' lan; uci_set 'firewall.@zone[0].device' 'br-lan'
@@ -4512,7 +4512,7 @@ uci_set 'firewall.ts' zone;        uci_set 'firewall.ts.name' ts;        uci_set
 printf '%s\n' '{"schema":1,"lan_devices":["br-lan","tailscale0"],"outputs":{"direct":{"kind":"direct"},"vpn":{"kind":"interface","device":"wg0","on_fail":"direct"}},"channels":[]}' > "$T/etc/spec.json"
 out="$(rpcd apply)"
 check "у устройства есть своя зона — нашей не появляется" "" "$(zone_id_by_name steer_clients)"
-check "ему хватает проброса из его зоны" "lan ts" "$(fwd_srcs steer_iface)"
+check "ему хватает проброса из его зоны" "lan ts" "$(fwd_srcs steer_zone)"
 rm -f "$T/uci.store"; : > "$T/uci.store"
 
 # ---- спека v2: бэкенд читает её так же, как прежнюю v1 ------------------------------------
@@ -4547,6 +4547,10 @@ out="$(printf '%s\n' 'splify2-backup 2' '[spec]' '{"version":2,"lists":{"a":{"do
 check "список вне каталога списков в v2 отвергается" "false" "$(printf '%s' "$out" | jget ok)"
 out="$(printf '%s\n' 'splify2-backup 2' '[spec]' '{"version":2,"dns":{"upstreams":{"g":{"url":"file:///etc/shadow"}}}}' | backup_put)"
 check "чужая схема в адресе DNS отвергается" "false" "$(printf '%s' "$out" | jget ok)"
+out="$(printf '%s\n' 'splify2-backup 2' '[spec]' '{"version":2,"dns":{"upstreams":{"a":{"url":"h3://dns.adguard-dns.com/dns-query","ips":["94.140.14.14"]},"b":{"url":"https://dns.google/dns-query","ips":["8.8.8.8"],"fragment":true}}}}' | backup_put)"
+check "архив с адресом h3:// и fragment у DoH принимается" "true" "$(printf '%s' "$out" | jget ok)"
+out="$(printf '%s\n' 'splify2-backup 2' '[spec]' '{"version":2,"dns":{"upstreams":{"g":{"url":"h3://x;reboot"}}}}' | backup_put)"
+check "адрес h3:// с разделителем команд отвергается" "false" "$(printf '%s' "$out" | jget ok)"
 out="$(printf '%s\n' 'splify2-backup 2' '[spec]' '{"version":2,"outputs":{"t":{"kind":"awg","conf":"/etc/shadow"}}}' | backup_put)"
 check "файл настройки вне каталога движка отвергается" "false" "$(printf '%s' "$out" | jget ok)"
 
@@ -4592,17 +4596,52 @@ uci_set 'firewall.@zone[1]' zone;  uci_set 'firewall.@zone[1].name' wan; uci_set
 out="$(rpcd apply)"
 check "apply со спекой прокси прошёл" "true" "$(printf '%s' "$out" | jget ok)"
 check "устройства hysteria2 и прокси — в зоне туннелей ядра, без NAT" "hy ss9 tr vl;0" \
-      "$(zone_devs steer_vless);$(uci_get "firewall.$(zone_id_by_name steer_vless).masq")"
+      "$(zone_devs steer_zone);$(uci_get "firewall.$(zone_id_by_name steer_zone).masq")"
 check "строка зон purge та же, что у объекта rpcd" \
       "$(sed -n 's/^FW_ZONES="\(.*\)"$/\1/p' "$SCRIPT")" \
       "$(sed -n 's/^FW_ZONES=${FW_ZONES:-"\(.*\)"}$/\1/p' "$ROOT/files/usr/sbin/splify2-purge")"
+
+# ---- миграция прежних зон steer_vless и steer_iface в steer_zone ------------------------------
+# Заведённые нами (есть расписка) убираются с пробросами и расписками, устройства уходят в
+# steer_zone, ни одно не стоит в двух зонах; одноимённая зона человека остаётся нетронутой.
+rm -f "$T/uci.store" "$T/etc/fw-owned"; : > "$T/uci.store"
+uci_set 'firewall.@zone[0]' zone;  uci_set 'firewall.@zone[0].name' lan; uci_set 'firewall.@zone[0].device' 'br-lan'
+uci_set 'firewall.@zone[1]' zone;  uci_set 'firewall.@zone[1].name' wan; uci_set 'firewall.@zone[1].device' 'eth1'
+uci_set 'firewall.@zone[2]' zone;  uci_set 'firewall.@zone[2].name' steer_vless; uci_set 'firewall.@zone[2].device' 'hy tr'
+uci_set 'firewall.@zone[3]' zone;  uci_set 'firewall.@zone[3].name' steer_iface; uci_set 'firewall.@zone[3].device' 'wgold'; uci_set 'firewall.@zone[3].masq' 1
+uci_set 'firewall.@forwarding[0]' forwarding; uci_set 'firewall.@forwarding[0].src' lan; uci_set 'firewall.@forwarding[0].dest' steer_vless
+uci_set 'firewall.@forwarding[1]' forwarding; uci_set 'firewall.@forwarding[1].src' lan; uci_set 'firewall.@forwarding[1].dest' steer_iface
+printf '%s\n' 'zone steer_vless' 'dev steer_vless hy' 'dev steer_vless tr' 'zone steer_iface' 'dev steer_iface wgold' > "$T/etc/fw-owned"
+out="$(rpcd apply)"
+check "миграция: apply прошёл" "true" "$(printf '%s' "$out" | jget ok)"
+check "миграция: заведённые нами steer_vless и steer_iface убраны" ";" "$(zone_id_by_name steer_vless);$(zone_id_by_name steer_iface)"
+check "миграция: устройства переехали в steer_zone, без masq" "hy ss9 tr vl;0" \
+      "$(zone_devs steer_zone);$(uci_get "firewall.$(zone_id_by_name steer_zone).masq")"
+check "миграция: пробросов в прежние зоны не осталось, в steer_zone — lan" "0;lan" \
+      "$(grep -c '^firewall\.[^.]*\.dest=steer_\(vless\|iface\)$' "$T/uci.store");$(fwd_srcs steer_zone)"
+check "миграция: расписок о прежних зонах нет" "0" "$(grep -c 'steer_vless\|steer_iface' "$T/etc/fw-owned")"
+check "миграция: ни одно устройство не стоит в двух зонах" "" \
+      "$(sed -n 's/^firewall\.[^.]*\.device=//p' "$T/uci.store" | tr -d "'" | tr ' ' '\n' | grep . | sort | uniq -d | tr '\n' ' ')"
+out="$(rpcd apply)"
+check "миграция: повторный apply ничего не меняет" "hy ss9 tr vl" "$(zone_devs steer_zone)"
+# Зоны человека с теми же именами (расписки нет, есть чужое устройство) — не трогаем.
+rm -f "$T/uci.store" "$T/etc/fw-owned"; : > "$T/uci.store"
+uci_set 'firewall.@zone[0]' zone;  uci_set 'firewall.@zone[0].name' lan; uci_set 'firewall.@zone[0].device' 'br-lan'
+uci_set 'firewall.@zone[1]' zone;  uci_set 'firewall.@zone[1].name' wan; uci_set 'firewall.@zone[1].device' 'eth1'
+uci_set 'firewall.@zone[2]' zone;  uci_set 'firewall.@zone[2].name' steer_vless; uci_set 'firewall.@zone[2].device' 'eth9'
+uci_set 'firewall.@zone[3]' zone;  uci_set 'firewall.@zone[3].name' steer_iface; uci_set 'firewall.@zone[3].device' 'eth8'; uci_set 'firewall.@zone[3].masq' 1
+uci_set 'firewall.@forwarding[0]' forwarding; uci_set 'firewall.@forwarding[0].src' lan; uci_set 'firewall.@forwarding[0].dest' steer_vless
+out="$(rpcd apply)"
+check "чужие steer_vless и steer_iface остались с устройствами" "eth9;eth8" "$(zone_devs steer_vless);$(zone_devs steer_iface)"
+check "и проброс человека в его зону цел" "1" "$(grep -c '^firewall\.[^.]*\.dest=steer_vless$' "$T/uci.store")"
+check "наши устройства — в steer_zone" "hy ss9 tr vl" "$(zone_devs steer_zone)"
 rm -f "$T/uci.store" "$T/etc/fw-owned"; : > "$T/uci.store"
 printf '{"schema":1,"outputs":{},"channels":[]}\n' > "$T/etc/spec.json"
 
 # ---- самолечение: ключ ipv6 выходу-интерфейсу без ключа в нашей зоне — по адресу IPv6 --------
 #
 # Обращение: «при добавлении выхода варпа s2 жалуется на созданный им самим интерфейс без
-# параметра IPv6 Masquerading». Зона steer_iface создаётся с masq (IPv4) без masq6, и ядро просит
+# параметра IPv6 Masquerading». Зона steer_zone создаётся без masq и без masq6 (IPv4 подменяет ядро), и ядро просит
 # включить masq6 — у зоны, которую завели мы. Подмену IPv6 ставит само ядро по `ipv6: nat`;
 # apply (spec_heal_ipv6) дописывает ключ выходам, записанным прежней панелью, архивом или руками.
 #
@@ -4723,7 +4762,7 @@ heal_zones() {  # [masq6]
     uci_set 'firewall.vpni' zone;      uci_set 'firewall.vpni.name' vpni;    uci_set 'firewall.vpni.network' 'old_vpn'
     heal_net
     if [ -n "${1:-}" ]; then
-        uci_set 'firewall.@zone[2]' zone; uci_set 'firewall.@zone[2].name' steer_iface
+        uci_set 'firewall.@zone[2]' zone; uci_set 'firewall.@zone[2].name' steer_zone
         uci_set 'firewall.@zone[2].device' 'warp wgv4 wgcfg wgdown ghost wgpfx wgll wg_r wg_o wg_n amn amn4 amn_def wgp1 wgp2'
         uci_set 'firewall.@zone[2].masq6' 1
     fi
@@ -4758,12 +4797,12 @@ check "heal: устройство в чужой зоне (list network, имя =
 check "heal: устройство в чужой зоне (list network, опция device) не тронуто" "-" "$(v6of foreign_d)"
 check "heal: устройство в чужой зоне (list network, прежняя опция ifname) не тронуто" "-" "$(v6of foreign_i)"
 check "heal: устройство в чужой зоне (list network, имя выводит netifd) не тронуто" "-" "$(v6of foreign_u)"
-check "heal: чужие устройства в нашу зону не добавлены" "" "$(in_zone steer_iface wg_f wgnet wg_d wg_i pptp-vpn)"
-check "heal: и не записаны за нами" "0" "$(grep -c 'dev steer_iface \(wg_f\|wgnet\|wg_d\|wg_i\|pptp-vpn\)$' "$T/etc/fw-owned" 2>/dev/null)"
+check "heal: чужие устройства в нашу зону не добавлены" "" "$(in_zone steer_zone wg_f wgnet wg_d wg_i pptp-vpn)"
+check "heal: и не записаны за нами" "0" "$(grep -c 'dev steer_zone \(wg_f\|wgnet\|wg_d\|wg_i\|pptp-vpn\)$' "$T/etc/fw-owned" 2>/dev/null)"
 check "heal: об оставленных чужих устройствах сказано в ответе apply" "yes" \
       "$(line_has "$txt" 'уже в своих зонах' wg_f wgnet wg_d wg_i pptp-vpn)"
 check "heal: свои устройства в нашей зоне на месте" "warp wgv4 wgcfg wgdown ghost wgpfx wgll wg_r amn amn4 amn_def wgp1 wgp2" \
-      "$(in_zone steer_iface warp wgv4 wgcfg wgdown ghost wgpfx wgll wg_r amn amn4 amn_def wgp1 wgp2)"
+      "$(in_zone steer_zone warp wgv4 wgcfg wgdown ghost wgpfx wgll wg_r amn amn4 amn_def wgp1 wgp2)"
 # --- пул: ключ у каждого члена по его устройству ---
 check "heal: члены пула — по устройству каждого" "nat off" "$(v6of pm.a) $(v6of pm.b)"
 check "heal: группа и туннель без изменений" "- -" "$(v6of pm) $(v6of tun)"
@@ -4795,7 +4834,7 @@ sum1="$(cksum < "$T/etc/spec.json")"
 out="$(heal_apply apply)"
 check "heal: второй apply спеку не меняет (идемпотентно)" "$sum1" "$(cksum < "$T/etc/spec.json")"
 check "heal: и не сообщает о правке" "no" "$(printf '%s' "$out" | jget output | grep -q 'записан ipv6' && echo yes || echo no)"
-check "heal: чужие устройства и после второго apply вне нашей зоны" "" "$(in_zone steer_iface wg_f wgnet wg_d wg_i pptp-vpn)"
+check "heal: чужие устройства и после второго apply вне нашей зоны" "" "$(in_zone steer_zone wg_f wgnet wg_d wg_i pptp-vpn)"
 # v2 со словом «schema» где-то в тексте (выход так назван) — всё равно v2: лечится, и копии v1 нет.
 heal_spec; heal_zones
 sed -i 's/"warp":{/"schema":{/' "$T/etc/spec.json"
@@ -4875,7 +4914,7 @@ uci_set 'network.wg_srv' interface; uci_set 'network.wg_srv.proto' wireguard
 printf '%s\n' '{"version":2,"lan":{"devices":["br-lan","wg_srv"]},"outputs":{"direct":{"kind":"direct"},"vpn":{"kind":"interface","device":"wg0","on_fail":"direct"}},"channels":[]}' > "$T/etc/spec.json"
 out="$(rpcd apply)"
 check "клиент — интерфейс WireGuard в чужой зоне через network: зоны клиентов не заводим" "" "$(zone_id_by_name steer_clients)"
-check "и ему хватает проброса из его зоны" "lan vpnsrv" "$(fwd_srcs steer_iface)"
+check "и ему хватает проброса из его зоны" "lan vpnsrv" "$(fwd_srcs steer_zone)"
 rm -rf "$T/outnet-heal" "$T/outnet-v6" "$T/etc/awg" "$T/etc/amn.conf" "$T/etc/amn4.conf"
 rm -f "$T/uci.store" "$T/etc/fw-owned"; : > "$T/uci.store"
 printf '{"schema":1,"outputs":{},"channels":[]}\n' > "$T/etc/spec.json"

@@ -232,8 +232,8 @@ backup_check_spec() {  # ФАЙЛ
     # Адрес сервера DNS уезжает в запросы резолвера: без пробелов, кавычек и подстановок.
     for v in $(jsonfilter -i "$1" -e '@.dns.upstreams[*].url' 2>/dev/null); do
         case "$v" in
-            https://*|tls://*|quic://*|udp://*|tcp://*) ;;
-            *) echo "DNS «$v»: ждём https://, tls://, quic://, udp:// или tcp://"; return 1 ;;
+            https://*|tls://*|quic://*|h3://*|udp://*|tcp://*) ;;
+            *) echo "DNS «$v»: ждём https://, tls://, quic://, h3://, udp:// или tcp://"; return 1 ;;
         esac
         case "$v" in *[\ \"\'\`\$\;\|\&\<\>]*) echo "DNS «$v»: недопустимые символы"; return 1 ;; esac
     done
@@ -631,11 +631,11 @@ case "$2" in
             # применённым: applied_get при отсутствии снимка отдаёт саму спеку, и пилюля
             # «Применить · N» показала бы ноль на только что заменённой настройке.
             if [ ! -s "$APPLIED" ]; then
-                if [ -s "$SPEC" ]; then cp "$SPEC" "$APPLIED" 2>/dev/null
+                if spec_have; then cp "$(spec_json)" "$APPLIED" 2>/dev/null
                 else printf '{"version":2}\n' > "$APPLIED"
                 fi
             fi
-            cp "$D/spec" "$SPEC.new.$$" && mv "$SPEC.new.$$" "$SPEC" ||
+            cp "$D/spec" "$SPEC.new.$$" && spec_put "$SPEC.new.$$" ||
                 { rm -f "$SPEC.new.$$"; backup_giveup "спека не записалась — кончилось место?"; }
             spec_done=1
         fi

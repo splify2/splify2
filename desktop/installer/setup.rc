@@ -1,0 +1,22 @@
+#include <winuser.h>
+1 ICON "../resources/icon.ico"
+2 RCDATA "../resources/install.gif"
+1 RT_MANIFEST "setup.manifest"
+1 VERSIONINFO
+FILEVERSION 1,0,0,0
+PRODUCTVERSION 1,0,0,0
+BEGIN
+  BLOCK "StringFileInfo"
+  BEGIN
+    BLOCK "041904B0"
+    BEGIN
+      VALUE "FileDescription", "Установка splify2"
+      VALUE "ProductName", "splify2"
+      VALUE "CompanyName", "splify2"
+    END
+  END
+  BLOCK "VarFileInfo"
+  BEGIN
+    VALUE "Translation", 0x419, 1200
+  END
+END

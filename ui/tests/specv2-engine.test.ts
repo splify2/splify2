@@ -95,6 +95,10 @@ const v1Specs: Record<string, unknown> = {
 
 describe.skipIf(!HAVE)('кодек v2 против движка', () => {
     for (const [name, v1] of Object.entries(v1Specs)) {
+        /* Пул: v2 — группа order, а группы спеки v2 закрепляют соединения за членом (steer b740e5b),
+         * у пула v1 закрепления нет — наборы правил разные по замыслу ядра. Перевод интерфейса
+         * сверяется с переводом самого ядра — тест «пул v1: как у `steer spec convert`» ниже. */
+        if (name === 'пул устройств') continue
         it(`v1 «${name}»: тот же набор правил`, () => {
             const before = ruleset(v1, 'a.json')
             const ui = decodeSpec(v1)

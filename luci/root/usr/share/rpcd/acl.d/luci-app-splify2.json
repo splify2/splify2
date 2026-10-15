@@ -19,6 +19,7 @@
           "allow_domains",
           "list_custom",
           "list_get",
+          "list_peek",
           "engine",
           "sub_info",
           "sub_list",
@@ -30,6 +31,8 @@
           "proxy_nodes",
           "proxy_probe",
           "dns_log",
+          "dns_probe",
+          "recheck_info",
           "conns",
           "helper",
           "live",
@@ -77,6 +80,7 @@
           "engine_start",
           "splify2_install",
           "list_put",
+          "list_srs_put",
           "fetch_mode_set",
           "lists_source_set",
           "xsteer_link_put",
@@ -84,7 +88,8 @@
           "sub_auto",
           "sub_refresh",
           "steer_module_add",
-          "steer_module_del"
+          "steer_module_del",
+          "recheck_set"
         ]
       }
     }

@@ -69,6 +69,7 @@ import {
     isUpstreamGroup,
 } from '@/lib/model'
 
+import { fragmentApplies } from '@/lib/dnsurl'
 import { S } from '@/copy'
 type J = Record<string, unknown>
 
@@ -99,7 +100,7 @@ const CLIENT_KEYS = ['addr', 'mac'] as const
 const LIST_KEYS = ['srs', 'prefixes_file', 'domains_file', 'proto', 'ports', 'all'] as const
 const RULE_KEYS = ['name', 'for', 'to', 'out', 'resolve', 'dns', 'enabled', 'scope'] as const
 const DNS_KEYS = ['mode', 'cache', 'cache_ttl', 'upstream', 'upstreams', 'other', 'bootstrap', 'traceroute_hops'] as const
-const UPSTREAM_KEYS = ['url', 'out', 'ips', 'bootstrap'] as const
+const UPSTREAM_KEYS = ['url', 'out', 'ips', 'bootstrap', 'fragment'] as const
 const GROUP_KEYS = ['servers', 'mode'] as const
 const OBFS_KEYS = ['mode', 'server', 'listen'] as const
 
@@ -204,6 +205,12 @@ function decodeOutput(name: string, o: J): Output {
         if (kind !== 'hysteria2') {
             const ac = int('active')
             if (ac !== undefined) out.active = ac
+            /* Самые быстрые узлы подписки в одном устройстве (spec-v2.md, `pick: latency`, умение
+             * pool_latency). */
+            const pk = str(o.pick)
+            if (pk === 'latency' || pk === 'order') { used.add('pick'); if (pk === 'latency') out.pick = 'latency' }
+            const tol = int('tolerance')
+            if (tol !== undefined) out.tolerance = tol
             const by = str(o.by)
             if (by && (POOL_BY as readonly string[]).includes(by)) { used.add('by'); out.by = by as Output['by'] }
         }
@@ -284,8 +291,11 @@ function decodeUpstream(u: unknown): Upstream | UpstreamGroup | string | undefin
     if (ips.length) out.ips = ips
     const bs = arr(u.bootstrap)
     if (bs.length) out.bootstrap = bs
+    if (u.fragment === true) out.fragment = true
     const x = rest(u, UPSTREAM_KEYS)
     if (x) out.extra = x
+    /* Не `true` и не `false` — чужое значение: пишется обратно как есть, а не теряется. */
+    if (u.fragment !== undefined && typeof u.fragment !== 'boolean') (out.extra ??= {}).fragment = u.fragment
     return out
 }
 
@@ -599,6 +609,10 @@ function putPool(out: J, o: Output, proto: string) {
         const many = typeof o.active === 'number' && o.active > 1
         if (many) out.active = o.active
         if (many && o.by && o.by !== 'connection') out.by = o.by
+        if (o.pick === 'latency') {
+            out.pick = 'latency'
+            if (typeof o.tolerance === 'number' && o.tolerance !== 50) out.tolerance = o.tolerance
+        }
     }
     if (typeof o.interval === 'number' && o.interval !== POOL_INTERVAL) out.interval = o.interval
     if (typeof o.silence === 'number' && o.silence !== poolSilence(proto)) out.silence = o.silence
@@ -731,6 +745,7 @@ function encodeUpstream(u: Upstream | UpstreamGroup): J {
     if (u.out) out.out = u.out
     if (u.ips?.length) out.ips = u.ips
     if (u.bootstrap?.length) out.bootstrap = u.bootstrap
+    if (u.fragment && fragmentApplies(u.url)) out.fragment = true
     return withExtra(out, u.extra)
 }
 

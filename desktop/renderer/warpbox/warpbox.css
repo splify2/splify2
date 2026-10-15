@@ -1,0 +1,288 @@
+/* Раздел WarpBox — в карточках панели (стекло Andromeda), классы desk-warp-*. */
+
+.desk-warp {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+
+/* Две колонки на широком окне: слева — что происходит (туннели, подбор), справа — настройка.
+ * Одной колонкой карточка либо ограничена по ширине (и справа пустует полоса), либо строки
+ * туннелей растягиваются на весь экран. */
+.desk-warp-body {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  gap: 20px;
+}
+
+@media (min-width: 1180px) {
+  .desk-warp-body {
+    grid-template-columns: minmax(0, 1.35fr) minmax(300px, 1fr);
+    align-items: start;
+  }
+}
+
+.desk-warp-main {
+  display: flex;
+  min-width: 0;
+  flex-direction: column;
+  gap: 14px;
+}
+
+.desk-warp-side {
+  min-width: 0;
+}
+
+.desk-warp-banner {
+  padding: 12px 16px;
+  border: 1px solid var(--an-warn-border);
+  border-radius: var(--an-radius-block);
+  font-size: 13px;
+}
+
+.desk-warp-card {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+  padding: 20px;
+  border-width: 1px;
+  border-style: solid;
+  border-radius: var(--an-radius-card);
+}
+
+.desk-warp-hero {
+  display: flex;
+  gap: 14px;
+  align-items: flex-start;
+}
+
+.desk-warp-hero > svg {
+  width: 32px;
+  height: 32px;
+  flex: none;
+  color: #f38020;
+}
+
+.desk-warp-title {
+  font-size: 16px;
+  font-weight: 600;
+}
+
+.desk-warp-row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+}
+
+.desk-warp-row .desk-input {
+  width: 200px;
+}
+
+.desk-warp-add {
+  align-self: flex-start;
+}
+
+.desk-warp-head {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.desk-warp-head-text {
+  flex: 1;
+  min-width: 0;
+}
+
+.desk-warp-dot {
+  width: 9px;
+  height: 9px;
+  flex: none;
+  border-radius: 50%;
+  background: var(--sp-muted-foreground);
+}
+
+.desk-warp-dot[data-state="ok"] {
+  background: var(--an-success);
+  box-shadow: 0 0 0 3px var(--an-success-soft);
+}
+
+.desk-warp-dot[data-state="bad"] {
+  background: var(--an-danger);
+  box-shadow: 0 0 0 3px var(--an-danger-soft);
+}
+
+.desk-warp-members {
+  display: flex;
+  flex-direction: column;
+  border: 1px solid var(--an-glass-border);
+  border-radius: var(--an-radius-block);
+}
+
+.desk-warp-member {
+  display: grid;
+  grid-template-columns: auto 52px minmax(0, 1fr) auto auto auto;
+  align-items: center;
+  gap: 12px;
+  min-height: 42px;
+  padding: 0 14px;
+  font-size: 13px;
+}
+
+.desk-warp-member + .desk-warp-member {
+  border-top: 1px solid var(--an-glass-border);
+}
+
+.desk-warp-member[data-active] {
+  background: var(--an-accent-soft);
+}
+
+.desk-warp-mname {
+  font-weight: 500;
+}
+
+.desk-warp-mep {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-family: var(--sp-font-mono, ui-monospace, monospace);
+  font-size: 12px;
+  color: var(--sp-muted-foreground);
+}
+
+.desk-warp-mcolo {
+  font-size: 12px;
+  white-space: nowrap;
+}
+
+.desk-warp-mlat {
+  font-variant-numeric: tabular-nums;
+  color: var(--sp-muted-foreground);
+}
+
+.desk-warp-grid {
+  display: grid;
+  grid-template-columns: 1fr;
+  gap: 6px;
+}
+
+.desk-warp-grid > [role="group"],
+.desk-warp-grid > .desk-warp-countries {
+  margin-bottom: 10px;
+}
+
+.desk-warp-grid .desk-block-title {
+  margin: 0;
+}
+
+
+
+.desk-warp-countries {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.desk-warp-chips {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px;
+}
+
+.desk-warp-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  height: 28px;
+  padding: 0 6px 0 10px;
+  border: 1px solid var(--an-glass-border);
+  border-radius: var(--an-radius-pill);
+  background-color: var(--an-glass-tint);
+  color: var(--sp-foreground);
+  font: inherit;
+  font-size: 12px;
+}
+
+.desk-warp-chip button {
+  display: grid;
+  place-items: center;
+  width: 18px;
+  height: 18px;
+  padding: 0;
+  border: 0;
+  border-radius: 50%;
+  background: transparent;
+  color: var(--sp-muted-foreground);
+  cursor: pointer;
+}
+
+.desk-warp-chip button svg {
+  width: 12px;
+  height: 12px;
+}
+
+.desk-warp-chip-add {
+  padding-right: 10px;
+  border-style: dashed;
+  background: transparent;
+  color: var(--sp-muted-foreground);
+  cursor: pointer;
+}
+
+.desk-warp-chip-add:hover {
+  border-color: var(--an-accent-line);
+  color: var(--sp-foreground);
+}
+
+.desk-warp-code input {
+  width: 64px;
+  height: 28px;
+  text-transform: uppercase;
+}
+
+.desk-warp-scan {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.desk-warp-points {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 12.5px;
+}
+
+.desk-warp-points th {
+  padding: 6px 8px;
+  text-align: left;
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: var(--sp-muted-foreground);
+}
+
+.desk-warp-points td {
+  padding: 6px 8px;
+  border-top: 1px solid var(--an-glass-border);
+  font-variant-numeric: tabular-nums;
+}
+
+.desk-warp-points tr[data-class="2"] td {
+  color: var(--sp-muted-foreground);
+}
+
+.desk-mono {
+  font-family: var(--sp-font-mono, ui-monospace, monospace);
+}
+
+.desk-warp-foot {
+  display: flex;
+  justify-content: flex-end;
+}
+
+.desk-warp-del {
+  color: var(--an-danger-ink);
+}

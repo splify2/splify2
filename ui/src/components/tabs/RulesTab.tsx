@@ -3,14 +3,11 @@ import { ArrowDown, ArrowUp, Pencil, Plus, Search, Trash2, X } from 'lucide-reac
 import { Button } from '@/components/ui/button'
 import { Switch } from '@/components/ui/switch'
 import { notify } from '@/lib/notify'
-import { rpc } from '@/lib/rpc'
-import { pending } from '@/lib/pending'
+import { mergeSpec, pending } from '@/lib/pending'
 import { useSpecCopy } from '@/lib/speccopy'
 import {
-    toAllowDomainsServices,
     customServices,
     DIRECT,
-    toCatalog,
     isPart,
     routedOutputs,
     type Channel,
@@ -20,9 +17,14 @@ import {
     type Spec,
 } from '@/lib/model'
 import { type Live } from '@/lib/live'
+import { dnsFragmentSupported, dnsH3Supported } from '@/lib/engine'
 import { Hint } from '@/components/ui/hint'
 import { Block, Group } from '@/components/ui/layout'
 import RuleEditor from '@/components/tabs/RuleEditor'
+import { useCatalog, useLocalLists } from '@/lib/catalog'
+import RuleTarget from '@/components/board/RuleTarget'
+import { dropRule } from '@/lib/ruleout'
+import { PRESETS, pruneDnsPresets } from '@/lib/dnspresets'
 import { pathFor, ruleFiles, selectedIds, srsProbe } from '@/lib/rulefiles'
 
 import { S } from '@/copy'
@@ -101,50 +103,59 @@ interface Props {
     /** Уйти туда, где собирают пул. Правилу некуда вести, пока пула нет, и оставлять
      *  человека с советом «соберите» без дороги туда — это тупик в один щелчок. */
     onGoOutbounds?: () => void
+    /** Открыть правило с этим номером (карточка на главной-«доске» приложения для компьютера). */
+    editNow?: number | null
+    onEditUsed?: () => void
+    /** Редактор закрыт — оболочка, открывшая его с главной, возвращается туда. */
+    onClosed?: () => void
+    /** Приложение для компьютера: «Куда» правила — пилюлями, выход у правила свой (RuleTarget). */
+    board?: boolean
 }
 
 export default function RulesTab({
-    live, wanted, onWantedUsed, addNow, onAddUsed, onGoOutbounds,
+    live, wanted, onWantedUsed, addNow, onAddUsed, onGoOutbounds, editNow, onEditUsed, onClosed, board = false,
 }: Props) {
     /* Спека приходит из общего хранилища (pending), а не своим запросом: хранилище помнит
      * и несохранённые полсекунды, и снимок применённого — свой specGet здесь вернул бы то,
      * что вкладка Outbounds уже успела поменять. Подмену после применения копия получает
      * оттуда же (useSpecCopy). */
     const [spec, setSpec] = useSpecCopy()
-    const [catalogServices, setServices] = useState<ServiceEntry[]>([])
-    const [local, setLocal] = useState<Record<string, { count: number; mtime: number }>>({})
+    /* Каталог и свои списки — сразу из памяти (lib/catalog.ts), свежие — когда ответит роутер:
+     * пилюли и кнопки правила не ждут опроса. Каталог у выбора списков ТОТ ЖЕ, что на вкладке
+     * каталога: сначала каталог выбранного источника, без него — зашитая таблица издателя. */
+    const catalogServices = useCatalog() ?? []
+    /** Свои списки поменялись (добавлен, поправлен, удалён из правила) — перечитать их. */
+    const [listsNonce, setListsNonce] = useState(0)
+    const local = useLocalLists(listsNonce) ?? {}
     const services = useMemo(
         () => [...catalogServices, ...customServices(local)],
         [catalogServices, local],
     )
     const [open, setOpen] = useState<number | null>(null)
+    /** Приложение для ПК: правило правится черновиком — копией спеки, которая уходит на роутер только
+     *  по «Сохранить» (`base` — спека на момент открытия, для слияния с тем, что поменялось за это
+     *  время); выход стрелкой назад или по рельсу черновик отбрасывает, новое правило не заводится. */
+    const [draft, setDraft] = useState<{ base: Spec; spec: Spec; isNew: boolean } | null>(null)
     const [search, setSearch] = useState('')
 
-    useEffect(() => {
-        /* Каталог у выбора списков ТОТ ЖЕ, что на вкладке каталога, и это не экономия: два
-         * источника означали бы, что человек видит в справке одно, а выбрать может другое.
-         * Поэтому и способ добыть его тот же: сначала каталог выбранного источника, и только
-         * если его нечем скачать — зашитая в пакет таблица издателя. Файлы прежнего каталога,
-         * уже стоящие в правилах, отсюда не пропадают: `pick` трогает только файлы своей
-         * записи, а незнакомые оставляет в спеке нетронутыми. */
-        rpc.manifest()
-            .then((m) => {
-                const c = toCatalog(m)
-                if (!c.services.length) throw new Error(S.rulesTab.pustoyKatalog)
-                setServices(c.services)
-            })
-            .catch(() =>
-                rpc.allowDomains()
-                    .then((a) => setServices(toAllowDomainsServices(a)))
-                    .catch(() => setServices([])),
-            )
-        rpc.localLists().then((d) => setLocal(d.files || {})).catch(() => setLocal({}))
-    }, [])
 
     /** Правка: в свой стейт для мгновенной перерисовки и в хранилище для автосохранения. */
     function edit(next: Spec) {
         setSpec(next)
         pending.edit(next)
+    }
+
+    /** Открыть правило `at` спеки `next` — в приложении для ПК черновиком, иначе правкой. */
+    function openRule(base: Spec, next: Spec, at: number, isNew: boolean) {
+        if (board) setDraft({ base, spec: next, isNew })
+        else if (next !== base) edit(next)
+        setOpen(at)
+    }
+
+    function closeEditor() {
+        setDraft(null)
+        setOpen(null)
+        onClosed?.()
     }
 
     /** Уже исполненные просьбы извне.
@@ -197,8 +208,7 @@ export default function RulesTab({
                     ? { narrow: Object.fromEntries(wanted.prefixes.map((f) => [pathFor(f), nw])) }
                     : {}),
             }
-            edit({ ...cur, channels: [...cur.channels, ch] })
-            setOpen(cur.channels.length)
+            openRule(cur, { ...cur, channels: [...cur.channels, ch] }, cur.channels.length, true)
         }
         if (wanted.srs) void srsProbe(wanted, local).then((r) => create(pending.saved ?? spec, r.set, wanted.narrow ?? (r.asked ? r.narrow : undefined)))
         else create(spec)
@@ -220,6 +230,13 @@ export default function RulesTab({
         // eslint-disable-next-line react-hooks/exhaustive-deps
     }, [addNow, spec])
 
+    useEffect(() => {
+        if (editNow === null || editNow === undefined || !spec) return
+        onEditUsed?.()
+        if (editNow >= 0 && editNow < spec.channels.length) openRule(spec, spec, editNow, false)
+        // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [editNow, spec])
+
     function move(i: number, delta: number) {
         if (!spec) return
         const j = i + delta
@@ -240,8 +257,7 @@ export default function RulesTab({
         const used = new Set(spec.channels.map((c) => c.name))
         let n = spec.channels.length + 1
         while (used.has(S.rulesTab.pravilo(n))) n++
-        edit({ ...spec, channels: [...spec.channels, { name: S.rulesTab.pravilo(n), match: {}, out }] })
-        setOpen(spec.channels.length)
+        openRule(spec, { ...spec, channels: [...spec.channels, { name: S.rulesTab.pravilo(n), match: {}, out }] }, spec.channels.length, true)
     }
 
     /** Исключение: «этот сервис — мимо туннеля».
@@ -279,8 +295,7 @@ export default function RulesTab({
         const idx = at < 0 ? spec.channels.length : at
         const channels = spec.channels.slice()
         channels.splice(idx, 0, { name, match: {}, out })
-        edit({ ...spec, outputs, channels })
-        setOpen(idx)
+        openRule(spec, { ...spec, outputs, channels }, idx, true)
     }
 
     /** Переключить правило. Одно поле спеки — и порядок, и видимость движку сохраняются. */
@@ -324,15 +339,17 @@ export default function RulesTab({
      *  выхода не было бы в списке вовсе, то есть шаблон «Исключение» выглядел бы сломанным
      *  ровно в тот момент, когда им пользуются впервые. Факты кладутся сверху: `up`, метку и
      *  таблицу знает только движок. */
+    /** Что показывает экран: черновик правила (приложение для ПК) или спека. */
+    const view = board && draft && open !== null ? draft.spec : spec
     const outputs: Record<string, OutputStatus> = {}
-    for (const [n, o] of Object.entries({ ...spec.outputs, ...(live.status?.outputs || {}) }))
+    for (const [n, o] of Object.entries({ ...view.outputs, ...(live.status?.outputs || {}) }))
         /* Служебные части пулов — не цели для правила: их локации человек видит внутри пула. */
-        if (!isPart(spec.outputs[n])) outputs[n] = o
+        if (!isPart(view.outputs[n])) outputs[n] = o
 
-    if (open !== null && spec.channels[open]) {
-        const ch = spec.channels[open]
+    if (open !== null && view.channels[open]) {
+        const ch = view.channels[open]
         const mine = new Set(selectedIds(ch, services))
-        const clashing = spec.channels
+        const clashing = view.channels
             .map((o, k) => ({ o, k }))
             .filter(({ o, k }) => k !== open && selectedIds(o, services).some((id) => mine.has(id)))
         const above = clashing.filter(({ k }) => k < open)
@@ -347,7 +364,7 @@ export default function RulesTab({
          * direct и только по правилам ВЫШЕ, включённым и туннельным. */
         const coveredBy =
             outputs[ch.out]?.kind === 'direct'
-                ? spec.channels
+                ? view.channels
                       .filter(
                           (o, k) =>
                               k < open &&
@@ -359,21 +376,40 @@ export default function RulesTab({
                 : []
         return (
             <RuleEditor
+                dnsFragmentOk={dnsFragmentSupported(live.status, live.build?.version)}
+                dnsH3Ok={dnsH3Supported(live.status, live.build?.version)}
                 ch={ch}
                 index={open}
                 services={services}
                 local={local}
                 outputs={outputs}
                 clash={clash}
-                rulesTotal={spec.channels.length}
+                rulesTotal={view.channels.length}
                 coveredBy={coveredBy}
-                onChange={(next) =>
-                    edit({ ...spec, channels: spec.channels.map((c, k) => (k === open ? next : c)) })
-                }
-                onClose={() => setOpen(null)}
+                onChange={(next) => {
+                    if (board) setDraft((d) => d && { ...d, spec: { ...d.spec, channels: d.spec.channels.map((c, k) => (k === open ? next : c)) } })
+                    else edit({ ...spec, channels: spec.channels.map((c, k) => (k === open ? next : c)) })
+                }}
+                target={board ? <RuleTarget spec={view} index={open} live={live} onSpec={(next) => setDraft((d) => d && { ...d, spec: next })} /> : undefined}
+                defer={board}
+                onListsChanged={() => setListsNonce((n) => n + 1)}
+                isNew={!!draft?.isNew}
+                onSave={(next) => {
+                    if (!draft) return closeEditor()
+                    let mine: Spec = { ...draft.spec, channels: draft.spec.channels.map((c, k) => (k === open ? next : c)) }
+                    /* Сервер DNS правила — готовый профиль, ещё не сервер роутера: заводится сейчас. */
+                    const preset = typeof next.dns === 'string' && !mine.dns?.upstreams?.[next.dns] && !mine.dns?.groups?.[next.dns]
+                        ? PRESETS.find((p) => p.name === next.dns) : undefined
+                    if (preset) mine = { ...mine, dns: { ...(mine.dns || {}), upstreams: { ...(mine.dns?.upstreams || {}), [preset.name]: { ...preset.up } } } }
+                    edit(pruneDnsPresets(mergeSpec(draft.base, mine, spec)))
+                    closeEditor()
+                }}
+                onClose={closeEditor}
                 onDelete={() => {
-                    edit({ ...spec, channels: spec.channels.filter((_, k) => k !== open) })
-                    setOpen(null)
+                    /* Новое правило ещё не заведено — удалять нечего; заведённое уходит с выходом,
+                     * который после этого никому не нужен. */
+                    if (!draft?.isNew) edit(board ? dropRule(spec, open) : { ...spec, channels: spec.channels.filter((_, k) => k !== open) })
+                    closeEditor()
                 }}
             />
         )

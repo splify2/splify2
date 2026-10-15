@@ -1,2 +1,5 @@
 /etc/config/splify2
 /etc/splify2/fw-owned
+/etc/splify2/api/
+/etc/splify2/recheck.conf
+/etc/splify2/recheck.cache

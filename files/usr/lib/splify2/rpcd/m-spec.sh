@@ -74,8 +74,8 @@ fw_zone_devices() {  # ИДЕНТИФИКАТОР_СЕКЦИИ
 # которых зону заводим мы (fw_client_devices_unzoned). Два списка, выведенных по-разному, рано
 # или поздно разошлись бы ровно на том устройстве, из-за которого всё и заводилось.
 fw_client_devices() {
-    _fcd="$(jsonfilter -i "$SPEC" -e '@.lan.devices[*]' -e '@.lan_devices[*]' 2>/dev/null)"
-    [ -n "$_fcd" ] || _fcd="$(jsonfilter -i "$SPEC" -e '@.lan_device' 2>/dev/null)"
+    _fcd="$(jsonfilter -i "$(spec_json)" -e '@.lan.devices[*]' -e '@.lan_devices[*]' 2>/dev/null)"
+    [ -n "$_fcd" ] || _fcd="$(jsonfilter -i "$(spec_json)" -e '@.lan_device' 2>/dev/null)"
     [ -n "$_fcd" ] || _fcd="br-lan"
     printf '%s\n' $_fcd | grep . | sort -u
 }
@@ -208,7 +208,7 @@ fw_forwarding_id() {  # SRC DEST -> идентификатор секции пр
 
 # Принять существующую зону за свою, если отличить её от нашей нельзя.
 #
-# Зона steer_vless заводилась и прежними версиями, когда расписок ещё не было. Без принятия она
+# Зоны steer_vless и steer_iface (теперь слиты в steer_zone, см. fw_zone_migrate) заводились и прежними версиями, когда расписок ещё не было. Без принятия она
 # навсегда осталась бы «чужой» и перестала бы убираться вместе с последним туннельным выходом —
 # ровно та накопительная беда, от которой и просили избавить.
 #
@@ -321,7 +321,7 @@ fw_zone_sync() {  # ЗОНА ВИДЫ MASQ
         [ -n "$idx" ] || return 0
         fw_note "zone $_z"
         changed=1
-        msg="зона $_z создана (NAT: $_masq)"
+        msg="зона $_z создана"
     else
         fw_adopt_if_ours "$_z" "$idx" "$want" || true
     fi
@@ -419,10 +419,58 @@ fw_zone_sync() {  # ЗОНА ВИДЫ MASQ
     return "$changed"
 }
 
+# Зоны прежних версий, слитые в steer_zone: steer_vless (masq 0) и steer_iface (masq 1).
+FW_LEGACY_ZONES="${FW_LEGACY_ZONES:-steer_vless steer_iface}"
+
+# МИГРАЦИЯ ПРЕЖНИХ ЗОН. Заведённые нами steer_vless и steer_iface убираются вместе с пробросами и
+# расписками РАНЬШЕ, чем синхронизируется steer_zone: устройство в двух зонах fw4 не прощает, а
+# fw_zone_sync оставил бы устройство в прежней зоне как «уже в своей». Зона с тем же именем, которой
+# мы не заводили (есть устройство, не названное в спеке и без расписки), — зона человека: её не
+# трогаем, а устройства из неё нашими не считаем — дальше о ней просто не заботимся.
+# Печатает, что сделала; код 1 — изменения были (нужна перезагрузка fw4).
+fw_zone_migrate() {
+    _zm_any=0
+    _zm_all="$(fw_devices_of vless,hysteria2,trojan,shadowsocks,socks,http,vmess,xsteer,warp-masque,interface,awg)"
+    for _zm_z in $FW_LEGACY_ZONES; do
+        _zm_i="$(zone_index "$_zm_z")"
+        if [ -z "$_zm_i" ]; then
+            # Зоны нет — расписки о ней устарели, чтобы не висели.
+            fw_noted "zone $_zm_z" && fw_forget_zone "$_zm_z"
+            continue
+        fi
+        fw_adopt_if_ours "$_zm_z" "$_zm_i" "$_zm_all" || true
+        fw_noted "zone $_zm_z" || continue
+        # Сначала пробросы (в зону и из неё), потом зона: проброс на несуществующую зону fw4 отвергает.
+        while :; do
+            _zm_f="$( { fw_forwardings_to "$_zm_z"; fw_forwardings_from "$_zm_z"; } | head -1)"
+            [ -n "$_zm_f" ] || break
+            uci -q delete "firewall.$_zm_f" || break
+        done
+        _zm_i="$(zone_index "$_zm_z")"
+        [ -n "$_zm_i" ] && uci -q delete "firewall.$_zm_i"
+        uci -q commit firewall
+        fw_forget_zone "$_zm_z"
+        _zm_any=1
+        echo "зона $_zm_z убрана — выходы теперь в зоне steer_zone"
+    done
+    return "$_zm_any"
+}
+
+# Вычеркнуть из расписки всё, что относится к зоне: саму зону, её устройства и пробросы.
+fw_forget_zone() {  # ЗОНА
+    [ -f "$FW_OWNED" ] || return 0
+    grep -vE "^(zone $1|dev $1 .*|fwd $1 .*|fwd wan $1)\$" "$FW_OWNED" > "$FW_OWNED.tmp" 2>/dev/null
+    mv "$FW_OWNED.tmp" "$FW_OWNED" 2>/dev/null || rm -f "$FW_OWNED.tmp"
+}
+
 # Привести фаервол в соответствие со спекой. Перезагрузка правил ОДНА на все зоны: fw4 reload
 # перестраивает набор целиком, и звать его на каждую зону значило бы дважды уронить транзит.
 fw_sync() {
     any=0
+    _mout="$(fw_zone_migrate)" || any=1
+    [ -n "$_mout" ] && printf '%s\n' "$_mout" | while IFS= read -r l; do
+        [ -n "$l" ] && printf 'splify2: %s\n' "$l"
+    done
     for z in $FW_ZONES; do
         _n="${z%%:*}"; _rest="${z#*:}"
         _k="${_rest%%:*}"; _m="${_rest##*:}"
@@ -442,14 +490,14 @@ fw_sync() {
 # Спека v1 — верхний ключ `schema` без `version`. Слово «schema» глубже (имя выхода или списка)
 # v1 не делает, поэтому поиском по тексту это не определяется.
 spec_is_v1() {
-    [ -n "$(jsonfilter -i "$SPEC" -e '@.schema' 2>/dev/null)" ] &&
-        [ -z "$(jsonfilter -i "$SPEC" -e '@.version' 2>/dev/null)" ]
+    [ -n "$(jsonfilter -i "$(spec_json)" -e '@.schema' 2>/dev/null)" ] &&
+        [ -z "$(jsonfilter -i "$(spec_json)" -e '@.version' 2>/dev/null)" ]
 }
 
 # САМОЛЕЧЕНИЕ: выходу-интерфейсу без ключа `ipv6` в нашей зоне без masq6 записывается `ipv6: nat`
 # или `ipv6: off` — смотря по тому, есть ли у его устройства адрес IPv6.
 #
-# ЗАЧЕМ. Зона steer_iface заводится с masq (IPv4), а masq6 в ней нет, и ядро steer (diag,
+# ЗАЧЕМ. Зона steer_zone заводится без masq и без masq6 (IPv4 подменяет само ядро), и ядро steer (diag,
 # output_nat6) пишет про такой выход «нет masquerade IPv6 — включите masq6 у зоны выхода»:
 # человек добавил WARP, а панель жалуется на интерфейс, который создала сама. Подмену IPv6
 # на устройство ставит само ядро по ключу `ipv6: nat` (у пира WARP один адрес, клиенты на ULA),
@@ -467,7 +515,7 @@ spec_is_v1() {
 # ЧТО ТРОГАЕМ, СТРОГО:
 #   - только выходы kind interface и awg (остальным виды подмену IPv6 не нужны или делают сами);
 #   - только без ключа `ipv6` — явные routed / off / nat человека остаются как есть;
-#   - только если устройство лежит в зоне steer_iface, которую ведём мы, и у зоны нет masq6:
+#   - только если устройство лежит в зоне steer_zone, которую ведём мы, и у зоны нет masq6:
 #     устройство в чужой зоне — чужая настройка (зона узнаётся и по `device`, и по `network`:
 #     fw_zone_id_of_dev), а при masq6 у зоны жалобы и нет;
 #   - только спека v2 (v1 ключа не знает) и только когда рядом нет spec.yaml (его ведёт человек).
@@ -484,14 +532,13 @@ spec_is_v1() {
 # Идемпотентна: после правки у выхода ключ есть. Печатает по строке «РЕЖИМ ВЫХОД» на каждый
 # записанный ключ; код 0 — спека изменена, 1 — менять нечего.
 spec_heal_ipv6() {
-    [ -s "$SPEC" ] || return 1
-    [ -s "${SPEC%/*}/spec.yaml" ] && return 1
+    [ -s "$(spec_json)" ] || return 1
     spec_is_v1 && return 1
     _sh_devs=""
     for _sh_d in $(fw_devices_of interface,awg); do
         _sh_z="$(fw_zone_id_of_dev "$_sh_d")"
         [ -n "$_sh_z" ] || continue
-        [ "$(uci -q get "firewall.$_sh_z.name" 2>/dev/null)" = steer_iface ] || continue
+        [ "$(uci -q get "firewall.$_sh_z.name" 2>/dev/null)" = steer_zone ] || continue
         [ "$(uci -q get "firewall.$_sh_z.masq6" 2>/dev/null)" = 1 ] && continue
         _sh_devs="$_sh_devs $_sh_d"
     done
@@ -581,7 +628,7 @@ spec_heal_ipv6() {
         printf "%s%s", out, substr(s, last)
     }'
     # Первый проход: выходы-кандидаты — «имя|вид|устройство|файл настройки».
-    _sh_cand="$(awk -v mode=scan -v devs="$_sh_devs" "$_sh_awk" "$SPEC" 2>/dev/null)"
+    _sh_cand="$(awk -v mode=scan -v devs="$_sh_devs" "$_sh_awk" "$(spec_json)" 2>/dev/null)"
     [ -n "$_sh_cand" ] || return 1
     _sh_tbl="$(net_v6_table)"
     _sh_nat=""; _sh_off=""
@@ -600,14 +647,14 @@ EOF
     _sh_tmp="$SPEC.new.$$"
     _sh_names="$_sh_tmp.names"
     awk -v mode=apply -v devs="$_sh_devs" -v nat="$_sh_nat" -v off="$_sh_off" -v namesf="$_sh_names" \
-        "$_sh_awk" "$SPEC" > "$_sh_tmp" 2>/dev/null || { rm -f "$_sh_tmp" "$_sh_names"; return 1; }
+        "$_sh_awk" "$(spec_json)" > "$_sh_tmp" 2>/dev/null || { rm -f "$_sh_tmp" "$_sh_names"; return 1; }
     # Компилятор — судья и здесь: не принял — спека остаётся прежней, жалоба диагностики
     # остаётся жалобой, а не превращается в отказ загрузки.
     if ! engine_check "$_sh_tmp" >/dev/null 2>&1; then
         rm -f "$_sh_tmp" "$_sh_names"
         return 1
     fi
-    mv "$_sh_tmp" "$SPEC" || { rm -f "$_sh_tmp" "$_sh_names"; return 1; }
+    spec_put "$_sh_tmp" || { rm -f "$_sh_names"; return 1; }
     cat "$_sh_names" 2>/dev/null
     rm -f "$_sh_names"
     return 0
@@ -637,11 +684,10 @@ case "$2" in
         json_load "$input" 2>/dev/null || fail "неразбираемый запрос"
         json_get_var spec spec
         [ -n "$spec" ] || fail "пустая спецификация"
-        # Рядом с нашим файлом лежит spec.yaml: человек ведёт спеку руками. Движок при двух
-        # спеках отказывается читать обе («две спеки»), поэтому второй файл мы не заводим —
-        # говорим словами, что делать.
-        if [ -s "${SPEC%/*}/spec.yaml" ]; then
-            fail "рядом со spec.json лежит spec.yaml — ядро не читает две спеки сразу; уберите один из файлов"
+        # Спека в spec.yaml, а ядро прежнее: JSON-вида оно не печатает, писать YAML нечем, а
+        # второй файл рядом ядро не прочтёт («две спеки»).
+        if [ -s "$SPEC_YAML" ] && ! spec_yaml_ok; then
+            fail "спека ведётся в spec.yaml, а это ядро не переводит её в JSON — обновите ядро до 2.1"
         fi
         # Временный файл РЯДОМ с целевым, а не в /tmp, и это не мелочь. /tmp на OpenWrt —
         # tmpfs, а спека лежит на overlay; mv между разными файловыми системами busybox
@@ -677,7 +723,8 @@ case "$2" in
         fi
         # Код возврата mv проверяется: без этого «Сохранено» печаталось независимо от
         # того, легла спека на диск или нет.
-        mv "$tmp" "$SPEC" || { rm -f "$tmp"; fail "не удалось заменить спецификацию"; }
+        # spec_put (spec.sh): на ядре 2.1 — spec.yaml (переводом), на прежнем — spec.json.
+        spec_put "$tmp" || fail "не удалось заменить спецификацию"
         # Предупреждение о нескачанном списке едет В ОТВЕТЕ, а не в журнал: сохранение
         # прошло, спека верна, но канал, ссылающийся на недоступный список, не поднимется —
         # и узнать об этом человек должен там же, где нажимал, а не догадываться позже по
@@ -709,7 +756,7 @@ case "$2" in
         # То же доскачивание, что и при сохранении: спеку могли положить на диск в обход
         # интерфейса (splify2 spec_set — не единственный способ), да и файл мог быть удалён
         # уборкой между сохранением и применением.
-        fetch_warn="$(fetch_missing_lists "$SPEC")"
+        fetch_warn="$(fetch_missing_lists "$(spec_json)")"
         out="$("$STEER" apply --spec "$SPEC" 2>&1)"; rc=$?
         # Снимок — только на успехе: неудавшийся apply ничего не изменил в ядре, и счётчик
         # обязан продолжать это показывать.
@@ -719,7 +766,7 @@ case "$2" in
         # снимок, из которого applied_get и проверки движка читали полспеки. mv внутри одного
         # каталога атомарен: снимок либо прежний, либо новый целиком.
         if [ "$rc" -eq 0 ]; then
-            if cp "$SPEC" "$APPLIED.new.$$" 2>/dev/null; then
+            if cp "$(spec_json)" "$APPLIED.new.$$" 2>/dev/null; then
                 mv "$APPLIED.new.$$" "$APPLIED" 2>/dev/null || rm -f "$APPLIED.new.$$"
             else
                 rm -f "$APPLIED.new.$$"

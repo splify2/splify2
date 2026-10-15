@@ -240,10 +240,11 @@ case "$2" in
         #
         # Имена — у ядра (--devices), а не из имён выходов, по тому же доводу, что у
         # fw_devices_of ниже. Виды те же, что в списке «пока не поднято» ниже (_core_off), и
-        # ещё awg: его устройство заводит то же ядро, а в предложения «пока не поднято» оно
-        # не входит — их состав этой правкой не меняется.
+        # ещё awg и warp-masque (члены kind: warp): их устройства заводит то же ядро (модуль
+        # steer-warpbox), а в предложения «пока не поднято» они не входят — их состав этой правкой
+        # не меняется.
         _core_off="$(fw_devices_of vless,hysteria2,trojan,shadowsocks,socks,http,vmess,xsteer)"
-        _core=" $(printf '%s\n%s\n' "$_core_off" "$(fw_devices_of awg)" | tr '\n' ' ')"
+        _core=" $(printf '%s\n%s\n' "$_core_off" "$(fw_devices_of awg,warp-masque)" | tr '\n' ' ')"
         # Файлы /sys читаются ВСТРОЕННЫМ read, а имя берётся подстановкой параметра.
         # Было четыре запуска процессов на устройство (basename и три cat, у одного из них
         # ещё sed с head в конвейере), устройств на типовой коробке десять — сорок с лишним
@@ -390,7 +391,7 @@ case "$2" in
         # члены пула добираются из самой спеки: пул из wg-a и wg-b — это два наших
         # исходящих, и второй иначе был бы предложен источником.
         _cn_ours=" $("$STEER" outputs --devices --spec "$SPEC" 2>/dev/null | tr '\n' ' ')"
-        _cn_ours="$_cn_ours$(jsonfilter -i "$SPEC" -e '@.outputs[*].devices[*]' -e '@.outputs[*].device' 2>/dev/null |
+        _cn_ours="$_cn_ours$(jsonfilter -i "$(spec_json)" -e '@.outputs[*].devices[*]' -e '@.outputs[*].device' 2>/dev/null |
                              tr '\n' ' ')"
 
         # 2. ЧЕРЕЗ УСТРОЙСТВО ИДЁТ МАРШРУТ ПО УМОЛЧАНИЮ — значит наружу роутер уходит через
@@ -968,6 +969,38 @@ case "$2" in
         printf '%s\n' "$out"
         ;;
 
+    dns_probe)
+        # Проверка серверов DNS тем же кодом, которым ходит резолвер ядра (`steer dns-probe`,
+        # контракт — в splicicd/DESKTOP.md): все разом, общий срок 3 с, ответ ядра — дословно.
+        # Ядро без этой команды отвечает не JSON — тогда `unsupported`: экран оставляет лампочки
+        # серыми, а не красными (сервер не проверен — не то же, что не отвечает).
+        read -r input
+        json_load "$input" 2>/dev/null || fail "неразбираемый запрос"
+        set --
+        if json_is_a urls array; then
+            json_select urls
+            _i=1
+            while json_is_a "$_i" string; do
+                json_get_var _u "$_i"
+                case "$_u" in ''|*[!A-Za-z0-9:/._=,%@?+-]*) fail "недопустимый адрес сервера" ;; esac
+                set -- "$@" "$_u"
+                _i=$((_i + 1))
+            done
+            json_select ..
+        fi
+        [ "$#" -gt 0 ] || fail "нет серверов"
+        raw="$("$STEER" dns-probe --timeout 3000 "$@" 2>&1)"
+        out="$(json_tail "$raw")"
+        if [ -z "$out" ]; then
+            json_init
+            json_add_boolean unsupported 1
+            json_add_string error "$raw"
+            json_dump
+        else
+            printf '%s\n' "$out"
+        fi
+        ;;
+
     helper)
         # Живое состояние помощников выхода из памяти демона: запущен ли, поднят ли, сколько
         # раз перезапускали, какой модуль и его версия, причина последнего отказа. Помощника
@@ -1208,30 +1241,30 @@ case "$2" in
         # граница, по которой имена узлов ПОДПИСКИ в отчёт не попадают: те пишет панель.
         sr_line ""
         sr_line "-- правила (из спеки) --"
-        _sr_spec="$(cat "$SPEC" 2>/dev/null)"
+        _sr_spec="$(cat "$(spec_json)" 2>/dev/null)"
         _sr_rules=0
         # Спека v2: правила — `rules`, списки — `lists` (вид списка по ключам списка, на который
         # ссылается `to`). Прежняя v1 читается ниже, пока интерфейс не переписал файл.
-        _sr_n2="$(jsonfilter -i "$SPEC" -e '@.rules[*].out' 2>/dev/null | grep -c .)"
+        _sr_n2="$(jsonfilter -i "$(spec_json)" -e '@.rules[*].out' 2>/dev/null | grep -c .)"
         case "${_sr_n2:-}" in ''|*[!0-9]*) _sr_n2=0 ;; esac
         if [ "$_sr_n2" -gt 0 ]; then
             _sr_i=0
             while [ "$_sr_i" -lt "$_sr_n2" ]; do
-                _sr_rn="$(jsonfilter -i "$SPEC" -e "@.rules[$_sr_i].name" 2>/dev/null)"
-                _sr_ro="$(jsonfilter -i "$SPEC" -e "@.rules[$_sr_i].out" 2>/dev/null)"
-                _sr_ren="$(jsonfilter -i "$SPEC" -e "@.rules[$_sr_i].enabled" 2>/dev/null)"
-                _sr_to="$(jsonfilter -i "$SPEC" -e "@.rules[$_sr_i].to[*]" -e "@.rules[$_sr_i].to" 2>/dev/null)"
+                _sr_rn="$(jsonfilter -i "$(spec_json)" -e "@.rules[$_sr_i].name" 2>/dev/null)"
+                _sr_ro="$(jsonfilter -i "$(spec_json)" -e "@.rules[$_sr_i].out" 2>/dev/null)"
+                _sr_ren="$(jsonfilter -i "$(spec_json)" -e "@.rules[$_sr_i].enabled" 2>/dev/null)"
+                _sr_to="$(jsonfilter -i "$(spec_json)" -e "@.rules[$_sr_i].to[*]" -e "@.rules[$_sr_i].to" 2>/dev/null)"
                 _sr_mkind="вид списка не назван"
                 for _sr_l in $_sr_to; do
                     case "$_sr_l" in
                         all) _sr_mkind="весь трафик"; break ;;
                         *[!A-Za-z0-9_.-]*|'') continue ;;
                     esac
-                    if [ -n "$(jsonfilter -i "$SPEC" -e "@.lists['$_sr_l'].domains_file[*]" 2>/dev/null)" ]; then
+                    if [ -n "$(jsonfilter -i "$(spec_json)" -e "@.lists['$_sr_l'].domains_file[*]" 2>/dev/null)" ]; then
                         _sr_mkind="доменные списки"; break
-                    elif [ -n "$(jsonfilter -i "$SPEC" -e "@.lists['$_sr_l'].prefixes_file[*]" 2>/dev/null)" ]; then
+                    elif [ -n "$(jsonfilter -i "$(spec_json)" -e "@.lists['$_sr_l'].prefixes_file[*]" 2>/dev/null)" ]; then
                         _sr_mkind="адресные списки"; break
-                    elif [ "$(jsonfilter -i "$SPEC" -e "@.lists['$_sr_l'].all" 2>/dev/null)" = true ]; then
+                    elif [ "$(jsonfilter -i "$(spec_json)" -e "@.lists['$_sr_l'].all" 2>/dev/null)" = true ]; then
                         _sr_mkind="весь трафик"; break
                     fi
                 done

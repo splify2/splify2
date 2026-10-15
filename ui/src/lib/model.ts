@@ -541,7 +541,8 @@ export interface Narrow {
 }
 
 /** Сервер DNS резолвера движка (спека v2, `dns.upstreams`). `url` выбирает транспорт:
- *  `https://` — DoH, `tls://` — DoT, `quic://` — DoQ, `udp://` и `tcp://` — обычный DNS.
+ *  `https://` — DoH, `tls://` — DoT, `quic://` — DoQ, `h3://` — DoH по HTTP/3, `udp://` и
+ *  `tcp://` — обычный DNS.
  *  `out` — выход, через который уходит запрос к серверу (пусто или `direct` — напрямую);
  *  `ips` — адреса сервера (имя тогда не разрешается); `bootstrap` — серверы обычного DNS,
  *  которыми разрешается имя сервера. */
@@ -550,6 +551,10 @@ export interface Upstream {
     out?: string
     ips?: string[]
     bootstrap?: string[]
+    /** `fragment: true` — первое сообщение рукопожатия уходит двумя частями. Только у `tls://` и
+     *  `https://`: на остальные адреса ядро ключ отвергает вместе со всей спекой, поэтому при
+     *  другой схеме он в спеку не пишется (`dnsurl.ts`). */
+    fragment?: boolean
     /** Ключи апстрима, которых модель не знает: пишутся обратно как есть. */
     extra?: Record<string, unknown>
 }
@@ -776,6 +781,8 @@ export interface RawManifest {
         format?: string
         default_on?: boolean
         is_geoblock?: boolean
+        /** Откуда издатель взял список, словами — для человека. */
+        source_name?: string
         /** Категории, чей файл адресов совпадает с этим ПОБАЙТОВО (общая автономная
          *  система: meta = whatsapp, google = youtube). Издатель не склеивает файлы —
          *  на их имена ссылаются уже настроенные роутеры, — а говорит правду полем. */
@@ -793,6 +800,7 @@ export interface RawManifest {
         format?: string
         default_on?: boolean
         source?: string
+        source_name?: string
         /** Address categories built from the SAME source file — the same target in
          *  another form. Enabling both is the likeliest misconfiguration there is:
          *  double the memory, and two channels arguing over one destination. */
@@ -843,6 +851,9 @@ export interface ServiceEntry {
     /** Кто издаёт эту запись. Пусто — первый издатель (наш манифест): он был единственным,
      *  и дописывать его в каждую запись значило бы переписать манифест ради подписи. */
     publisher?: { id: string; name: string }
+    /** Откуда издатель взял списки записи — его `source_name` («itdoginfo (allow-domains)»). Блоки
+     *  «Что» в приложении для компьютера делятся по нему. Нет — издатель источник не назвал. */
+    provider?: string
     description?: string
     /** Пути у издателя, отдельно по видам: движку их надо класть в разные поля правила. */
     prefixes: string[]
@@ -999,7 +1010,7 @@ export function toCatalog(m: RawManifest): Catalog {
     }
 
     const groups = new Map<string, ServiceEntry>()
-    const put = (key: string, part: ServiceEntry['parts'][0], file: string) => {
+    const put = (key: string, part: ServiceEntry['parts'][0], file: string, provider?: string) => {
         const root = find(key)
         let g = groups.get(root)
         if (!g) {
@@ -1007,15 +1018,16 @@ export function toCatalog(m: RawManifest): Catalog {
             groups.set(root, g)
         }
         g.parts.push(part)
+        if (provider && !g.provider) g.provider = provider
         if (part.kind === 'domains') g.domains.push(file)
         else g.prefixes.push(file)
         g.count += part.count || 0
     }
 
     for (const c of cats)
-        put('c:' + c.id, { id: c.id, kind: 'prefixes', name: c.name_ru, file: c.file, count: c.count }, c.file)
+        put('c:' + c.id, { id: c.id, kind: 'prefixes', name: c.name_ru, file: c.file, count: c.count }, c.file, c.source_name)
     for (const d of doms)
-        put('d:' + d.id, { id: d.id, kind: 'domains', name: d.name_ru, file: d.file, count: d.count }, d.file)
+        put('d:' + d.id, { id: d.id, kind: 'domains', name: d.name_ru, file: d.file, count: d.count }, d.file, d.source_name)
 
     const catName = new Map(cats.map((c) => [c.id, c.name_ru]))
     const domName = new Map(doms.map((d) => [d.id, d.name_ru]))

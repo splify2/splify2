@@ -25,7 +25,7 @@ import { S } from '@/copy'
  *  остальные вкладки, и найти в нём что-либо можно было только прокруткой. Здесь вместо
  *  склада шесть названных входов, и каждый открывает своё содержимое на месте раздела. */
 
-type Screen = 'root' | 'general' | 'catalog' | 'xsteer' | 'extra' | 'about'
+export type Screen = 'root' | 'general' | 'catalog' | 'xsteer' | 'extra' | 'about'
 
 const TITLE: Record<Exclude<Screen, 'root'>, string> = {
     general: S.settings.obschee,
@@ -36,13 +36,17 @@ const TITLE: Record<Exclude<Screen, 'root'>, string> = {
 }
 
 export default function Settings({
-    live, onUseInRule,
+    live, onUseInRule, only,
 }: {
     live: Live
     /** Запись каталога «в правило»: переход между разделами — дело оболочки. */
     onUseInRule: (s: ServiceEntry) => void
+    /** Один экран без перечня и стрелки назад: в приложении для компьютера экраны — отдельные
+     *  пункты его слоя настроек («Роутер → Общее, Каталог…»), заголовок пишет он сам. */
+    only?: Exclude<Screen, 'root'>
 }) {
-    const [screen, setScreen] = useState<Screen>('root')
+    const [chosen, setScreen] = useState<Screen>('root')
+    const screen: Screen = only ?? chosen
     const { spec } = usePending()
     const [local, setLocal] = useState<Record<string, { count: number; mtime: number }>>({})
     const [editable, setEditable] = useSpecCopy()
@@ -58,7 +62,7 @@ export default function Settings({
         return (
             <div className="space-y-4">
                 {/* Bode: шапка вложенного экрана — стрелка назад и заголовок, как в приложении. */}
-                <ScreenHeader title={TITLE[screen]} back={() => setScreen('root')} backLabel={S.settings.nastroyki} />
+                {!only && <ScreenHeader title={TITLE[screen]} back={() => setScreen('root')} backLabel={S.settings.nastroyki} />}
                 <>
                     {screen === 'general' && (
                         <div className="space-y-4">

@@ -1,0 +1,89 @@
+{
+  "name": "splify2-desktop",
+  "productName": "splify2",
+  "version": "0.1.22",
+  "description": "splify2 для компьютера: панель роутера в своём окне",
+  "author": "splify2",
+  "private": true,
+  "main": "electron/main.cjs",
+  "scripts": {
+    "postinstall": "install-electron",
+    "renderer": "cd ../ui && node node_modules/vite/bin/vite.js build --config ../desktop/vite.config.mjs",
+    "icons": "electron scripts/icons.cjs",
+    "install-gif": "electron scripts/install-gif.cjs",
+    "start": "npm run renderer && electron .",
+    "dist:win": "npm run renderer && electron-builder --win squirrel --x64",
+    "dist:linux": "npm run renderer && electron-builder --linux AppImage --x64",
+    "dist:win:nsis": "npm run renderer && electron-builder --win nsis --x64",
+    "check": "node ../ui/node_modules/typescript/bin/tsc -p tsconfig.json --noEmit"
+  },
+  "devDependencies": {
+    "electron": "44.4.5",
+    "electron-builder": "26.16.1",
+    "electron-builder-squirrel-windows": "26.16.1"
+  },
+  "build": {
+    "appId": "io.github.splify2.desktop",
+    "productName": "splify2",
+    "electronLanguages": [
+      "ru",
+      "en-US"
+    ],
+    "copyright": "splify2",
+    "directories": {
+      "output": "release",
+      "buildResources": "resources"
+    },
+    "files": [
+      "electron/**",
+      "dist/renderer/**",
+      "resources/icon.png",
+      "resources/tray-*.png",
+      "resources/tray.ico",
+      "resources/tray-alert.ico",
+      "package.json",
+      "!node_modules/cpu-features/**",
+      "!node_modules/nan/**"
+    ],
+    "win": {
+      "target": [
+        {
+          "target": "squirrel",
+          "arch": [
+            "x64"
+          ]
+        }
+      ],
+      "icon": "resources/icon.ico"
+    },
+    "squirrelWindows": {
+      "name": "splify2",
+      "loadingGif": "resources/install.gif",
+      "iconUrl": "https://gitlab.com/xyzmean/splify2/-/raw/main/desktop/resources/icon.ico"
+    },
+    "nsis": {
+      "oneClick": false,
+      "perMachine": false,
+      "allowToChangeInstallationDirectory": true,
+      "shortcutName": "splify2",
+      "artifactName": "splify2-desktop-${version}-setup-x64.${ext}"
+    },
+    "linux": {
+      "target": [
+        {
+          "target": "AppImage",
+          "arch": [
+            "x64"
+          ]
+        }
+      ],
+      "category": "Network",
+      "icon": "resources/icon.png",
+      "artifactName": "splify2-desktop-${version}-x86_64.${ext}"
+    },
+    "npmRebuild": false
+  },
+  "dependencies": {
+    "ssh2": "1.17.0"
+  }
+}

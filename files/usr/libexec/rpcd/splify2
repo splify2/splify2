@@ -250,8 +250,7 @@ SUB_ANSWER=""
 # способ — попасть в зону. А зоны — это uci, то есть управляющий слой. Движок про это
 # честно предупреждает («not mentioned by the firewall at all»), но починить не может.
 #
-# Имена зон и их политики — ниже, у FW_ZONES: их две, и различает их нужда в трансляции
-# адресов, а не вкус.
+# Имена зон и их политики — ниже, у FW_ZONES.
 
 # Файл настройки uci. Пакет его не кладёт, а `uci set` в несуществующий файл молча ничего не
 # делает — ссылка подписки «сохранялась» и пропадала, причём метод отвечал ok. Тихая потеря
@@ -279,24 +278,19 @@ UCI_SPLIFY2="${UCI_SPLIFY2:-/etc/config/splify2}"
 # положить своё устройство, а правило «убрать всё, чего нет в спеке» вынесло бы его молча.
 FW_OWNED="${FW_OWNED:-/etc/splify2/fw-owned}"
 
-# ДВЕ зоны, а не одна, и различает их НУЖДА В ТРАНСЛЯЦИИ АДРЕСОВ.
+# ВСЕ ВЫХОДЫ СТОЯТ В ОДНОЙ ЗОНЕ — steer_zone, БЕЗ masq (решение владельца 2026-10-12).
 #
-# steer_vless — устройства, которые создаёт сам движок (kind=vless и kind=xsteer). NAT там не
-# нужен и вреден: клиент завершает TCP у себя и соединяется с сервером обычным сокетом, адрес
-# клиента наружу не уезжает вовсе, а трансляция на входе в устройство подменила бы адреса, по
-# которым движок и различает клиентов.
+# Зона нужна только затем, чтобы fw4 пропускал транзит: политика forward зоны действует лишь
+# внутри неё, а устройство без зоны отвергается. Трансляцию IPv4-адресов теперь делает само ядро
+# steer в своей таблице (цепочка postrouting_nat4 таблицы inet steer) для видов, которым она
+# нужна: interface, awg, члены WARP; IPv6 — по ключу спеки `ipv6` (nat — подмену ставит ядро).
+# Поэтому зону с masq мы больше не заводим: два masq (fw4 и ядра) подменяли бы адрес дважды.
 #
-# steer_iface — устройства выходов kind=interface, то есть WireGuard, AmneziaWG и всё, что
-# поднимает netifd. Здесь наоборот: пакет уходит в туннель как есть и уносит адрес из локальной
-# сети, а обратно не возвращается ничего. Движок это и говорит своим «no masquerade/snat rule
-# found for wgN: packets leave with LAN addresses and the channel goes quiet while its counter
-# still rises». Значит masq здесь обязателен — и именно поэтому зона отдельная: смешав их, мы
-# либо оставили бы wg без NAT, либо навязали NAT туннелю движка.
+# Прежние зоны steer_vless (masq 0) и steer_iface (masq 1) слиты в steer_zone: fw_zone_migrate
+# убирает заведённые нами (по расписке) раньше, чем синхронизируется новая, — устройство в двух
+# зонах fw4 не прощает. Одноимённые зоны человека не трогаются.
 #
-# Имя steer_vless сохранено, хотя теперь оно уже не про один vless: на него могли сослаться
-# собственные правила человека, а переименование сломало бы их молча.
-#
-# ТРЕТЬЯ ЗОНА — steer_clients, и она не про выход, а про ВХОД. Устройства, которые спека
+# ВТОРАЯ ЗОНА — steer_clients, и она не про выход, а про ВХОД. Устройства, которые спека
 # называет клиентами, бывают без зоны вовсе: так поднимаются tailscale0 и интерфейс сервера
 # WireGuard, заведённый мастером OpenWrt. fw4 роняет такой интерфейс дважды — `forward`, то
 # есть маршрутизации через нас нет совсем, и `input`, то есть до роутера с него не доходит
@@ -309,11 +303,12 @@ FW_OWNED="${FW_OWNED:-/etc/splify2/fw-owned}"
 # синхронизация ЗОНЫ ТУННЕЛЯ, спрашивая fw_client_zones. Пока зоны клиентов нет, та её не
 # назовёт — значит завести её надо раньше, чем синхронизируются зоны туннелей.
 #
-# hysteria2 (QUIC-клиент со своим TUN, как vless) и прокси steer-proxy (trojan, shadowsocks,
-# socks, http, vmess — тоже свой TUN, TCP завершается в клиенте) идут в зону туннелей движка, awg
-# (WireGuard в ядре, адреса наружу меняются masquerade, как у обычного интерфейса) — в зону
-# интерфейсов.
-FW_ZONES="steer_clients:clients:0 steer_vless:vless,hysteria2,trojan,shadowsocks,socks,http,vmess,xsteer:0 steer_iface:interface,awg:1"
+# В steer_zone идут устройства всех видов: vless и hysteria2 (свой TUN), прокси steer-proxy
+# (trojan, shadowsocks, socks, http, vmess), xsteer, warp-masque (туннель MASQUE группы kind: warp,
+# TUN модуля steer-warpbox), а также interface и awg. Ядро без steer-warpbox вида warp-masque не
+# знает — `steer outputs --kind warp-masque` отвечает отказом, fw_devices_of глушит его и даёт
+# пустой список.
+FW_ZONES="steer_clients:clients:0 steer_zone:vless,hysteria2,trojan,shadowsocks,socks,http,vmess,xsteer,warp-masque,interface,awg:0"
 
 # Релизы GitHub: версия, которой ставится пакет, и НАЗВАНИЕ, которым выпуск называют.
 #
@@ -398,6 +393,8 @@ LIST_MAX_BYTES=1048576
 # шестнадцать килобайт списка было бы проверкой размера фикстуры, а не логики. rpcd запускает
 # объект с чистым окружением, так что на роутере ветка `:-` не выбирается никогда.
 LIST_CHUNK="${LIST_CHUNK:-16384}"
+# Сколько записей списка показывает list_peek («глазик» у списка в правиле).
+PEEK_LINES="${PEEK_LINES:-300}"
 
 # ---- архив настроек: экспорт и восстановление (R-005) -------------------------
 #
@@ -551,6 +548,15 @@ list)
     json_add_object list_get
         json_add_string name; json_add_string kind; json_add_int offset
     json_close_object
+    # Что лежит в списке (только чтение, каталог списков): `q` — поиск по записям.
+    json_add_object list_peek
+        json_add_string path; json_add_string q
+    json_close_object
+    # Свой список из набора sing-box (.srs): base64 порциями (append, final) или ссылкой.
+    json_add_object list_srs_put
+        json_add_string name; json_add_string url; json_add_string data
+        json_add_boolean append; json_add_boolean final; json_add_string filename
+    json_close_object
     json_add_object engine; json_close_object
     # `name` — какая из подписок. Поля нет — первая (main), и это же значение приходит от
     # интерфейсов, которые про несколько подписок ещё не знают.
@@ -590,6 +596,9 @@ list)
     json_add_object support_report; json_close_object
     json_add_object net_info; json_close_object
     json_add_object outbound_probe; json_add_string output; json_close_object
+    # Проверка серверов DNS с роутера (`steer dns-probe`): адрес сервера, как в dns.upstreams, и по
+    # желанию «=адрес,адрес» — минуя bootstrap. Ответ ядра — дословно.
+    json_add_object dns_probe; json_add_array urls; json_close_array; json_close_object
     json_add_object outbound_geo
         json_add_string output; json_add_boolean fresh
     json_close_object
@@ -646,6 +655,14 @@ list)
     json_close_object
     # Модули ядра 2.0: перечень с состоянием и установка или снятие одного модуля.
     json_add_object steer_modules; json_close_object
+    # ReCheck — обход DPI на прямом трафике (служба splify2-recheck, движок — пакет recheck):
+    # состояние с изученным и настройки. Поле, которого в recheck_set нет, остаётся прежним.
+    json_add_object recheck_info; json_close_object
+    json_add_object recheck_set
+        json_add_boolean enabled; json_add_string interface; json_add_boolean persist
+        json_add_boolean watch_active; json_add_array resources; json_close_array
+        json_add_boolean epoch_bump; json_add_boolean forget
+    json_close_object
     json_add_object steer_module_add; json_add_string module; json_close_object
     json_add_object steer_module_del; json_add_string module; json_close_object
     json_dump
@@ -655,9 +672,9 @@ call)
     # /usr/lib/splify2/rpcd. Метод, которого нет ни в одной группе, — отказ здесь же, до
     # чтения чего бы то ни было.
     case "$2" in
-        status|diag|dev_stats|net_info|devices|client_nets|leases|engine_state|outbound_geo|outbound_probe|explain|xsteer_state|vless_nodes|vless_probe|hysteria2_nodes|hysteria2_probe|proxy_nodes|proxy_probe|dns_log|conns|helper|support_report) _grp=state ;;
+        status|diag|dev_stats|net_info|devices|client_nets|leases|engine_state|outbound_geo|outbound_probe|explain|xsteer_state|vless_nodes|vless_probe|hysteria2_nodes|hysteria2_probe|proxy_nodes|proxy_probe|dns_log|dns_probe|conns|helper|support_report) _grp=state ;;
         spec_set|apply|group_select|spec_heal) _grp=spec ;;
-        lists|list_fetch|lists_update|list_put|list_remove|list_custom|list_get|local_lists|allow_domains|fetch_mode|fetch_mode_set|\
+        lists|list_fetch|lists_update|list_put|list_remove|list_custom|list_get|list_peek|list_srs_put|local_lists|allow_domains|fetch_mode|fetch_mode_set|\
         lists_source|lists_source_set) _grp=lists ;;
         engine|engine_stop|engine_start|steer_versions|splify2_versions|splify2_install|steer_install|ui_get|ui_set|\
         steer_modules|steer_module_add|steer_module_del) _grp=engine ;;
@@ -665,8 +682,12 @@ call)
         backup_get|backup_put) _grp=backup ;;
         xsteer_link|xsteer_link_put) _grp=xsteer ;;
         telemetry_state|telemetry_set) _grp=telemetry ;;
+        recheck_info|recheck_set) _grp=recheck ;;
         *) fail "неизвестный метод" ;;
     esac
+    # Где спека и как её читать (spec.yaml ядра 2.1 или spec.json): читать — `spec_json`, писать —
+    # `spec_put`. Файл — /usr/lib/splify2/spec.sh, рядом с каталогом групп.
+    . "${SPEC_SH:-${RPCD_LIB%/rpcd}/spec.sh}"
     . "$RPCD_LIB/common.sh"
     . "$RPCD_LIB/m-$_grp.sh"
     ;;

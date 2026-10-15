@@ -56,7 +56,10 @@ FW_INITD=${FW_INITD:-/etc/init.d/firewall}
 # «имя:виды:masq». Виды и masq здесь не нужны — удалять зону можно, не зная, чем её наполняли,
 # — но формат оставлен общим нарочно: строку правят в одном месте и переносят сюда как есть,
 # без перевода, на котором и теряются такие правки.
-FW_ZONES=${FW_ZONES:-"steer_clients:clients:0 steer_vless:vless,hysteria2,trojan,shadowsocks,socks,http,vmess,xsteer:0 steer_iface:interface,awg:1"}
+FW_ZONES=${FW_ZONES:-"steer_clients:clients:0 steer_zone:vless,hysteria2,trojan,shadowsocks,socks,http,vmess,xsteer,warp-masque,interface,awg:0"}
+# Зоны прежних версий: steer_vless и steer_iface слиты в steer_zone. Заведённые нами (по расписке)
+# убираются так же, как текущие: после обновления без единого apply они ещё могут стоять.
+FW_LEGACY_ZONES=${FW_LEGACY_ZONES:-"steer_vless steer_iface"}
 # Таблицы nftables, которые ставим МЫ: правило «DoH через туннель», фикс Zapret Manager и
 # изоляция проверки стратегий. Четвёртая, `inet steer`, принадлежит движку и в обычном порядке
 # уходит сама: её сносит остановка службы, которая идёт первым делом. Она перечислена здесь
@@ -64,7 +67,7 @@ FW_ZONES=${FW_ZONES:-"steer_clients:clients:0 steer_vless:vless,hysteria2,trojan
 # и init-скрипт, то есть снять таблицу больше нечем, и она осталась бы метить трафик в никуда
 # до перезагрузки. Существование каждой таблицы проверяется перед удалением, так что лишнего
 # здесь не происходит.
-NFT_TABLES=${NFT_TABLES:-"splify2_doh splify2_zm splify2_ztest steer"}
+NFT_TABLES=${NFT_TABLES:-"splify2_doh splify2_zm splify2_ztest splify2_recheck steer"}
 # Таблица маршрутов и приоритет правила для «DoH через туннель» — те же числа, что в
 # common.sh (doh_rules_sync), иначе снималось бы не то, что ставилось.
 DOH_RT=${DOH_RT:-290}
@@ -228,11 +231,31 @@ purge_firewall() {
     for _z in $FW_ZONES; do
         purge_zone "${_z%%:*}"
     done
+    for _z in $FW_LEGACY_ZONES; do
+        purge_zone "$_z"
+    done
     [ "$FW_CHANGED" = 1 ] || return 0
     # Перезагрузка ОДНА на все зоны: fw4 перестраивает набор целиком, и звать её на каждую
     # зону значило бы дважды уронить транзит (тот же довод, что у fw_sync).
     say "правила фаервола перезагружаются"
     fw4 reload >/dev/null 2>&1 || "$FW_INITD" reload >/dev/null 2>&1
+    return 0
+}
+
+# ---- ReCheck ------------------------------------------------------------------------
+# Служба splify2-recheck и её движок (пакет recheck сам по себе не запускается). Таблица уходит
+# с остановкой службы, а без init-скрипта — в purge_nft; процесс без таблицы пакетов не получает,
+# но и висеть ему незачем.
+RECHECK_INITD=${RECHECK_INITD:-/etc/init.d/splify2-recheck}
+purge_recheck() {
+    if [ -x "$RECHECK_INITD" ] && "$RECHECK_INITD" enabled 2>/dev/null; then
+        plan "служба splify2-recheck выключается"
+        [ "$DO" = 1 ] && { "$RECHECK_INITD" stop >/dev/null 2>&1; "$RECHECK_INITD" disable >/dev/null 2>&1; }
+    fi
+    if pidof steer-dpi-live >/dev/null 2>&1; then
+        plan "движок ReCheck останавливается"
+        [ "$DO" = 1 ] && killall steer-dpi-live 2>/dev/null
+    fi
     return 0
 }
 
@@ -384,7 +407,7 @@ purge_paths() {
         # Содержимое перечисляется по именам, а не одним каталогом: «/etc/steer удаляется»
         # человек читает как «какие-то служебные файлы», а «spec.json» — как свою работу за
         # полгода. По показу решают, звать ли команду с --yes, и решают по этой строке.
-        plan "$STEER_DIR удаляется — вместе со спекой spec.json, подписками и списками"
+        plan "$STEER_DIR удаляется — вместе со спекой (spec.json или spec.yaml), подписками и списками"
         [ "$DO" = 1 ] && rm -rf "$STEER_DIR"
     fi
     if [ -e "$UCI_SPLIFY2" ]; then
@@ -439,6 +462,7 @@ say_packages() {
 }
 
 purge_engine
+purge_recheck
 purge_firewall
 purge_nft
 purge_doh_rules

@@ -25,7 +25,7 @@ import { devList, insecureApplies, isPart, isProxyKind, type Output, type Output
 /** Протокол, у которого есть свой тон. */
 export type ProtoId =
     | 'vless' | 'hysteria2' | 'trojan' | 'shadowsocks' | 'vmess' | 'socks' | 'http'
-    | 'xsteer' | 'wireguard' | 'awg'
+    | 'xsteer' | 'wireguard' | 'awg' | 'masque'
 
 /** Место бейджа в строке — оно же порядок. */
 export type BadgeGroup = 'proto' | 'transport' | 'security' | 'feature'
@@ -56,6 +56,7 @@ export const PROTO_NAME: Record<ProtoId, string> = {
     xsteer: 'xsteer',
     wireguard: 'WireGuard',
     awg: 'AmneziaWG',
+    masque: 'MASQUE',
 }
 
 /** Тон протокола: номер категориального цвета Andromeda (--an-cat-N). Своих туннелей
@@ -72,6 +73,8 @@ export const PROTO_TONE: Record<ProtoId, number> = {
     xsteer: 3,
     wireguard: 5,
     awg: 5,
+    /* MASQUE (WARP) — QUIC, как hysteria2. */
+    masque: 4,
 }
 
 /** Транспорты: поле `type` узла VLESS (tcp | grpc | xhttp | ws | httpupgrade, vless.h) и
@@ -146,7 +149,7 @@ function protoOf(p: string | undefined | null): ProtoId | null {
     return k in PROTO_NAME ? (k as ProtoId) : null
 }
 
-function protoBadge(p: ProtoId): ConfBadge {
+export function protoBadge(p: ProtoId): ConfBadge {
     return { id: `proto:${p}`, text: PROTO_NAME[p], group: 'proto', proto: p }
 }
 

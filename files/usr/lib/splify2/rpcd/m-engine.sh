@@ -428,8 +428,8 @@ EOF
 # ВНИМАНИЕ: json_load — вызывать до json_init своего ответа.
 spec_mods() {
     SPEC_MODS=""; SPEC_MOD_OUTS=""
-    [ -s "$SPEC" ] || return 0
-    json_load "$(cat "$SPEC" 2>/dev/null)" 2>/dev/null || return 0
+    spec_have || return 0
+    json_load "$(cat "$(spec_json)" 2>/dev/null)" 2>/dev/null || return 0
     json_select outputs 2>/dev/null || return 0
     json_get_keys _sm_keys
     for _sm_k in $_sm_keys; do
@@ -772,6 +772,8 @@ case "$2" in
                     esac
                 done
             fi
+            # Спека v1 — переводом прежнего ядра, пока оно стоит (spec.sh, spec_premigrate).
+            premig="$(spec_premigrate)"
             # shellcheck disable=SC2086
             pkg_install "${files# }" $legacy
             rc=$?
@@ -780,6 +782,7 @@ case "$2" in
             rm -f $files
             json_init
             if [ "$rc" != 0 ]; then
+                [ -n "$premig" ] && rm -f "$premig"
                 json_add_boolean ok 0
                 if [ "$removed" = 1 ]; then
                     json_add_string error "$out
@@ -794,8 +797,10 @@ case "$2" in
                 for n in $legacy; do pkg_del "$n"; done
             fi
             "$INITD" enable >/dev/null 2>&1 || true
+            # Ядро 2.1 печатает спеку JSON-ом — спека переезжает в spec.yaml (v1 — переведённой).
+            spec_migrate "$premig"
             restarted=0
-            if [ -f "$SPEC" ]; then
+            if spec_have; then
                 "$INITD" restart >/dev/null 2>&1 && restarted=1
             fi
             json_add_boolean ok 1
@@ -872,7 +877,7 @@ case "$2" in
         # выглядело это как «переустановил — всё сломалось». restart применяет спеку,
         # поднимает резолвер и туннели vless — то же, что происходит при загрузке.
         restarted=0
-        if [ -f "$SPEC" ]; then
+        if spec_have; then
             "$INITD" restart >/dev/null 2>&1 && restarted=1
         fi
         json_add_boolean ok 1

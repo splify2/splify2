@@ -1,0 +1,224 @@
+/* Мастер первого запуска: одна карточка посреди окна, шаги сменяют друг друга (.desk-step —
+ * появление в motion.css). */
+
+.desk-wizard {
+  flex: 1;
+  display: grid;
+  place-items: center;
+  padding: 24px 16px;
+}
+
+.desk-wizard-card {
+  width: 100%;
+  max-width: 440px;
+  padding: 32px;
+  border-width: 1px;
+  border-style: solid;
+  border-radius: var(--an-radius-card);
+  overflow: hidden;
+}
+
+.desk-step {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+}
+
+.desk-step .sp-sub {
+  margin-top: -8px;
+  color: var(--sp-muted-foreground);
+}
+
+.desk-wizard-center {
+  align-items: center;
+  text-align: center;
+}
+
+.desk-wizard-logo {
+  width: 72px;
+  height: 72px;
+  margin-bottom: 4px;
+}
+
+.desk-wizard-s {
+  fill: none;
+  stroke: #8b7cf6;
+  stroke-width: 7;
+  stroke-linecap: round;
+  stroke-dasharray: 100;
+  stroke-dashoffset: 100;
+  animation: desk-draw 900ms var(--an-ease-out) 150ms forwards;
+}
+
+@keyframes desk-draw {
+  to { stroke-dashoffset: 0; }
+}
+
+.desk-wizard-main {
+  width: 100%;
+  margin-top: 6px;
+}
+
+.desk-wizard-text {
+  font-size: 13px;
+  color: var(--sp-muted-foreground);
+}
+
+.desk-wizard-link {
+  display: inline-flex;
+  align-items: center;
+  align-self: flex-start;
+  gap: 6px;
+  padding: 0;
+  border: 0;
+  background: none;
+  color: var(--sp-primary);
+  font: inherit;
+  font-size: 13px;
+  cursor: pointer;
+}
+
+.desk-wizard-link svg {
+  width: 14px;
+  height: 14px;
+}
+
+.desk-wizard-back {
+  margin-bottom: 2px;
+  color: var(--sp-muted-foreground);
+}
+
+.desk-found {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  min-height: 60px;
+}
+
+.desk-found-wait {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 14px 4px;
+  font-size: 13px;
+  color: var(--sp-muted-foreground);
+}
+
+.desk-found-item {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 12px 14px;
+  border: 1px solid var(--an-glass-border);
+  border-radius: var(--an-radius-block);
+  background-color: var(--an-glass-tint);
+  color: var(--sp-foreground);
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+  transition: border-color var(--an-dur-hover) var(--an-ease), background-color var(--an-dur-hover) var(--an-ease);
+}
+
+.desk-found-item:hover {
+  border-color: var(--an-accent-line);
+}
+
+.desk-found-item > svg {
+  width: 20px;
+  height: 20px;
+  flex: none;
+  color: var(--sp-muted-foreground);
+}
+
+.desk-found-text {
+  display: flex;
+  flex: 1;
+  min-width: 0;
+  flex-direction: column;
+}
+
+.desk-found-name {
+  font-size: 14px;
+  font-weight: 500;
+}
+
+.desk-found-sub {
+  font-size: 12px;
+  color: var(--sp-muted-foreground);
+}
+
+svg.desk-found-ok {
+  width: 18px;
+  height: 18px;
+  color: var(--an-success);
+}
+
+.desk-wizard-manual {
+  display: flex;
+  gap: 8px;
+}
+
+.desk-wizard-manual .desk-input {
+  flex: 1;
+}
+
+.desk-wizard-log {
+  height: 200px;
+  margin: 0;
+  padding: 10px 12px;
+  overflow: auto;
+  border: 1px solid var(--an-glass-border);
+  border-radius: var(--an-radius-inner);
+  background: color-mix(in srgb, var(--sp-foreground) 4%, transparent);
+  font-family: var(--sp-font-mono, ui-monospace, monospace);
+  font-size: 11.5px;
+  line-height: 1.5;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  color: var(--sp-muted-foreground);
+}
+
+.desk-wizard-check {
+  display: grid;
+  place-items: center;
+  width: 48px;
+  height: 48px;
+  border-radius: 50%;
+  background: var(--an-success-soft);
+  color: var(--an-success);
+}
+
+.desk-wizard-check svg {
+  width: 24px;
+  height: 24px;
+}
+
+.desk-wizard-prefs {
+  padding: 4px 16px;
+  border-radius: var(--an-radius-block);
+}
+
+.desk-spin {
+  width: 16px;
+  height: 16px;
+  animation: an-spin 900ms linear infinite;
+}
+
+/* Сброс панели делает svg блочным (.splify-react-root svg) — здесь значок стоит в строке текста. */
+.desk-wizard .desk-inline {
+  display: inline-block;
+  vertical-align: -3px;
+  margin-right: 4px;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .desk-wizard-s {
+    stroke-dashoffset: 0;
+    animation: none;
+  }
+}
+
+html[data-motion="off"] .desk-wizard-s {
+  stroke-dashoffset: 0;
+  animation: none;
+}

@@ -178,6 +178,18 @@ export function activeNodesSupported(status: Status | null | undefined): boolean
     return Array.isArray(status?.features) && status.features.includes('active_nodes')
 }
 
+/** Умеет ли установленное ядро самые быстрые узлы подписки в одном туннеле (`pick: latency` у
+ *  `kind: tunnel`, умение `pool_latency`): «Самый быстрый» без устройства на каждый узел. */
+export function poolLatencySupported(status: Status | null | undefined): boolean {
+    return Array.isArray(status?.features) && status.features.includes('pool_latency')
+}
+
+/** Умеет ли установленное ядро выход «Блок» (`kind: block`, умение `block`): ядро без умения спеку
+ *  с таким выходом отвергает целиком. */
+export function blockSupported(status: Status | null | undefined): boolean {
+    return Array.isArray(status?.features) && status.features.includes('block')
+}
+
 /** Умеет ли установленное ядро группы серверов DNS (`{ servers, mode }` в `dns.upstreams`, умение
  *  `dns_groups`). Ядро без умения спеку с группой отвергает целиком. */
 export function dnsGroupsSupported(status: Status | null | undefined): boolean {
@@ -187,6 +199,27 @@ export function dnsGroupsSupported(status: Status | null | undefined): boolean {
 /** Умеет ли установленное ядро сервер для имён вне правил (`dns.other`, умение `dns_other`). */
 export function dnsOtherSupported(status: Status | null | undefined): boolean {
     return Array.isArray(status?.features) && status.features.includes('dns_other')
+}
+
+/** С какой версии ядро знает `fragment` у серверов DoT/DoH и адрес `h3://` (steer после 2.0.4).
+ *  Сначала спрашивается умение `dns_fragment`/`dns_h3` в `status.features` (ядро печатает их
+ *  вместе с самой поддержкой); версия — запасной признак для ядер без перечня этих имён. */
+export const DNS_FRAGMENT_SINCE = '2.0.5'
+
+function dnsFeature(status: Status | null | undefined, name: string, version?: string): boolean {
+    if (Array.isArray(status?.features) && status.features.includes(name)) return true
+    return !!version && cmpVersion(version, DNS_FRAGMENT_SINCE) >= 0
+}
+
+/** Умеет ли установленное ядро `fragment: true` у сервера DoT/DoH (умение `dns_fragment`).
+ *  Ядро без умения спеку с этим ключом отвергает целиком. `version` — версия ядра из `engine`. */
+export function dnsFragmentSupported(status: Status | null | undefined, version?: string): boolean {
+    return dnsFeature(status, 'dns_fragment', version)
+}
+
+/** Умеет ли установленное ядро адрес `h3://` (DoH по HTTP/3, умение `dns_h3`). */
+export function dnsH3Supported(status: Status | null | undefined, version?: string): boolean {
+    return dnsFeature(status, 'dns_h3', version)
 }
 
 /** Модули ядра 2.0 (пакеты steer-<модуль>) в порядке показа — тот же, что у бэкенда
