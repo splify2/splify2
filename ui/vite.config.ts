@@ -156,6 +156,12 @@ export default defineConfig({
           // правила. Без этой строки rollup выделял их в `splify-DnsUpstreamExtras.js` без пина
           // `?v=`, и барьер останавливал сборку (пришло с 54ef275).
           if (/[\\/]src[\\/]components[\\/]DnsUpstreamExtras\.tsx$/.test(id)) return 'x'
+          // Флаг страны читают главная (Home) и ленивые разделы (узлы и цели правил доски VPN).
+          // Без этой строки rollup выделял его в `splify-Flag.js` без пина `?v=`.
+          if (/[\\/]src[\\/]components[\\/]Flag\.tsx$/.test(id)) return 'x'
+          // Значки конфигурации читают главная и ленивые разделы (доска, правила, выходы): без
+          // этой строки rollup выделял их в `splify-ConfBadges.js` без пина `?v=`.
+          if (/[\\/]src[\\/]components[\\/]ConfBadges\.tsx$/.test(id)) return 'x'
           return undefined
         },
       }
