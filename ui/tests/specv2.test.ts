@@ -434,6 +434,24 @@ describe('ключи, которых модель не знает, доезжа�
     })
 })
 
+describe('правило «только эти устройства» без устройств (I-366)', () => {
+    const one = (from: string[]) => encodeSpec(base({
+        channels: [{ name: 'r', out: 'direct', from, match: { domains_files: ['/l/a.lst'] } }],
+    })) as { clients?: Record<string, unknown>; rules: Record<string, unknown>[] }
+
+    it('from: [""] — ни клиента с пустым адресом, ни for', () => {
+        const d = one([''])
+        expect(d.clients).toBeUndefined()
+        expect(d.rules).toHaveLength(1)
+        expect('for' in d.rules[0]).toBe(false)
+    })
+
+    it('пустые строки среди адресов отбрасываются', () => {
+        const d = one(['', ' 192.168.1.50 ', '  '])
+        expect(Object.values(d.clients as object)).toEqual([{ addr: ['192.168.1.50'] }])
+    })
+})
+
 describe('правило и на адреса, и на MAC', () => {
     const ui = (narrow = false): Spec => base({
         outputs: { direct: { name: 'direct', kind: 'direct' }, wg0: { name: 'wg0', kind: 'interface', device: 'wg0' } },
