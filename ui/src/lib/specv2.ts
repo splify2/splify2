@@ -821,9 +821,12 @@ export function encodeSpec(spec: Spec): J {
          * кроме `for`. По смыслу это то же правило: соседние правила с одним выходом, списками и
          * режимом забирают объединение своих клиентов. При чтении они склеиваются обратно. */
         const forSets: string[][] = []
-        if (ch.from?.length) {
-            const macs = ch.from.filter((x) => MAC_RE.test(x))
-            const addrs = ch.from.filter((x) => !MAC_RE.test(x))
+        /* Пустые строки — пометка редактора «только эти устройства, пока ни одного» (from: ['']):
+         * в спеку они не идут, ядро не принимает клиента с пустым адресом. */
+        const from = (ch.from || []).map((x) => x.trim()).filter(Boolean)
+        if (from.length) {
+            const macs = from.filter((x) => MAC_RE.test(x))
+            const addrs = from.filter((x) => !MAC_RE.test(x))
             if (addrs.length) { const cn = clientName(ch.name, n); clients[cn] = { addr: addrs }; forSets.push([cn]) }
             if (macs.length) { const cn = clientName(`${ch.name}_mac`, n); clients[cn] = { mac: macs }; forSets.push([cn]) }
         }

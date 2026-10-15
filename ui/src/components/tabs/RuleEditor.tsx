@@ -393,6 +393,11 @@ export default function RuleEditor({
                                             {S.ruleEditor.neAdresINe}{bad.join(', ')} {S.ruleEditor.takuyuZapisYadroVybrosit}</p>
                                     ) : null
                                 })()}
+                                {/* Ни одного устройства: в спеку правило уходит без клиентов, то есть для
+                                    всех устройств (пустой адрес ядро не принимает). Говорим об этом. */}
+                                {!(ch.from || []).some((x) => x.trim()) && (
+                                    <p className="text-xs text-destructive">{S.ruleEditor.ustroystvNetVseUstroystva}</p>
+                                )}
                             </>
                         )}
                     </Block>

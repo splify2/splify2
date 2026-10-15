@@ -36,3 +36,19 @@ describe('редактор правила «весь трафик»', () => {
         expect(screen.getByText('ничего не выбрано')).toBeInTheDocument()
     })
 })
+
+// I-366: «только эти устройства» без единого устройства (from: ['']) уходит в спеку без клиентов,
+// то есть действует на всех, — редактор говорит об этом, а не молчит.
+describe('редактор правила: «только эти устройства» без устройств', () => {
+    const NOTE = /Устройства не выбраны/
+
+    it('from: [""] — предупреждение показано', () => {
+        mount({ name: 'Пусто', out: 'direct', from: [''], scope: 'device', match: { any: true } } as Channel)
+        expect(screen.getByText(NOTE)).toBeInTheDocument()
+    })
+
+    it('есть адрес — предупреждения нет', () => {
+        mount({ name: 'Есть', out: 'direct', from: ['192.168.1.50'], scope: 'device', match: { any: true } } as Channel)
+        expect(screen.queryByText(NOTE)).toBeNull()
+    })
+})

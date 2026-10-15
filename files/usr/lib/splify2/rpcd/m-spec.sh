@@ -630,6 +630,23 @@ heal_report() {  # ВЫВОД spec_heal_ipv6
     return 0
 }
 
+# ЗАМОК СПЕКИ. spec_set, apply и spec_heal читают спеку, правят и заменяют её через mv; два
+# таких вызова вперемешку (сохранение из интерфейса и отложенное лечение после установки) теряли
+# правку того, кто заменял раньше. Замок один на все три метода и на всё время метода: flock
+# на /var/lock/splify2-spec.lock, как в splify2-update-subs. Повторный вход (spec_heal зовёт
+# apply дочерним вызовом) замок не берёт заново — его держит родитель, SPLIFY2_SPEC_LOCKED
+# уходит в окружение дочернему. Без flock или без места под файл замка работаем как раньше.
+SPEC_LOCK="${SPEC_LOCK:-/var/lock/splify2-spec.lock}"
+spec_lock() {
+    [ -n "$SPLIFY2_SPEC_LOCKED" ] && return 0
+    command -v flock >/dev/null 2>&1 || return 0
+    ( : >> "$SPEC_LOCK" ) 2>/dev/null || return 0
+    exec 8>> "$SPEC_LOCK"
+    flock -w 120 8 || fail "спеку сейчас правит другой вызов — повторите через минуту"
+    SPLIFY2_SPEC_LOCKED=1
+    export SPLIFY2_SPEC_LOCKED
+}
+
 case "$2" in
 
     spec_set)
@@ -637,6 +654,7 @@ case "$2" in
         json_load "$input" 2>/dev/null || fail "неразбираемый запрос"
         json_get_var spec spec
         [ -n "$spec" ] || fail "пустая спецификация"
+        spec_lock
         # Рядом с нашим файлом лежит spec.yaml: человек ведёт спеку руками. Движок при двух
         # спеках отказывается читать обе («две спеки»), поэтому второй файл мы не заводим —
         # говорим словами, что делать.
@@ -688,6 +706,7 @@ case "$2" in
         ;;
 
     apply)
+        spec_lock
         # Ядро ведёт steer-box-connector (podkop, forkop): `steer apply` без службы steer исполняет
         # само ядро и поставило бы таблицу inet steer поверх таблицы коннектора (box_busy).
         box_busy && fail "ядро занято: $BOX_BY"
@@ -710,7 +729,7 @@ case "$2" in
         # интерфейса (splify2 spec_set — не единственный способ), да и файл мог быть удалён
         # уборкой между сохранением и применением.
         fetch_warn="$(fetch_missing_lists "$SPEC")"
-        out="$("$STEER" apply --spec "$SPEC" 2>&1)"; rc=$?
+        out="$("$STEER" apply --spec "$SPEC" 8>&- 2>&1)"; rc=$?
         # Снимок — только на успехе: неудавшийся apply ничего не изменил в ядре, и счётчик
         # обязан продолжать это показывать.
         #
@@ -746,6 +765,7 @@ $out"
         ;;
 
     spec_heal)
+        spec_lock
         # Вызов из установки и обновления пакета (uci-defaults) и для рук: вылечить спеку
         # (spec_heal_ipv6) и, только если она изменилась И уже применялась, применить так же, как
         # применяет интерфейс. Спеку, которую ни разу не применяли, не применяем: включать
@@ -757,7 +777,7 @@ $out"
         if heal_out="$(spec_heal_ipv6)"; then
             healed=1
             if [ -s "$APPLIED" ]; then
-                "$0" call apply </dev/null >/dev/null 2>&1
+                "$0" call apply </dev/null >/dev/null 2>&1 8>&-
             fi
         else
             healed=0
