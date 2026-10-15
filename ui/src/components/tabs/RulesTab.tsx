@@ -25,6 +25,7 @@ import { Block, Group } from '@/components/ui/layout'
 import RuleEditor from '@/components/tabs/RuleEditor'
 import { pathFor, ruleFiles, selectedIds, srsProbe } from '@/lib/rulefiles'
 
+import { pruneDnsPresets } from '@/lib/dnspresets'
 import { S } from '@/copy'
 /** Правила: единственное место, где что-то назначается.
  *
@@ -368,11 +369,11 @@ export default function RulesTab({
                 rulesTotal={spec.channels.length}
                 coveredBy={coveredBy}
                 onChange={(next) =>
-                    edit({ ...spec, channels: spec.channels.map((c, k) => (k === open ? next : c)) })
+                    edit(pruneDnsPresets({ ...spec, channels: spec.channels.map((c, k) => (k === open ? next : c)) }))
                 }
                 onClose={() => setOpen(null)}
                 onDelete={() => {
-                    edit({ ...spec, channels: spec.channels.filter((_, k) => k !== open) })
+                    edit(pruneDnsPresets({ ...spec, channels: spec.channels.filter((_, k) => k !== open) }))
                     setOpen(null)
                 }}
             />
@@ -445,7 +446,7 @@ export default function RulesTab({
             </Button>
             <Button variant="ghost" size="icon" aria-label={S.rulesTab.udalitPravilo}
                     className="hover:bg-destructive/10 hover:text-destructive"
-                    onClick={() => edit({ ...spec!, channels: spec!.channels.filter((_, k) => k !== i) })}>
+                    onClick={() => edit(pruneDnsPresets({ ...spec!, channels: spec!.channels.filter((_, k) => k !== i) }))}>
                 <Trash2 className="h-4 w-4" aria-hidden="true" />
             </Button>
         </div>
