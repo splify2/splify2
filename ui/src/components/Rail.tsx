@@ -1,4 +1,4 @@
-import { House, Lock, Route, Settings, ShieldCheck, Stethoscope } from 'lucide-react'
+import { Bug, Heart, House, Lock, Route, Send, Settings, ShieldCheck, Stethoscope } from 'lucide-react'
 import EngineToggle from '@/components/EngineToggle'
 import { type Live } from '@/lib/live'
 import { assetUrl } from '@/lib/assets'
@@ -32,6 +32,19 @@ const ITEMS: { id: SectionId; label: string; icon: typeof House }[] = [
     { id: 'dns', label: 'DNS', icon: Lock },
     { id: 'diag', label: S.rail.diagnostika, icon: Stethoscope },
     { id: 'settings', label: S.rail.nastroyki, icon: Settings },
+]
+
+/** Адреса ссылок в подвале рельса. Источник: бот обращений @splifybugbot (баг-репорты и
+ *  запросы фич) и сбор поддержки — названы владельцем; чат проекта — README.md (бейдж
+ *  «Telegram · чат поддержки»). */
+const REPORT_URL = 'https://t.me/splifybugbot'
+const SUPPORT_URL = 'https://pay.cloudtips.ru/p/fb925110'
+const CHAT_URL = 'https://t.me/ssplify'
+
+const LINKS: { href: string; label: string; icon: typeof House }[] = [
+    { href: REPORT_URL, label: S.rail.soobschit, icon: Bug },
+    { href: SUPPORT_URL, label: S.rail.podderzhat, icon: Heart },
+    { href: CHAT_URL, label: S.rail.chat, icon: Send },
 ]
 
 export interface RailProps {
@@ -113,7 +126,26 @@ export default function Rail({ live, section, onSection, counts }: RailProps) {
                     })}
                 </nav>
 
-                <div className="mt-auto">
+                {/* Ссылки наружу — только в широком рельсе; в нижней панели им нет места. */}
+                <div className="mt-auto flex flex-col gap-4">
+                    <div className="flex flex-col gap-0.5">
+                        {LINKS.map(({ href, label, icon: Icon }) => (
+                            <a
+                                key={href}
+                                href={href}
+                                target="_blank"
+                                rel="noopener noreferrer"
+                                className={[
+                                    'flex items-center gap-2.5 rounded-lg px-3 py-2.5 text-sm transition-colors duration-200',
+                                    'focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary',
+                                    'text-subtle hover:bg-accent hover:text-foreground',
+                                ].join(' ')}
+                            >
+                                <Icon className="h-[18px] w-[18px] shrink-0" aria-hidden="true" />
+                                {label}
+                            </a>
+                        ))}
+                    </div>
                     <EngineToggle live={live} variant="rail" onSection={onSection} />
                 </div>
             </aside>
