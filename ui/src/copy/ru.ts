@@ -945,6 +945,9 @@ export const ru = {
         diagnostika: "Диагностика",
         nastroyki: "Настройки",
         razdely: "Разделы",
+        soobschit: "Сообщить о проблеме",
+        podderzhat: "Поддержать проект",
+        chat: "Чат в Telegram",
     },
     rpc: {
         netOtveta: "нет ответа",

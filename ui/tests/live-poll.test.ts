@@ -211,6 +211,32 @@ describe('круг опроса: один вызов вместо пяти', () 
         expect(result.current.error).toBeNull()
     })
 
+    it('«Object not found» — не «метода нет»: прежние вызовы не включаются (I-337)', async () => {
+        // Объекта splify2 нет вовсе (пакет не стоит): прежние вызовы упрутся в то же самое, и
+        // навсегда переходить на них незачем.
+        vi.spyOn(rpc, 'live').mockRejectedValue(new Error('RPC call to splify2/live failed with error -32000: Object not found'))
+        const status = vi.spyOn(rpc, 'status').mockResolvedValue(STATUS as never)
+        vi.spyOn(rpc, 'devStats').mockResolvedValue({ devices: DEVICES } as never)
+        vi.spyOn(rpc, 'netInfo').mockResolvedValue(NET as never)
+        vi.spyOn(rpc, 'diag').mockResolvedValue(DIAG as never)
+        renderHook(() => useLive())
+        await waitFor(() => expect(rpc.live).toHaveBeenCalled())
+        expect(status).not.toHaveBeenCalled()
+    })
+
+    it('снимок для следующего открытия несёт сборку движка, а не null (I-337)', async () => {
+        const BUILD = { version: '2.0.4', enabled: true, running: true }
+        window.localStorage.setItem('splify2:live', JSON.stringify({ status: STATUS, diag: DIAG, build: BUILD }))
+        vi.spyOn(rpc, 'live').mockResolvedValue({ ok: true, status: STATUS, devices: DEVICES, net: NET, diag: DIAG } as never)
+        vi.spyOn(rpc, 'engine').mockResolvedValue(BUILD as never)
+        const { result } = renderHook(() => useLive())
+        await waitFor(() => expect(result.current.status).not.toBeNull())
+        await waitFor(() => {
+            const saved = JSON.parse(window.localStorage.getItem('splify2:live') || '{}')
+            expect(saved.build).toEqual(BUILD)
+        })
+    })
+
     it('объект старее интерфейса и движок молчит: снимок из памяти помечен прошлым, а не живым', async () => {
         // В прежнем круге finish() звался ВСЕГДА, в том числе при отказе status, и его
         // setStale(false) затирал setStale(true), выставленный failed() на первом промолчавшем

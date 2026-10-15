@@ -537,7 +537,10 @@ case "$2" in
                 ;;
         esac
         uci_file || fail "не удалось создать $UCI_SPLIFY2 — кончилось место?"
-        [ "$minutes" = 0 ] && sub_put "$SUB_NAME" auto "" || sub_put "$SUB_NAME" auto "$minutes"
+        # if, а не `&& … || …`: отказ первой записи запускал вторую ветку (I-329).
+        if [ "$minutes" = 0 ]; then sub_put "$SUB_NAME" auto ""
+        else sub_put "$SUB_NAME" auto "$minutes"
+        fi
         uci -q commit splify2
         # Отметка о последней попытке снимается: человек только что задал интервал, и первое
         # обновление должно случиться от ЭТОГО момента, а не от давно просроченного прежнего.
