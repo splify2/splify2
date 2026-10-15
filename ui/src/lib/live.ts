@@ -197,6 +197,8 @@ export function useLive(): Live {
     const [devs, setDevs] = useState<Record<string, { rx: string; tx: string }> | null>(null)
     const [speed, setSpeed] = useState<Live['speed']>({ ch: {}, dev: {} })
     const [build, setBuild] = useState<Build | null>(saved.current?.build ?? null)
+    const buildNow = useRef<Build | null>(saved.current?.build ?? null)
+    useEffect(() => { buildNow.current = build }, [build])
     /* Версии — из памяти браузера: за ними роутер ходит на GitHub (или по обходным путям),
      * и полторы секунды на каждый из двух вопросов при каждом открытии окна — ради чисел,
      * которые меняются раз в неделю. Запомненное рисуется сразу; свежее спрашивается, когда
@@ -375,7 +377,7 @@ export function useLive(): Live {
              * помеченным: состояние выходов, счёт проверок и версия движка. Скорости сюда не
              * едут — они считаются из разницы двух опросов, и «прошлая скорость» это число
              * ни о чём. */
-            if (st) cacheSet('live', { status: st, diag: dg ?? diagNow.current, build: null })
+            if (st) cacheSet('live', { status: st, diag: dg ?? diagNow.current, build: buildNow.current })
 
             /* СКОРОСТЬ ИЗ ЗАПОМНЕННОГО ОТВЕТА НЕ СЧИТАЕТСЯ ВОВСЕ, и точка отсчёта им не
              * ставится.
@@ -469,7 +471,7 @@ export function useLive(): Live {
                          * время применения, таймаут, оборванный запрос — прежде тоже включал
                          * прежние вызовы, навсегда и молча: круг дорожал впятеро, а текст
                          * исключения уезжал на экран как причина «Движок не отвечает». */
-                        if (/Method not found|not found|not supported|unavailable outside LuCI/i.test(r)) {
+                        if (/Method not found|not supported|unavailable outside LuCI/i.test(r)) {
                             legacy = true
                             await loadLegacy(withDiag)
                             return

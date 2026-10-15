@@ -1002,6 +1002,9 @@ case "$2" in
             read -r input
             json_load "$input" 2>/dev/null || fail "неразбираемый запрос"
             json_get_var state state
+            # Строка непрозрачна, но не безразмерна: в uci она уезжает на overlay и в каждый ответ
+            # настроек (I-329).
+            [ "${#state}" -le 4096 ] || fail "состояние мастера длиннее 4096 знаков"
             uci -q set splify2.main.wizard="$state"
             uci -q commit splify2
             json_init; json_add_boolean ok 1; json_dump
