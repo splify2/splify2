@@ -31,7 +31,7 @@ rpcd() {  # ПЕРЕМЕННЫЕ... МЕТОД ВХОД
     printf '%s\n' "${2:-}" | env SANDBOX="$T" PATH="$T/bin:$PATH" \
         JSHN_SH="$ROOT/tests/stub/jshn.sh" FETCH_SH="$ROOT/files/usr/lib/splify2/fetch.sh" \
         FAST_SH="$ROOT/files/usr/lib/splify2/fast.sh" RPCD_LIB="$ROOT/files/usr/lib/splify2/rpcd" \
-        STEER="$STEER_BIN" SPEC="$T/etc/spec.json" APPLIED="$T/etc/spec.applied.json" \
+        STEER="$STEER_BIN" SPEC="$T/etc/spec.json" SPEC_VIEW="$T/spec-view.json" APPLIED="$T/etc/spec.applied.json" \
         LISTS="$T/lists" MANIFEST="$T/etc/manifest.json" UCI_SPLIFY2="$T/etc/config-splify2" \
         INITD="$T/bin/initd" FW_OWNED="$T/etc/fw-owned" SUB="$T/etc/sub.txt" SUBS_DIR="$T/etc/subs" \
         sh "$ROOT/files/usr/libexec/rpcd/splify2" call "$1" 2>"$T/stderr"
@@ -50,17 +50,40 @@ chmod +x "$T/bin/jsonfilter"
 printf 'example.org\n' > "$T/lists/dom.lst"
 printf '#!/bin/sh\nexit 0\n' > "$T/bin/initd"; chmod +x "$T/bin/initd"
 
+# Что лежит на диске. Ядро 2.1 (печатает JSON-вид, `spec convert --json`) бэкенд ведёт в spec.yaml,
+# прежнее — в spec.json. На 2.1 файл не совпадает с присланным текстом побайтно (ядро пишет свой
+# перевод и дополняет умолчаниями), поэтому там сравнивается канонический JSON: «лежит» — это
+# JSON-вид ядра той же спеки, а при отказе — вид прежней спеки, тот же, что ядро даёт её тексту.
+if printf '{"version":2,"outputs":{"direct":{"kind":"direct"}}}' | "$STEER_BIN" spec convert --json --spec - 2>/dev/null | grep -q '^{'; then
+    YAML_CORE=1
+else
+    YAML_CORE=0
+fi
+canon() { python3 -c 'import json,sys; print(json.dumps(json.load(sys.stdin), sort_keys=True, ensure_ascii=False))'; }
+disk_spec() {
+    if [ "$YAML_CORE" = 1 ]; then
+        [ ! -e "$T/etc/spec.json" ] && [ -s "$T/etc/spec.yaml" ] || { echo "нет spec.yaml или рядом лежит spec.json"; return; }
+        "$STEER_BIN" spec convert --json --spec "$T/etc/spec.yaml" | canon
+    else
+        cat "$T/etc/spec.json" 2>/dev/null
+    fi
+}
+want_spec() {  # ТЕКСТ — как спека должна лежать
+    if [ "$YAML_CORE" = 1 ]; then printf '%s' "$1" | "$STEER_BIN" spec convert --json --spec - | canon
+    else printf '%s' "$1"; fi
+}
+
 GOOD='{"version":2,"outputs":{"direct":{"kind":"direct"},"wg0":{"kind":"interface","device":"wg0"},"wg1":{"kind":"interface","device":"wg1"},"g":{"kind":"group","pick":"order","members":["wg0","wg1"]}},"lists":{"a":{"domains_file":["'"$T"'/lists/dom.lst"]}},"rules":[{"name":"Новости","to":["a"],"out":"g"}]}'
 out="$(rpcd spec_set "$(req "$GOOD")")"
 check "спека v2 с группой проходит разбор движка" "true" "$(printf '%s' "$out" | jget ok)"
-check "и лежит на месте байт в байт" "$GOOD" "$(cat "$T/etc/spec.json")"
+check "и лежит на месте" "$(want_spec "$GOOD")" "$(disk_spec)"
 
 BAD='{"version":2,"outputs":{"direct":{"kind":"direct"},"x":{"kind":"interface","device":"wg0","опечатка":1}}}'
 out="$(rpcd spec_set "$(req "$BAD")")"
 check "неизвестный ключ — отказ движка" "false" "$(printf '%s' "$out" | jget ok)"
 check "и его слова доехали до человека" "yes" \
       "$(printf '%s' "$out" | jget error | grep -q 'опечатка' && echo yes || echo no)"
-check "прежняя спека при отказе цела" "$GOOD" "$(cat "$T/etc/spec.json")"
+check "прежняя спека при отказе цела" "$(want_spec "$GOOD")" "$(disk_spec)"
 
 # Выход, через который ходит DNS, убран из спеки, а сервер DNS на него ссылается. Именно такую спеку
 # панель оставляла в памяти после удаления выхода: ядро отвергает её целиком («настройки не
@@ -74,7 +97,7 @@ out="$(rpcd spec_set "$(req "$DNSGONE")")"
 check "выход сервера DNS убран — отказ ядра" "false" "$(printf '%s' "$out" | jget ok)"
 check "и его слова называют сервер и выход" "yes" \
       "$(printf '%s' "$out" | jget error | grep -q 'dns.upstreams.cf.out: выхода «wg1» нет в outputs' && echo yes || echo no)"
-check "прежняя спека при отказе цела (DNS через wg1)" "$DNSVIA" "$(cat "$T/etc/spec.json")"
+check "прежняя спека при отказе цела (DNS через wg1)" "$(want_spec "$DNSVIA")" "$(disk_spec)"
 
 NOMOD='{"version":2,"outputs":{"direct":{"kind":"direct"},"nl":{"kind":"tunnel","protocol":"hysteria2","subscription":"'"$T"'/etc/sub.txt"}}}'
 printf 'hy2://x@h:443#n\n' > "$T/etc/sub.txt"
@@ -87,6 +110,7 @@ else
     check "движок с модулем hysteria2 принял спеку" "true" "$(printf '%s' "$out" | jget ok)"
 fi
 
+rm -f "$T/etc/spec.yaml" "$T/etc/spec.json"
 printf '{"schema":1,"outputs":{"direct":{"kind":"direct"}},"channels":[]}\n' > "$T/etc/spec.json"
 rm -f "$T/etc/spec.json.v1.bak"
 out="$(rpcd spec_set "$(req '{"version":2,"outputs":{"direct":{"kind":"direct"}}}')")"
