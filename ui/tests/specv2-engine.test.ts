@@ -421,3 +421,30 @@ describe.skipIf(HAVE)('кодек v2 против движка — ПРОПУЩ�
         expect(HAVE).toBe(false)
     })
 })
+
+describe.skipIf(!HAVE)('кодек v2 против движка: весь трафик устройства в выход', () => {
+    const outputs = { direct: { name: 'direct', kind: 'direct' as const }, wg0: { name: 'wg0', kind: 'interface' as const, device: 'wg0' } }
+
+    it('правило {from: устройство, scope: device, any} ядро принимает: MAC, адрес и оба вместе', () => {
+        for (const from of [['aa:bb:cc:dd:ee:01'], ['192.168.1.50'], ['2001:db8::7'], ['192.168.1.50', 'aa:bb:cc:dd:ee:01']]) {
+            const spec = encodeSpec({ outputs, channels: [{ name: 'Телевизор', out: 'wg0', from, scope: 'device', match: { any: true } }] })
+            // В спеке v2 — `to: all` и `scope: device`, а не список адресов.
+            expect(JSON.stringify(spec)).toContain('"all"')
+            expect(JSON.stringify(spec)).toContain('"device"')
+            const rs = ruleset(spec, `dev-all-${from.join('_').replace(/[:/]/g, '-')}.json`)
+            for (const a of from) expect(rs).toContain(a)
+        }
+    })
+
+    it('прочитанное из файла и записанное обратно то же', () => {
+        const ui = { outputs, channels: [{ name: 'Телевизор', out: 'wg0', from: ['aa:bb:cc:dd:ee:01'], scope: 'device' as const, match: { any: true } }] }
+        const once = encodeSpec(ui)
+        expect(encodeSpec(decodeSpec(once))).toEqual(once)
+        expect(decodeSpec(once).channels[0]).toMatchObject({ scope: 'device', match: { any: true }, from: ['aa:bb:cc:dd:ee:01'] })
+    })
+
+    it('подсеть вместо устройства при scope: device ядро отвергает — интерфейс таких правил не заводит', () => {
+        const spec = encodeSpec({ outputs, channels: [{ name: 'Сеть', out: 'wg0', from: ['192.168.1.0/24'], scope: 'device', match: { any: true } }] })
+        expect(() => ruleset(spec, 'dev-all-subnet.json')).toThrow()
+    })
+})

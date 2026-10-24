@@ -21,6 +21,7 @@ import { dnsFragmentSupported, dnsH3Supported } from '@/lib/engine'
 import { Hint } from '@/components/ui/hint'
 import { Block, Group } from '@/components/ui/layout'
 import RuleEditor from '@/components/tabs/RuleEditor'
+import DeviceVpn from '@/components/DeviceVpn'
 import { useCatalog, useLocalLists } from '@/lib/catalog'
 import RuleTarget from '@/components/board/RuleTarget'
 import { dropRule } from '@/lib/ruleout'
@@ -132,6 +133,8 @@ export default function RulesTab({
         [catalogServices, local],
     )
     const [open, setOpen] = useState<number | null>(null)
+    /** Открыта карточка «Весь трафик устройства — в VPN». */
+    const [deviceVpn, setDeviceVpn] = useState(false)
     /** Приложение для ПК: правило правится черновиком — копией спеки, которая уходит на роутер только
      *  по «Сохранить» (`base` — спека на момент открытия, для слияния с тем, что поменялось за это
      *  время); выход стрелкой назад или по рельсу черновик отбрасывает, новое правило не заводится. */
@@ -498,7 +501,13 @@ export default function RulesTab({
                 механизм в движке тот же. */}
             <Button variant="ghost" onClick={addException} className="w-full sm:w-auto">
                 {S.rulesTab.isklyuchenie3}</Button>
+            <Button variant="ghost" onClick={() => setDeviceVpn(true)} className="w-full sm:w-auto">
+                {S.deviceVpn.knopka}</Button>
         </div>
+    )
+    /* Карточка сверху списка: открывается кнопкой под списком или из пустого экрана. */
+    const deviceCard = deviceVpn && (
+        <DeviceVpn spec={spec} onSpec={edit} onClose={() => setDeviceVpn(false)} onGoOutbounds={onGoOutbounds} />
     )
 
     return (
@@ -514,6 +523,8 @@ export default function RulesTab({
                 <Hint tip={S.rulesTab.adresDostaetsyaSamomuVerhnemu}>
                     {S.rulesTab.pervoeSovpadenie}</Hint>
                 {S.rulesTab.izmeneniyaSohranyayutsyaSamiPravilo}</p>
+
+            {deviceCard}
 
             {spec.channels.length > 0 && (
                 <div className="flex items-center gap-2 rounded-xl border border-border bg-card px-3 py-1.5 shadow-card">
@@ -552,6 +563,8 @@ export default function RulesTab({
                             <Plus className="mr-1 h-4 w-4" aria-hidden="true" /> {S.rulesTab.novoePravilo}</Button>
                         <Button variant="ghost" onClick={addException}>
                             {S.rulesTab.isklyuchenie3}</Button>
+                        <Button variant="ghost" onClick={() => setDeviceVpn(true)}>
+                            {S.deviceVpn.knopka}</Button>
                     </div>
                     {routedOutputs(outputs).length === 0 && (
                         <div className="text-xs">

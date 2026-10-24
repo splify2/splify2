@@ -844,6 +844,25 @@ export const ru = {
         gruppy: (p0: unknown) => `группы — ${p0}`,
         tunneli: (p0: unknown) => `туннели через него — ${p0}`,
     },
+    /** «Весь трафик устройства — в VPN» (правила): выбор устройства и выхода. */
+    deviceVpn: {
+        knopka: "Устройство целиком в VPN",
+        zagolovok: "Весь трафик устройства — в VPN",
+        ustroystvo: "Устройство",
+        svoyAdres: "Или адрес устройства",
+        adresPlaceholder: "192.168.1.50",
+        vyhod: "Выход",
+        vklyuchit: "Включить",
+        zakryt: "Закрыть",
+        netUstroystv: "Устройства не видны — введите адрес вручную",
+        neUstroystvo: "Нужен адрес одного устройства или MAC — подсеть и диапазон не подходят",
+        netVyhoda: "Сначала настройте выход VPN",
+        imyaPravila: (d: string) => `${d}: весь трафик`,
+        vklyucheno: (d: string, out: string) => `Весь трафик «${d}» идёт через «${out}»`,
+        uzheEst: (d: string, out: string) => `«${d}» уже идёт через «${out}»`,
+        sejchas: "Сейчас",
+        cherez: "через",
+    },
     /** «Что изменится» и «Что изменилось»: строки списка, кнопки, тосты об удалении (D-P2.4). */
     changes: {
         praviloDobavleno: (n: string) => `Добавлено правило «${n}»`,
