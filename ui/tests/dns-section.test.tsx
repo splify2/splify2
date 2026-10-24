@@ -60,7 +60,7 @@ describe('раздел DNS', () => {
         await userEvent.selectOptions(screen.getByDisplayValue('wg0'), '')
         const a = edit.mock.calls.at(-1)![0] as Spec
         expect(a.dns?.upstreams?.google.out).toBeUndefined()
-        fireEvent.click(screen.getByText('Настоящие адреса'))
+        fireEvent.click(screen.getByText('Настоящие адреса сайтов'))
         const b = edit.mock.calls.at(-1)![0] as Spec
         expect(b.dns?.mode).toBe('realip')
     })

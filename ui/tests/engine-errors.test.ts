@@ -17,3 +17,20 @@ describe('отказы движка для человека', () => {
         expect(engineErrorText('')).toBe('')
     })
 })
+
+describe('ответ «Куда пойдёт запрос» и пустая установка', () => {
+    it('строка ядра — словами; незнакомый вывод не разбирается', async () => {
+        const { explainSummary } = await import('../src/lib/engineerr')
+        expect(explainSummary('youtube.com -> vless (правило: Youtube)')).toBe('youtube.com пойдёт через выход «vless» — по правилу «Youtube».')
+        expect(explainSummary('example.org -> direct')).toBe('example.org пойдёт напрямую, мимо туннелей.')
+        expect(explainSummary('какой-то другой вывод')).toBeNull()
+    })
+    it('пустая установка — только когда движок ответил и в нём нет выходов и правил', async () => {
+        const { blankInstall } = await import('../src/lib/blank')
+        const st = (outputs: object, channels: unknown[]) => ({ status: { outputs, channels }, error: null, phase: null }) as never
+        expect(blankInstall(st({ direct: { kind: 'direct' } }, []))).toBe(true)
+        expect(blankInstall(st({ wg0: { kind: 'interface' } }, []))).toBe(false)
+        expect(blankInstall({ status: null, error: null, phase: null } as never)).toBe(false)
+        expect(blankInstall({ status: { outputs: {}, channels: [] }, error: 'нет', phase: null } as never)).toBe(false)
+    })
+})

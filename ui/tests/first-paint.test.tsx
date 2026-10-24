@@ -17,7 +17,11 @@ import { live } from './fixtures'
 // не ответил, на экране нет слова «Загрузка» — оно и было тем, на что жаловались.
 
 const OK = {
-    status: { schema: 1, outputs: {}, channels: [] },
+    status: {
+        schema: 1,
+        outputs: { wg0: { name: 'wg0', kind: 'interface', device: 'wg0', up: true } },
+        channels: [{ name: 'wg0_dom', out: 'wg0', live: true, channels: ['YouTube'] }],
+    },
     diag: { fail: 0, warn: 0, checks: [] },
     net: { uptime: 120, active_clients: 3 },
 }

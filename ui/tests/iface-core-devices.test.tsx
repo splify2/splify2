@@ -184,7 +184,7 @@ describe('VPN: подпись строки «Свои туннели» назы�
             ],
         })
         const text = await subtitle()
-        await vi.waitFor(() => expect(text()).toContain('взяты: wg0'))
+        await vi.waitFor(() => expect(text()).toContain('используются: wg0'))
         expect(text()).not.toContain('nl')
     })
 
@@ -196,7 +196,7 @@ describe('VPN: подпись строки «Свои туннели» назы�
             ],
         })
         const text = await subtitle()
-        await vi.waitFor(() => expect(text()).toContain('взяты: nl, wg0'))
+        await vi.waitFor(() => expect(text()).toContain('используются: nl, wg0'))
     })
 })
 

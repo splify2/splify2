@@ -5,6 +5,7 @@ import { Block, CardHead, FieldRow, KV, Segmented } from '@/components/ui/layout
 import { inputCls } from '@/components/formbits'
 import { notify } from '@/lib/notify'
 import { pending } from '@/lib/pending'
+import { dnsErrorText } from '@/lib/engineerr'
 import { useSpecCopy } from '@/lib/speccopy'
 import { rpc, type DnsLog } from '@/lib/rpc'
 import { isPart, type DomainMode, type DnsSpec, type Spec, type Upstream, type UpstreamGroup } from '@/lib/model'
@@ -96,7 +97,7 @@ function DnsCard({ title, up, chosen, rank, where, lamp, live, onToggle, onEdit,
                 <span className="min-w-0 flex-1 truncate text-sm font-semibold">{title}</span>
                 {res?.ok && res.ms !== undefined && <span className="shrink-0 text-xs tabular-nums text-muted-foreground">{S.subsBoard.ms(res.ms)}</span>}
                 <span
-                    title={res ? (res.ok ? S.dns.otvechaet : res.error || S.dns.neOtvechaetLampa) : busy ? S.dns.proveryaetsya : S.dns.neProveren}
+                    title={res ? (res.ok ? S.dns.otvechaet : (res.error ? dnsErrorText(res.error) : S.dns.neOtvechaetLampa)) : busy ? S.dns.proveryaetsya : S.dns.neProveren}
                     aria-label={res ? (res.ok ? S.dns.otvechaet : S.dns.neOtvechaetLampa) : S.dns.neProveren}
                     className={[
                         'h-2.5 w-2.5 shrink-0 rounded-full',
@@ -525,7 +526,7 @@ export default function Dns({ live, board = false }: { live?: Live; board?: bool
                                         сам закрывает простаивающее соединение) — под «ждёт вопросов». */}
                                     {s?.error && s.state !== 'ready' && s.state !== 'idle' && s.state !== 'connecting' &&
                                         !(s.last_ok_ago != null && s.error_ago != null && s.last_ok_ago < s.error_ago) &&
-                                        <p className="text-xs text-destructive">{s.error}</p>}
+                                        <p className="text-xs text-destructive">{dnsErrorText(s.error)}</p>}
                                 </div>
                             )
     }

@@ -206,7 +206,7 @@ describe('совет виден содержанием и ведёт на диа
 
     it('советов несколько — счётчик остаётся, но с первым советом рядом', () => {
         render(<Home live={live({ ...OK, diag: DIAG(3) })} onSection={() => {}} />)
-        const line = screen.getByRole('button', { name: /советов: 3/ })
+        const line = screen.getByRole('button', { name: /можно улучшить: 3/ })
         expect(line).toHaveTextContent(/клиент может обходить DNS роутера/)
     })
 

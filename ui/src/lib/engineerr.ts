@@ -32,3 +32,30 @@ export function engineErrorText(raw: string): string {
     const human = knownEngineError(text)
     return human ? `${human}\n${S.engineErr.ishodnyTekst(text)}` : text
 }
+
+/** Отказы сервера DNS из журнала резолвера: слова Go-сети («i/o timeout», «connection refused») —
+ *  человеческими; незнакомое и уже русское («нет ответа за 4000 мс») — как есть. */
+const DNS_KNOWN: Array<[RegExp, string]> = [
+    [/i\/o timeout|deadline exceeded|timed out/i, S.engineErr.dnsTaymaut],
+    [/connection refused/i, S.engineErr.dnsOtkaz],
+    [/no route to host|network is unreachable/i, S.engineErr.dnsNetMarshruta],
+    [/(tls|x509|certificate)/i, S.engineErr.dnsSertifikat],
+    [/(no such host|lookup .* failed)/i, S.engineErr.dnsNetAdresa],
+]
+
+export function dnsErrorText(raw: string): string {
+    const text = raw.trim()
+    for (const [re, say] of DNS_KNOWN) if (re.test(text)) return `${say} (${text})`
+    return text
+}
+
+/** Ответ «Куда пойдёт запрос» человеческими словами. Ядро печатает строку вида
+ *  «youtube.com -> vless (правило: Youtube)»; узнаём только её и ничего не додумываем: не разобралось —
+ *  `null`, и экран показывает вывод ядра как есть. Сырой текст при разобранном ответе остаётся по раскрытию. */
+export function explainSummary(text: string): string | null {
+    const m = /^\s*(\S+)\s*->\s*(\S+)(?:\s*\((?:правило|rule):\s*([^)]+)\))?/m.exec(text)
+    if (!m) return null
+    const [, host, out, rule] = m
+    const where = out === 'direct' ? S.explain.napryamuyu : S.explain.cherezVyhod(out)
+    return rule ? S.explain.poPravilu(host, where, rule) : S.explain.bezPravila(host, where)
+}
