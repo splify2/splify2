@@ -980,6 +980,24 @@ export function toAllowDomainsServices(a: AllowDomains | null): ServiceEntry[] {
     })
 }
 
+/** Порядок для ВЫБОРА списка: сначала то, за чем приходят чаще всего (заблокированное, геоблок),
+ *  потом остальное, хостинги и CDN (Hetzner, OVH, DigitalOcean, Cloudflare…) — в конце. Порядок
+ *  внутри ступени прежний (сортировка устойчивая), а сам каталог издателя не переписывается:
+ *  это только порядок показа. Признак — по id и названию записи, без списка «правильных» id. */
+const WANTED_FIRST = /block|заблокир|геоблок/i
+const HOSTING_LAST = /hetzner|ovh|digitalocean|cloudflare|cloudfront|akamai|hodca|h\.o\.d\.c\.a|\baws\b/i
+export function catalogRank(sv: Pick<ServiceEntry, 'id' | 'name'>): 0 | 1 | 2 {
+    const key = `${sv.id} ${sv.name}`
+    if (HOSTING_LAST.test(key)) return 2
+    return WANTED_FIRST.test(key) ? 0 : 1
+}
+export function wantedFirst<T extends Pick<ServiceEntry, 'id' | 'name'>>(list: T[]): T[] {
+    return list
+        .map((sv, i) => ({ sv, i, r: catalogRank(sv) }))
+        .sort((a, b) => a.r - b.r || a.i - b.i)
+        .map((x) => x.sv)
+}
+
 export interface Catalog {
     version: string
     base_url: string
