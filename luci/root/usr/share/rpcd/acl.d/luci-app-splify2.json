@@ -86,6 +86,7 @@
           "xsteer_link_put",
           "telemetry_set",
           "sub_auto",
+          "sub_rename",
           "sub_refresh",
           "steer_module_add",
           "steer_module_del",
