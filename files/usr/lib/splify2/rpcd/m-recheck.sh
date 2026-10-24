@@ -2,7 +2,7 @@
 # /etc/init.d/splify2-recheck, помощники /usr/lib/splify2/recheck.sh). Движок — отдельный пакет
 # recheck; без него методы отвечают installed=false, а настройки всё равно пишутся.
 
-. /usr/lib/splify2/recheck.sh
+. "${RECHECK_SH:-/usr/lib/splify2/recheck.sh}"
 
 RECHECK_INIT=${RECHECK_INIT:-/etc/init.d/splify2-recheck}
 RECHECK_KEEP=/etc/splify2/recheck.cache
