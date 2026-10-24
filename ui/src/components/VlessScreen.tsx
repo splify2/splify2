@@ -9,6 +9,7 @@ import { isHttpUrl, isProxyLinks, isSubSource } from '@/lib/validate'
 import { agoText } from '@/lib/quota'
 import { subsRemember, subsRemembered } from '@/lib/subs'
 import SubTools from '@/components/SubTools'
+import { pending } from '@/lib/pending'
 import { makeSubOutput } from '@/lib/suboutput'
 
 import { S } from '@/copy'
@@ -161,6 +162,9 @@ export default function VlessScreen() {
             return
         }
         setBusy('__adding__')
+        /* Пачка «подписка + выход на её узлах»: автоприменение держится до конца и применяет их одним
+           применением, а не подпиской без выхода, а потом выходом. */
+        const release = pending.hold()
         try {
             const r = px ? await rpc.subSet(src, n, name.trim(), px) : await rpc.subSet(src, n, name.trim())
             if (!r.ok) { notify(r.error || S.vlessScreen.podpiskaNeSohranilas, 'error'); return }
@@ -184,6 +188,7 @@ export default function VlessScreen() {
         } catch (e) {
             notify(String(e instanceof Error ? e.message : e), 'error')
         } finally {
+            release()
             setBusy('')
         }
     }

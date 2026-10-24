@@ -10,7 +10,7 @@ export function hasSubOutput(spec: Spec | null, path: string): boolean {
     return !!spec && Object.values(spec.outputs).some((o) => o.sub_file === path)
 }
 
-/** Завести выход на узлах подписки и записать правку (применяет её человек — «Применить»).
+/** Завести выход на узлах подписки и записать правку (применяется само: lib/autoapply.ts).
  *  Возвращает имя выхода или null, если завести нечем: спека не загружена или набор не собирается. */
 export async function makeSubOutput(sub: { name: string; path: string }): Promise<string | null> {
     if (!pending.saved) return null

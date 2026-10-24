@@ -338,13 +338,13 @@ describe('ядро всё же отвергло спеку с висячей с�
         const s = base()
         const { nl: _n, ...outputs } = s.outputs
         await failedWrite({ ...s, outputs }, RAW)
-        expect(said()).toEqual(['Выхода «nl» нет, но он выбран: серверы DNS — cf. Выберите там другой выход'])
+        expect(said()).toEqual([`Настройки не записаны, на роутере прежние — исправьте правку, она запишется и применится сама\nВыхода «nl» нет, но он выбран: серверы DNS — cf. Выберите там другой выход`])
         expect(vi.mocked(notify).mock.calls[0][1]).toBe('error')
         expect(pending.dirty).toBe(true)
     })
 
     it('причина не в выходе — слова ядра как были', async () => {
         await failedWrite(free(), 'steer: /etc/steer/spec.json.new.5321:1:9: неизвестный ключ «опечатка»')
-        expect(said()).toEqual(['steer: /etc/steer/spec.json.new.5321:1:9: неизвестный ключ «опечатка»'])
+        expect(said()).toEqual([`Настройки не записаны, на роутере прежние — исправьте правку, она запишется и применится сама\nsteer: /etc/steer/spec.json.new.5321:1:9: неизвестный ключ «опечатка»`])
     })
 })

@@ -14,7 +14,7 @@ import { desk, type WarpScan, type WarpState } from '../desk'
 
 /** WarpBox — выходы Cloudflare WARP (`kind: warp`, модуль steer-warpbox). Только в приложении:
  *  под LuCI этого раздела нет. Настройка — в спеке через тот же pending, что у всей панели
- *  (правка → «Применить»); состояние туннелей — из status (группа и её члены `<выход>.<n>`),
+ *  (правка применяется сама); состояние туннелей — из status (группа и её члены `<выход>.<n>`),
  *  точки входа и подбор — шлюз API /v1/warp. */
 export const warpSection: ExtraSection = {
     id: 'warpbox',
