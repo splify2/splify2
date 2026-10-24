@@ -23,6 +23,8 @@ const EXPECTED_JS = [
   'splify-RulesTab.js', 'splify-Vpn.js',
   // Доска VPN — ленивая вкладка раздела «VPN» (Console.tsx), как и splify-Vpn.js.
   'splify-SubsBoard.js', 'splify-Dns.js', 'splify-Diagnostics.js',
+  // «Запросы» — ленивый раздел рельса, как «Диагностика».
+  'splify-Requests.js',
   'splify-Settings.js',
   // Панели, которые читают ДВА раздела сразу. Своим куском они стали не по нашему выбору:
   // модуль, который импортируют два ленивых куска, rollup выносит в третий. Имена

@@ -57,9 +57,10 @@ export interface ExtraSection {
 /** `railHost` — узел оболочки, куда рисуется рельс разделов (порталом): в приложении для
  *  компьютера рельс — отдельная колонка окна вне прокрутки раздела. Нет — рельс рядом с
  *  разделом, как под LuCI. */
-/** `board` — оболочка приложения для компьютера: главная «доской» (правила карточками), правила
- *  открываются с неё и вкладки в рельсе нет, Под LuCI ничего этого нет.
- *  Применение в обоих режимах автоматическое, кнопки «Применить» нет. */
+/** `board` — доска: главная блоками (правила карточками), правила открываются с неё, вкладки
+ *  «Правила» в рельсе нет. Один вид в обеих оболочках: под LuCI и в приложении для компьютера
+ *  (R-156); различие только в том, что оболочка приносит сама (`railHost`, `settingsHost`, `extra`).
+ *  Применение автоматическое, кнопки «Применить» нет. */
 export default function Console({ extra, railHost, board = false, settingsHost, settingsScreen, setup = false }: {
     extra?: ExtraSection[]
     /** Открыть сразу мастер настройки (приложение для ПК: «Настроить splify2» в конце установки). */
@@ -134,6 +135,11 @@ export default function Console({ extra, railHost, board = false, settingsHost, 
      * «движка нет» тому, у кого он работает, и это худшая из двух ошибок. */
     if (live.build && !live.build.present) return <FirstRun live={live} />
 
+    /* У доски правила открываются с главной, и пункта в рельсе нет; настройки — пункт рельса, если
+     * оболочка не держит их в своём слое (приложение для ПК: settingsHost). Под LuCI своего слоя
+     * нет, и без пункта настройки были бы недоступны. */
+    const boardHide: SectionId[] | undefined = board ? (settingsHost ? ['rules', 'settings'] : ['rules']) : undefined
+
     /* Пока применяется или поднимается — метки тревоги в рельсе нет: находки этих секунд
        описывают стройплощадку, а не роутер (см. Live.phase). */
     const warnings = live.phase ? 0 : (live.diag?.fail ?? 0) + (live.diag?.warn ?? 0)
@@ -159,15 +165,15 @@ export default function Console({ extra, railHost, board = false, settingsHost, 
     }
 
     return (
-        <div className="sp-root an-backdrop text-foreground">
+        <div className={`sp-root an-backdrop text-foreground${board ? ' sp-board-on' : ''}`}>
             {/* Ряд тянется на всю подложку (у неё своя нижняя граница высоты), иначе рельс
                 кончается там, где кончился его список, и под ним видна ступенька другого
                 фона. `min-h-full` работает от родителя с известной высотой — им и является
                 .sp-root. */}
             <div className="flex min-h-full flex-col lg:flex-row">
                 {railHost
-                    ? (setupShow ? null : createPortal(<Rail live={live} section={section} onSection={(s) => go(s)} counts={counts} extra={extra} hide={board ? ['rules', 'settings'] : undefined} />, railHost))
-                    : <Rail live={live} section={section} onSection={(s) => go(s)} counts={counts} extra={extra} hide={board ? ['rules', 'settings'] : undefined} />}
+                    ? (setupShow ? null : createPortal(<Rail live={live} section={section} onSection={(s) => go(s)} counts={counts} extra={extra} hide={boardHide} />, railHost))
+                    : <Rail live={live} section={section} onSection={(s) => go(s)} counts={counts} extra={extra} hide={boardHide} />}
 
                 {/* Отступ снизу на узком экране — под нижнюю панель разделов: без него последняя
                     карточка уезжает под неё, и человек не видит, что страница кончилась. */}
@@ -245,7 +251,10 @@ export default function Console({ extra, railHost, board = false, settingsHost, 
                                 board={board}
                             />
                         )}
-                        {section === 'vpn' && !loadFailed && (board ? <SubsBoard /> : <Vpn live={live} />)}
+                        {/* Доска приложения для ПК держит туннели, интерфейсы и xsteer в своём слое настроек, и её VPN —
+                            только подписки. Под LuCI слоя нет: там нужен полный раздел, иначе эти настройки
+                            недоступны вовсе. Свести два экрана в один — отдельное решение (R-156, остаток). */}
+                        {section === 'vpn' && !loadFailed && (board && settingsHost ? <SubsBoard /> : <Vpn live={live} />)}
                         {section === 'dns' && !loadFailed && <Dns live={live} board={board} />}
                         {section === 'requests' && <Requests live={live} board={board} />}
                         {section === 'diag' && <Diagnostics live={live} board={board} />}
