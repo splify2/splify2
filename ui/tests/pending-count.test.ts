@@ -1,5 +1,6 @@
 import { describe, expect, it, vi, beforeEach } from 'vitest'
-import { pending } from '@/lib/pending'
+import { pending, writable } from '@/lib/pending'
+import { decodeSpec, encodeSpec } from '@/lib/specv2'
 import { rpc } from '@/lib/rpc'
 import { type Spec } from '@/lib/model'
 
@@ -100,6 +101,38 @@ describe('счётчик непримененных правок', () => {
     it('настоящая правка по-прежнему видна', async () => {
         const applied = SPEC({ outputs: { vl: { name: 'vl', kind: 'vless', node: 3 } } } as Partial<Spec>)
         const saved = SPEC({ outputs: { vl: { name: 'vl', kind: 'vless', node: 7 } } } as Partial<Spec>)
+        expect(await count(applied, saved)).toBe(1)
+    })
+})
+
+describe('счётчик после записи и чтения спеки (I-563)', () => {
+    beforeEach(() => { vi.restoreAllMocks() })
+    const vpn = { name: 'vpn', kind: 'interface', device: 'wg0' }
+    const spec = (channels: unknown[]) => SPEC({ outputs: { direct: { name: 'direct', kind: 'direct' }, vpn }, channels } as Partial<Spec>)
+
+    it('правило без единого списка не висит «Применить · 1»: на роутер оно не пишется', async () => {
+        const draft = { name: 'Новое', out: 'vpn', match: {} }
+        expect(await count(spec([]), spec([draft]))).toBe(0)
+    })
+
+    it('порядок файлов при сужении портов не считается правкой', async () => {
+        // encodeSpec ставит файлы без сужения в основное правило, файлы с портами — в спутника,
+        // и после чтения порядок «/a, /b» превращался в «/b, /a».
+        const saved = spec([{ name: 'A', out: 'vpn', match: { prefixes_files: ['/a', '/b'] }, narrow: { '/a': { ports: ['443'] } } }])
+        const applied = decodeSpec(JSON.parse(JSON.stringify(encodeSpec(saved))))
+        expect(await count(applied, saved)).toBe(0)
+    })
+
+    it('«только эти устройства» без единого устройства — черновик, пустой адрес в спеку не пишется (I-366)', async () => {
+        const ch = { name: 'A', out: 'vpn', match: { domains_files: ['/d'] }, from: [''] }
+        expect(await count(spec([]), spec([ch]))).toBe(0)
+        expect(JSON.stringify(encodeSpec(writable(spec([ch])).spec))).not.toContain('""')
+    })
+
+    it('настоящая правка списка по-прежнему считается', async () => {
+        const ch = { name: 'A', out: 'vpn', match: { prefixes_files: ['/a'] } }
+        const applied = decodeSpec(JSON.parse(JSON.stringify(encodeSpec(spec([ch])))))
+        const saved = spec([{ ...ch, match: { prefixes_files: ['/a', '/b'] } }])
         expect(await count(applied, saved)).toBe(1)
     })
 })

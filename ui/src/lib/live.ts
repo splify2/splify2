@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from 'react'
 import { cacheGet, cacheSet } from '@/lib/cache'
 import { engineErrorText } from '@/lib/engineerr'
-import { rpc } from './rpc'
+import { deadline, rpc } from './rpc'
 import { type Releases, type SelfUpdateInfo } from './engine'
 import { type Status } from './model'
 import { pending } from './pending'
@@ -140,6 +140,9 @@ export function rate(bytes: number, ms: number) {
 }
 
 const PERIOD_MS = 5000
+/** Срок ответа на круг опроса: дольше этого роутер считается молчащим (проверки состояния — самая
+ *  долгая часть круга, но не минуты). */
+const LIVE_DEADLINE_MS = 45_000
 /** Сколько кругов подряд движок должен промолчать вне известного перехода, чтобы это стало
  *  «Движок не отвечает». Один круг — это пять секунд, за которые движок мог просто
  *  перечитывать спеку после правки; три — пятнадцать, столько не молчит ни одна штатная
@@ -165,7 +168,7 @@ const VERSIONS_TTL_MS = 30 * 60 * 1000
  *  Врать снимком нельзя: «Работает», нарисованное по вчерашним данным, — это не задержка, а
  *  неправда. Поэтому вместе со снимком отдаётся признак `stale`, и интерфейс показывает
  *  прошлое как прошлое, пока не приедет настоящее. */
-type Snapshot = { status: Status | null; diag: Diag | null; build: Build | null }
+type Snapshot = { status: Status | null; diag: Diag | null }
 
 export function useLive(): Live {
     const saved = useRef<Snapshot | null>(cacheGet<Snapshot>('live'))
@@ -197,7 +200,7 @@ export function useLive(): Live {
     const [diagOld, setDiagOld] = useState(false)
     const [devs, setDevs] = useState<Record<string, { rx: string; tx: string }> | null>(null)
     const [speed, setSpeed] = useState<Live['speed']>({ ch: {}, dev: {} })
-    const [build, setBuild] = useState<Build | null>(saved.current?.build ?? null)
+    const [build, setBuild] = useState<Build | null>(null)
     /* Версии — из памяти браузера: за ними роутер ходит на GitHub (или по обходным путям),
      * и полторы секунды на каждый из двух вопросов при каждом открытии окна — ради чисел,
      * которые меняются раз в неделю. Запомненное рисуется сразу; свежее спрашивается, когда
@@ -387,7 +390,7 @@ export function useLive(): Live {
              * помеченным: состояние выходов, счёт проверок и версия движка. Скорости сюда не
              * едут — они считаются из разницы двух опросов, и «прошлая скорость» это число
              * ни о чём. */
-            if (st) cacheSet('live', { status: st, diag: dg ?? diagNow.current, build: null })
+            if (st) cacheSet('live', { status: st, diag: dg ?? diagNow.current })
 
             /* СКОРОСТЬ ИЗ ЗАПОМНЕННОГО ОТВЕТА НЕ СЧИТАЕТСЯ ВОВСЕ, и точка отсчёта им не
              * ставится.
@@ -471,7 +474,9 @@ export function useLive(): Live {
                  * вызовы первым же `return`, и проверки не приезжали к нему вовсе. */
                 await (async () => {
                     if (legacy) { await loadLegacy(withDiag); return }
-                    const r = await rpc.live(withDiag, fast).catch((e) => asText(e))
+                    /* Со сроком: вызов, на который роутер не ответил, иначе держал круг до предела LuCI
+                     * (две минуты), и опрос стоял всё это время. Срок вышел — как обрыв: роутер молчит. */
+                    const r = await deadline(rpc.live(withDiag, fast), LIVE_DEADLINE_MS).catch((e) => asText(e))
                     if (stop) return
                     if (typeof r === 'string') {
                         /* Метода нет — это не отказ роутера, а старый объект. Переходим на
@@ -480,8 +485,12 @@ export function useLive(): Live {
                          * ТОЛЬКО ПО ЭТОМУ ОТКАЗУ. Любой другой обрыв — перезапуск rpcd во
                          * время применения, таймаут, оборванный запрос — прежде тоже включал
                          * прежние вызовы, навсегда и молча: круг дорожал впятеро, а текст
-                         * исключения уезжал на экран как причина «Движок не отвечает». */
-                        if (/Method not found|not found|not supported|unavailable outside LuCI/i.test(r)) {
+                         * исключения уезжал на экран как причина «Движок не отвечает».
+                         *
+                         * «Object not found» сюда не входит: так отвечает rpcd, пока
+                         * перечитывает объекты после установки или перезапуска, — объект
+                         * вернётся через секунды, а прежние вызовы остались бы навсегда. */
+                        if (/Method not found|not supported|unavailable outside LuCI/i.test(r)) {
                             legacy = true
                             await loadLegacy(withDiag)
                             return

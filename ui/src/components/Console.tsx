@@ -95,7 +95,13 @@ export default function Console({ extra, railHost, board = false, settingsHost, 
      *  один раз и сбрасывается — иначе следующий заход в правила снова заводил бы пустое. */
     const [addRule, setAddRule] = useState(false)
     const [editRule, setEditRule] = useState<number | null>(null)
-    const go = (s: SectionId | string) => setSection(s)
+    /** Счётчик повторных щелчков по уже открытому разделу: подэкран VPN и настроек живёт в
+     *  состоянии раздела, и без перемонтирования щелчок по пункту рельса не возвращал в корень. */
+    const [again, setAgain] = useState(0)
+    const go = (s: SectionId | string) => {
+        if (s === section) setAgain((n) => n + 1)
+        else setSection(s)
+    }
     const ext = extra?.find((e) => e.id === section)
 
     /* Спека нужна рельсу для счётчика правил, а он виден на всех разделах — значит загрузить её
@@ -190,7 +196,7 @@ export default function Console({ extra, railHost, board = false, settingsHost, 
                         обзора заголовок другой — им служит вердикт, и второго над ним не надо. */}
                     {/* Обёртка с ключом раздела: при смене раздела она новая, и оболочка вне LuCI может
                         показать смену движением (класс sp-section). Под LuCI у класса нет правил. */}
-                    <div key={section} className="sp-section">
+                    <div key={`${section}:${again}`} className="sp-section">
                     {/* Правило в приложении для ПК открывается с главной, и шапка редактора — его заголовок. */}
                     {section !== 'home' && !(board && section === 'rules') && (
                         <h1 className="sp-title mb-3">{SECTION_TITLE[section as SectionId] ?? ext?.label}</h1>

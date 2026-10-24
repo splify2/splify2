@@ -528,6 +528,7 @@ net_v6_table() {
             if (p[3] == "device" || p[3] == "ifname") dev[p[2]] = dev[p[2]] " " val
             else if (p[3] == "addresses" || p[3] == "ip6addr") adr[p[2]] = adr[p[2]] " " val
             else if (p[3] == "ip6prefix") pfx[p[2]] = 1
+            else if (p[3] == "proto") proto[p[2]] = val
         }
         END {
             for (k = 1; k <= ns; k++) {
@@ -537,6 +538,9 @@ net_v6_table() {
                 for (i = 1; i <= nt; i++)
                     if (t[i] ~ /:/ && t[i] !~ /^[Ff][Ee][89AaBb][0-9A-Fa-f]:/) m = "nat"
                 if (m == "off" && pfx[s]) m = "keep"
+                # Адрес придёт позже (DHCPv6, туннель 6in4/6to4/6rd): сейчас его нет, но «off» навсегда
+                # оставил бы такое устройство без IPv6 через выход — решать не нам, как с ip6prefix.
+                if (m == "off" && proto[s] ~ /^(dhcpv6|6in4|6to4|6rd)$/) m = "keep"
                 nd = split(dev[s], dv, " ")
                 if (nd) { for (i = 1; i <= nd; i++) put(dv[i], m) }
                 else put(s, m)

@@ -796,6 +796,10 @@ export const rpc = {
             bytes?: number
             spec?: boolean
             sub?: boolean
+            /** Сколько именованных подписок и ключей xsteer восстановлено, и вернулся ли выбор узла. */
+            subs?: number
+            xsteer?: number
+            select?: boolean
             lists?: { name: string; kind: string; count: number; dropped: number }[]
             warn?: string
         }>,

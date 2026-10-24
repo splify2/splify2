@@ -155,7 +155,7 @@ export default function BackupCard({
                 [
                     S.backupCard.nastroykiVosstanovleny,
                     last.spec ? S.backupCard.pravilaIVyhody : '',
-                    last.sub ? S.backupCard.podpiska : '',
+                    last.sub || last.subs ? S.backupCard.podpiska : '',
                     lists.length ? S.backupCard.svoiSpiski(lists.length) : '',
                     dropped ? S.backupCard.otbroshenoStrok(dropped) : '',
                     S.backupCard.primenyaetsyaPoslePerezagruzki,

@@ -179,6 +179,22 @@ describe('чтение v2 и круг', () => {
         expect(encodeSpec(back)).toEqual(d)
     })
 
+    it('правило, названное «X (порты)» вручную, не сливается в «X» и не теряет настройки (I-549)', () => {
+        const d = {
+            version: 2,
+            outputs: { wg0: { kind: 'interface', device: 'wg0' } },
+            lists: { a: { domains_file: '/l/a.lst' }, b: { domains_file: '/l/b.lst' } },
+            rules: [
+                { name: 'Игры', to: ['a'], out: 'wg0' },
+                { name: 'Игры (порты)', to: ['b'], out: 'wg0', enabled: false, resolve: 'realip' },
+            ],
+        }
+        const back = decodeSpec(d)
+        expect(back.channels.map((c) => c.name)).toEqual(['Игры', 'Игры (порты)'])
+        expect(back.channels[1].enabled).toBe(false)
+        expect(back.channels[1].match.mode).toBe('realip')
+    })
+
     it('состояние: пул-группа сворачивается в выход со списком устройств, члены уходят', () => {
         const st = {
             schema: 1, channels: [],

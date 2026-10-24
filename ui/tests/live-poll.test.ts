@@ -96,7 +96,8 @@ describe('круг опроса: один вызов вместо пяти', () 
          * досчитывается прокруткой очереди микрозадач, а не таймером. */
         vi.useFakeTimers()
         renderHook(() => useLive())
-        await act(async () => { await Promise.resolve() })
+        // Несколько оборотов очереди: ответ идёт через срок (deadline), а это ещё пара микрозадач.
+        for (let i = 0; i < 5; i++) await act(async () => { await Promise.resolve() })
         // Первый круг — быстрый, и проверок он НЕ просит: память движка отдаётся мгновенно, а
         // `steer diag` считается заново (201 мс против 91 мс на стенде), то есть вместе они
         // вернули бы то ожидание, ради снятия которого память и заведена. Приговор на экране
@@ -209,6 +210,31 @@ describe('круг опроса: один вызов вместо пяти', () 
         expect(diag).toHaveBeenCalled()
         expect(result.current.devs).toEqual(DEVICES)
         expect(result.current.error).toBeNull()
+    })
+
+    it('«Object not found» — rpcd перечитывает объекты: прежние вызовы не включаются навсегда (I-549)', async () => {
+        const live = vi.spyOn(rpc, 'live')
+            .mockRejectedValue(new Error('RPC call to splify2/live failed with error -32000: Object not found'))
+        const status = vi.spyOn(rpc, 'status').mockResolvedValue(STATUS as never)
+        vi.spyOn(rpc, 'engine').mockResolvedValue({ present: true, vless: true } as never)
+        vi.spyOn(rpc, 'steerVersions').mockResolvedValue({} as never)
+        vi.spyOn(rpc, 'splify2Versions').mockResolvedValue({} as never)
+
+        vi.useFakeTimers()
+        const { result } = renderHook(() => useLive())
+        for (let i = 0; i < 4; i++) await act(async () => { await vi.advanceTimersByTimeAsync(5000) })
+        expect(result.current.errorKind).toBe('router')
+        expect(status).not.toHaveBeenCalled()
+        expect(live.mock.calls.length).toBeGreaterThan(2)
+    })
+
+    it('роутер не ответил на круг вовсе — круг кончается по сроку, а не стоит до предела LuCI (I-549)', async () => {
+        const live = vi.spyOn(rpc, 'live').mockReturnValue(new Promise(() => {}) as never)
+        vi.spyOn(rpc, 'engine').mockResolvedValue({ present: true, vless: true } as never)
+        vi.useFakeTimers()
+        renderHook(() => useLive())
+        await act(async () => { await vi.advanceTimersByTimeAsync(2 * (45_000 + 5000) + 100) })
+        expect(live.mock.calls.length).toBeGreaterThan(2)
     })
 
     it('объект старее интерфейса и движок молчит: снимок из памяти помечен прошлым, а не живым', async () => {

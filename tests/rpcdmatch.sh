@@ -811,6 +811,7 @@ rpcd_raw() {  # МЕТОД JSON_ЗАПРОСА
 rpcd() {  # МЕТОД [JSON_ЗАПРОСА]  — вызов метода; для перечня методов есть rpcd_list
     if [ "${RPCD_NO_NEWLINE:-0}" = 1 ]; then printf '%s' "${2:-}"; else printf '%s\n' "${2:-}"; fi | env \
         SANDBOX="$T" \
+        SPLIFY2_LOCK_DIR="$T/lock" SPLIFY2_LOCK_WAIT="${SPLIFY2_LOCK_WAIT:-120}" \
         PATH="$T/bin:$PATH" \
         JSHN_SH="$ROOT/tests/stub/jshn.sh" FETCH_SH="$ROOT/files/usr/lib/splify2/fetch.sh" \
         FAST_SH="$ROOT/files/usr/lib/splify2/fast.sh" \
@@ -4929,7 +4930,7 @@ check "heal: спека v1 не правится (ключ ей неизвест
 # apply, и лечить такому выходу уже нечего. (Расхождение у выходов без подсказки страница после
 # apply снимает сама, перечитывая спеку: ui/src/lib/pending.ts, refresh.)
 rm -rf "$T/outnet-v6"; mkdir -p "$T/outnet-v6"
-for _d in wgA wgB wgC wgD; do
+for _d in wgA wgB wgC wgD wgE; do
     mkdir -p "$T/outnet-v6/$_d"
     printf '65534\n' > "$T/outnet-v6/$_d/type"; printf 'up\n' > "$T/outnet-v6/$_d/operstate"
     printf 'DEVTYPE=wireguard\n' > "$T/outnet-v6/$_d/uevent"
@@ -4939,6 +4940,8 @@ rm -f "$T/uci.store"; : > "$T/uci.store"
 uci_set 'network.wgB' interface; uci_set 'network.wgB.proto' wireguard; uci_set 'network.wgB.addresses' '10.1.0.2/24'
 uci_set 'network.wgC' interface; uci_set 'network.wgC.proto' wireguard; uci_set 'network.wgC.addresses' '10.2.0.2/24'
 uci_set 'network.wgC.ip6prefix' '2001:db8:2::/56'
+# wgE: IPv6 поднимет DHCPv6 позже — сейчас адреса нет, но «off» навсегда ему не писать (I-474).
+uci_set 'network.wgE' interface; uci_set 'network.wgE.proto' dhcpv6; uci_set 'network.wgE.device' wgE
 heal_spec
 out="$(OUT_SYSNET_FIXTURE="$T/outnet-v6" rpcd devices)"
 d6of() {  # УСТРОЙСТВО < JSON -> значение ipv6 у устройства ('-' — поля нет)
@@ -4951,6 +4954,7 @@ else: print("НЕТ УСТРОЙСТВА")' "$1"
 check "devices: у устройства с живым адресом IPv6 подсказка nat" "nat" "$(printf '%s' "$out" | d6of wgA)"
 check "devices: у туннеля с одним IPv4 подсказка off" "off" "$(printf '%s' "$out" | d6of wgB)"
 check "devices: при ip6prefix подсказки нет — решать человеку" "-" "$(printf '%s' "$out" | d6of wgC)"
+check "devices: адрес придёт по DHCPv6 — подсказки нет, а не off навсегда (I-474)" "-" "$(printf '%s' "$out" | d6of wgE)"
 check "devices: устройство есть, а адреса нет нигде — off" "off" "$(printf '%s' "$out" | d6of wgD)"
 check "devices: устройству, которое поднимает ядро, подсказка не нужна" "-" "$(printf '%s' "$out" | d6of tun)"
 # Клиенты: интерфейс WireGuard (устройство называется как интерфейс) в зоне человека списком
@@ -5077,6 +5081,30 @@ d = json.load(sys.stdin)
 w = json.load(open(sys.argv[1]))["luci-app-splify2"]["write"]["ubus"]["splify2"]
 print("yes" if "purge" in d and "purge" in w else "no")' "$ROOT/luci/root/usr/share/rpcd/acl.d/luci-app-splify2.json")"
 
+
+# ---- замок на правку спеки, подписок и архива (I-546) --------------------------------------
+# Пока кто-то держит замок «state», spec_set не пишет и отвечает отказом по сроку; отпустили —
+# работает. Без замка оба вызова шли бы параллельно и затирали бы друг друга.
+mkdir -p "$T/lock"
+if command -v flock >/dev/null 2>&1; then
+    ( exec 8>"$T/lock/splify2-state.lock"; flock 8; sleep 4 ) &
+    _lp=$!
+    sleep 0.5
+    out="$(SPLIFY2_LOCK_WAIT=1 rpcd spec_set "$(spec_req "$(vless_spec)")")"
+    check "замок занят: spec_set отказывает по сроку, а не пишет" "false" "$(printf '%s' "$out" | jget ok)"
+    check "и отказ говорит словами" "yes" \
+          "$(printf '%s' "$out" | grep -q 'ещё идёт' && echo yes || echo no)"
+    wait "$_lp"
+    out="$(rpcd spec_set "$(spec_req "$(vless_spec)")")"
+    check "замок свободен: spec_set пишет" "true" "$(printf '%s' "$out" | jget ok)"
+    ( exec 8>"$T/lock/splify2-state.lock"; flock 8; sleep 3 ) &
+    _lp=$!
+    sleep 0.5
+    out="$(SPLIFY2_LOCK_WAIT=1 rpcd list_remove '{"name":"x","kind":"prefixes"}')"
+    check "замок не мешает методам, которым общий файл не нужен" "no" \
+          "$(printf '%s' "$out" | grep -q 'ещё идёт' && echo yes || echo no)"
+    wait "$_lp"
+fi
 
 printf '\n%s\n' "$([ "$fails" -eq 0 ] && echo 'все проверки прошли' || echo "ЕСТЬ ПРОВАЛЫ: $fails")"
 [ "$fails" -eq 0 ]

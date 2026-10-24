@@ -3,6 +3,7 @@ import { beforeEach, describe, expect, it, vi } from 'vitest'
 import BackupCard, { BACKUP_CHUNK, cutChunks, readBackup } from '@/components/BackupCard'
 import { rpc } from '@/lib/rpc'
 import { pending } from '@/lib/pending'
+import * as notifyMod from '@/lib/notify'
 
 // R-005: бекапа и переноса настроек не было вовсе, а штатный архив системы настройки
 // splify2 не содержит (I-037). Здесь проверяется клиентская половина: сборка архива из
@@ -141,6 +142,18 @@ describe('карточка бекапа', () => {
         // страницы допишет её ПОСЛЕ и прежняя спека ляжет поверх восстановленной.
         expect(flush).toHaveBeenCalled()
         expect(flush.mock.invocationCallOrder[0]).toBeLessThan(put.mock.invocationCallOrder[0])
+    })
+
+    it('именованные подписки из ответа попадают в сообщение о восстановлении (I-337)', async () => {
+        vi.spyOn(rpc, 'backupPut').mockResolvedValue({ ok: true, subs: 2 })
+        vi.spyOn(pending, 'flush').mockResolvedValue(undefined)
+        const note = vi.spyOn(notifyMod, 'notify').mockImplementation(() => {})
+        const onRestored = vi.fn()
+        render(<BackupCard onRestored={onRestored} />)
+        pickFile(screen.getByLabelText('Файл с настройками'), 'splify2-backup 1\n')
+        fireEvent.click(await screen.findByRole('button', { name: /Восстановить/ }))
+        await waitFor(() => expect(onRestored).toHaveBeenCalled())
+        expect(String(note.mock.calls[0][0])).toContain('подписка')
     })
 
     it('автоприменение держится на время восстановления: кусками файл уходит под pending.hold', async () => {

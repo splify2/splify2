@@ -138,4 +138,15 @@ describe('рельс разделов вместо вкладок (Andromeda 26.
             expect(screen.getAllByRole('button', { name: /Остановить всё/ }).length).toBeGreaterThan(0),
         )
     })
+
+    it('щелчок по открытому разделу возвращает из подменю в его корень (I-561)', async () => {
+        render(<Console />)
+        await screen.findByRole('heading', { name: 'Маршрутизация работает' })
+        nav(/Настройки/).click()
+        ;(await screen.findByRole('button', { name: /Дополнительно/ })).click()
+        expect(await screen.findByText('Архив настроек')).toBeInTheDocument()
+        nav(/Настройки/).click()
+        expect(await screen.findByRole('button', { name: /Дополнительно/ })).toBeInTheDocument()
+        expect(screen.queryByText('Архив настроек')).toBeNull()
+    })
 })
