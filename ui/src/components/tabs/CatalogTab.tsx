@@ -1,14 +1,16 @@
 import { useEffect, useMemo, useState } from 'react'
-import { Plus, RefreshCw, Search, Trash2 } from 'lucide-react'
+import { Eye, Plus, RefreshCw, Search, Trash2 } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { notify } from '@/lib/notify'
 import { rpc } from '@/lib/rpc'
 import CustomLists from '@/components/CustomLists'
+import { ListViewer } from '@/components/board/ListDialogs'
 import { Hint } from '@/components/ui/hint'
 import { ruleFiles, srsPathFor } from '@/lib/rulefiles'
 import {
     toAllowDomainsServices,
     toCatalog,
+    wantedFirst,
     type AllowDomains,
     type ListOrigin,
     type ServiceEntry,
@@ -106,6 +108,8 @@ export default function CatalogTab({ onUseInRule }: Props) {
     /** Идёт общий прогон обновления. Отдельно от `busy`: тот про одну запись, а этот
      *  запирает кнопку целиком — два прогона разом скрипт всё равно не пустит. */
     const [updating, setUpdating] = useState(false)
+    /** Запись, чьё содержимое (домены и подсети) открыто для просмотра. */
+    const [viewing, setViewing] = useState<ServiceEntry | null>(null)
 
     useEffect(() => {
         /* КАТАЛОГ — ЭТО ПРОВАЙДЕР, а не таблица в пакете. Человек выбирает источник в
@@ -119,7 +123,7 @@ export default function CatalogTab({ onUseInRule }: Props) {
             .then((m) => {
                 const c = toCatalog(m)
                 if (c.services.length) {
-                    setServices(c.services)
+                    setServices(wantedFirst(c.services))
                     setVersion(c.version || '')
                     setFailed(false)
                     return
@@ -128,7 +132,7 @@ export default function CatalogTab({ onUseInRule }: Props) {
             })
             .catch(() =>
                 rpc.allowDomains()
-                    .then((a) => { setAd(a); setServices(toAllowDomainsServices(a)); setFailed(false) })
+                    .then((a) => { setAd(a); setServices(wantedFirst(toAllowDomainsServices(a))); setFailed(false) })
                     .catch(() => { setServices([]); setFailed(true) }),
             )
         rpc.specGet().then(setSpec).catch(() => setSpec(null))
@@ -292,6 +296,8 @@ export default function CatalogTab({ onUseInRule }: Props) {
                     <Plus className="mr-1 h-4 w-4" aria-hidden="true" /> {S.catalogTab.svoySpisok}</Button>
             </div>
 
+            {viewing && <ListViewer sv={viewing} onClose={() => setViewing(null)} />}
+
             {customOpen && (
                 <CustomLists
                     local={local}
@@ -421,6 +427,15 @@ export default function CatalogTab({ onUseInRule }: Props) {
                                                 </Hint>
                                             ) : (
                                                 <>
+                                                    <Button
+                                                        variant="ghost"
+                                                        size="icon"
+                                                        aria-label={S.catalogTab.posmotretZapisi(sv.name)}
+                                                        title={S.listDialogs.smotret}
+                                                        onClick={() => setViewing(sv)}
+                                                    >
+                                                        <Eye className="h-4 w-4" aria-hidden="true" />
+                                                    </Button>
                                                     <Hint tip={S.catalogTab.spiskiObnovlyayutsyaSamiRaz}>
                                                         <Button
                                                             variant="ghost"

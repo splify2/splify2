@@ -162,6 +162,10 @@ export default defineConfig({
           // Значки конфигурации читают главная и ленивые разделы (доска, правила, выходы): без
           // этой строки rollup выделял их в `splify-ConfBadges.js` без пина `?v=`.
           if (/[\\/]src[\\/]components[\\/]ConfBadges\.tsx$/.test(id)) return 'x'
+          // Окна списков (просмотр записей, свой список) нужны и редактору правила, и каталогу в
+          // настройках — два ленивых раздела. Без этой строки rollup выделял их в
+          // `splify-ListDialogs.js` без пина `?v=`.
+          if (/[\\/]src[\\/]components[\\/]board[\\/]ListDialogs\.tsx$/.test(id)) return 'x'
           return undefined
         },
       }

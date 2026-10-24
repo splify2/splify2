@@ -9,7 +9,7 @@ import { notify } from '@/lib/notify'
 import { pending, usePending } from '@/lib/pending'
 import { type Live } from '@/lib/live'
 import { dnsOtherSupported, poolLatencySupported } from '@/lib/engine'
-import { customServices, toAllowDomainsServices, toCatalog, type Channel, type Output, type ServiceEntry, type Spec } from '@/lib/model'
+import { customServices, toAllowDomainsServices, toCatalog, wantedFirst, type Channel, type Output, type ServiceEntry, type Spec } from '@/lib/model'
 import { pathFor, srsProbe } from '@/lib/rulefiles'
 import { applyTarget, EMPTY_TARGET, type Target } from '@/lib/ruleout'
 import { subProtos } from '@/lib/subnodes'
@@ -66,8 +66,8 @@ export default function SetupWizard({ live, onDone, railHost }: {
     const [devices, setDevices] = useState<{ name: string; up: boolean; kind: string; owner?: string }[]>([])
     const [warpOk, setWarpOk] = useState<boolean | null>(null)
     useEffect(() => {
-        rpc.manifest().then((m) => setServices(toCatalog(m).services))
-            .catch(() => rpc.allowDomains().then((a) => setServices(toAllowDomainsServices(a))).catch(() => setServices([])))
+        rpc.manifest().then((m) => setServices(wantedFirst(toCatalog(m).services)))
+            .catch(() => rpc.allowDomains().then((a) => setServices(wantedFirst(toAllowDomainsServices(a)))).catch(() => setServices([])))
         rpc.localLists().then((d) => setLocal(d.files || {})).catch(() => setLocal({}))
         rpc.devices().then((d) => setDevices((d.devices || []).filter((x) => x.owner !== 'steer'))).catch(() => setDevices([]))
         /* Модуль WarpBox перечнем модулей роутера может быть не назван (прежний бэкенд) — тогда WARP

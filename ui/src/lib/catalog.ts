@@ -1,7 +1,7 @@
 import { useMemo } from 'react'
 import { rpc } from '@/lib/rpc'
 import { useRemembered } from '@/lib/cache'
-import { customServices, toAllowDomainsServices, toCatalog, type ServiceEntry } from '@/lib/model'
+import { customServices, toAllowDomainsServices, toCatalog, wantedFirst, type ServiceEntry } from '@/lib/model'
 
 /** Сервисы каталога и свои списки — для подписей правил. Тот же порядок, что у вкладки правил
  *  (RulesTab): манифест первого издателя, без него — второй (allow-domains), плюс свои списки
@@ -19,9 +19,9 @@ export function useCatalog(): ServiceEntry[] | null {
             .then((m) => {
                 const c = toCatalog(m)
                 if (!c.services.length) throw new Error('empty catalog')
-                return c.services
+                return wantedFirst(c.services)
             })
-            .catch(() => rpc.allowDomains().then((a) => toAllowDomainsServices(a))))
+            .catch(() => rpc.allowDomains().then((a) => wantedFirst(toAllowDomainsServices(a)))))
 }
 
 /** Свои списки роутера (имя → число записей, время) — сразу из памяти. */

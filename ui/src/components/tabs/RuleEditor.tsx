@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef, useState, type ReactNode } from 'react'
-import { LoaderCircle, Plus, Search, Trash2 } from 'lucide-react'
+import { Eye, LoaderCircle, Plus, Search, Trash2 } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Block, CardHead, FieldRow, ScreenHeader, Segmented } from '@/components/ui/layout'
 import { rpc } from '@/lib/rpc'
@@ -580,10 +580,8 @@ export default function RuleEditor({
                                 const kinds = [...new Set(sv.parts.map((p) => p.kind))]
                                 const missing = onRouter(sv, local) ? 0 : 1
                                 return (
-                                    <label
-                                        key={sv.id}
-                                        className="flex min-h-[44px] cursor-pointer items-center gap-3 py-1.5 text-sm"
-                                    >
+                                    <div key={sv.id} className="flex items-center gap-1">
+                                    <label className="flex min-h-[44px] min-w-0 flex-1 cursor-pointer items-center gap-3 py-1.5 text-sm">
                                         <span className="min-w-0 flex-1 truncate">
                                             {sv.name}
                                             {/* «Скачается» — под именем, а не в строку справа: там
@@ -617,6 +615,16 @@ export default function RuleEditor({
                                             className="shrink-0"
                                         />
                                     </label>
+                                        <button
+                                            type="button"
+                                            aria-label={S.listDialogs.smotret}
+                                            title={S.listDialogs.smotret}
+                                            onClick={() => setViewing(sv)}
+                                            className="flex h-8 w-8 shrink-0 items-center justify-center rounded-md bg-transparent p-0 text-muted-foreground hover:text-foreground"
+                                        >
+                                            <Eye className="h-4 w-4" aria-hidden="true" />
+                                        </button>
+                                    </div>
                                 )
                             })}
                         </div>
@@ -968,6 +976,7 @@ export default function RuleEditor({
                         {whatTop}
                         {searchField}
                         {catalogRows}
+                        {viewing && <ListViewer sv={viewing} onClose={() => setViewing(null)} />}
 
                         {whatBottom}
                     </Block>
