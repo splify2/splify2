@@ -10,6 +10,7 @@ import FetchCard from '@/components/FetchCard'
 import ListsSourceCard from '@/components/ListsSourceCard'
 import ModulesCard from '@/components/ModulesCard'
 import SelfUpdateCard from '@/components/SelfUpdateCard'
+import PurgeCard from '@/components/PurgeCard'
 import TelemetryCard from '@/components/TelemetryCard'
 import XsteerPanel from '@/components/XsteerPanel'
 import { rpc } from '@/lib/rpc'
@@ -99,6 +100,7 @@ export default function Settings({
                                 и именно это место названо в документации как то, где учёт
                                 роутера выключается. */}
                             <TelemetryCard />
+                            <PurgeCard />
                         </div>
                     )}
                 </>

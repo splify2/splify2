@@ -5017,5 +5017,59 @@ check "opkg: world не существует, лечение ничего не �
       "ok" "$(PM_FIXTURE=opkg rpcd splify2_install '{"version":"26.9"}' >/dev/null 2>&1; grep -q 'steer-core><QnEW' "$T/apk.world" && echo ok || echo changed)"
 
 
+# ---- purge: «удалить splify2» кнопкой (план и отсоединённый запуск) -----------
+# Настоящий splify2-purge подменён заглушкой: стенд проверяет метод, а не удаление.
+cat > "$T/bin/purge-stub" <<'EOF'
+#!/bin/sh
+echo "$*" >> "$SANDBOX/purge.log"
+if [ "${1:-}" = "--yes" ]; then
+    echo "splify2-purge: служба ядра останавливается"; exit 0
+fi
+echo "splify2-purge: будет сделано: таблица nftables inet steer удаляется"
+echo "splify2-purge: будет сделано: /etc/steer удаляется — вместе со спекой"
+echo "splify2-purge: интерфейсы с протоколом xsteer остаются в настройке сети: wg1"
+echo "splify2-purge: пакеты этот скрипт не снимает. Чтобы снять:  apk del steer"
+echo "splify2-purge: ничего не удалено. Чтобы удалить: splify2-purge --yes"
+EOF
+chmod +x "$T/bin/purge-stub"
+export PURGE_BIN="$T/bin/purge-stub" PURGE_DELAY=0 PURGE_LOG="$T/purge-job.log"
+
+reset_logs; rm -f "$T/purge.log"
+out="$(rpcd purge '{"plan":true}')"
+check "purge plan: ok" "true" "$(printf '%s' "$out" | jget ok)"
+check "purge plan: пункты плана по строкам" "2" \
+      "$(printf '%s' "$out" | python3 -c 'import json,sys; print(len(json.load(sys.stdin)["items"]))')"
+check "purge plan: пункт без приставки" "таблица nftables inet steer удаляется" \
+      "$(printf '%s' "$out" | python3 -c 'import json,sys; print(json.load(sys.stdin)["items"][0])')"
+check "purge plan: примечание про чужое осталось, служебные строки нет" "1" \
+      "$(printf '%s' "$out" | python3 -c 'import json,sys; print(len(json.load(sys.stdin)["notes"]))')"
+check "purge plan: пакеты к снятию названы" "steer-extended luci-app-splify2" \
+      "$(printf '%s' "$out" | python3 -c 'import json,sys; print(" ".join(json.load(sys.stdin)["packages"]))')"
+check "purge plan: ничего не выполнено (без --yes, пакеты на месте)" "" \
+      "$(cat "$T/purge.log" | grep -- '--yes'; cat "$T/apk.log")"
+
+reset_logs; rm -f "$T/purge.log"
+rpcd purge '{"plan":true,"keep_config":true}' >/dev/null
+check "purge plan: keep_config доходит до команды" "--keep-config" "$(cat "$T/purge.log")"
+
+reset_logs; rm -f "$T/purge.log" "$T/purge-job.log"
+out="$(rpcd purge '{"keep_config":true}')"
+check "purge: ответ сразу — «началось»" "true" "$(printf '%s' "$out" | jget started)"
+n=0; while [ $n -lt 50 ] && [ ! -s "$T/rpcd-initd.log" ]; do sleep 0.1; n=$((n + 1)); done
+check "purge: отсоединённое задание вызвало команду с --yes --keep-config" "--yes --keep-config" \
+      "$(sed 's/ *$//' "$T/purge.log")"
+check "purge: затем сняты пакеты — модуль раньше интерфейса" "del steer-extended del luci-app-splify2" \
+      "$(awk '{printf "%s ", $0}' "$T/apk.log" | sed 's/ $//')"
+check "purge: rpcd перезапущен последним" "restart" "$(cat "$T/rpcd-initd.log")"
+check "purge: файл задания убран" "0" "$(ls /tmp/splify2-purge-job.*  2>/dev/null | wc -l | tr -d ' ')"
+unset PURGE_BIN PURGE_DELAY PURGE_LOG
+
+check "purge объявлен в list и разрешён в ACL на запись" "yes" \
+      "$(rpcd_list | python3 -c 'import json,sys
+d = json.load(sys.stdin)
+w = json.load(open(sys.argv[1]))["luci-app-splify2"]["write"]["ubus"]["splify2"]
+print("yes" if "purge" in d and "purge" in w else "no")' "$ROOT/luci/root/usr/share/rpcd/acl.d/luci-app-splify2.json")"
+
+
 printf '\n%s\n' "$([ "$fails" -eq 0 ] && echo 'все проверки прошли' || echo "ЕСТЬ ПРОВАЛЫ: $fails")"
 [ "$fails" -eq 0 ]

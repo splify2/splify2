@@ -76,6 +76,7 @@
           "backup_put",
           "ui_set",
           "steer_install",
+          "purge",
           "engine_stop",
           "engine_start",
           "splify2_install",
