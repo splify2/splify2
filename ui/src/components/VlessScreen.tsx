@@ -8,6 +8,8 @@ import { human } from '@/lib/live'
 import { isHttpUrl, isProxyLinks, isSubSource } from '@/lib/validate'
 import { agoText } from '@/lib/quota'
 import { subsRemember, subsRemembered } from '@/lib/subs'
+import SubTools from '@/components/SubTools'
+import { makeSubOutput } from '@/lib/suboutput'
 
 import { S } from '@/copy'
 /** «Подписки» (прежде «VLESS»): откуда берутся узлы — VLESS, hysteria2 и прокси steer-proxy.
@@ -172,6 +174,13 @@ export default function VlessScreen() {
             setUrl('')
             setProxy('')
             await load()
+            /* Подписка выходом сама не становится, а без выхода правилам вести некуда: заводим его
+             * сразу, на узлах только что добавленной подписки. Пригодных узлов нет — выход вёл бы в
+             * туннель без узлов, и это решает человек, а не мы. */
+            if (r.usable !== 0 && !r.warn) {
+                const path = (await rpc.subList().catch(() => null))?.subs.find((x) => x.name === n)?.path
+                if (path) await makeSubOutput({ name: n, path })
+            }
         } catch (e) {
             notify(String(e instanceof Error ? e.message : e), 'error')
         } finally {
@@ -282,6 +291,7 @@ export default function VlessScreen() {
                                 : S.vlessScreen.neIspolzuetsya}
                         </span>
                     </div>
+                    <SubTools sub={s} onRenamed={() => void load()} />
                     {/* Обновление по часам есть только у подписки: вставленные руками
                         ссылки обновлять неоткуда. */}
                     {s.kind === 'url' && (
@@ -339,29 +349,38 @@ export default function VlessScreen() {
             <Block>
                 <CardHead title={S.vlessScreen.dobavitPodpisku} />
                 <div className="grid gap-2 sm:grid-cols-[10.5rem_minmax(0,1fr)]">
-                    <input
-                        value={name}
-                        onChange={(e) => setName(e.currentTarget.value)}
-                        placeholder={S.vlessScreen.imyaNeobyazatelno}
-                        aria-label={S.vlessScreen.imyaPodpiski}
-                        className="h-10 w-full min-w-0 rounded-lg border border-border bg-background px-3 text-sm"
-                    />
-                    <input
-                        value={url}
-                        onChange={(e) => setUrl(e.currentTarget.value)}
-                        onKeyDown={(e) => e.key === 'Enter' && add()}
-                        placeholder={S.vlessScreen.ssylkaPodpiskiIliVless}
-                        aria-label={S.vlessScreen.ssylkaPodpiski}
-                        className="h-10 w-full min-w-0 rounded-lg border border-border bg-background px-3 font-mono text-[13px]"
-                    />
-                    <input
-                        value={proxy}
-                        onChange={(e) => setProxy(e.currentTarget.value)}
-                        onKeyDown={(e) => e.key === 'Enter' && add()}
-                        placeholder={S.vlessScreen.proksiHttpPlaceholder}
-                        aria-label={S.vlessScreen.ssylkaProksi}
-                        className="h-10 w-full min-w-0 rounded-lg border border-border bg-background px-3 font-mono text-[13px] sm:col-start-2"
-                    />
+                    <label className="space-y-1">
+                        <span className="block text-sm text-subtle">{S.vlessScreen.imyaLabel}</span>
+                        <input
+                            value={name}
+                            onChange={(e) => setName(e.currentTarget.value)}
+                            placeholder={S.vlessScreen.imyaNeobyazatelno}
+                            aria-label={S.vlessScreen.imyaPodpiski}
+                            className="h-10 w-full min-w-0 rounded-lg border border-border bg-background px-3 text-sm"
+                        />
+                    </label>
+                    <label className="space-y-1">
+                        <span className="block text-sm text-subtle">{S.vlessScreen.ssylkaLabel}</span>
+                        <input
+                            value={url}
+                            onChange={(e) => setUrl(e.currentTarget.value)}
+                            onKeyDown={(e) => e.key === 'Enter' && add()}
+                            placeholder={S.vlessScreen.ssylkaPodpiskiIliVless}
+                            aria-label={S.vlessScreen.ssylkaPodpiski}
+                            className="h-10 w-full min-w-0 rounded-lg border border-border bg-background px-3 font-mono text-[13px]"
+                        />
+                    </label>
+                    <label className="space-y-1 sm:col-start-2">
+                        <span className="block text-sm text-subtle">{S.vlessScreen.proksiLabel}</span>
+                        <input
+                            value={proxy}
+                            onChange={(e) => setProxy(e.currentTarget.value)}
+                            onKeyDown={(e) => e.key === 'Enter' && add()}
+                            placeholder={S.vlessScreen.proksiHttpPlaceholder}
+                            aria-label={S.vlessScreen.ssylkaProksi}
+                            className="h-10 w-full min-w-0 rounded-lg border border-border bg-background px-3 font-mono text-[13px]"
+                        />
+                    </label>
                 </div>
                 <Button className="h-10 w-full" onClick={add} disabled={!!busy}>
                     {busy === '__adding__' ? (

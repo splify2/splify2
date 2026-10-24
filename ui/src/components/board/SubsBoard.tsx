@@ -154,20 +154,26 @@ function AddCard({ existing, onDone, onCancel }: { existing: Sub[]; onDone: () =
 
     return (
         <div className="sp-board-tile an-glass space-y-3 rounded-2xl border p-4">
-            <textarea
-                className={inputCls + ' h-20 w-full resize-y py-2 font-mono text-xs'}
-                value={src}
-                onChange={(e) => setSrc(e.currentTarget.value)}
-                placeholder={S.subsBoard.ssylkaPlaceholder}
-                spellCheck={false}
-                autoFocus
-            />
-            <input
-                className={inputCls + ' w-full'}
-                value={title}
-                onChange={(e) => setTitle(e.currentTarget.value)}
-                placeholder={S.vlessScreen.imyaNeobyazatelno}
-            />
+            <label className="block space-y-1">
+                <span className="block text-sm text-subtle">{S.vlessScreen.ssylkaLabel}</span>
+                <textarea
+                    className={inputCls + ' h-20 w-full resize-y py-2 font-mono text-xs'}
+                    value={src}
+                    onChange={(e) => setSrc(e.currentTarget.value)}
+                    placeholder={S.subsBoard.ssylkaPlaceholder}
+                    spellCheck={false}
+                    autoFocus
+                />
+            </label>
+            <label className="block space-y-1">
+                <span className="block text-sm text-subtle">{S.vlessScreen.imyaLabel}</span>
+                <input
+                    className={inputCls + ' w-full'}
+                    value={title}
+                    onChange={(e) => setTitle(e.currentTarget.value)}
+                    placeholder={S.vlessScreen.imyaNeobyazatelno}
+                />
+            </label>
             <div className="flex gap-2">
                 <Button onClick={add} disabled={busy || !src.trim()}>
                     {busy && <LoaderCircle className="animate-spin" aria-hidden="true" />}
