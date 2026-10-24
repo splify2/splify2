@@ -606,6 +606,7 @@ function RuleCards({
     const setOf = (name: string): ChannelStatus | undefined =>
         sets.find((s) => (s.channels || []).includes(name)) || sets.find((s) => s.name === name)
     const channels = spec?.channels ?? []
+    const speedOf = (s?: ChannelStatus) => (s ? live.speed.ch[s.name] : undefined)
 
     function toggle(i: number) {
         /* Правится только загруженная спека — не та, что из памяти прошлого открытия. */
@@ -668,6 +669,7 @@ function RuleCards({
                     ch={ch}
                     labels={ruleLabels(ch, services)}
                     set={setOf(ch.name)}
+                    speed={speedOf(setOf(ch.name))}
                     st={live.status?.outputs?.[ch.out]}
                     facts={facts[ch.out]}
                     phase={live.phase}
@@ -708,8 +710,20 @@ function ruleLabels(ch: Channel, services: ReturnType<typeof useServices>): stri
     return ruleFiles(ch).map((f) => f.replace(/^.*\//, '').replace(/\.(lst|txt|srs)$/, ''))
 }
 
+/** Скорость сейчас — ↓/↑ готовыми строками из опроса. Нет замера (первый круг, вкладка была
+ *  скрыта, трафика нет) — нет и элемента: нуль был бы неправдой, а мигающая строка — шумом. */
+function Speed({ s }: { s?: { up: string | null; down: string | null } }) {
+    if (!s || (!s.down && !s.up)) return null
+    return (
+        <span title={S.home.skorostSeychas} className="flex gap-2 text-foreground">
+            {s.down && <span>↓ {s.down}</span>}
+            {s.up && <span>↑ {s.up}</span>}
+        </span>
+    )
+}
+
 function RuleCard({
-    ch, labels, set, st, facts, phase, onOpen, onToggle, onDelete, index, total, dragging, target, dnd, onMove,
+    ch, labels, set, st, facts, phase, speed, onOpen, onToggle, onDelete, index, total, dragging, target, dnd, onMove,
 }: {
     onDelete: () => void
     index: number
@@ -721,6 +735,7 @@ function RuleCard({
     ch: Channel
     labels: string[]
     set?: ChannelStatus
+    speed?: { up: string | null; down: string | null }
     st?: OutputStatus
     facts?: Facts
     phase: Live['phase']
@@ -791,7 +806,10 @@ function RuleCard({
                     </button>
                     <span className="truncate">{!on ? S.home.vyklyucheno : set && !set.live && !phase ? S.home.netVYadreLinux : ''}</span>
                 </span>
-                <span title={shared ? S.home.schetchikObschiy : undefined}>{shared ? S.home.schetchikObschiy + ' · ' : ''}↓ {down ?? '—'} ↑ {up ?? '—'}</span>
+                <span className="flex shrink-0 flex-wrap justify-end gap-x-2">
+                    <Speed s={speed} />
+                    <span title={shared ? S.home.schetchikObschiy : undefined}>{shared ? S.home.schetchikObschiy + ' · ' : ''}↓ {down ?? '—'} ↑ {up ?? '—'}</span>
+                </span>
             </div>
         </article>
     )
@@ -876,6 +894,7 @@ function RulesBoard({
                             n={i + 1}
                             row={r}
                             set={setOf(r.name)}
+                            speed={setOf(r.name) ? live.speed.ch[setOf(r.name)!.name] : undefined}
                             st={live.status?.outputs?.[r.out]}
                             facts={facts[r.out]}
                             share={peak > 0 ? load(r.name) / peak : 0}
@@ -889,11 +908,12 @@ function RulesBoard({
 }
 
 function RuleRow({
-    n, row, set, st, facts, phase, share, onSection,
+    n, row, set, st, facts, phase, share, speed, onSection,
 }: {
     n: number
     row: { name: string; out: string; enabled: boolean }
     set?: ChannelStatus
+    speed?: { up: string | null; down: string | null }
     st?: OutputStatus
     facts?: Facts
     phase: Live['phase']
@@ -952,9 +972,12 @@ function RuleRow({
                     </span>
                     {/* Счётчик принадлежит НАБОРУ. Там, где движок свёл несколько правил в один
                         набор, это сказано словом ниже, а не поделено поровну выдумкой. */}
-                    <span className="flex shrink-0 gap-2 text-xs tabular-nums text-muted-foreground">
-                        <span>↓ {down ?? '—'}</span>
-                        <span>↑ {up ?? '—'}</span>
+                    <span className="flex shrink-0 flex-col items-end text-xs tabular-nums text-muted-foreground">
+                        <span className="flex gap-2">
+                            <span>↓ {down ?? '—'}</span>
+                            <span>↑ {up ?? '—'}</span>
+                        </span>
+                        <Speed s={speed} />
                     </span>
                 </div>
                 <button
