@@ -4873,6 +4873,26 @@ out="$(heal_apply apply)"
 check "heal: у зоны masq6=1 — выход без ключа остаётся без ключа" "-" "$(v6of warp)"
 check "heal: и туннель без IPv6 тоже" "-" "$(v6of wgv4)"
 check "heal: и пул тоже" "- -" "$(v6of pm.a) $(v6of pm.b)"
+# Правка ДО ПЕРВОГО apply: снимок применённого заводится из прежней спеки, и пилюля «Применить · N»
+# переживает перезагрузку страницы (applied_get больше не отдаёт новую спеку под видом применённой).
+heal_spec; heal_zones
+rm -f "$T/etc/spec.applied.json"
+cp "$T/etc/spec.json" "$T/spec.before"
+out="$(heal_apply spec_set '{"spec":"{\"version\":2,\"outputs\":{\"direct\":{\"kind\":\"direct\"},\"newone\":{\"kind\":\"direct\"}},\"channels\":[]}"}')"
+check "spec_set без снимка: ответ ok" "true" "$(printf '%s' "$out" | jget ok)"
+check "spec_set без снимка: снимок — прежняя спека" "$(cksum < "$T/spec.before")" "$(cksum < "$T/etc/spec.applied.json")"
+check "spec_set без снимка: applied_get не равен новой спеке" "no" \
+      "$([ "$(rpcd applied_get | cksum)" = "$(rpcd spec_get | cksum)" ] && echo yes || echo no)"
+cp "$T/etc/spec.applied.json" "$T/applied.keep"
+heal_apply spec_set '{"spec":"{\"version\":2,\"outputs\":{\"direct\":{\"kind\":\"direct\"}},\"channels\":[]}"}' >/dev/null
+check "spec_set со снимком: снимок не двигается" "$(cksum < "$T/applied.keep")" "$(cksum < "$T/etc/spec.applied.json")"
+# spec_heal не применяет неприменённые правки человека: снимок есть, но спека от него отличается.
+heal_spec; heal_zones
+printf '{"version":2,"outputs":{"direct":{"kind":"direct"}},"channels":[]}\n' > "$T/etc/spec.applied.json"
+: > "$T/steer.log"
+out="$(heal_apply spec_heal)"
+check "spec_heal: есть неприменённые правки — apply не зовётся" "no" \
+      "$(grep -q '^apply --spec' "$T/steer.log" && echo yes || echo no)"
 # Метод для установки: лечит спеку, а применённую заново применяет; неприменявшуюся не применяет.
 heal_spec; heal_zones
 rm -f "$T/etc/spec.applied.json"; : > "$T/steer.log"
