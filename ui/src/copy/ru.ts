@@ -1431,6 +1431,7 @@ export const ru = {
         subscriptions: (n: number) => plural(n, 'подписка', 'подписки', 'подписок'),
         locations: (n: number) => plural(n, 'локация', 'локации', 'локаций'),
         svoiTunneli: "Свои туннели",
+        uzlyPodpisok: "Узлы и автообновление",
         vzyaty: (p0: unknown) => `используются: ${p0}`,
         wireguardAmneziawgOpenvpnNi: "WireGuard, AmneziaWG, OpenVPN — ни один пока не используется",
         vzyaty2: (p0: unknown, p1: unknown) => `используются: ${p0} · ${p1}`,

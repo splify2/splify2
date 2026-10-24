@@ -33,7 +33,6 @@ import { S } from '@/copy'
 
 const RulesTab = lazy(() => import('@/components/tabs/RulesTab'))
 const Vpn = lazy(() => import('@/components/sections/Vpn'))
-const SubsBoard = lazy(() => import('@/components/board/SubsBoard'))
 const Dns = lazy(() => import('@/components/sections/Dns'))
 const Settings = lazy(() => import('@/components/sections/Settings'))
 type SettingsScreen = Exclude<import('@/components/sections/Settings').Screen, 'root'>
@@ -251,10 +250,8 @@ export default function Console({ extra, railHost, board = false, settingsHost, 
                                 board={board}
                             />
                         )}
-                        {/* Доска приложения для ПК держит туннели, интерфейсы и xsteer в своём слое настроек, и её VPN —
-                            только подписки. Под LuCI слоя нет: там нужен полный раздел, иначе эти настройки
-                            недоступны вовсе. Свести два экрана в один — отдельное решение (R-156, остаток). */}
-                        {section === 'vpn' && !loadFailed && (board && settingsHost ? <SubsBoard /> : <Vpn live={live} />)}
+                        {/* Один экран VPN в обеих оболочках: подписки, свои туннели, xsteer и выходы. */}
+                        {section === 'vpn' && !loadFailed && <Vpn live={live} />}
                         {section === 'dns' && !loadFailed && <Dns live={live} board={board} />}
                         {section === 'requests' && <Requests live={live} board={board} />}
                         {section === 'diag' && <Diagnostics live={live} board={board} />}
