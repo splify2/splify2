@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react'
-import { ShieldCheck } from 'lucide-react'
+import { Gauge, LoaderCircle, ShieldCheck } from 'lucide-react'
+import { Button } from '@/components/ui/button'
 import { Switch } from '@/components/ui/switch'
 import { Empty, Group } from '@/components/ui/layout'
 import { notify } from '@/lib/notify'
@@ -46,6 +47,9 @@ export default function IfacesPanel({ live }: { live: Live }) {
         { name: string; up: boolean; kind: string; ipv6?: 'nat' | 'off'; owner?: 'steer' }[]
     >([])
 
+    /** Отклик своих туннелей — по имени устройства: что ответил проверенный выход (R-134). */
+    const [probed, setProbed] = useState<Record<string, { ms: number; state: string } | 'run' | 'fail'>>({})
+
     useEffect(() => {
         rpc.devices().then((d) => setDevices(d.devices || [])).catch(() => setDevices([]))
     }, [])
@@ -89,6 +93,19 @@ export default function IfacesPanel({ live }: { live: Live }) {
         })
     }
 
+    /** Проверить отклик туннеля тем же вызовом, которым мерится отклик любого выхода (outbound_probe):
+     *  обычное устройство ядро проверяет пингом через него. Туннель, не взятый ни в один выход,
+     *  проверить нечем — метод принимает выход, а не устройство, и кнопки у него нет. */
+    async function probe(dev: string, output: string) {
+        setProbed((p) => ({ ...p, [dev]: 'run' }))
+        try {
+            const r = await rpc.outboundProbe(output)
+            setProbed((p) => ({ ...p, [dev]: { ms: r.ms, state: r.state } }))
+        } catch {
+            setProbed((p) => ({ ...p, [dev]: 'fail' }))
+        }
+    }
+
     function turnOff(dev: string) {
         /* Выходы, у которых это устройство единственное: они уходят из спеки целиком. */
         const gone = Object.entries(spec!.outputs)
@@ -129,6 +146,7 @@ export default function IfacesPanel({ live }: { live: Live }) {
                 const outs = usedBy(d.name)
                 const on = outs.length > 0
                 const live_ = d.up || d.name in (live.devs || {})
+                const pr = probed[d.name]
                 return (
                     <div key={d.name} className="flex min-h-[52px] select-none items-center gap-3 py-2">
                         <span
@@ -144,7 +162,30 @@ export default function IfacesPanel({ live }: { live: Live }) {
                                     .filter(Boolean)
                                     .join(' · ')}
                             </div>
+                            {pr && pr !== 'run' && (
+                                <div role="status" className={`mt-0.5 truncate text-xs ${pr !== 'fail' && pr.ms >= 0 ? 'text-success' : 'text-warning-fg'}`}>
+                                    {pr === 'fail'
+                                        ? S.ifacesPanel.proverkaNeVyshla
+                                        : pr.ms >= 0
+                                            ? S.ifacesPanel.otklik(pr.ms)
+                                            : pr.state || S.ifacesPanel.netOtklika}
+                                </div>
+                            )}
                         </div>
+                        {on && (
+                            <Button
+                                variant="ghost"
+                                size="sm"
+                                disabled={pr === 'run'}
+                                onClick={() => void probe(d.name, outs[0][0])}
+                                aria-label={`${S.ifacesPanel.proverit} ${d.name}`}
+                            >
+                                {pr === 'run'
+                                    ? <LoaderCircle className="h-4 w-4 animate-spin" aria-hidden="true" />
+                                    : <Gauge className="h-4 w-4" aria-hidden="true" />}
+                                {pr === 'run' ? S.ifacesPanel.proveryaem : S.ifacesPanel.proverit}
+                            </Button>
+                        )}
                         <Switch
                             on={on}
                             label={d.name}

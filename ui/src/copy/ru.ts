@@ -671,6 +671,11 @@ export const ru = {
         zagruzka: "Загрузка…",
         tunnelnyhUstroystvNetTunnel: "Туннельных устройств нет. Туннель создаётся в настройках сети роутера.",
         vVyhodah: (p0: unknown) => `в выходах: ${p0}`,
+        proverit: "Проверить отклик",
+        proveryaem: "Проверяем…",
+        otklik: (p0: unknown) => `отклик ${p0} мс`,
+        netOtklika: "нет ответа",
+        proverkaNeVyshla: "проверка не вышла",
     },
     layout: {
         nazad: "Назад",
