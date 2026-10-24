@@ -392,11 +392,15 @@ engine_running() {
 # порядок показа в карточке модулей.
 STEER_MODULES="vless hysteria2 proxy xsteer obfs tgws"
 
-# Какие модули лежат рядом с ядром — по файлу (см. метод engine).
+# Какие модули стоят: файл рядом с ядром ИЛИ пакет в базе менеджера (PKGS, если его уже прочли).
+# Только по файлу — мало: пакет модуля, чей файл пропал или ещё не лёг, держит зависимость на
+# прежнее ядро, а в транзакцию обновления не попадает — apk отказывает всей установке (I-560).
 mods_present() {
     _mp=""
     for _m in $STEER_MODULES; do
-        [ -x "${MODULE_DIR:-${STEER%/*}}/steer-$_m" ] && _mp="$_mp $_m"
+        if [ -x "${MODULE_DIR:-${STEER%/*}}/steer-$_m" ] || { [ -n "${PKGS:-}" ] && pkg_in "steer-$_m" >/dev/null; }; then
+            _mp="$_mp $_m"
+        fi
     done
     printf '%s' "${_mp# }"
 }

@@ -1553,6 +1553,13 @@ check "2.0.0 → 2.0.1: ядро и все стоящие модули одно�
       "$(apk_adds);$(grep -c '^del' "$T/apk.log" | sed 's/^0$//')"
 check "  без спеки служба не перезапускается" "false" "$(printf '%s' "$out" | jget restarted)"
 
+# I-560: пакет модуля в базе есть, а файла рядом с ядром нет (SP-0006: steer-tgws 2.0.4 держал
+# обновление до 2.0.5). Модуль обязан попасть в транзакцию, иначе apk отказывает всей установке.
+reset_logs
+out="$(APK_LIST="$CORE_LIST
+steer-tgws-2.0.0-r1 aarch64_cortex-a53 {steer-tgws}" rpcd steer_install '{"version":"2.0.1"}')"
+check "модуль по пакету без файла обновляется вместе с ядром (I-560)" "core vless proxy tgws" "$(apk_adds)"
+
 reset_logs
 printf 'steer-proxy-2.0.1\n' > "$T/curl.fail"
 out="$(APK_LIST="$CORE_LIST" rpcd steer_install '{"version":"2.0.1"}')"
