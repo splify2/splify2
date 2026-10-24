@@ -13,8 +13,9 @@ import { S } from '@/copy'
 // Вопрос пришёл снаружи: перенести настройку на второй роутер или вернуть её после
 // переустановки было нечем. Штатная резервная копия OpenWrt тоже не помогала — /etc/steer
 // не объявлен ничьим, и sysupgrade его не берёт (I-037). Это карточка «файл туда, файл
-// обратно», а не второй способ настраивать: восстановленное СОХРАНЯЕТСЯ, но не
-// применяется, применение остаётся отдельным шагом человека (ApplyPill).
+// обратно», а не второй способ настраивать: восстановленное сохраняется и применяется
+// сразу — одним применением после перезагрузки страницы (lib/autoapply.ts), а на время самого
+// восстановления автоприменение держится (pending.batch), чтобы не применить прежнюю спеку.
 //
 // Про размер архива. В нём настройки и СВОИ списки, но нет 284 КБ зеркал категорий
 // издателя: роутер скачивает их сам, они одинаковы у всех и обновляются по расписанию.
@@ -121,7 +122,7 @@ export default function BackupCard({
             title: S.backupCard.vosstanovitNastroykiIzFayla,
             body:
                 S.backupCard.pravilaVyhodyPodpiskaI +
-                S.backupCard.primenenieOstanetsyaZaVami,
+                S.backupCard.primenyaetsyaSrazu,
             confirmLabel: S.backupCard.vosstanovit,
         })
         if (!ok) {
@@ -129,6 +130,9 @@ export default function BackupCard({
             return
         }
         setBusy('import')
+        /* Пачка: пока файл уходит кусками, автоприменение держится — иначе таймер недавней правки
+           применил бы полузаписанное. Отпускается после onRestored (перезагрузка страницы). */
+        const release = pending.hold()
         try {
             // Дописать несохранённую правку ДО восстановления. Иначе она уедет после него:
             // страховка на уход со страницы (lib/pending.ts) допишет её при перезагрузке,
@@ -154,7 +158,7 @@ export default function BackupCard({
                     last.sub ? S.backupCard.podpiska : '',
                     lists.length ? S.backupCard.svoiSpiski(lists.length) : '',
                     dropped ? S.backupCard.otbroshenoStrok(dropped) : '',
-                    S.backupCard.primenitKnopkoyPrimenit,
+                    S.backupCard.primenyaetsyaPoslePerezagruzki,
                 ]
                     .filter(Boolean)
                     .join(' '),
@@ -164,6 +168,7 @@ export default function BackupCard({
         } catch (e) {
             notify(String(e instanceof Error ? e.message : e), 'error')
         } finally {
+            release()
             setBusy('')
             if (fileRef.current) fileRef.current.value = ''
         }

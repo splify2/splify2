@@ -11,10 +11,10 @@ import { missingText } from '@/lib/outrefs'
 import { S } from '@/copy'
 /** Автосохранение и счётчик неприменённого — одно место на весь экран.
  *
- *  Правка уходит в spec_set сама, через полсекунды тишины: кнопок «Сохранить» больше
- *  нет. Применение остаётся отдельным шагом (перекомпиляция наборов), и его единственная
- *  кнопка — плавающая пилюля «Применить · N», где N — сколько правил и выходов
- *  ОТЛИЧАЕТСЯ от применённого. Не счётчик кликов: изменил и вернул обратно — ноль.
+ *  Правка уходит в spec_set сама, через полсекунды тишины: кнопок «Сохранить» и «Применить»
+ *  нет. Записанное применяет lib/autoapply.ts (через 0,8 с тишины после записи), а count() —
+ *  сколько правил и выходов ОТЛИЧАЕТСЯ от применённого: по нему решается, есть ли что применять.
+ *  Не счётчик кликов: изменил и вернул обратно — ноль.
  *
  *  «Применённое» приходит от бэкенда (applied_get — снимок спеки в момент apply), а не
  *  запоминается интерфейсом: перезагрузка страницы не должна обнулять счётчик.
@@ -122,6 +122,15 @@ class PendingStore {
      *  автосохранение. Список, который «нам пока не подходит», не подходит и через
      *  полсекунды, когда человек допечатал имя правила: предупреждение то же, и вторая
      *  полоса о нём ничего не добавляет. Новый текст — новая полоса. */
+    /** Последнее применение не удалось: на роутере прежнее, а не то, что на экране. Снимается
+     *  удавшимся применением. Нужен страховке на уход со страницы (unfinished). */
+    applyFailed = false
+    /** Пачка правок в работе (hold): автоприменение ждёт её конца и применяет один раз. */
+    private holds = 0
+    /** Сколько правок сделано с открытия страницы (edit). Автоприменение откликается на правки
+     *  человека, а не на подмену спеки при сверке после apply: иначе отказавшее применение
+     *  повторялось бы по кругу. */
+    editSeq = 0
     private lastWarn = ''
 
     private listeners = new Set<Listener>()
@@ -156,6 +165,37 @@ class PendingStore {
     /** Хранилище подменило спеку НЕ по правке человека, а по тому, что лежит на роутере (после
      *  применения). Нужна разделам, которые правят спеку на месте со своей копией в состоянии:
      *  без подмены их следующая правка выросла бы из прежней копии и записала её поверх свежей. */
+    get held(): boolean {
+        return this.holds > 0
+    }
+
+    /** Остановить автоприменение на время пачки (восстановление из копии, подписка с выходом):
+     *  правки пачки записываются как обычно, но роутер не трогается, пока не отпущены все hold.
+     *  Отпускание шлёт оповещение, и автоприменение применяет накопленное ОДНИМ применением.
+     *  Возвращает функцию отпускания (повторный вызов безвреден). */
+    hold(): () => void {
+        this.holds++
+        let done = false
+        return () => {
+            if (done) return
+            done = true
+            this.holds--
+            this.emit()
+        }
+    }
+
+    /** Пачка: hold на время fn, отпускание — даже при исключении. */
+    async batch<T>(fn: () => Promise<T>): Promise<T> {
+        const release = this.hold()
+        try { return await fn() } finally { release() }
+    }
+
+    /** Есть то, что на роутер ещё не легло: идёт применение, правка не записана, или записанное
+     *  отличается от применённого (ждёт автоприменения либо оно не удалось). */
+    unfinished(): boolean {
+        return this.applying || this.hasUnsaved() || this.applyFailed || this.count() > 0
+    }
+
     onReplaced(fn: (spec: Spec) => void) {
         this.replaced.add(fn)
         return () => { this.replaced.delete(fn) }
@@ -255,6 +295,7 @@ class PendingStore {
         if (!this.saved) { notify(S.pending.specNeZagruzhena, 'error'); return }
         this.saved = next
         this.dirty = true
+        this.editSeq++
         this.emit()
         this.arm()
     }
@@ -329,7 +370,7 @@ class PendingStore {
                      * «Не записано». */
                     const why = missingText(spec) ?? engineErrorText(('error' in r && r.error) || S.pending.neUdalosSohranit)
                     this.saveError = why
-                    if (!quiet) notify(why, 'error')
+                    if (!quiet) notify(S.pending.nastroykiNeZapisany(why), 'error')
                     this.dirty = true
                     this.emit()
                 } else if (drafts) {
@@ -356,6 +397,7 @@ class PendingStore {
                  * исходе, включая исключение, — иначе страховка на выгрузку начнёт спрашивать
                  * про несохранённое там, где всё давно записано. */
                 this.inflight = false
+                this.emit()
             }
         })
         await this.writing
@@ -437,6 +479,7 @@ class PendingStore {
              * получает состояние и действие, а повторное нажатие снова начнёт с записи. */
             if (this.saveError !== null) {
                 refused = true
+                this.applyFailed = true
                 notify(S.pending.nastroykiNeZapisany(this.saveError), 'error')
                 return
             }
@@ -448,10 +491,11 @@ class PendingStore {
             try {
                 const r = await rpc.apply()
                 ok = r.ok
-                notify(applyText(r.output) || (r.ok ? S.pending.primeneno : S.pending.sboyPrimeneniya), r.ok ? 'info' : 'error')
+                notify(r.ok ? (applyText(r.output) || S.pending.primeneno) : S.pending.neprimeneno(applyText(r.output) || S.pending.sboyPrimeneniya), r.ok ? 'info' : 'error')
             } catch (e) {
-                notify(String(e instanceof Error ? e.message : e), 'error')
+                notify(S.pending.neprimeneno(String(e instanceof Error ? e.message : e)), 'error')
             }
+            this.applyFailed = !ok
             /* Сверка с роутером — при любом исходе вызова, а не только при удаче: apply правит файл
              * (самолечение) ДО того, как ядро примет или отвергнет спеку, а оборванный ответ (таймаут
              * ubus при ещё идущем apply) не значит, что на роутере ничего не изменилось. */
@@ -462,7 +506,8 @@ class PendingStore {
                 setTimeout(() => { this.justApplied = false; this.emit() }, 1800)
             }
         } catch (e) {
-            notify(String(e instanceof Error ? e.message : e), 'error')
+            this.applyFailed = true
+            notify(S.pending.neprimeneno(String(e instanceof Error ? e.message : e)), 'error')
         } finally {
             this.applying = false
             if (!refused) this.appliedAt = Date.now()
@@ -538,8 +583,10 @@ export const pending = new PendingStore()
  * Два крюка, и они делают разное. `visibilitychange`/`pagehide` — попытка ДОПИСАТЬ: браузер
  * ещё разрешает начатый запрос, и в большинстве случаев этого достаточно. `beforeunload` —
  * последняя черта: если правка всё ещё не уехала, человека СПРАШИВАЮТ, а не теряют её молча.
- * Спрашивается только при действительно несохранённом (окно дебаунса или отказ прошлой
- * записи), поэтому в обычной работе диалога не видно. */
+ * Спрашивается только пока что-то не дошло до роутера (pending.unfinished): правка не записана
+ * (окно дебаунса или отказ записи), записанное ещё ждёт автоприменения (0,8 с тишины), применение
+ * идёт или не удалось. Автоприменение живёт в странице, поэтому уход посреди него оставил бы
+ * роутер на прежних настройках; в обычной работе диалога не видно. */
 if (typeof window !== 'undefined') {
     /* Мимо ожидания записи на время применения (flush(true)): после ухода писать будет некому, а
      * потерять правку хуже, чем разойтись с самолечением бэкенда, которое при следующем apply
@@ -552,7 +599,7 @@ if (typeof window !== 'undefined') {
     })
     window.addEventListener('pagehide', flushNow)
     window.addEventListener('beforeunload', (e) => {
-        if (!pending.hasUnsaved()) return
+        if (!pending.unfinished()) return
         /* Текст сообщения браузеры давно не показывают — важен сам факт отмены события. */
         e.preventDefault()
         e.returnValue = ''

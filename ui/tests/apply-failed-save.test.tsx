@@ -1,10 +1,10 @@
-import { fireEvent, render, screen, waitFor } from '@testing-library/preact'
+import { waitFor } from '@testing-library/preact'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import type { Channel, Spec } from '@/lib/model'
 
 vi.mock('@/lib/notify', () => ({ notify: vi.fn() }))
 
-import ApplyPill from '@/components/ApplyPill'
+import { startAutoApply } from '@/lib/autoapply'
 import { notify } from '@/lib/notify'
 import { pending } from '@/lib/pending'
 import { rpc } from '@/lib/rpc'
@@ -21,7 +21,7 @@ import { decodeSpec } from '@/lib/specv2'
 // удаляешь выход, настройки не применяются, если через него идёт DNS»).
 //
 // Теперь apply() сначала пробует дописать всё, что не уехало: отказала запись — применения нет, тост
-// говорит состояние и действие («Настройки не записаны — исправьте и примените снова» и причина),
+// говорит состояние и действие («Настройки не записаны, на роутере прежние — исправьте правку, она запишется и применится сама» и причина),
 // пилюля — «Не записано» вместо числа. Записалось — применение идёт как обычно.
 //
 // Бэкенд и ядро здесь — маленькая модель: ядро отвергает ссылку сервера DNS на выход, которого нет
@@ -72,7 +72,7 @@ function coreWords(spec: Spec): string | null {
 /** То, что говорит об отказе автосохранение: причина словами панели, без действия. */
 const REASON = 'Выхода «wg1» нет, но он выбран: серверы DNS — cf. Выберите там другой выход'
 /** То, что человек читает, нажав «Применить» при отказанной записи: состояние, действие и причина. */
-const REFUSED = `Настройки не записаны — исправьте и примените снова\n${REASON}`
+const REFUSED = `Настройки не записаны, на роутере прежние — исправьте правку, она запишется и применится сама\n${REASON}`
 
 let disk: Spec
 let snapshot: Spec
@@ -105,7 +105,7 @@ async function open() {
     // Сброс внутреннего состояния между проверками.
     pending.saved = null; pending.applied = null; pending.dirty = false; pending.applying = false
     pending.justApplied = false; pending.savedFlash = false; pending.appliedAt = 0
-    pending.saveError = null
+    pending.saveError = null; pending.applyFailed = false
     await pending.load()
 }
 
@@ -128,7 +128,7 @@ describe('«Применить» после отказанной записи', 
         await breakIt()
         expect(set).toHaveBeenCalledTimes(1)
         // Автосохранение уже сказало причину — как говорило всегда.
-        expect(said()).toEqual([[REASON, 'error']])
+        expect(said()).toEqual([[REFUSED, 'error']])
         expect(pending.hasUnsaved()).toBe(true)
         vi.mocked(notify).mockClear()
 
@@ -229,7 +229,7 @@ describe('«Применить» после отказанной записи', 
         vi.mocked(notify).mockClear()
         await pending.apply()
         expect(apply).not.toHaveBeenCalled()
-        expect(said()).toEqual([['Настройки не записаны — исправьте и примените снова\nне удалось сохранить', 'error']])
+        expect(said()).toEqual([['Настройки не записаны, на роутере прежние — исправьте правку, она запишется и применится сама\nне удалось сохранить', 'error']])
     })
 
     it('причина не в выходе — слова ядра как были, внутри того же сообщения', async () => {
@@ -240,7 +240,7 @@ describe('«Применить» после отказанной записи', 
         vi.mocked(notify).mockClear()
         await pending.apply()
         expect(apply).not.toHaveBeenCalled()
-        expect(said()).toEqual([[`Настройки не записаны — исправьте и примените снова\n${words}`, 'error']])
+        expect(said()).toEqual([[`Настройки не записаны, на роутере прежние — исправьте правку, она запишется и применится сама\n${words}`, 'error']])
     })
 
     it('запись, летящая в момент нажатия, отказала — применения нет', async () => {
@@ -278,7 +278,7 @@ describe('отказ записи запоминается', () => {
         pending.edit(dangling())
         await vi.advanceTimersByTimeAsync(600)
         expect(set).toHaveBeenCalledTimes(1)
-        expect(said()).toEqual([[REASON, 'error']])
+        expect(said()).toEqual([[REFUSED, 'error']])
         expect(pending.saveError).toBe(REASON)
         expect(pending.hasUnsaved()).toBe(true)
 
@@ -303,62 +303,22 @@ describe('отказ записи запоминается', () => {
     })
 })
 
-describe('пилюля «Применить» при отказанной записи', () => {
-    const button = () => screen.getByRole('button')
+describe('автоприменение при отказанной записи (кнопки «Применить» нет)', () => {
+    it('запись отказана — роутер не трогается, человек видит состояние, действие и причину; после исправления применяется само', async () => {
+        const stop = startAutoApply()
+        try {
+            await breakIt()
+            await vi.advanceTimersByTimeAsync(5000)
+            expect(apply).not.toHaveBeenCalled()
+            expect(said()).toEqual([[REFUSED, 'error']])
+            expect(pending.unfinished()).toBe(true) // уход со страницы предупредит: правка не записана
 
-    it('без отказа — «Применить» и число, как всегда', async () => {
-        pending.edit(fixed())
-        await pending.flush()
-        render(<ApplyPill />)
-        expect(button()).toHaveTextContent(/Применить\s*\d/)
-        expect(button()).not.toHaveTextContent('Не записано')
-        expect(button().getAttribute('title')).toContain('Изменения уже сохранены')
-    })
-
-    it('запись отказана — «Не записано» вместо числа, а в подсказке состояние, действие и причина', async () => {
-        render(<ApplyPill />)
-        expect(screen.queryByRole('button')).toBeNull() // правок нет — пилюли нет
-        await breakIt()
-        await waitFor(() => expect(button()).toHaveTextContent('Не записано'))
-        expect(button()).not.toHaveTextContent('Применить')
-        expect(button()).not.toHaveTextContent(/\d/)
-        // «Изменения уже сохранены» — ровно то, что здесь неправда.
-        expect(button().getAttribute('title')).toBe(REFUSED)
-        expect(button()).not.toBeDisabled()
-    })
-
-    it('отказ без числа правок: пилюля всё равно стоит — состояние важнее счёта', async () => {
-        // Правку сделали и вернули: в памяти то же, что применено (число 0), а запись отвергнута —
-        // человек должен видеть, что на роутере не то, что на экране.
-        set.mockImplementation((async () => ({ ok: false, error: 'не удалось заменить спецификацию' })) as never)
-        pending.edit(clone(GOOD))
-        await pending.flush()
-        expect(pending.count()).toBe(0)
-        render(<ApplyPill />)
-        expect(button()).toHaveTextContent('Не записано')
-    })
-
-    it('нажатие при отказе не применяет и говорит словами; после исправления пилюля снова «Применить»', async () => {
-        render(<ApplyPill />)
-        await breakIt()
-        await waitFor(() => expect(button()).toHaveTextContent('Не записано'))
-        vi.mocked(notify).mockClear()
-
-        fireEvent.click(button())
-        await waitFor(() => expect(said()).toEqual([[REFUSED, 'error']]))
-        await waitFor(() => expect(button()).toHaveTextContent('Не записано'))
-        expect(apply).not.toHaveBeenCalled()
-
-        // Человек выбрал серверу DNS другой выход — автосохранение записало, пилюля вернулась.
-        pending.edit(fixed())
-        await pending.flush()
-        await waitFor(() => expect(button()).toHaveTextContent(/Применить\s*\d/))
-        expect(button()).not.toHaveTextContent('Не записано')
-
-        vi.mocked(notify).mockClear()
-        fireEvent.click(button())
-        await waitFor(() => expect(apply).toHaveBeenCalledTimes(1))
-        await waitFor(() => expect(button()).toHaveTextContent('Применено'))
-        expect(said()).toEqual([['Применено', 'info']])
+            vi.mocked(notify).mockClear()
+            pending.edit(fixed())
+            await pending.flush()
+            await vi.advanceTimersByTimeAsync(2000)
+            await vi.waitFor(() => expect(apply).toHaveBeenCalledTimes(1))
+            expect(said()).toEqual([['Применено', 'info']])
+        } finally { stop() }
     })
 })

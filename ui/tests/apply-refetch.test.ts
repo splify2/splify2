@@ -427,7 +427,7 @@ describe('сверка не ломает применение', () => {
         expect(pending.count()).toBe(1)
         expect(pending.justApplied).toBe(false)
         // Причина отказа — без строки самолечения.
-        expect(vi.mocked(notify)).toHaveBeenCalledWith('steer: нет такого выхода', 'error')
+        expect(vi.mocked(notify)).toHaveBeenCalledWith(expect.stringMatching(/^Не применено, роутер работает по прежним настройкам[^]*\nsteer: нет такого выхода$/), 'error')
     })
 
     it('apply оборвался исключением — спека всё равно сверена', async () => {
@@ -438,7 +438,7 @@ describe('сверка не ломает применение', () => {
             throw new Error('таймаут ubus')
         }) as never)
         await pending.apply()
-        expect(vi.mocked(notify)).toHaveBeenCalledWith('таймаут ubus', 'error')
+        expect(vi.mocked(notify)).toHaveBeenCalledWith(expect.stringMatching(/^Не применено[^]*\nтаймаут ubus$/), 'error')
         expect(pending.saved?.outputs.warp.ipv6).toBe('nat')
         expect(pending.applying).toBe(false)
     })

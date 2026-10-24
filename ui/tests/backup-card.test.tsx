@@ -6,8 +6,8 @@ import { pending } from '@/lib/pending'
 
 // R-005: бекапа и переноса настроек не было вовсе, а штатный архив системы настройки
 // splify2 не содержит (I-037). Здесь проверяется клиентская половина: сборка архива из
-// кусков, нарезка на куски при отправке, и — главное — что восстановление НЕ применяется
-// само и не даёт прежней спеке уехать поверх восстановленной.
+// кусков, нарезка на куски при отправке, и — главное — что восстановление применяется одним
+// применением после перезагрузки и не даёт прежней спеке уехать поверх восстановленной.
 
 /** Выбрать файл — двумя обходами, и оба не косметические.
  *
@@ -143,7 +143,20 @@ describe('карточка бекапа', () => {
         expect(flush.mock.invocationCallOrder[0]).toBeLessThan(put.mock.invocationCallOrder[0])
     })
 
-    it('отказ бэкенда не выдаётся за восстановление (R-005)', async () => {
+    it('автоприменение держится на время восстановления: кусками файл уходит под pending.hold', async () => {
+        vi.spyOn(pending, 'flush').mockResolvedValue(undefined)
+        const heldAt: boolean[] = []
+        vi.spyOn(rpc, 'backupPut').mockImplementation((async () => { heldAt.push(pending.held); return { ok: true, spec: true } }) as never)
+        const onRestored = vi.fn(() => heldAt.push(pending.held))
+        render(<BackupCard onRestored={onRestored} />)
+        pickFile(screen.getByLabelText('Файл с настройками'), 'splify2-backup 1\n' + 'x'.repeat(BACKUP_CHUNK))
+        fireEvent.click(await screen.findByRole('button', { name: /Восстановить/ }))
+        await waitFor(() => expect(onRestored).toHaveBeenCalled())
+        expect(heldAt).toEqual([true, true, true])
+        await waitFor(() => expect(pending.held).toBe(false))
+    })
+
+    it('отказ бэкенда держит применение лишь на время попытки и не выдаётся за восстановление (R-005)', async () => {
         const put = vi
             .spyOn(rpc, 'backupPut')
             .mockResolvedValue({ ok: false, error: 'это не файл настроек splify2' })
@@ -154,6 +167,7 @@ describe('карточка бекапа', () => {
         fireEvent.click(await screen.findByRole('button', { name: /Восстановить/ }))
         await waitFor(() => expect(put).toHaveBeenCalled())
         expect(onRestored).not.toHaveBeenCalled()
+        await waitFor(() => expect(pending.held).toBe(false))
     })
 })
 

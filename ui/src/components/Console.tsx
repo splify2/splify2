@@ -1,4 +1,4 @@
-import { lazy, Suspense, useEffect, useRef, useState, type ReactNode } from 'react'
+import { lazy, Suspense, useEffect, useState, type ReactNode } from 'react'
 import { createPortal } from 'react-dom'
 import { Check } from 'lucide-react'
 import { useLive, type Live } from '@/lib/live'
@@ -8,7 +8,7 @@ import { SECTION_TITLE, type SectionId } from '@/lib/sections'
 import Rail from '@/components/Rail'
 import FirstRun from '@/components/FirstRun'
 import SetupWizard, { setupDone } from '@/components/board/SetupWizard'
-import ApplyPill from '@/components/ApplyPill'
+import { startAutoApply } from '@/lib/autoapply'
 import { Button } from '@/components/ui/button'
 import Home from '@/components/sections/Home'
 import EngineToggle from '@/components/EngineToggle'
@@ -29,7 +29,7 @@ import { S } from '@/copy'
  *  бы два разных мгновения, и оба были бы правдой.
  *
  *  Сохранение автоматическое (lib/pending.ts): кнопок «Сохранить» в разделах нет, применение —
- *  одна плавающая пилюля (ApplyPill) на весь экран. */
+ *  применение тоже автоматическое (lib/autoapply.ts): кнопки «Применить» нет. */
 
 const RulesTab = lazy(() => import('@/components/tabs/RulesTab'))
 const Vpn = lazy(() => import('@/components/sections/Vpn'))
@@ -57,8 +57,8 @@ export interface ExtraSection {
  *  компьютера рельс — отдельная колонка окна вне прокрутки раздела. Нет — рельс рядом с
  *  разделом, как под LuCI. */
 /** `board` — оболочка приложения для компьютера: главная «доской» (правила карточками), правила
- *  открываются с неё и вкладки в рельсе нет, а сохранённая правка применяется сама — без кнопки
- *  «Применить» (владелец). Под LuCI ничего этого нет. */
+ *  открываются с неё и вкладки в рельсе нет, Под LuCI ничего этого нет.
+ *  Применение в обоих режимах автоматическое, кнопки «Применить» нет. */
 export default function Console({ extra, railHost, board = false, settingsHost, settingsScreen, setup = false }: {
     extra?: ExtraSection[]
     /** Открыть сразу мастер настройки (приложение для ПК: «Настроить splify2» в конце установки). */
@@ -103,36 +103,9 @@ export default function Console({ extra, railHost, board = false, settingsHost, 
      * загрузил (lib/pending.ts). */
     useEffect(() => { pending.load().catch(() => {}) }, [])
 
-    /* Без кнопки «Применить» (board): всё — через «Сохранить» (владелец), сохранённое применяется
-     * само, через 0,8 с тишины — подряд идущие правки уходят одним применением. Сохранённое и не
-     * применённое ДО открытия (например, в LuCI) применяется так же, сразу после загрузки.
-     * Неудачное применение не повторяется по кругу: следующая попытка — со следующей правкой;
-     * об отказе говорит само хранилище (pending.apply → notify). */
-    const autoBase = useRef<unknown>(null)
-    const [, bump] = useState(0)
-    useEffect(() => {
-        if (!board) return
-        let t: ReturnType<typeof setTimeout> | null = null
-        const off = pending.subscribe(() => {
-            const saved = pending.saved
-            if (!saved) return
-            if (autoBase.current === null) {
-                autoBase.current = saved
-                bump((n) => n + 1)
-                if (pending.count() > 0 && !pending.hasUnsaved() && !pending.applying) void pending.apply()
-                return
-            }
-            if (saved === autoBase.current || pending.hasUnsaved() || pending.applying) return
-            if (pending.count() === 0) { autoBase.current = saved; bump((n) => n + 1); return }
-            if (t) clearTimeout(t)
-            t = setTimeout(() => {
-                autoBase.current = pending.saved
-                bump((n) => n + 1)
-                void pending.apply()
-            }, 800)
-        })
-        return () => { off(); if (t) clearTimeout(t) }
-    }, [board])
+    /* Кнопки «Применить» нет ни в LuCI, ни в приложении: сохранённое применяется само (lib/autoapply.ts),
+     * пачки правок держат применение через pending.hold/batch. */
+    useEffect(() => startAutoApply(), [])
 
     /* Переход в раздел снаружи — событием `splify:section` (detail — имя раздела). Нужен
      * приложению для компьютера: щелчок по уведомлению «выход не отвечает» открывает VPN. Под
@@ -324,7 +297,6 @@ export default function Console({ extra, railHost, board = false, settingsHost, 
                 </main>
             </div>
 
-            {!board && <ApplyPill />}
         </div>
     )
 }
