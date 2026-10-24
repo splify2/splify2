@@ -62,7 +62,7 @@ describe('«Интерфейс» без перечня выпусков', () => 
                 counts={{}}
             />,
         )
-        expect(screen.getAllByText(/^26\.10\.0 Bode/).length).toBeGreaterThan(0)
+        expect(screen.getAllByText(/^26\.10\.0 Cigar/).length).toBeGreaterThan(0)
     })
 })
 

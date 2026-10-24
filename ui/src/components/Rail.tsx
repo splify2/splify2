@@ -94,7 +94,7 @@ export default function Rail({ live, section, onSection, counts, extra, hide }: 
                         {/* Версия — та, что стоит, а не та, что задумана: строку читают, чтобы
                             сверить с релизом. Пока её не спросили, места она не занимает. */}
                         <div className="truncate text-[11px] text-muted-foreground">
-                            {[live.selfUpdate?.current || live.build?.ui_version, 'Bode', releaseSuffix()].filter(Boolean).join(' ')}
+                            {[live.selfUpdate?.current || live.build?.ui_version, 'Cigar', releaseSuffix()].filter(Boolean).join(' ')}
                         </div>
                     </div>
                 </div>
