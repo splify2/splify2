@@ -4930,7 +4930,7 @@ check "heal: спека v1 не правится (ключ ей неизвест
 # apply, и лечить такому выходу уже нечего. (Расхождение у выходов без подсказки страница после
 # apply снимает сама, перечитывая спеку: ui/src/lib/pending.ts, refresh.)
 rm -rf "$T/outnet-v6"; mkdir -p "$T/outnet-v6"
-for _d in wgA wgB wgC wgD; do
+for _d in wgA wgB wgC wgD wgE; do
     mkdir -p "$T/outnet-v6/$_d"
     printf '65534\n' > "$T/outnet-v6/$_d/type"; printf 'up\n' > "$T/outnet-v6/$_d/operstate"
     printf 'DEVTYPE=wireguard\n' > "$T/outnet-v6/$_d/uevent"
@@ -4940,6 +4940,8 @@ rm -f "$T/uci.store"; : > "$T/uci.store"
 uci_set 'network.wgB' interface; uci_set 'network.wgB.proto' wireguard; uci_set 'network.wgB.addresses' '10.1.0.2/24'
 uci_set 'network.wgC' interface; uci_set 'network.wgC.proto' wireguard; uci_set 'network.wgC.addresses' '10.2.0.2/24'
 uci_set 'network.wgC.ip6prefix' '2001:db8:2::/56'
+# wgE: IPv6 поднимет DHCPv6 позже — сейчас адреса нет, но «off» навсегда ему не писать (I-474).
+uci_set 'network.wgE' interface; uci_set 'network.wgE.proto' dhcpv6; uci_set 'network.wgE.device' wgE
 heal_spec
 out="$(OUT_SYSNET_FIXTURE="$T/outnet-v6" rpcd devices)"
 d6of() {  # УСТРОЙСТВО < JSON -> значение ipv6 у устройства ('-' — поля нет)
@@ -4952,6 +4954,7 @@ else: print("НЕТ УСТРОЙСТВА")' "$1"
 check "devices: у устройства с живым адресом IPv6 подсказка nat" "nat" "$(printf '%s' "$out" | d6of wgA)"
 check "devices: у туннеля с одним IPv4 подсказка off" "off" "$(printf '%s' "$out" | d6of wgB)"
 check "devices: при ip6prefix подсказки нет — решать человеку" "-" "$(printf '%s' "$out" | d6of wgC)"
+check "devices: адрес придёт по DHCPv6 — подсказки нет, а не off навсегда (I-474)" "-" "$(printf '%s' "$out" | d6of wgE)"
 check "devices: устройство есть, а адреса нет нигде — off" "off" "$(printf '%s' "$out" | d6of wgD)"
 check "devices: устройству, которое поднимает ядро, подсказка не нужна" "-" "$(printf '%s' "$out" | d6of tun)"
 # Клиенты: интерфейс WireGuard (устройство называется как интерфейс) в зоне человека списком
