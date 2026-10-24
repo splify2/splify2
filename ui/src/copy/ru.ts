@@ -844,6 +844,25 @@ export const ru = {
         gruppy: (p0: unknown) => `группы — ${p0}`,
         tunneli: (p0: unknown) => `туннели через него — ${p0}`,
     },
+    /** Быстрый старт на пустой главной: ссылка подписки → плитки «что обходить» (D-P3.1). */
+    quick: {
+        zagolovok: "Быстрый старт",
+        shag1: "Вставьте ссылку подписки — выход создастся сам",
+        ssylka: "Ссылка подписки",
+        podklyuchit: "Подключить",
+        podklyuchayu: "Подключаю…",
+        shag2: "Что пустить через VPN",
+        vyhod: (n: string) => `Выход «${n}» готов`,
+        vklyuchit: "Включить",
+        neSeychas: "Не сейчас",
+        youtube: "YouTube",
+        discord: "Discord",
+        telegram: "Telegram",
+        ai: "Нейросети",
+        all: "Весь трафик",
+        gotovo: (what: string, out: string) => `Готово: ${what} — через «${out}»`,
+        netVyhoda: "Подписка скачалась, но выход не создался — соберите его в разделе «VPN»",
+    },
     /** «Весь трафик устройства — в VPN» (правила): выбор устройства и выхода. */
     deviceVpn: {
         knopka: "Устройство целиком в VPN",

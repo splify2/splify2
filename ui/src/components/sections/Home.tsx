@@ -10,6 +10,7 @@ import { LooseBlock, SubBlock, TunnelBlock, type Facts } from '@/components/Outp
 import { deadline, rpc, type SubQuota } from '@/lib/rpc'
 import { subsRemember, subsRemembered } from '@/lib/subs'
 import { explainSummary } from '@/lib/engineerr'
+import QuickStart from '@/components/QuickStart'
 import { blankInstall } from '@/lib/blank'
 import { human, type DiagCheck, type Live } from '@/lib/live'
 import { pending, usePending } from '@/lib/pending'
@@ -569,6 +570,9 @@ export default function Home({
             )}
 
             {verdictBlock}
+
+            {/* Пустая установка: ссылка подписки → что пустить → готово (D-P3.1). Сама прячется, когда есть правила. */}
+            <QuickStart />
 
             <div className="grid gap-4 xl:grid-cols-[minmax(0,1fr)_minmax(0,22rem)] xl:items-start">
                 <div className="min-w-0 space-y-4">
