@@ -8,7 +8,7 @@ import { country } from '@/lib/geo'
 import { ccFromName, plainName } from '@/lib/nodename'
 import Flag from '@/components/Flag'
 import { daysText, readQuota, resetText } from '@/lib/quota'
-import { outDown, outDownLine, outExcluded, poolNow } from '@/lib/outstate'
+import { outDown, outTone, outDownLine, outExcluded, poolNow } from '@/lib/outstate'
 import ConfBadges, { useOutNodes } from '@/components/ConfBadges'
 import { outNodes, outputBadges, poolBadges } from '@/lib/badges'
 
@@ -447,14 +447,11 @@ export function TunnelBlock({ name, st, facts, phase, out, spec, devKinds }: Out
  *  не поднят — красная, состояния ещё нет — серая. Цвет повторяет то, что строка говорит
  *  словами (Where/Trouble), и ничего не решает сам. */
 function StateDot({ st, phase }: { st?: OutputStatus; phase?: OutRef['phase'] }) {
-    const tone = !st
-        ? 'bg-muted-foreground'
-        : st.up === true && !outDown(st)
-          ? 'bg-success'
-          : st.probe?.state === 'probing' || (phase && st.probe?.state === undefined)
-            ? 'bg-warning'
-            : 'bg-destructive'
-    return <span className={`mt-[7px] h-2 w-2 shrink-0 rounded-full ${tone}`} aria-hidden="true" />
+    const { tone, label } = outTone(st, phase)
+    const bg = { good: 'bg-success', warn: 'bg-warning', bad: 'bg-destructive', idle: 'bg-muted-foreground' }[tone]
+    return (
+        <span className={`mt-[7px] h-2 w-2 shrink-0 rounded-full ${bg}`} data-state={tone} role="img" aria-label={label} title={label} />
+    )
 }
 
 /** Где выход сейчас: локация, отклик и — у подписки — внешний адрес.

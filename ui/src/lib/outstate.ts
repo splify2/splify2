@@ -19,6 +19,20 @@ export function outDown(st?: OutputStatus | null): 'node' | 'failed' | null {
     return null
 }
 
+/** Состояние выхода для точки у его строки: цвет И слово вместе (цвет один не читается
+ *  дальтоником). Цвет значит только состояние: работает — зелёный, подключается — янтарный,
+ *  не работает — красный, состояния ещё нет — серый. Цвет протокола (бейдж) — другое дело:
+ *  он различает выходы и красным/зелёным не бывает. `phase` — идёт применение или загрузка:
+ *  неподнятый в это время выход ещё не беда. */
+export type OutTone = 'good' | 'warn' | 'bad' | 'idle'
+export function outTone(st?: OutputStatus | null, phase?: 'applying' | 'starting' | null): { tone: OutTone; label: string } {
+    if (!st) return { tone: 'idle', label: S.outState.sostoyanieNeIzvestno }
+    if (st.up === true && !outDown(st)) return { tone: 'good', label: S.outState.sostoyanieRabotaet }
+    if (st.probe?.state === 'probing' || (phase && st.probe?.state === undefined))
+        return { tone: 'warn', label: S.outState.sostoyanieProveryaetsya }
+    return { tone: 'bad', label: S.outState.sostoyanieNeRabotaet }
+}
+
 /** Все кандидаты выхода исключены («Не брать»): слово ядра — probe.state `excluded`. Не отказ
  *  сторожа и не «не запущен»: узлы в подписке есть, их не велено брать, и чинится это в «Не
  *  брать», а не перезапуском. Отказ сторожа и остановка помощника при этом — следствия: без

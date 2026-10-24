@@ -60,7 +60,7 @@ export const PROTO_NAME: Record<ProtoId, string> = {
 }
 
 /** Тон протокола: номер категориального цвета Andromeda (--an-cat-N). Своих туннелей
- *  (WireGuard, AmneziaWG) один тон — это одно семейство; SOCKS и HTTP — серый cat-7: прокси без
+ *  (WireGuard, AmneziaWG) один тон — это одно семейство, фиолетовый: прежний cat-5 (#f5365c) совпадал с цветом отказа, и работающий туннель читался как сломанный (splify2#42). Красный и зелёный протоколу не даём — это цвета состояния; SOCKS и HTTP — серый cat-7: прокси без
  *  своего шифрования, выделять их цветом незачем. */
 export const PROTO_TONE: Record<ProtoId, number> = {
     vless: 1,
@@ -71,8 +71,8 @@ export const PROTO_TONE: Record<ProtoId, number> = {
     socks: 7,
     http: 7,
     xsteer: 3,
-    wireguard: 5,
-    awg: 5,
+    wireguard: 6,
+    awg: 6,
     /* MASQUE (WARP) — QUIC, как hysteria2. */
     masque: 4,
 }
