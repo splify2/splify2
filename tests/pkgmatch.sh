@@ -604,6 +604,15 @@ check "в CHANGELOG.md есть раздел версии $CHV" "yes" \
 check "release.yml разбирает CHANGELOG.md тем же выражением" "1" \
     "$(grep -c "split(\$0, h, \" \"); if (h\[2\] == v)" .github/workflows/release.yml)"
 
+# ReCheck: перед снятием пакета служба и её таблица nftables убираются (иначе таблица переживает
+# init-скрипт), и это есть в обоих форматах; после обновления opkg служба поднимается заново.
+check "pre-remove останавливает службу ReCheck и снимает таблицу" "2" \
+    "$(sed -n '/^cat > build\/scripts\/pre-remove/,/^EOF$/p' build.sh | grep -c 'splify2-recheck stop\|delete table inet splify2_recheck')"
+check "apk получает pre-deinstall" "1" "$(grep -c 'pre-deinstall:build/scripts/pre-remove' build.sh)"
+check "ipk получает prerm" "1" "$(grep -c 'build/scripts/pre-remove "\$PKG/CONTROL/prerm"' build.sh)"
+check "post-install поднимает включённый ReCheck после обновления" "1" \
+    "$(sed -n '/^cat > build\/scripts\/post-install/,/^EOF$/p' build.sh | grep -c 'splify2-recheck restart')"
+
 printf '\n%d проверок пройдено' "$pass"
 if [ "$fail" -gt 0 ]; then printf ', %d ПРОВАЛЕНО\n' "$fail"; exit 1; fi
 printf '\nвсе проверки прошли\n'

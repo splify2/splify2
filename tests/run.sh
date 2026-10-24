@@ -34,6 +34,8 @@ run enginematch sh "$ROOT/tests/enginematch.sh"
 # скачивание, сохранение спеки настоящим движком, доскачивание, ночное обновление, удаление.
 run srsmatch sh "$ROOT/tests/srsmatch.sh"
 run pkgmatch   sh "$ROOT/tests/pkgmatch.sh"
+# ReCheck: таблица nftables для IPv4 и IPv6, служба и rpcd без движка.
+run recheckmatch sh "$ROOT/tests/recheckmatch.sh"
 # Спека в spec.yaml (spec.sh): JSON-вид, запись переводом ядра, перевод при обновлении ядра.
 run specfilematch sh "$ROOT/tests/specfilematch.sh"
 # Автообновление подписок: задание крона само ничего не качает — оно зовёт объект rpcd по тем

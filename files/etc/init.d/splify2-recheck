@@ -7,7 +7,7 @@ START=96
 STOP=10
 USE_PROCD=1
 
-. /usr/lib/splify2/recheck.sh
+. "${RECHECK_SH:-/usr/lib/splify2/recheck.sh}"
 
 start_service() {
     [ "$(recheck_get enabled 0)" = 1 ] || { recheck_drop; return 0; }

@@ -337,6 +337,13 @@ fi
 # https-dns-proxy и zapret этот пакет не настраивает и от них не зависит: шифрованный DNS
 # теперь у движка (`dns.upstreams` в спеке), а обход DPI из splify2 убран. Уже стоящие у
 # человека пакеты и их настройки не трогаются.
+# ReCheck: после обновления службу надо поднять заново. opkg обновляет удалением и установкой, и
+# перед удалением служба снята (pre-remove ниже) вместе с таблицей nftables; без этого включённый
+# человеком обход молчал бы до перезагрузки. Только если он включён: иначе незачем.
+if [ -x /etc/init.d/splify2-recheck ] && grep -qx enabled=1 /etc/splify2/recheck.conf 2>/dev/null; then
+    /etc/init.d/splify2-recheck enable 2>/dev/null
+    /etc/init.d/splify2-recheck restart >/dev/null 2>&1
+fi
 # Кеш LuCI обязателен к сбросу: иначе меню и view остаются прежними до перезагрузки.
 rm -f /tmp/luci-indexcache.* 2>/dev/null
 rm -rf /tmp/luci-modulecache/ 2>/dev/null
@@ -383,6 +390,23 @@ fi
 exit 0
 EOF
 chmod +x build/scripts/post-install
+
+# Перед снятием пакета служба ReCheck останавливается, а таблица nftables уходит вместе с
+# остановкой. Без этого после `apk del`/`opkg remove` init-скрипта уже нет, а таблица
+# splify2_recheck остаётся и гоняет пакеты в очередь, которую никто не слушает (`bypass`
+# их пропускает, но лишний проход по цепочкам и счётчики живут до перезагрузки). Автозапуск
+# снимается тоже; при обновлении opkg его вернёт post-install, если обход включён.
+cat > build/scripts/pre-remove <<'EOF'
+#!/bin/sh
+[ -n "${IPKG_INSTROOT}" ] && exit 0
+if [ -x /etc/init.d/splify2-recheck ]; then
+    /etc/init.d/splify2-recheck stop >/dev/null 2>&1
+    /etc/init.d/splify2-recheck disable >/dev/null 2>&1
+fi
+nft delete table inet splify2_recheck >/dev/null 2>&1
+exit 0
+EOF
+chmod +x build/scripts/pre-remove
 
 # ЧТО ОБЪЯВЛЕНО ЗАВИСИМОСТЬЮ, А ЧТО НЕТ, И ПОЧЕМУ ЭТО РАЗНЫЕ ОТВЕТЫ.
 #
@@ -473,6 +497,7 @@ docker run --rm -v "$PWD":/w -w /w alpine:latest sh -c \
        --info arch:noarch --info depends:'luci-base ip-full curl ucode ucode-mod-fs ucode-mod-ubus' \
        --script post-install:build/scripts/post-install \
        --script post-upgrade:build/scripts/post-install \
+       --script pre-deinstall:build/scripts/pre-remove \
        -F $PKG -o $OUT/luci-app-splify2-$VERSION-1_noarch.apk" > "$BUILD_LOG" 2>&1 \
     || { echo "упаковка apk провалилась:"; cat "$BUILD_LOG"; exit 1; }
 
@@ -520,6 +545,8 @@ Description: splify2: правила, выходы и списки поверх 
 EOF
 cp build/scripts/post-install "$PKG/CONTROL/postinst"
 chmod 0755 "$PKG/CONTROL/postinst"
+cp build/scripts/pre-remove "$PKG/CONTROL/prerm"
+chmod 0755 "$PKG/CONTROL/prerm"
 if "$PWD/$IPKG" "$PKG" "$PWD/$OUT" >/dev/null 2>&1; then
     # ipkg-build называет файл через подчёркивания; приводим к тому же виду, что у apk,
     # чтобы в релизе оба формата одного пакета лежали рядом и читались одинаково.

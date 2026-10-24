@@ -1384,7 +1384,7 @@ unmarked/no-tls, счётчики, `last_ok_ago`, последняя ошибк�
 ReCheck — обход DPI на трафике, который уходит из сети напрямую в WAN, самостоятельная часть
 splify2: служба `/etc/init.d/splify2-recheck` ставит таблицу `inet splify2_recheck` (первые пакеты
 соединений — в очередь 4340, наблюдение — в 4341; пакеты с битом 0x40000000 — трафик ядра и
-уведённый в выходы — не трогает) и запускает движок `/usr/sbin/steer-dpi-live` из отдельного
+уведённый в выходы — не трогает; таблица ловит и IPv4, и IPv6, частные адреса и link-local мимо) и запускает движок `/usr/sbin/steer-dpi-live` из отдельного
 пакета `recheck`. Настройки — `/etc/splify2/recheck.conf`, строка на ключ.
 
 `recheck_info` → `installed` (движок стоит), `version`, `running`, `enabled`, `interface` (заданный
