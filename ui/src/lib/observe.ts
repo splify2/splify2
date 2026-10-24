@@ -1,4 +1,4 @@
-import type { Spec } from '@/lib/model'
+import type { Spec, Status } from '@/lib/model'
 
 import { S } from '@/copy'
 /** Соединение, которое ядро steer повело в свой выход (`steer conns`, steer docs/ctl.md, «conns»):
@@ -71,4 +71,15 @@ export function matches(q: string, words: (string | number | null | undefined)[]
     const s = q.trim().toLowerCase()
     if (!s) return true
     return words.some((w) => w !== null && w !== undefined && String(w).toLowerCase().includes(s))
+}
+
+/** Узел, через который выход ходит сейчас: у туннеля — выбранный клиентом, у пула — живые активные.
+ *  Ядро этого не называет, когда выход не туннель (direct, интерфейс), — тогда null: догадки нет. */
+export function nodesOf(status: Status | null | undefined, out: string | null): string[] {
+    const o = out ? status?.outputs?.[out] : undefined
+    if (!o) return []
+    const pool = o.vless?.active?.length ? o.vless.active : o.proxy?.active?.length ? o.proxy.active : null
+    if (pool) return pool.map((a) => a.name)
+    const one = o.vless?.node || o.proxy?.node
+    return one ? [one] : []
 }

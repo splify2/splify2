@@ -21,6 +21,8 @@ import { devKindsOf } from '@/lib/badges'
 import { country } from '@/lib/geo'
 import { outDown, outDownWord } from '@/lib/outstate'
 import Flag from '@/components/Flag'
+import { Spark } from '@/components/ui/spark'
+import { type Point } from '@/lib/history'
 import { type SectionId } from '@/lib/sections'
 
 import { S } from '@/copy'
@@ -670,6 +672,7 @@ function RuleCards({
                     labels={ruleLabels(ch, services)}
                     set={setOf(ch.name)}
                     speed={speedOf(setOf(ch.name))}
+                    trend={setOf(ch.name) ? live.history?.series('ch:' + setOf(ch.name)!.name) : undefined}
                     st={live.status?.outputs?.[ch.out]}
                     facts={facts[ch.out]}
                     phase={live.phase}
@@ -712,18 +715,19 @@ function ruleLabels(ch: Channel, services: ReturnType<typeof useServices>): stri
 
 /** Скорость сейчас — ↓/↑ готовыми строками из опроса. Нет замера (первый круг, вкладка была
  *  скрыта, трафика нет) — нет и элемента: нуль был бы неправдой, а мигающая строка — шумом. */
-function Speed({ s }: { s?: { up: string | null; down: string | null } }) {
+function Speed({ s, trend }: { s?: { up: string | null; down: string | null }; trend?: readonly Point[] }) {
     if (!s || (!s.down && !s.up)) return null
     return (
-        <span title={S.home.skorostSeychas} className="flex gap-2 text-foreground">
+        <span title={S.home.skorostSeychas} className="flex items-center gap-2 text-foreground">
             {s.down && <span>↓ {s.down}</span>}
             {s.up && <span>↑ {s.up}</span>}
+            {trend && <Spark points={trend} width={48} height={14} />}
         </span>
     )
 }
 
 function RuleCard({
-    ch, labels, set, st, facts, phase, speed, onOpen, onToggle, onDelete, index, total, dragging, target, dnd, onMove,
+    ch, labels, set, st, facts, phase, speed, trend, onOpen, onToggle, onDelete, index, total, dragging, target, dnd, onMove,
 }: {
     onDelete: () => void
     index: number
@@ -736,6 +740,8 @@ function RuleCard({
     labels: string[]
     set?: ChannelStatus
     speed?: { up: string | null; down: string | null }
+    /** История скорости правила (live.history) — спарклайн рядом со скоростью. */
+    trend?: readonly Point[]
     st?: OutputStatus
     facts?: Facts
     phase: Live['phase']
@@ -807,7 +813,7 @@ function RuleCard({
                     <span className="truncate">{!on ? S.home.vyklyucheno : set && !set.live && !phase ? S.home.netVYadreLinux : ''}</span>
                 </span>
                 <span className="flex shrink-0 flex-wrap justify-end gap-x-2">
-                    <Speed s={speed} />
+                    <Speed s={speed} trend={trend} />
                     <span title={shared ? S.home.schetchikObschiy : undefined}>{shared ? S.home.schetchikObschiy + ' · ' : ''}↓ {down ?? '—'} ↑ {up ?? '—'}</span>
                 </span>
             </div>
@@ -895,6 +901,7 @@ function RulesBoard({
                             row={r}
                             set={setOf(r.name)}
                             speed={setOf(r.name) ? live.speed?.ch[setOf(r.name)!.name] : undefined}
+                            trend={setOf(r.name) ? live.history?.series('ch:' + setOf(r.name)!.name) : undefined}
                             st={live.status?.outputs?.[r.out]}
                             facts={facts[r.out]}
                             share={peak > 0 ? load(r.name) / peak : 0}
@@ -908,12 +915,14 @@ function RulesBoard({
 }
 
 function RuleRow({
-    n, row, set, st, facts, phase, share, speed, onSection,
+    n, row, set, st, facts, phase, share, speed, trend, onSection,
 }: {
     n: number
     row: { name: string; out: string; enabled: boolean }
     set?: ChannelStatus
     speed?: { up: string | null; down: string | null }
+    /** История скорости правила (live.history) — спарклайн рядом со скоростью. */
+    trend?: readonly Point[]
     st?: OutputStatus
     facts?: Facts
     phase: Live['phase']
@@ -977,7 +986,7 @@ function RuleRow({
                             <span>↓ {down ?? '—'}</span>
                             <span>↑ {up ?? '—'}</span>
                         </span>
-                        <Speed s={speed} />
+                        <Speed s={speed} trend={trend} />
                     </span>
                 </div>
                 <button
@@ -1044,6 +1053,11 @@ function OutputsColumn({
      * не попадала ни в один блок — на экране оставался голый остаток. */
     const { shown: spec } = usePending()
     const outputs = Object.entries(live.status?.outputs || {})
+    /* Спарклайн выхода — по устройствам: счётчик правила считает только путь «наружу». */
+    const outTrend = (o: Output | undefined, st: OutputStatus) => {
+        const devs = devList(o).length ? devList(o) : devList(st)
+        return devs.length ? live.history?.series(...devs.map((d) => 'dev:' + d)) : undefined
+    }
     const vless = outputs.filter(([, o]) => isTunnelKind(o.kind))
     const tunnels = outputs.filter(([, o]) => o.kind === 'interface')
 
@@ -1130,16 +1144,16 @@ function OutputsColumn({
                     return <SubTile key={'sub:' + sub.name} sub={sub} outs={outs} facts={facts} spec={spec} />
                 })}
                 {subs === null && vless.map(([name, st]) => (
-                    <OutTile key={'v:' + name} name={name} st={st} facts={facts[name]} out={spec?.outputs?.[name]} />
+                    <OutTile key={'v:' + name} name={name} st={st} facts={facts[name]} out={spec?.outputs?.[name]} trend={outTrend(spec?.outputs?.[name], st)} />
                 ))}
                 {loose.map(([name, st]) => (
-                    <OutTile key={'l:' + name} name={name} st={st} facts={facts[name]} out={spec?.outputs?.[name]} />
+                    <OutTile key={'l:' + name} name={name} st={st} facts={facts[name]} out={spec?.outputs?.[name]} trend={outTrend(spec?.outputs?.[name], st)} />
                 ))}
                 {tunnels.map(([name, st]) => {
                     const o = spec?.outputs?.[name]
                     const devs = devList(o).length ? devList(o) : devList(st)
                     if (devs.length > 0 && devs.every((d) => isPart(spec?.outputs?.[d]))) return null
-                    return <OutTile key={'t:' + name} name={name} st={st} facts={facts[name]} out={o} device={devs[0]} />
+                    return <OutTile key={'t:' + name} name={name} st={st} facts={facts[name]} out={o} device={devs[0]} trend={live.history?.series(...devs.map((d) => 'dev:' + d))} />
                 })}
                 {warps.map(([name, st]) => <WarpTile key={'w:' + name} name={name} st={st} facts={facts[name]} />)}
             </>
@@ -1280,19 +1294,24 @@ function SubTile({ sub, outs, facts, spec }: {
 }
 
 /** Выход без подписки или свой туннель: протокол или устройство, состояние, отклик. */
-function OutTile({ name, st, facts, out, device }: {
+function OutTile({ name, st, facts, out, device, trend }: {
     name: string
     st: OutputStatus
     facts?: Facts
     out?: Output
     device?: string
+    /** История скорости выхода — сумма его устройств (live.history). */
+    trend?: readonly Point[]
 }) {
     const kind = out?.kind ?? st.kind
     const ok = !!st.up && !outDown(st)
     return (
         <div className={TILE}>
             <TileHead title={name} tag={kind && PROTO_NAME[kind] ? <Badge variant="proto">{PROTO_NAME[kind]}</Badge> : undefined} />
-            <div className="truncate font-mono text-xs text-muted-foreground">{device ?? st.device ?? ''}</div>
+            <div className="flex items-center justify-between gap-2">
+                <div className="min-w-0 truncate font-mono text-xs text-muted-foreground">{device ?? st.device ?? ''}</div>
+                {trend && <Spark points={trend} width={56} height={14} />}
+            </div>
             <StateLine ok={ok}>
                 <Flag cc={facts?.geo?.cc} /> {[country(facts?.geo?.cc), ms(facts, st), outDownWord(st)].filter(Boolean).join(' · ') || (st.up ? S.home.rabotaet : S.home.nePodnyat2)}
             </StateLine>

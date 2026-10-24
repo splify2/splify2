@@ -1,4 +1,4 @@
-import { Bug, Heart, House, Lock, Route, Send, Settings, ShieldCheck, Stethoscope } from 'lucide-react'
+import { Bug, Heart, House, ListTree, Lock, Route, Send, Settings, ShieldCheck, Stethoscope } from 'lucide-react'
 import EngineToggle from '@/components/EngineToggle'
 import { type Live } from '@/lib/live'
 import { assetUrl } from '@/lib/assets'
@@ -31,6 +31,7 @@ const ITEMS: { id: SectionId | string; label: string; icon: typeof House }[] = [
     { id: 'rules', label: S.rail.pravila, icon: Route },
     { id: 'vpn', label: 'VPN', icon: ShieldCheck },
     { id: 'dns', label: 'DNS', icon: Lock },
+    { id: 'requests', label: S.rail.zaprosy, icon: ListTree },
     { id: 'diag', label: S.rail.diagnostika, icon: Stethoscope },
     { id: 'settings', label: S.rail.nastroyki, icon: Settings },
 ]

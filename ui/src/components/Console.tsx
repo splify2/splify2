@@ -37,6 +37,7 @@ const SubsBoard = lazy(() => import('@/components/board/SubsBoard'))
 const Dns = lazy(() => import('@/components/sections/Dns'))
 const Settings = lazy(() => import('@/components/sections/Settings'))
 type SettingsScreen = Exclude<import('@/components/sections/Settings').Screen, 'root'>
+const Requests = lazy(() => import('@/components/sections/Requests'))
 const Diagnostics = lazy(() => import('@/components/sections/Diagnostics'))
 
 /** Разделы, что читают и правят спеку: при отказе загрузки их место занимает «Повторить». */
@@ -246,6 +247,7 @@ export default function Console({ extra, railHost, board = false, settingsHost, 
                         )}
                         {section === 'vpn' && !loadFailed && (board ? <SubsBoard /> : <Vpn live={live} />)}
                         {section === 'dns' && !loadFailed && <Dns live={live} board={board} />}
+                        {section === 'requests' && <Requests live={live} board={board} />}
                         {section === 'diag' && <Diagnostics live={live} board={board} />}
                         {section === 'settings' && !loadFailed && (
                             <Settings

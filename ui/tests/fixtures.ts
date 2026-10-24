@@ -1,4 +1,5 @@
 import type { Live } from '@/lib/live'
+import { History } from '@/lib/history'
 
 /** Пустой Live: всё, чего тест не задал, отсутствует, а не выдумано.
  *
@@ -18,6 +19,11 @@ export function live(patch: Partial<Live> = {}): Live {
         diagOld: false,
         devs: null,
         speed: { ch: {}, dev: {} },
+        history: new History(),
+        conns: null,
+        dnsLog: null,
+        engineLog: null,
+        want: () => () => {},
         refresh: () => {},
         ...patch,
     } as Live
