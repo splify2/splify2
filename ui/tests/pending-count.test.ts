@@ -1,5 +1,5 @@
 import { describe, expect, it, vi, beforeEach } from 'vitest'
-import { pending } from '@/lib/pending'
+import { pending, writable } from '@/lib/pending'
 import { decodeSpec, encodeSpec } from '@/lib/specv2'
 import { rpc } from '@/lib/rpc'
 import { type Spec } from '@/lib/model'
@@ -121,6 +121,12 @@ describe('счётчик после записи и чтения спеки (I-5
         const saved = spec([{ name: 'A', out: 'vpn', match: { prefixes_files: ['/a', '/b'] }, narrow: { '/a': { ports: ['443'] } } }])
         const applied = decodeSpec(JSON.parse(JSON.stringify(encodeSpec(saved))))
         expect(await count(applied, saved)).toBe(0)
+    })
+
+    it('«только эти устройства» без единого устройства — черновик, пустой адрес в спеку не пишется (I-366)', async () => {
+        const ch = { name: 'A', out: 'vpn', match: { domains_files: ['/d'] }, from: [''] }
+        expect(await count(spec([]), spec([ch]))).toBe(0)
+        expect(JSON.stringify(encodeSpec(writable(spec([ch])).spec))).not.toContain('""')
     })
 
     it('настоящая правка списка по-прежнему считается', async () => {
