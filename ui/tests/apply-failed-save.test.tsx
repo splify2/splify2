@@ -80,7 +80,8 @@ let set: ReturnType<typeof vi.spyOn>
 let apply: ReturnType<typeof vi.spyOn>
 
 /** Тосты, как их видел человек: пары (текст, вид). */
-const said = () => vi.mocked(notify).mock.calls.map(([t, k]) => [t, k])
+/* Сообщения с кнопкой «Вернуть» (D-P2.4) — не отказы и не предупреждения: здесь они не считаются. */
+const said = () => vi.mocked(notify).mock.calls.filter((c) => !c[2]).map(([t, k]) => [t, k])
 
 async function open() {
     vi.restoreAllMocks()

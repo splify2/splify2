@@ -7,6 +7,7 @@ import { decodeSpec, encodeSpec, wasV1 } from '@/lib/specv2'
 import { cmpVersion } from '@/lib/engine'
 import { engineErrorText } from '@/lib/engineerr'
 import { missingText } from '@/lib/outrefs'
+import { same, rest, describeChanges, revertChanges, type Change } from '@/lib/specdiff'
 
 import { S } from '@/copy'
 /** Автосохранение и счётчик неприменённого — одно место на весь экран.
@@ -123,12 +124,12 @@ class PendingStore {
      *  Опора трёхстороннего слияния (mergeSpec): по разнице между ним и `saved` видно, что человек
      *  успел поправить, а по разнице между ним и перечитанным — что сделал за это время роутер. */
     private written: Spec | null = null
-    applying = false
     /** Ревизия файла на роутере, от которой начата наша правка (D-P2.7): с spec_get, после удавшегося
      *  spec_set, после сверки с роутером. Уходит в spec_set — роутер отказывает, если файл с тех пор
      *  переписали (вторая вкладка, ssh, подписка), и страница сливает правки (reconcile), а не затирает
      *  чужое. Нет — бэкенд ревизий не отдаёт, пишем без сверки, как прежде. */
     private rev: string | undefined
+    applying = false
     /** Закрывается, когда применение кончилось (любым исходом). Записи, пришедшие за время
      *  применения, ждут его — см. flush. */
     private applyDone: Promise<void> = Promise.resolve()
@@ -290,8 +291,8 @@ class PendingStore {
             const migrate = wasV1(saved)
             this.saved = migrate ? { ...saved, schema: undefined } : saved
             this.written = this.saved
-            this.applied = applied ?? this.saved
             this.rev = revOf(saved)
+            this.applied = applied ?? this.saved
             this.saveError = null
             this.loadFailed = false
             this.emit()
@@ -318,12 +319,69 @@ class PendingStore {
         /* Спека не загружена — писать нечего: запись «поверх» затёрла бы настоящую спеку
          * тем, что набрано без неё. Экран отказа правок и не предлагает; это страховка. */
         if (!this.saved) { notify(S.pending.specNeZagruzhena, 'error'); return }
-        this.saved = next
         const prev = this.saved
+        this.saved = next
         this.dirty = true
         this.editSeq++
         this.emit()
         this.arm()
+        this.offerUndo(prev, next)
+    }
+
+    /** Удалённое правило или выход возвращается кнопкой в сообщении, а не вопросом «вы уверены?»
+     *  заранее (D-P2.4). Удалением считается правка, где что-то ушло и ничего не пришло: переименование
+     *  правила при наборе имени — это «ушло и пришло», его не показываем. Дешёвая проверка длин
+     *  стоит перед полным сравнением: правок набора текста — десятки в секунду, а удалений — единицы. */
+    private offerUndo(prev: Spec, next: Spec) {
+        try {
+            const shrank = (next.channels?.length ?? 0) < (prev.channels?.length ?? 0) ||
+                Object.keys(next.outputs || {}).length < Object.keys(prev.outputs || {}).length
+            if (!shrank) return
+            const all = describeChanges(prev, next)
+            if (all.some((c) => c.kind === 'added' && (c.subject === 'rule' || c.subject === 'output'))) return
+            const gone = all.filter((c) => c.kind === 'removed')
+            if (!gone.length) return
+            const rules = gone.filter((c) => c.subject === 'rule')
+            const outs = gone.filter((c) => c.subject === 'output')
+            const text = gone.length === 1
+                ? (rules.length ? S.changes.udalenoPravilo(rules[0].name) : S.changes.udalenVyhod(outs[0].name))
+                : S.changes.udaleno(rules.length, outs.length)
+            notify(text, 'info', { label: S.changes.vernut, run: () => this.revert(gone) })
+        } catch {
+            /* Подсказка об удалении не должна ронять правку. */
+        }
+    }
+
+    /** Отменить перечисленные изменения поверх текущей спеки — обычной правкой: запишется и
+     *  применится само, как любая другая. */
+    revert(changes: Change[]) {
+        if (!this.saved || !changes.length) return
+        this.edit(revertChanges(this.saved, changes))
+    }
+
+    /** Что записано, но не применено: строки «Что изменится». Считается по тому, что увидит роутер
+     *  (asWritten): черновик правила и порядок файлов разницей не считаются, как и в count(). */
+    private pendingMemo: { a: Spec; s: Spec; list: Change[] } | null = null
+    changes(): Change[] {
+        if (!this.applied || !this.saved) return []
+        const m = this.pendingMemo
+        if (m && m.a === this.applied && m.s === this.saved) return m.list
+        const list = describeChanges(asWritten(this.applied), asWritten(this.saved))
+        this.pendingMemo = { a: this.applied, s: this.saved, list }
+        return list
+    }
+
+    /** Последнее удавшееся применение: что в нём поменялось — строки «Что изменилось» с отменой.
+     *  Нет изменений (применение без правок) — не запоминается. */
+    lastApplied: { at: number; changes: Change[] } | null = null
+
+    /** Строки «Что изменилось» убраны с экрана: отменены или скрыты. */
+    dismissApplied(ids?: string[]) {
+        const la = this.lastApplied
+        if (!la) return
+        const left = ids ? la.changes.filter((c) => !ids.includes(c.id)) : []
+        this.lastApplied = left.length ? { ...la, changes: left } : null
+        this.emit()
     }
 
     /** Взвести отправку: через 500 мс тишины. */
@@ -371,7 +429,7 @@ class PendingStore {
         if (!this.dirty || !this.saved) { await this.writing; return }
         this.dirty = false
         if (this.timer) { clearTimeout(this.timer); this.timer = null }
-        const { spec, drafts } = writable(this.saved)
+        let { spec, drafts } = writable(this.saved)
         this.inflight = true
         this.writing = this.writing.then(async () => {
             try {
@@ -525,6 +583,7 @@ class PendingStore {
              * подстановка) — то, что в памяти: правки, сделанные позже, всё равно от него отличны. */
             const base = this.written ?? (this.saved ? writable(this.saved).spec : null)
             let ok = false
+            const appliedBefore = this.applied
             try {
                 const r = await rpc.apply()
                 ok = r.ok
@@ -538,6 +597,10 @@ class PendingStore {
              * ubus при ещё идущем apply) не значит, что на роутере ничего не изменилось. */
             await this.refresh(base, ok)
             if (ok) {
+                if (appliedBefore && base) {
+                    const changes = describeChanges(asWritten(appliedBefore), asWritten(base))
+                    this.lastApplied = changes.length ? { at: Date.now(), changes } : null
+                }
                 this.justApplied = true
                 this.emit()
                 setTimeout(() => { this.justApplied = false; this.emit() }, 1800)
@@ -551,6 +614,29 @@ class PendingStore {
             release()
             this.emit()
         }
+    }
+
+    /** Спеку на роутере переписали после нашего чтения (spec_set вернул conflict): прочитать её и
+     *  слить с правкой тем же трёхсторонним слиянием, что после применения — основа то, что мы о
+     *  роутере знали (`written`), «моё» — память, «их» — то, что лежит. Если из чужого что-то
+     *  вошло, человеку об этом говорится: правка не потеряна, но экран только что изменился. Код
+     *  `false` — прочитать не удалось: запись отказывает, как при любой другой ошибке. */
+    private async reconcile(): Promise<boolean> {
+        const mine = this.saved
+        if (!mine) return false
+        let disk: Spec
+        try { disk = await this.readSpec([]) } catch { return false }
+        const fresh = wasV1(disk) ? { ...disk, schema: undefined } : disk
+        const merged = mergeSpec(this.written ?? writable(mine).spec, mine, fresh)
+        this.written = fresh
+        this.rev = revOf(disk)
+        if (!same(merged, mine)) {
+            this.saved = merged
+            notify(S.pending.nastroykiIzmenilis, 'info')
+            this.emit()
+            for (const fn of this.replaced) fn(merged)
+        }
+        return true
     }
 
     /** Сверить память страницы с роутером после применения.
@@ -588,6 +674,7 @@ class PendingStore {
             const mine = this.saved
             if (fresh && mine) {
                 this.written = fresh
+                this.rev = disk ? revOf(disk) : undefined
                 const merged = mergeSpec(base ?? writable(mine).spec, mine, fresh)
                 if (!same(merged, mine)) { this.saved = merged; replaced = true }
                 /* Есть то, чего на роутере нет, — правка за время применения. Черновики не в счёт:
@@ -616,29 +703,6 @@ export const pending = new PendingStore()
  * Именно так и пришло сообщение об ошибке (splify2#11: «после создания правила и перезагрузки
  * страницы пропадает правило»). С прежней кнопкой «Сохранить» такого случиться не могло:
  * человек знал, отправил он что-нибудь или нет.
-    /** Спеку на роутере переписали после нашего чтения (spec_set вернул conflict): прочитать её и
-     *  слить с правкой тем же трёхсторонним слиянием, что после применения — основа то, что мы о
-     *  роутере знали (`written`), «моё» — память, «их» — то, что лежит. Если из чужого что-то
-     *  вошло, человеку об этом говорится: правка не потеряна, но экран только что изменился. Код
-     *  `false` — прочитать не удалось: запись отказывает, как при любой другой ошибке. */
-    private async reconcile(): Promise<boolean> {
-        const mine = this.saved
-        if (!mine) return false
-        let disk: Spec
-        try { disk = await this.readSpec([]) } catch { return false }
-        const fresh = wasV1(disk) ? { ...disk, schema: undefined } : disk
-        const merged = mergeSpec(this.written ?? writable(mine).spec, mine, fresh)
-        this.written = fresh
-        this.rev = revOf(disk)
-        if (!same(merged, mine)) {
-            this.saved = merged
-            notify(S.pending.nastroykiIzmenilis, 'info')
-            this.emit()
-            for (const fn of this.replaced) fn(merged)
-        }
-        return true
-    }
-
  *
  * Два крюка, и они делают разное. `visibilitychange`/`pagehide` — попытка ДОПИСАТЬ: браузер
  * ещё разрешает начатый запрос, и в большинстве случаев этого достаточно. `beforeunload` —
@@ -674,7 +738,6 @@ export function usePending() {
         /** Сохранённая спека — та же, что видят разделы. Нужна рельсу для счётчика «Правила N»:
          *  спрашивать её отдельным вызовом значило бы показать в рельсе одно число, а в
          *  разделе рядом другое. null, пока не загружена. */
-                this.rev = disk ? revOf(disk) : undefined
         spec: pending.saved,
         /** Спека для показа: загруженная, а до её прихода — из памяти прошлого открытия. Писать по
          *  ней нельзя — для правок есть `spec`. */
@@ -691,66 +754,6 @@ export function usePending() {
         applied: pending.applied,
         apply: () => void pending.apply(),
     }
-}
-
-/** Поля, отсутствие которых значит РОВНО ТО ЖЕ, что записанное значение.
- *
- *  Взято из контракта движка (steer/docs/contract-v1.md): поля нет — действует умолчание.
- *  Имена не пересекаются между каналом и выходом в этой схеме (`enabled` и `mode` бывают
- *  только у канала, `on_fail` и `node` — только у выхода), поэтому таблица одна на оба.
- *
- *  ЗАЧЕМ. Интерфейс пишет умолчания ЯВНО, а движок и архивы — как получилось. Пока сравнение
- *  шло по JSON.stringify, выключить правило и включить обратно означало вечное «Применить · 1»
- *  на правке, которая ничего не меняет: в спеке появлялось `"enabled": true`, которого в
- *  снимке применённого не было. Поймано живым проходом по интерфейсу — пилюля висела над
- *  списком и перехватывала клики по строкам под собой. */
-const DEFAULTS: Record<string, unknown> = {
-    enabled: true,
-    on_fail: 'drop',
-    mode: 'fakeip',
-    /** −1 и пустой список означают одно: «первый рабочий среди всех пригодных». */
-    node: -1,
-}
-
-/** Канонический вид для СРАВНЕНИЯ (не для записи): ключи по алфавиту, поля с умолчанием и
- *  пустые списки выброшены.
- *
- *  Порядок ключей тоже выброшен нарочно: он ничего не значит ни для движка, ни для человека,
- *  а JSON.stringify считал его различием — то есть спека, пересобранная другим порядком
- *  полей, показывала бы «не применено» на всех правилах сразу. */
-function canon(v: unknown): unknown {
-    if (Array.isArray(v)) return v.map(canon)
-    if (!v || typeof v !== 'object') return v
-    const src = v as Record<string, unknown>
-    const out: Record<string, unknown> = {}
-    for (const k of Object.keys(src).sort()) {
-        const val = src[k]
-        if (val === undefined) continue
-        if (k in DEFAULTS && val === DEFAULTS[k]) continue
-        if (Array.isArray(val) && val.length === 0) continue
-        out[k] = canon(val)
-    }
-    return out
-}
-
-/** Спека без выходов и правил — то, что счётчик сравнивает целиком, одной правкой. `schema`
- *  и `lan_device` сюда не входят: первое — номер формы записи, а не настройка (движку уезжает
- *  свой, см. expandNarrow), второе normalizeSpec уже привёл к `lan_devices`. */
-function rest(spec: Spec): Record<string, unknown> {
-    const { outputs: _o, channels: _c, schema: _s, lan_device, lan_devices, ...r } =
-        spec as Spec & { lan_device?: string }
-    /* Устройства клиентов — к одной форме: одиночная запись `lan_device` (спека времён 1.2.5)
-     * и отсутствие поля значат «br-lan», и снимок применённого в такой форме против списка
-     * из одного элемента в сохранённом давал бы вечное «Применить · 1» — ровно та беда, ради
-     * которой этот стенд заведён. Умолчание то же, что у движка и у карточки. */
-    const devs = lan_devices?.length ? lan_devices : lan_device ? [lan_device] : ['br-lan']
-    return { ...r, lan_devices: devs }
-}
-
-/** Одно и то же ли это по смыслу. Отдельной функцией, чтобы сравнение стояло в одном месте:
- *  каналы и выходы сравниваются по одному правилу, и разойтись они не должны. */
-function same(a: unknown, b: unknown): boolean {
-    return JSON.stringify(canon(a)) === JSON.stringify(canon(b))
 }
 
 const isPlain = (v: unknown): v is Record<string, unknown> => !!v && typeof v === 'object' && !Array.isArray(v)
@@ -792,13 +795,13 @@ function merge3(base: unknown, mine: unknown, theirs: unknown): unknown {
         if (theirs.kind !== base.kind) throw new Unmergeable()
         const out: Record<string, unknown> = {}
         for (const k of new Set([...Object.keys(mine), ...Object.keys(theirs)])) {
-            const v = merge3(base[k], mine[k], theirs[k])
-            if (v !== undefined) out[k] = v
-        }
             /* Правила — по именам, а не целым списком (D-P2.7): две вкладки добавили по правилу —
              * в спеке должны остаться оба, а не победитель по времени записи. */
             const byName = k === 'channels' ? mergeNamed(base[k], mine[k], theirs[k]) : null
             if (byName) { out[k] = byName; continue }
+            const v = merge3(base[k], mine[k], theirs[k])
+            if (v !== undefined) out[k] = v
+        }
         return out
     }
     return mine

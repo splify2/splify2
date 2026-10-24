@@ -799,6 +799,14 @@ case "$2" in
         # снимок, из которого applied_get и проверки движка читали полспеки. mv внутри одного
         # каталога атомарен: снимок либо прежний, либо новый целиком.
         if [ "$rc" -eq 0 ]; then
+            # Прежнее применённое — рядом, как spec.prev.json (D-P2.4): откатить применение руками —
+            # положить его на место спеки. Только когда применённое изменилось: повторный apply без
+            # правок не должен затирать откат копией той же спеки.
+            prev="${APPLIED%/*}/spec.prev.json"
+            if [ -s "$APPLIED" ] && ! cmp -s "$APPLIED" "$(spec_json)" &&
+                    cp "$APPLIED" "$prev.new.$$" 2>/dev/null; then
+                mv "$prev.new.$$" "$prev" 2>/dev/null || rm -f "$prev.new.$$"
+            fi
             if cp "$(spec_json)" "$APPLIED.new.$$" 2>/dev/null; then
                 mv "$APPLIED.new.$$" "$APPLIED" 2>/dev/null || rm -f "$APPLIED.new.$$"
             else

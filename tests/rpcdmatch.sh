@@ -4876,7 +4876,16 @@ check "heal: apply применил уже исправленную спеку (
 # первая правка записала бы поверх роутерной спеку без вылеченных ключей.
 check "heal: spec_get после apply отдаёт исправленную спеку" "nat off" \
       "$(rpcd spec_get | python3 -c 'import json,sys; o=json.load(sys.stdin)["outputs"]; print(o["warp"].get("ipv6","-"), o["wgv4"].get("ipv6","-"))')"
-check "heal: applied_get после apply отдаёт то же, что spec_get" "$(rpcd spec_get | cksum)" "$(rpcd applied_get | cksum)"
+# Прежнее применённое остаётся рядом (D-P2.4): откат руками — положить spec.prev.json на место спеки.
+# Тут спека уже применена дважды подряд (вылеченная apply) — копия равна одному из снимков.
+check "apply: spec.prev.json лежит рядом со снимком" "yes" "$([ -s "$T/etc/spec.prev.json" ] && echo yes || echo no)"
+cp "$T/etc/spec.applied.json" "$T/etc/spec.applied.before"
+rpcd apply >/dev/null
+check "apply без правок прежнее применённое не затирает" "yes" \
+      "$(cmp -s "$T/etc/spec.applied.before" "$T/etc/spec.applied.json" && echo yes || echo no)"
+# `rev` у spec_get — не часть спеки (D-P2.7), поэтому сравнивается без него.
+norev() { python3 -c 'import json,sys; d=json.load(sys.stdin); d.pop("rev", None); print(json.dumps(d, sort_keys=True))'; }
+check "heal: applied_get после apply отдаёт то же, что spec_get" "$(rpcd spec_get | norev)" "$(rpcd applied_get | norev)"
 # Строки самолечения интерфейс в тосте не показывает и узнаёт их по началу (applyText в pending.ts;
 # его проверка читает исходник бэкенда): по две строки, nat и off, обе с этим началом.
 check "heal: обе строки самолечения начинаются так, как их узнаёт интерфейс" "2" \

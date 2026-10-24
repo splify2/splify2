@@ -18,7 +18,12 @@
  *  экране, не добавляет вторую полосу — первая живёт дальше и получает счётчик «×N». Поймано
  *  владельцем на редакторе правил: автосохранение шло каждые полсекунды правки, отказ был один
  *  и тот же, и внизу стояла стопка из четырёх красных полос с одним текстом. Стопка не
- *  говорит больше, чем одна полоса, — только заслоняет. */
+ *  говорит больше, чем одна полоса, — только заслоняет.
+ *
+ *  ДЕЙСТВИЕ В СООБЩЕНИИ (D-P2.4). Удаление правила или выхода не спрашивает подтверждения, а
+ *  отвечает сообщением с кнопкой «Вернуть»: нажатие выполняет действие и закрывает полосу. Такая
+ *  полоса живёт дольше обычной — вернуть успевают, пока читают. */
+export type NotifyAction = { label: string; run: () => void }
 export type NotifyKind = 'info' | 'warning' | 'error'
 
 const KIND_BG: Record<NotifyKind, string> = {
@@ -29,6 +34,9 @@ const KIND_BG: Record<NotifyKind, string> = {
 
 /** Сколько висит: обычное сообщение — пока читаешь, ошибка — пока успеешь понять. */
 const KIND_MS: Record<NotifyKind, number> = { info: 4000, warning: 7000, error: 12000 }
+
+/** Сообщение с действием висит дольше: вернуть удалённое успевают, пока дочитывают. */
+const ACTION_MS = 10000
 
 const STACK_ID = 'splify2-toasts'
 
@@ -50,16 +58,16 @@ function stack(): HTMLElement | null {
 /** Живые полосы по тексту: чтобы повтор находил свою. */
 const live = new Map<string, { text: HTMLElement; n: number; timer: ReturnType<typeof setTimeout>; close: () => void }>()
 
-export function notify(msg: string, kind: NotifyKind = 'info') {
+export function notify(msg: string, kind: NotifyKind = 'info', action?: NotifyAction) {
   const host = stack()
   if (!host) return
-  const key = `${kind}\n${msg}`
+  const key = `${kind}\n${msg}${action ? `\n${action.label}` : ''}`
   const seen = live.get(key)
   if (seen) {
     seen.n += 1
     seen.text.textContent = `${msg}  ×${seen.n}`
     clearTimeout(seen.timer)
-    seen.timer = setTimeout(seen.close, KIND_MS[kind])
+    seen.timer = setTimeout(seen.close, action ? ACTION_MS : KIND_MS[kind])
     return
   }
   const el = document.createElement('div')
@@ -85,5 +93,16 @@ export function notify(msg: string, kind: NotifyKind = 'info') {
     setTimeout(() => el.remove(), 200)
   }
   el.addEventListener('click', close)
-  live.set(key, { text, n: 1, timer: setTimeout(close, KIND_MS[kind]), close })
+  if (action) {
+    const btn = document.createElement('button')
+    btn.type = 'button'
+    btn.textContent = action.label
+    Object.assign(btn.style, {
+      marginLeft: '14px', padding: '2px 10px', borderRadius: '6px', cursor: 'pointer',
+      border: '1px solid rgba(255,255,255,.55)', background: 'transparent', color: '#fff', font: 'inherit',
+    } satisfies Partial<CSSStyleDeclaration>)
+    btn.addEventListener('click', () => action.run())
+    el.appendChild(btn)
+  }
+  live.set(key, { text, n: 1, timer: setTimeout(close, action ? ACTION_MS : KIND_MS[kind]), close })
 }

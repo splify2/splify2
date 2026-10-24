@@ -47,7 +47,8 @@ function free(): Spec {
 
 const withPools = live({ status: { schema: 1, features: ['lan_devices', 'nodes', 'pool', 'groups'], outputs: {}, channels: [] } })
 
-const said = () => vi.mocked(notify).mock.calls.map((c) => String(c[0]))
+/* Сообщения с кнопкой «Вернуть» (D-P2.4) — не отказы и не предупреждения: здесь они не считаются. */
+const said = () => vi.mocked(notify).mock.calls.filter((c) => !c[2]).map((c) => String(c[0]))
 
 beforeEach(() => {
     vi.restoreAllMocks()
@@ -339,7 +340,7 @@ describe('ядро всё же отвергло спеку с висячей с�
         const { nl: _n, ...outputs } = s.outputs
         await failedWrite({ ...s, outputs }, RAW)
         expect(said()).toEqual([`Настройки не записаны, на роутере прежние — исправьте правку, она запишется и применится сама\nВыхода «nl» нет, но он выбран: серверы DNS — cf. Выберите там другой выход`])
-        expect(vi.mocked(notify).mock.calls[0][1]).toBe('error')
+        expect(vi.mocked(notify).mock.calls.find((c) => !c[2])![1]).toBe('error')
         expect(pending.dirty).toBe(true)
     })
 

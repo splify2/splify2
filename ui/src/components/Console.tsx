@@ -12,6 +12,7 @@ import { startAutoApply } from '@/lib/autoapply'
 import { Button } from '@/components/ui/button'
 import Home from '@/components/sections/Home'
 import EngineToggle from '@/components/EngineToggle'
+import ChangesBar from '@/components/ChangesBar'
 
 import { S } from '@/copy'
 /** Пульт: рельс разделов слева, работа справа.
@@ -171,6 +172,9 @@ export default function Console({ extra, railHost, board = false, settingsHost, 
                 {/* Отступ снизу на узком экране — под нижнюю панель разделов: без него последняя
                     карточка уезжает под неё, и человек не видит, что страница кончилась. */}
                 <main className={board ? 'relative min-w-0 flex-1 px-3 pb-24 pt-3 lg:px-6 lg:pb-6 lg:pt-3' : 'min-w-0 flex-1 px-3 pb-24 pt-3 lg:p-6'}>
+                    {/* «Что изменится» / «Что изменилось»: строки с отменой (D-P2.4). Пусто — полосы нет. */}
+                    <ChangesBar />
+
                     {/* «Сохранено» — вспышка на полторы секунды после каждой УДАВШЕЙСЯ записи, а
                         не после правки: взамен кнопки эта галочка — единственное, по чему человек
                         судит, уехало ли что-нибудь на роутер. */}
