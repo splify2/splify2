@@ -490,6 +490,28 @@ BACKUP_IN="${BACKUP_IN:-/tmp/splify2-backup.in}"
 # завершает ash целиком, — закрыта раньше: файл настройки заводит uci_file, и стенд следит,
 # чтобы перенаправление не вернулось.
 
+# Замок метода (см. ниже, в `call`). Держится до конца процесса: fd 9 закрывается вместе с ним.
+# Вложенный вызов того же объекта (spec_heal зовёт apply) замок уже держит родитель, и ждать его у
+# потомка значило бы ждать самого себя, — об этом говорит SPLIFY2_LOCK_HELD.
+# Нет flock или каталога замков — работаем без замка: хуже прежнего от этого не будет.
+call_lock() {  # ИМЯ
+    case " ${SPLIFY2_LOCK_HELD:-} " in *" $1 "*) return 0 ;; esac
+    command -v flock >/dev/null 2>&1 || return 0
+    _cl_dir="${SPLIFY2_LOCK_DIR:-/var/lock}"
+    mkdir -p "$_cl_dir" 2>/dev/null
+    # exec с недоступным файлом завершает ash целиком, поэтому каталог проверяется заранее.
+    [ -d "$_cl_dir" ] && [ -w "$_cl_dir" ] || return 0
+    exec 9>"$_cl_dir/splify2-$1.lock"
+    _cl_n=0
+    until flock -n 9 2>/dev/null; do
+        _cl_n=$((_cl_n + 1))
+        [ "$_cl_n" -gt "${SPLIFY2_LOCK_WAIT:-120}" ] && fail "другая правка настроек ещё идёт — повторите через минуту"
+        sleep 1
+    done
+    SPLIFY2_LOCK_HELD="${SPLIFY2_LOCK_HELD:-} $1"
+    export SPLIFY2_LOCK_HELD
+}
+
 case "$1" in
 list)
     json_init
@@ -691,6 +713,16 @@ call)
         telemetry_state|telemetry_set) _grp=telemetry ;;
         recheck_info|recheck_set) _grp=recheck ;;
         *) fail "неизвестный метод" ;;
+    esac
+    # ЗАМОК НА МЕТОДЫ, КОТОРЫЕ ЧИТАЮТ, МЕНЯЮТ И ЗАМЕНЯЮТ ОБЩИЙ ФАЙЛ. Каждый вызов rpcd — свой
+    # процесс, и ручное «Применить» шло параллельно с плановым обновлением подписки или лечением
+    # после установки: оба читали спеку, учёт зон фаервола или файл подписки, оба писали своё, и
+    # выигрывал тот, кто заменил файл последним (I-546, I-473). Одна блокировка на спеку, подписки
+    # и архив — у них общие файлы и общий учёт зон; установка пакетов — своя (долгая, и спеку
+    # ей держать незачем).
+    case "$2" in
+        spec_set|apply|spec_heal|group_select|sub_set|sub_auto|sub_del|sub_refresh|sub_rename|backup_get|backup_put) call_lock state ;;
+        steer_install|splify2_install|steer_module_add|steer_module_del) call_lock install ;;
     esac
     # Где спека и как её читать (spec.yaml ядра 2.1 или spec.json): читать — `spec_json`, писать —
     # `spec_put`. Файл — /usr/lib/splify2/spec.sh, рядом с каталогом групп.

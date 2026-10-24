@@ -811,6 +811,7 @@ rpcd_raw() {  # МЕТОД JSON_ЗАПРОСА
 rpcd() {  # МЕТОД [JSON_ЗАПРОСА]  — вызов метода; для перечня методов есть rpcd_list
     if [ "${RPCD_NO_NEWLINE:-0}" = 1 ]; then printf '%s' "${2:-}"; else printf '%s\n' "${2:-}"; fi | env \
         SANDBOX="$T" \
+        SPLIFY2_LOCK_DIR="$T/lock" SPLIFY2_LOCK_WAIT="${SPLIFY2_LOCK_WAIT:-120}" \
         PATH="$T/bin:$PATH" \
         JSHN_SH="$ROOT/tests/stub/jshn.sh" FETCH_SH="$ROOT/files/usr/lib/splify2/fetch.sh" \
         FAST_SH="$ROOT/files/usr/lib/splify2/fast.sh" \
@@ -5077,6 +5078,30 @@ d = json.load(sys.stdin)
 w = json.load(open(sys.argv[1]))["luci-app-splify2"]["write"]["ubus"]["splify2"]
 print("yes" if "purge" in d and "purge" in w else "no")' "$ROOT/luci/root/usr/share/rpcd/acl.d/luci-app-splify2.json")"
 
+
+# ---- замок на правку спеки, подписок и архива (I-546) --------------------------------------
+# Пока кто-то держит замок «state», spec_set не пишет и отвечает отказом по сроку; отпустили —
+# работает. Без замка оба вызова шли бы параллельно и затирали бы друг друга.
+mkdir -p "$T/lock"
+if command -v flock >/dev/null 2>&1; then
+    ( exec 8>"$T/lock/splify2-state.lock"; flock 8; sleep 4 ) &
+    _lp=$!
+    sleep 0.5
+    out="$(SPLIFY2_LOCK_WAIT=1 rpcd spec_set "$(spec_req "$(vless_spec)")")"
+    check "замок занят: spec_set отказывает по сроку, а не пишет" "false" "$(printf '%s' "$out" | jget ok)"
+    check "и отказ говорит словами" "yes" \
+          "$(printf '%s' "$out" | grep -q 'ещё идёт' && echo yes || echo no)"
+    wait "$_lp"
+    out="$(rpcd spec_set "$(spec_req "$(vless_spec)")")"
+    check "замок свободен: spec_set пишет" "true" "$(printf '%s' "$out" | jget ok)"
+    ( exec 8>"$T/lock/splify2-state.lock"; flock 8; sleep 3 ) &
+    _lp=$!
+    sleep 0.5
+    out="$(SPLIFY2_LOCK_WAIT=1 rpcd list_remove '{"name":"x","kind":"prefixes"}')"
+    check "замок не мешает методам, которым общий файл не нужен" "no" \
+          "$(printf '%s' "$out" | grep -q 'ещё идёт' && echo yes || echo no)"
+    wait "$_lp"
+fi
 
 printf '\n%s\n' "$([ "$fails" -eq 0 ] && echo 'все проверки прошли' || echo "ЕСТЬ ПРОВАЛЫ: $fails")"
 [ "$fails" -eq 0 ]
