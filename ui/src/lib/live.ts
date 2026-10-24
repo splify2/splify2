@@ -1,7 +1,9 @@
 import { useEffect, useRef, useState } from 'react'
 import { cacheGet, cacheSet } from '@/lib/cache'
 import { engineErrorText } from '@/lib/engineerr'
-import { deadline, rpc } from './rpc'
+import { deadline, rpc, type DnsLog } from './rpc'
+import { loadHistory, type History } from './history'
+import { type ConnsReply } from './observe'
 import { type Releases, type SelfUpdateInfo } from './engine'
 import { type Status } from './model'
 import { pending } from './pending'
@@ -58,6 +60,8 @@ export interface Build {
     ui_version?: string
 }
 
+export type FeedTopic = 'conns' | 'dnsLog' | 'engineLog'
+
 export interface Live {
     status: Status | null
     /** Время работы движка в секундах и сколько устройств сейчас ходит в сеть. */
@@ -113,6 +117,22 @@ export interface Live {
         ch: Record<string, { up: string | null; down: string | null }>
         dev: Record<string, { rx: string | null; tx: string | null }>
     }
+    /** История скорости (lib/history.ts): спарклайны у выходов и правил, суточный график. Объект
+     *  один на всё время жизни экрана; обновляется тем же замером, что и `speed`. */
+    history: History
+    /** Данные, которые круг опроса добавляет, ТОЛЬКО пока их кто-то смотрит (`want`). Один опрос на
+     *  экран: прежде у «Диагностики», «Имён», «Соединений» и «DNS» было по своему таймеру, и четыре
+     *  вызова за пять секунд шли мимо общего круга — со своими мгновениями и без паузы на скрытой
+     *  вкладке. Теперь они едут в том же такте, что и состояние (LuCI складывает их в один запрос
+     *  к ubus). null — не просили или ответ ещё в пути. */
+    conns: ConnsReply | null
+    dnsLog: DnsLog | null
+    /** Журнал ядра steer (строки). */
+    engineLog: string[] | null
+    /** Попросить тему на круге опроса; вернёт «больше не нужно». Тема, которую никто не смотрит,
+     *  не стоит роутеру ничего, и её данные сбрасываются: при следующем открытии экран говорит
+     *  «Загрузка…», а не показывает давно прошедшее. */
+    want: (topic: FeedTopic) => () => void
     /** Перечитать сейчас, не дожидаясь следующего круга. Нужно после «Применить»: без этого
      *  человек видит прежние числа и не понимает, подействовало ли. */
     refresh: () => void
@@ -131,9 +151,18 @@ export function human(n: number) {
 
 /** Скорость из разницы двух опросов. Отрицательная разница значит, что счётчики начались
  *  заново (перезагрузка) — такую не показываем вовсе. */
-export function rate(bytes: number, ms: number) {
+export function bps(bytes: number, ms: number): number | null {
     if (!(ms > 0) || !(bytes > 0)) return null
-    const bits = (bytes * 8 * 1000) / ms
+    return (bytes * 8 * 1000) / ms
+}
+
+export function rate(bytes: number, ms: number) {
+    const bits = bps(bytes, ms)
+    return bits === null ? null : bitRate(bits)
+}
+
+/** Скорость готовой строкой из бит/с. */
+export function bitRate(bits: number) {
     if (bits >= 1e6) return S.live.mbitS((bits / 1e6).toFixed(1).replace('.', ','))
     if (bits >= 1e3) return S.live.kbitS(Math.round(bits / 1e3))
     return S.live.bitS(Math.round(bits))
@@ -201,6 +230,31 @@ export function useLive(): Live {
     const [devs, setDevs] = useState<Record<string, { rx: string; tx: string }> | null>(null)
     const [speed, setSpeed] = useState<Live['speed']>({ ch: {}, dev: {} })
     const [build, setBuild] = useState<Build | null>(null)
+    /* Один объект истории на жизнь экрана; сбрасывать его при перезапуске эффекта (refresh) нельзя. */
+    const history = useRef<History | null>(null)
+    if (!history.current) history.current = loadHistory()
+    /* Темы круга — кто и что смотрит (см. Live.want). Счётчик, а не флаг: «Запросы» и «DNS» просят
+     * один и тот же журнал имён, и уход одного не должен отнять его у другого. */
+    const topics = useRef<Record<FeedTopic, number>>({ conns: 0, dnsLog: 0, engineLog: 0 })
+    const [conns, setConns] = useState<ConnsReply | null>(null)
+    const [dnsLog, setDnsLog] = useState<DnsLog | null>(null)
+    const [engineLog, setEngineLog] = useState<string[] | null>(null)
+    /** Внеочередной вызов тем — ставит эффект опроса: тема, которую только что попросили, не ждёт пять
+     *  секунд, а состояние ради неё не перечитывается. */
+    const kick = useRef<() => void>(() => {})
+    const want = useRef((topic: FeedTopic) => {
+        topics.current[topic]++
+        kick.current()
+        let on = true
+        return () => {
+            if (!on) return
+            on = false
+            if (--topics.current[topic] > 0) return
+            if (topic === 'conns') setConns(null)
+            else if (topic === 'dnsLog') setDnsLog(null)
+            else setEngineLog(null)
+        }
+    }).current
     /* Версии — из памяти браузера: за ними роутер ходит на GitHub (или по обходным путям),
      * и полторы секунды на каждый из двух вопросов при каждом открытии окна — ради чисел,
      * которые меняются раз в неделю. Запомненное рисуется сразу; свежее спрашивается, когда
@@ -419,6 +473,21 @@ export function useLive(): Live {
             const p = prev.current
             if (p) {
                 const ms = now - p.t
+                const hist = history.current!
+                /* Замер короче секунды в историю не идёт: догоняющий круг выпускается сразу за быстрым, и
+                 * разница за считанные миллисекунды — это не «трафика не было», а «не успело накопиться». */
+                if (ms >= 1000) {
+                    for (const [n, v] of Object.entries(ch)) {
+                        const o = p.ch[n]
+                        if (o) hist.push(now, 'ch:' + n, bps(v.up - o.up, ms) ?? 0, bps(v.down - o.down, ms) ?? 0)
+                    }
+                    /* У устройства rx — скачанное, tx — отданное (fast.sh, fast_devices). */
+                    for (const [n, v] of Object.entries(dev)) {
+                        const o = p.dev[n]
+                        if (o) hist.push(now, 'dev:' + n, bps(v.tx - o.tx, ms) ?? 0, bps(v.rx - o.rx, ms) ?? 0)
+                    }
+                }
+                hist.save(now)
                 const chs: Live['speed']['ch'] = {}
                 for (const [n, v] of Object.entries(ch))
                     chs[n] = {
@@ -467,6 +536,9 @@ export function useLive(): Live {
              * оставлял бы следующий плановый опрос проверок там, где он и стоял, — то есть
              * через считанные секунды после только что полученного приговора. */
             round = withDiag ? 1 : round + 1
+            /* Темы круга уходят В ТОТ ЖЕ ТАКТ, что и состояние: LuCI складывает вызовы такта в один
+             * запрос к ubus. Ждётся ответ после основного — чтобы следующий круг не перекрыл их. */
+            const feedDone = fast ? null : pullFeed()
             try {
                 /* Тело круга — отдельной функцией, а не ветками с `return` прямо здесь: из
                  * этого места надо ВСЕГДА дойти до догоняющего круга ниже, а ранний `return`
@@ -514,6 +586,7 @@ export function useLive(): Live {
                     }
                     finish(r.status, r.devices || null, r.net || null, r.diag ?? null)
                 })()
+                if (feedDone) await feedDone
             } finally {
                 inflight = false
             }
@@ -531,7 +604,24 @@ export function useLive(): Live {
              * отбросил бы сам себя. */
             if (fast && !stop) void load('diag')
         }
+        /* Что сейчас смотрят — то и спрашиваем; ответ отброшен, если тему уже отпустили. Отказ темы
+         * не отказ круга: у неё свой текст на экране. */
+        const pullFeed = (): Promise<unknown> | null => {
+            const t = topics.current
+            const jobs: Promise<unknown>[] = []
+            if (t.conns > 0)
+                jobs.push(rpc.conns().then((r) => { if (!stop && topics.current.conns > 0) setConns(r) })
+                    .catch(() => { if (!stop && topics.current.conns > 0) setConns({ error: 'unavailable' }) }))
+            if (t.dnsLog > 0)
+                jobs.push(rpc.dnsLog().then((r) => { if (!stop && topics.current.dnsLog > 0) setDnsLog(r) })
+                    .catch(() => { if (!stop && topics.current.dnsLog > 0) setDnsLog(null) }))
+            if (t.engineLog > 0)
+                jobs.push(rpc.engineState().then((e) => { if (!stop && topics.current.engineLog > 0) setEngineLog(e.log || []) })
+                    .catch(() => { if (!stop && topics.current.engineLog > 0) setEngineLog([]) }))
+            return jobs.length ? Promise.all(jobs) : null
+        }
         void load()
+        kick.current = () => { if (!document.hidden) void pullFeed() }
         /* Опрос ЗАМИРАЕТ, пока вкладка скрыта, и догоняет одним кругом при возврате.
          *
          * Круг стоит роутеру пяти запусков shell-скрипта плюс двух запусков движка, и на
@@ -555,6 +645,7 @@ export function useLive(): Live {
         document.addEventListener('visibilitychange', onVisible)
         return () => {
             stop = true
+            kick.current = () => {}
             clearInterval(id)
             document.removeEventListener('visibilitychange', onVisible)
         }
@@ -636,7 +727,7 @@ export function useLive(): Live {
           : null
 
     return {
-        status, error, errorKind: fault?.kind ?? null, diag, diagOld, devs, speed, build, net, releases, selfUpdate, stale, phase,
+        status, error, errorKind: fault?.kind ?? null, diag, diagOld, devs, speed, history: history.current, conns, dnsLog, engineLog, want, build, net, releases, selfUpdate, stale, phase,
         refresh: () => setNonce((n) => n + 1),
     }
 }

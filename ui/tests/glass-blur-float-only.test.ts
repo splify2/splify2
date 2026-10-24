@@ -18,7 +18,7 @@ function blurRules(css: string): string[] {
     const re = /([^{}]+)\{([^{}]*)\}/g
     const text = strip(css)
     for (let m = re.exec(text); m; m = re.exec(text)) {
-        if (/backdrop-filter\s*:\s*(?!none)/.test(m[2])) out.push(m[1].replace(/@supports[^{]*\{/, '').trim())
+        if (/backdrop-filter\s*:(?!\s*none)/.test(m[2])) out.push(m[1].replace(/@supports[^{]*\{/, '').trim())
     }
     return out
 }
@@ -44,7 +44,7 @@ describe('стекло: размытие только у плавающих по
     it('в пульте нет своих backdrop-filter и backdrop-blur', () => {
         const hits = sources(join(ROOT, 'src')).flatMap((p) => {
             const text = p.endsWith('.css') ? strip(readFileSync(p, 'utf8')) : readFileSync(p, 'utf8')
-            return /backdrop-filter\s*:\s*(?!none)|\bbackdrop-blur/.test(text) ? [p] : []
+            return /backdrop-filter\s*:(?!\s*none)|\bbackdrop-blur/.test(text) ? [p] : []
         })
         expect(hits).toEqual([])
     })

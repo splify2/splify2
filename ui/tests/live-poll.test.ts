@@ -264,3 +264,68 @@ describe('круг опроса: один вызов вместо пяти', () 
         expect(result.current.status).toBeNull()
     })
 })
+
+describe('круг опроса: темы экранов едут в том же круге', () => {
+    beforeEach(() => {
+        vi.restoreAllMocks()
+        window.localStorage.clear()
+        vi.spyOn(rpc, 'engine').mockResolvedValue({ present: true, vless: true } as never)
+        vi.spyOn(rpc, 'steerVersions').mockResolvedValue({} as never)
+        vi.spyOn(rpc, 'splify2Versions').mockResolvedValue({} as never)
+    })
+
+    it('пока темы никто не просит, имён, соединений и журнала круг не спрашивает', async () => {
+        mockLive()
+        const conns = vi.spyOn(rpc, 'conns')
+        const dnsLog = vi.spyOn(rpc, 'dnsLog')
+        const engineState = vi.spyOn(rpc, 'engineState')
+        const { result } = renderHook(() => useLive())
+        await waitFor(() => expect(result.current.status).not.toBeNull())
+        for (const s of [conns, dnsLog, engineState]) expect(s).not.toHaveBeenCalled()
+    })
+
+    it('want() спрашивает тему сразу, без перечитывания состояния; отпущенная тема сбрасывается', async () => {
+        const live = mockLive()
+        const conns = vi.spyOn(rpc, 'conns').mockResolvedValue({ conns: [], shown: 0, total: 0 } as never)
+        const { result } = renderHook(() => useLive())
+        await waitFor(() => expect(result.current.status).not.toBeNull())
+        const before = live.mock.calls.length
+        let off = () => {}
+        act(() => { off = result.current.want('conns') })
+        await waitFor(() => expect(result.current.conns).not.toBeNull())
+        expect(conns).toHaveBeenCalledTimes(1)
+        expect(live.mock.calls.length).toBe(before)
+        act(() => off())
+        expect(result.current.conns).toBeNull()
+    })
+
+    it('два желающих одну тему: уход одного не отнимает её у другого', async () => {
+        mockLive()
+        vi.spyOn(rpc, 'dnsLog').mockResolvedValue({ running: true, names: [] } as never)
+        const { result } = renderHook(() => useLive())
+        await waitFor(() => expect(result.current.status).not.toBeNull())
+        let a = () => {}
+        act(() => { a = result.current.want('dnsLog'); result.current.want('dnsLog') })
+        await waitFor(() => expect(result.current.dnsLog).not.toBeNull())
+        act(() => a())
+        expect(result.current.dnsLog).not.toBeNull()
+    })
+
+    it('замеры скорости копятся в истории: по правилу и по устройству', async () => {
+        vi.useFakeTimers({ shouldAdvanceTime: true })
+        let n = 0
+        vi.spyOn(rpc, 'live').mockImplementation(async () => {
+            n++
+            return {
+                status: { schema: 1, outputs: {}, channels: [{ name: 'YT', out: 'v', bytes: n * 1_000_000, down_bytes: n * 5_000_000 }] },
+                devices: { wg0: { rx: String(n * 5_000_000), tx: String(n * 1_000_000), rx_packets: '1', tx_packets: '1' } },
+                net: NET,
+            } as never
+        })
+        const { result } = renderHook(() => useLive())
+        await waitFor(() => expect(result.current.status).not.toBeNull())
+        await act(async () => { await vi.advanceTimersByTimeAsync(5100) })
+        await waitFor(() => expect(result.current.history.series('ch:YT').length).toBeGreaterThan(0))
+        expect(result.current.history.series('dev:wg0')[0].down).toBeGreaterThan(0)
+    })
+})

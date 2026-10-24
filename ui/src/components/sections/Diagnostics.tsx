@@ -1,12 +1,10 @@
 import { useEffect, useMemo, useState } from 'react'
-import { Check, ChevronDown, Info, RefreshCw, Search, TriangleAlert, X, XCircle } from 'lucide-react'
+import { Check, ChevronDown, Info, Search, TriangleAlert, X, XCircle } from 'lucide-react'
 import { Button } from '@/components/ui/button'
-import { ConnsCard, NamesCard } from '@/components/ObserveCards'
 import { Block, CardHead } from '@/components/ui/layout'
 import { blankInstall } from '@/lib/blank'
 import { type Live } from '@/lib/live'
 import { parseLog } from '@/lib/log'
-import { rpc } from '@/lib/rpc'
 
 import { S } from '@/copy'
 /** Диагностика: то, за чем приходят, когда «применилось, но не работает».
@@ -24,7 +22,8 @@ import { S } from '@/copy'
 const OK_FOLD = 6
 
 export default function Diagnostics({ live, board = false }: { live: Live; board?: boolean }) {
-    /* Журнал движка спрашивает ЭТОТ экран, пока он открыт, а не общий круг опроса.
+    /* Журнал движка спрашивается, ТОЛЬКО пока этот экран открыт: тему просит экран, а спрашивает
+     * общий круг опроса (lib/live.ts), в том же такте, что и состояние.
      *
      * Читает его один-единственный список — тот, что ниже, — а стоил он дороже всего
      * остального вместе взятого: `logread -l 300 | grep steer` это 76 мс на каждом круге,
@@ -35,36 +34,12 @@ export default function Diagnostics({ live, board = false }: { live: Live; board
      * своим ответом, строки журнала — своим, и сверять их между собой незачем — это
      * разные вопросы. Расхождение мгновений опасно там, где два числа об одном и том же
      * (см. шапку lib/live.ts), а здесь такого нет. */
-    const [log, setLog] = useState<string[] | null>(null)
+    const log = live.engineLog
     const [logFilter, setLogFilter] = useState('')
-    const [refreshingLog, setRefreshingLog] = useState(false)
     const [allOk, setAllOk] = useState(false)
-
-    const pull = async () => {
-        setRefreshingLog(true)
-        try {
-            const e = await rpc.engineState()
-            setLog(e.log || [])
-        } catch {
-            setLog([])
-        } finally {
-            setRefreshingLog(false)
-        }
-    }
-
-    useEffect(() => {
-        let stop = false
-        const timerPull = () => {
-            if (!stop && !document.hidden) {
-                rpc.engineState()
-                    .then((e) => { if (!stop) setLog(e.log || []) })
-                    .catch(() => { if (!stop) setLog([]) })
-            }
-        }
-        void timerPull()
-        const id = setInterval(timerPull, 5000)
-        return () => { stop = true; clearInterval(id) }
-    }, [])
+    /* Журнал просится у общего опроса, пока экран открыт (live.want): своего таймера у экрана нет. */
+    const { want } = live
+    useEffect(() => want('engineLog'), [want])
 
     const filteredLog = useMemo(() => {
         if (!log) return []
@@ -92,18 +67,6 @@ export default function Diagnostics({ live, board = false }: { live: Live; board
                               : live.diag?.warn
                                 ? S.diagnostics.proverokSPreduprezhdeniem(live.diag.warn)
                                 : S.diagnostics.vseVPoryadke
-    const logRefresh = (
-                    <Button
-                        variant="ghost"
-                        size="sm"
-                        className="h-8 gap-1.5 px-2 text-xs text-muted-foreground hover:text-foreground"
-                        disabled={refreshingLog}
-                        onClick={() => void pull()}
-                    >
-                        <RefreshCw className={`h-3.5 w-3.5 ${refreshingLog ? 'animate-spin' : ''}`} />
-                        <span>{S.diagnostics.obnovit}</span>
-                    </Button>
-    )
     const logBody = (
                 <div className="space-y-2">
                     {log && log.length > 0 && (
@@ -224,15 +187,8 @@ export default function Diagnostics({ live, board = false }: { live: Live; board
                 </section>
 
                 <section className={GROUP}>
-                    <h2 className="sp-sub px-1 pt-1">{S.diagnostics.trafikSeychas}</h2>
-                    <ConnsCard />
-                    <NamesCard />
-                </section>
-
-                <section className={GROUP}>
                     <div className="flex items-center justify-between gap-2 px-1 pt-1">
                         <h2 className="sp-sub">{S.diagnostics.logiSteer}</h2>
-                        {logRefresh}
                     </div>
                     <div className={TILE}>{logBody}</div>
                 </section>
@@ -311,14 +267,9 @@ export default function Diagnostics({ live, board = false }: { live: Live; board
                 )}
             </Block>
 
-            {/* Что ядро делает с трафиком сейчас: соединения через выходы и недавние имена. */}
-            <ConnsCard />
-            <NamesCard />
-
             <Block>
                 <CardHead
                     title={S.diagnostics.logiSteer}
-                    action={logRefresh}
                 />
                 {logBody}
             </Block>

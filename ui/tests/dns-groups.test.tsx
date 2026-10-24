@@ -9,22 +9,7 @@ let current: Spec
 vi.mock('@/lib/pending', () => ({
     pending: { load: vi.fn(async () => current), edit: (s: Spec) => edit(s), onReplaced: () => () => {} },
 }))
-vi.mock('@/lib/rpc', () => ({
-    rpc: {
-        dnsLog: vi.fn(async () => ({
-            running: true,
-            upstreams: [
-                { name: 'q9', url: 'https://dns.quad9.net/dns-query', proto: 'doh', via: null, state: 'down', ok: 0 },
-                { name: 'cf', url: 'https://cloudflare-dns.com/dns-query', proto: 'doh', via: null, state: 'ready', ok: 5 },
-                {
-                    name: 'rules', url: '', proto: 'group', via: null, state: 'ready', mode: 'failover', active: 'cf', ok: 5,
-                    servers: [{ name: 'q9', pause: 17, ok: 0, failed: 3 }, { name: 'cf', pause: 0, ok: 5, failed: 0 }],
-                },
-            ],
-            other: { name: 'cf', pause: 40, ok: 1, failed: 2, fallback: 2 },
-        })),
-    },
-}))
+vi.mock('@/lib/rpc', () => ({ rpc: {} }))
 const notify = vi.fn()
 vi.mock('@/lib/notify', () => ({ notify: (...a: unknown[]) => notify(...a) }))
 
@@ -35,7 +20,20 @@ import { S } from '@/copy'
 // несколько (группа серверов ядра: порядок, «сразу все / по очереди»). Видимость — по умениям ядра
 // dns_groups и dns_other; записанное в спеке видно и снимается и без них.
 
-const live = (features: string[]) => ({ status: { features } }) as unknown as Live
+/* Состояние резолвера приходит из общего опроса (live.dnsLog), а не своим вызовом экрана. */
+const DNSLOG = {
+            running: true,
+            upstreams: [
+                { name: 'q9', url: 'https://dns.quad9.net/dns-query', proto: 'doh', via: null, state: 'down', ok: 0 },
+                { name: 'cf', url: 'https://cloudflare-dns.com/dns-query', proto: 'doh', via: null, state: 'ready', ok: 5 },
+                {
+                    name: 'rules', url: '', proto: 'group', via: null, state: 'ready', mode: 'failover', active: 'cf', ok: 5,
+                    servers: [{ name: 'q9', pause: 17, ok: 0, failed: 3 }, { name: 'cf', pause: 0, ok: 5, failed: 0 }],
+                },
+            ],
+            other: { name: 'cf', pause: 40, ok: 1, failed: 2, fallback: 2 },
+}
+const live = (features: string[]) => ({ status: { features }, dnsLog: DNSLOG, want: () => () => {} }) as unknown as Live
 const ALL = live(['groups', 'dns_groups', 'dns_other'])
 const last = () => edit.mock.calls.at(-1)![0] as Spec
 const rulesBox = () => screen.getByRole('group', { name: S.dns.dlyaImenPodPravilami })

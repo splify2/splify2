@@ -5,6 +5,7 @@ import PoolList from '@/components/PoolList'
 import IfacesPanel from '@/components/IfacesPanel'
 import VlessScreen from '@/components/VlessScreen'
 import XsteerPanel from '@/components/XsteerPanel'
+import SubsBoard from '@/components/board/SubsBoard'
 import { rpc } from '@/lib/rpc'
 import { usePending } from '@/lib/pending'
 import { devList, isPart, isTunnelKind } from '@/lib/model'
@@ -12,6 +13,10 @@ import { type Live } from '@/lib/live'
 
 import { S } from '@/copy'
 /** VPN: чем роутер выходит наружу.
+ *
+ *  Ссылки подписок — сверху, прямо на экране: добавить, обновить, удалить (SubsBoard). Под ними три
+ *  входа и один список. Экран один и в LuCI, и в приложении для компьютера (R-156): раньше доска
+ *  приложения показывала только ссылки, а туннели, интерфейсы и xsteer жили лишь под LuCI.
  *
  *  Три входа и один список. Входы отвечают на «что у меня есть»: свои туннели, узлы подписки,
  *  звезда xsteer. Список ниже — выходы, то есть то, во что правила ведут трафик; выход
@@ -31,7 +36,7 @@ type Screen = 'root' | 'ifaces' | 'vless' | 'xsteer'
 
 const TITLE: Record<Exclude<Screen, 'root'>, string> = {
     ifaces: S.vpn.svoiTunneli,
-    vless: S.vpn.podpiski,
+    vless: S.vpn.uzlyPodpisok,
     xsteer: 'XSTEER',
 }
 
@@ -93,6 +98,7 @@ export default function Vpn({ live }: { live: Live }) {
      * с нуля, то есть закрывала бы редактор в момент открытия. */
     return (
         <div className="space-y-4">
+            {!editing && <SubsBoard />}
             {!editing && <Group>
                 {/* «Свои туннели», а не «VPN»: строка «VPN» внутри раздела VPN не говорила,
                     что за ней — WireGuard, AmneziaWG и прочие устройства самого роутера. */}
@@ -104,7 +110,7 @@ export default function Vpn({ live }: { live: Live }) {
                 />
                 <TapRow
                     icon={Globe}
-                    title={S.vpn.podpiski}
+                    title={S.vpn.uzlyPodpisok}
                     /* «ВЗЯТЫ», а не «подписок» — и это не придирка к слову. Оба числа
                        считаются по ВЫХОДАМ спеки, то есть говорят, сколько подписок и
                        локаций взято в работу. Подпись «подписок: 1» при двух заведённых

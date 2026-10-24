@@ -1,4 +1,4 @@
-import { Bug, Heart, House, Lock, Route, Send, Settings, ShieldCheck, Stethoscope } from 'lucide-react'
+import { Bug, Heart, House, ListTree, Lock, Route, Send, Settings, ShieldCheck, Stethoscope } from 'lucide-react'
 import EngineToggle from '@/components/EngineToggle'
 import { type Live } from '@/lib/live'
 import { assetUrl } from '@/lib/assets'
@@ -31,6 +31,7 @@ const ITEMS: { id: SectionId | string; label: string; icon: typeof House }[] = [
     { id: 'rules', label: S.rail.pravila, icon: Route },
     { id: 'vpn', label: 'VPN', icon: ShieldCheck },
     { id: 'dns', label: 'DNS', icon: Lock },
+    { id: 'requests', label: S.rail.zaprosy, icon: ListTree },
     { id: 'diag', label: S.rail.diagnostika, icon: Stethoscope },
     { id: 'settings', label: S.rail.nastroyki, icon: Settings },
 ]
@@ -166,7 +167,7 @@ export default function Rail({ live, section, onSection, counts, extra, hide }: 
                 меню у темы спрятано, и панель была целой; отсюда «не всегда». */}
             <nav
                 aria-label={S.rail.razdely}
-                className="an-glass-chrome an-glass-float sp-bottom-bar fixed bottom-0 z-40 flex border-t lg:hidden"
+                className="an-glass-chrome an-glass-float sp-bottom-bar fixed bottom-0 z-40 flex overflow-x-auto border-t lg:hidden"
             >
                 {items.map(({ id, label, icon: Icon }) => {
                     const on = section === id
@@ -176,10 +177,13 @@ export default function Rail({ live, section, onSection, counts, extra, hide }: 
                             key={id}
                             type="button"
                             aria-current={on ? 'page' : undefined}
+                            ref={on ? (el) => el?.scrollIntoView?.({ block: 'nearest', inline: 'nearest' }) : undefined}
                             onClick={() => onSection(id)}
                             className={[
-                                'relative flex min-w-0 flex-auto flex-col items-center gap-1 px-0.5 pb-2 pt-2.5',
-                                /* Шесть пунктов: ширина по подписи (flex-auto), а не поровну — «Диагностика»
+                                'relative flex min-w-[3.75rem] flex-auto flex-col items-center gap-1 px-0.5 pb-2 pt-2.5',
+                                /* Пунктов больше шести (рельс приложения приносит свои) не сжимаются до нечитаемого: у
+                                   каждого нижняя граница ширины, остальное — прокрутка панели вбок, активный пункт
+                                   подводится в видимую часть (ниже). Шесть пунктов: ширина по подписи (flex-auto), а не поровну — «Диагностика»
                                    длиннее «VPN» вчетверо, и поровну ей не хватало буквы даже на 390 px. */
                                 'text-[10px] leading-tight tracking-[-0.01em] transition-colors duration-200',
                                 'focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-primary',

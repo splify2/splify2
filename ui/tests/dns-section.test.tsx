@@ -8,25 +8,28 @@ let current: Spec
 vi.mock('@/lib/pending', () => ({
     pending: { load: vi.fn(async () => current), edit: (s: Spec) => edit(s), onReplaced: () => () => {} },
 }))
-vi.mock('@/lib/rpc', () => ({
-    rpc: {
-        dnsLog: vi.fn(async () => ({
-            running: true,
-            upstreams: [{ name: 'google', url: 'https://dns.google/dns-query', proto: 'doh', via: 'wg0', state: 'down', ok: 0, error: 'нет ответа за 4000 мс' }],
-            cache: { entries: 12, max: 512, hits: 40, misses: 7, stored: 12, evicted: 0 },
-        })),
-    },
-}))
+vi.mock('@/lib/rpc', () => ({ rpc: {} }))
 vi.mock('@/lib/notify', () => ({ notify: vi.fn() }))
 
 import Dns from '@/components/sections/Dns'
-import { rpc } from '@/lib/rpc'
+import { live } from './fixtures'
+import type { DnsLog } from '@/lib/rpc'
 import { S } from '@/copy'
 
 // Раздел DNS: серверы резолвера движка (DoH, DoT, DoQ, обычный DNS), выход для запроса, общий
 // сервер, кэш и режим. Проверяется то, что уходит в спеку, и что состояние серверов видно.
 
+/* Состояние резолвера приходит из общего опроса (live.dnsLog), а не своим вызовом экрана. */
+const DEFAULT_LOG = {
+            running: true,
+            upstreams: [{ name: 'google', url: 'https://dns.google/dns-query', proto: 'doh', via: 'wg0', state: 'down', ok: 0, error: 'нет ответа за 4000 мс' }],
+            cache: { entries: 12, max: 512, hits: 40, misses: 7, stored: 12, evicted: 0 },
+} as unknown as DnsLog
+let LOG: DnsLog = DEFAULT_LOG
+const view = () => <Dns live={live({ dnsLog: LOG })} />
+
 beforeEach(() => {
+    LOG = DEFAULT_LOG
     edit.mockClear()
     current = {
         outputs: { direct: { name: 'direct', kind: 'direct' }, wg0: { name: 'wg0', kind: 'interface', device: 'wg0' } },
@@ -37,7 +40,7 @@ beforeEach(() => {
 
 describe('раздел DNS', () => {
     it('показывает сервер, его выход и состояние из журнала резолвера', async () => {
-        render(<Dns />)
+        render(view())
         expect(await screen.findByLabelText('имя сервера google')).toBeInTheDocument()
         await waitFor(() => expect(screen.getByText(/DoH · не отвечает/)).toBeInTheDocument())
         expect(screen.getByText('нет ответа за 4000 мс')).toBeInTheDocument()
@@ -45,7 +48,7 @@ describe('раздел DNS', () => {
     })
 
     it('добавление готового сервера пишет его в dns.upstreams с адресами', async () => {
-        render(<Dns />)
+        render(view())
         await screen.findByLabelText('имя сервера google')
         await userEvent.selectOptions(screen.getByDisplayValue('Cloudflare (DoH)'), 'quad9')
         fireEvent.click(screen.getByRole('button', { name: /Добавить$/ }))
@@ -55,7 +58,7 @@ describe('раздел DNS', () => {
     })
 
     it('смена выхода сервера и режима доходит до спеки', async () => {
-        render(<Dns />)
+        render(view())
         await screen.findByLabelText('имя сервера google')
         await userEvent.selectOptions(screen.getByDisplayValue('wg0'), '')
         const a = edit.mock.calls.at(-1)![0] as Spec
@@ -66,7 +69,7 @@ describe('раздел DNS', () => {
     })
 
     it('удаление сервера снимает его и общий выбор', async () => {
-        render(<Dns />)
+        render(view())
         await screen.findByLabelText('имя сервера google')
         fireEvent.click(screen.getByLabelText('убрать google'))
         const next = edit.mock.calls.at(-1)![0] as Spec
@@ -76,14 +79,14 @@ describe('раздел DNS', () => {
 
     it('сервер, выбранный в правиле, не удаляется', async () => {
         current = { ...current, channels: [{ name: 'Новости', out: 'wg0', dns: 'google', match: { domains_files: ['/l/a.lst'] } }] }
-        render(<Dns />)
+        render(view())
         await screen.findByLabelText('имя сервера google')
         fireEvent.click(screen.getByLabelText('убрать google'))
         expect(edit).not.toHaveBeenCalled()
     })
 
     it('bootstrap у отдельного сервера уходит в его upstream', async () => {
-        render(<Dns />)
+        render(view())
         await screen.findByLabelText('имя сервера google')
         await userEvent.type(screen.getByLabelText(S.dns.razreshatImyaCherez), '1.1.1.1, 9.9.9.9')
         await userEvent.tab()
@@ -92,7 +95,7 @@ describe('раздел DNS', () => {
     })
 
     it('сроки кэша — в dns.cache_ttl, пока кэш включён', async () => {
-        render(<Dns />)
+        render(view())
         await screen.findByLabelText('имя сервера google')
         fireEvent.input(screen.getByLabelText(S.dns.hranitNeMenshe), { target: { value: '60' } })
         let next = edit.mock.calls.at(-1)![0] as Spec
@@ -105,13 +108,13 @@ describe('раздел DNS', () => {
 
     it('сроков кэша нет, пока кэш выключен', async () => {
         current = { ...current, dns: { ...current.dns, cache: undefined } }
-        render(<Dns />)
+        render(view())
         await screen.findByLabelText('имя сервера google')
         expect(screen.queryByLabelText(S.dns.hranitNeMenshe)).toBeNull()
     })
 
     it('у сервера видно HTTP-версию и 0-RTT из журнала резолвера', async () => {
-        vi.mocked(rpc.dnsLog).mockResolvedValue({
+        LOG = ({
             running: true,
             upstreams: [
                 { name: 'google', url: 'https://dns.google/dns-query', proto: 'doh', via: null, state: 'ready', ok: 3, http: 'h2' },
@@ -119,40 +122,40 @@ describe('раздел DNS', () => {
             ],
         } as never)
         current = { ...current, dns: { upstreams: { ...current.dns!.upstreams, adguard: { url: 'quic://dns.adguard-dns.com', ips: ['94.140.14.14'] } } } }
-        render(<Dns />)
+        render(view())
         await waitFor(() => expect(screen.getByText(/DoH · работает/).textContent).toContain(S.dns.http('h2')))
         expect(screen.getByText(/DoQ · работает/).textContent).toContain(S.dns.early(4, 1))
     })
 
     it('старая ошибка не висит под работающим сервером: после неё уже были ответы', async () => {
-        vi.mocked(rpc.dnsLog).mockResolvedValue({
+        LOG = ({
             running: true,
             upstreams: [{ name: 'google', url: 'https://dns.google/dns-query', proto: 'doh', via: 'wg0', state: 'ready',
                 ok: 5551, error: 'нет ответа за 4000 мс', error_ago: 600, last_ok_ago: 2 }],
         } as never)
-        render(<Dns />)
+        render(view())
         await waitFor(() => expect(screen.getByText(/DoH · работает/)).toBeInTheDocument())
         expect(screen.queryByText('нет ответа за 4000 мс')).toBeNull()
     })
 
     it('«сервер закрыл соединение» не висит под «ждёт вопросов»', async () => {
-        vi.mocked(rpc.dnsLog).mockResolvedValue({
+        LOG = ({
             running: true,
             upstreams: [{ name: 'google', url: 'https://dns.google/dns-query', proto: 'doh', via: 'wg0', state: 'idle',
                 ok: 595, error: 'сервер закрыл соединение', error_ago: 30, last_ok_ago: 300 }],
         } as never)
-        render(<Dns />)
+        render(view())
         await waitFor(() => expect(screen.getByText(/DoH · ждёт вопросов/)).toBeInTheDocument())
         expect(screen.queryByText('сервер закрыл соединение')).toBeNull()
     })
 
     it('свежая ошибка видна: после неё сервер ещё не отвечал', async () => {
-        vi.mocked(rpc.dnsLog).mockResolvedValue({
+        LOG = ({
             running: true,
             upstreams: [{ name: 'google', url: 'https://dns.google/dns-query', proto: 'doh', via: 'wg0', state: 'down',
                 ok: 10, error: 'нет ответа за 4000 мс', error_ago: 3, last_ok_ago: 120 }],
         } as never)
-        render(<Dns />)
+        render(view())
         expect(await screen.findByText('нет ответа за 4000 мс')).toBeInTheDocument()
     })
 })

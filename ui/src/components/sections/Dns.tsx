@@ -285,7 +285,9 @@ function DnsTarget({ spec, dns, which, label, names, canGroup, log, onDns }: {
 
 export default function Dns({ live, board = false }: { live?: Live; board?: boolean }) {
     const [spec, setSpec] = useSpecCopy()
-    const [log, setLog] = useState<DnsLog | null>(null)
+    /* Состояние серверов и кэш — из общего опроса (lib/live.ts): экран просит тему, а своего таймера
+     * у него нет. */
+    const log: DnsLog | null = live?.dnsLog ?? null
     const [preset, setPreset] = useState(PRESETS[0].name)
     const [allPresets, setAllPresets] = useState(false)
     /** Сервер, чьи поля открыты под карточками. */
@@ -299,13 +301,8 @@ export default function Dns({ live, board = false }: { live?: Live; board?: bool
         return next
     })
 
-    useEffect(() => {
-        let stop = false
-        const tick = () => rpc.dnsLog().then((l) => { if (!stop) setLog(l) }).catch(() => { if (!stop) setLog(null) })
-        void tick()
-        const id = setInterval(tick, 5000)
-        return () => { stop = true; clearInterval(id) }
-    }, [])
+    const want = live?.want
+    useEffect(() => want?.('dnsLog'), [want])
 
     /* Проверка — при открытии вкладки (приложение для ПК), когда спека уже есть. */
     const probeRef = useRef<() => void>(() => {})

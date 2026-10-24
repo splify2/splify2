@@ -2,6 +2,7 @@
  * в документе, как и требует shadow root: Chrome не видит @font-face внутри него), токены --an-*
  * и стекло (.an-backdrop, .an-glass, .an-glass-chrome). Свои --sp-* ниже берут значения отсюда. */
 @import "@andromeda/ui/styles.css";
+@import "./board.css";
 
 @tailwind base;
 @tailwind components;
@@ -481,6 +482,10 @@
     left: var(--sp-inset-l, 0px);
     right: var(--sp-inset-r, 0px);
   }
+  /* Панель может не уместиться (семь пунктов и больше) — тогда она прокручивается вбок, без полосы:
+   * полоса заняла бы нижние пиксели, а продолжение видно по обрезанному пункту. */
+  .splify-react-root .sp-bottom-bar { scrollbar-width: none; }
+  .splify-react-root .sp-bottom-bar::-webkit-scrollbar { display: none; }
   /* Середина подложки для плавающих элементов (пилюля «Применить»): у fixed проценты
    * считаются от окна, поэтому середина выводится из тех же измеренных полей. */
   .splify-react-root .sp-float-center {
