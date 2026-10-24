@@ -335,6 +335,16 @@ function sameButClients(a: Channel, b: Channel): boolean {
     return strip(a) === strip(b)
 }
 
+/** Совпадают ли два правила во всём, кроме списков: спутник, который записала encodeSpec,
+ *  отличается от родителя только ими. Правило, которое человек сам назвал «X (порты)», с
+ *  другим режимом, DNS, выключением или клиентами — другое правило, и складывать его в «X»
+ *  значило бы молча потерять эти настройки. */
+function sameButLists(a: Channel, b: Channel): boolean {
+    const strip = ({ name: _n, match: _m, narrow: _w, file_extra: _x, all_extra: _a, raw_lists: _r, ...x }: Channel) =>
+        JSON.stringify({ ...x, mode: _m.mode })
+    return strip(a) === strip(b)
+}
+
 function decodeV2(d: J): Spec {
     const lan = isObj(d.lan) ? d.lan : {}
     const clients = isObj(d.clients) ? d.clients : {}
@@ -433,7 +443,7 @@ function decodeV2(d: J): Spec {
     const folded: Channel[] = []
     for (const ch of channels) {
         const m = SUFFIX_RE.exec(ch.name)
-        const parent = m ? [...folded].reverse().find((p) => p.name === m[1] && p.out === ch.out) : undefined
+        const parent = m ? [...folded].reverse().find((p) => p.name === m[1] && p.out === ch.out && sameButLists(p, ch)) : undefined
         if (parent && !ch.match.any) {
             parent.match = {
                 ...parent.match,
