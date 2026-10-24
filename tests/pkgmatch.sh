@@ -559,6 +559,8 @@ STUB
             без-службы) rm -f "$TSP/root/etc/init.d/steer" ;;
             спека)      printf '{"version":2}\n' > "$TSP/root/etc/steer/spec.json" ;;
             yaml)       printf 'version: 2\n' > "$TSP/root/etc/steer/spec.yaml" ;;
+            откат)      printf 'version: 2\n' > "$TSP/root/etc/steer/spec.yaml"; : > "$TSP/root/etc/steer/spec.json.bak"
+                        mkdir -p "$TSP/root/usr/sbin"; printf '#!/bin/sh\necho "{\\"version\\":2}"\n' > "$TSP/root/usr/sbin/steer"; chmod +x "$TSP/root/usr/sbin/steer" ;;
             коннектор)  printf '# sing-box от steer-box-connector\n' > "$TSP/root/etc/init.d/sing-box" ;;
         esac
     done
@@ -588,6 +590,10 @@ if [ -s "$TSP/blk.sh" ] && [ "$(grep -v '^[[:space:]]*#' "$TSP/blk.sh" | grep '/
     spec_blk работает yaml
     check "рядом spec.yaml: второй файл не заводится" "no" "$(spec_has)"
     check "  и служба не тронута" "" "$(spec_calls)"
+
+    spec_blk откат
+    check "откат с 26.11: spec.yaml с копией панели вернулся в spec.json" '{"version":2};yes' \
+        "$(cat "$TSP/root/etc/steer/spec.json" 2>/dev/null);$([ -s "$TSP/root/etc/steer/spec.yaml.bak" ] && echo yes || echo no)"
 
     spec_blk работает коннектор
     check "ядро ведёт коннектор: спека не заводится" "no" "$(spec_has)"

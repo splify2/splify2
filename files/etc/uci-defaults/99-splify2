@@ -144,6 +144,15 @@ done
 # корень — тот же шов `_r`, что у блока выше, на роутере он пуст.
 # >>> пустая спека и служба ядра
 SPEC="$_r/etc/steer/spec.json"
+# Откат с 26.11: spec.yaml от перевода панелью (рядом копия spec.json.bak) возвращается в spec.json
+# ядром — эта версия читает только его. Та же логика и условия — fast.sh, spec_rollback.
+if [ ! -s "$SPEC" ] && [ -s "$_r/etc/steer/spec.yaml" ] &&
+   [ -e "$SPEC.bak" ] &&
+   "$_r/usr/sbin/steer" spec convert --json --spec "$_r/etc/steer/spec.yaml" > "$SPEC.new" 2>/dev/null &&
+   [ "$(head -c 1 "$SPEC.new")" = "{" ]; then
+    mv "$SPEC.new" "$SPEC" && mv "$_r/etc/steer/spec.yaml" "$_r/etc/steer/spec.yaml.bak"
+fi
+rm -f "$SPEC.new" 2>/dev/null
 if [ ! -s "$SPEC" ] && [ ! -s "$_r/etc/steer/spec.yaml" ] &&
    ! grep -q steer-box-connector "$_r/etc/init.d/sing-box" 2>/dev/null; then
     mkdir -p "$_r/etc/steer" 2>/dev/null

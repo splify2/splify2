@@ -497,6 +497,12 @@ echo "$*" >> "$SANDBOX/steer.log"
 # Проверка узла: движок пишет предупреждения в stderr, а JSON — в stdout. Стенду нужно уметь
 # воспроизводить обе половины сразу: именно их смешение и ломало ответ.
 case "${1:-}" in
+    # spec convert --json (steer 2.0.6+): печатает STEER_SPEC_JSON; ядро без него (2.0.0–2.0.5)
+    # отвечает отказом разбора аргументов. Для отката 26.11 → 26.10.x (I-559).
+    spec)
+        [ -n "${STEER_SPEC_JSON:-}" ] || { echo "steer: неизвестная подкоманда" >&2; exit 2; }
+        printf '%s\n' "$STEER_SPEC_JSON"; exit 0
+        ;;
     # Разбор набора sing-box: движок кладёт домены в --out, подсети в --prefixes-out.
     # Содержимое поданного файла заглушке не важно — важно, что её вообще позвали и что
     # половины разошлись по разным файлам, а не слились в одну.
@@ -3356,6 +3362,26 @@ check "при spec.yaml рядом второй файл не заводится
 out="$(rpcd spec_get 2>/dev/null)"; rc=$?
 check "spec.yaml без spec.json: чтение отказывает" "1" "$rc"
 check "и пустой спеки не отдаёт" "" "$out"
+rm -f "$T/etc/spec.yaml"
+# ОТКАТ С 26.11 (I-559): spec.yaml остался от перевода панелью (рядом spec.json.bak), а spec.json нет.
+# Эта панель читает только spec.json — ядро печатает его само (convert --json), и спека читается целиком.
+printf 'version: 2\n' > "$T/etc/spec.yaml"; printf '{"version":2,"old":1}\n' > "$T/etc/spec.json.bak"
+out="$(STEER_SPEC_JSON='{"version":2,"outputs":{"direct":{"kind":"direct"},"wg":{"kind":"interface"}}}' rpcd spec_get 2>/dev/null)"; rc=$?
+check "откат: spec.yaml с копией панели — чтение отдаёт спеку" "0;direct,wg" \
+      "$rc;$(printf '%s' "$out" | python3 -c 'import json,sys; print(",".join(sorted(json.load(sys.stdin)["outputs"])))')"
+check "  spec.json лёг, а spec.yaml ушёл в spec.yaml.bak (две спеки ядро не читает)" "yes;no;yes" \
+      "$([ -s "$T/etc/spec.json" ] && echo yes || echo no);$([ -e "$T/etc/spec.yaml" ] && echo yes || echo no);$([ -s "$T/etc/spec.yaml.bak" ] && echo yes || echo no)"
+rm -f "$T/etc/spec.json" "$T/etc/spec.yaml.bak"
+# Ядро без convert --json: спека не тронута, чтение отказывает, как прежде.
+printf 'version: 2\n' > "$T/etc/spec.yaml"
+out="$(rpcd spec_get 2>/dev/null)"; rc=$?
+check "откат на ядре без convert --json: чтение отказывает, spec.yaml цел" "1;yes;no" \
+      "$rc;$([ -s "$T/etc/spec.yaml" ] && echo yes || echo no);$([ -e "$T/etc/spec.json" ] && echo yes || echo no)"
+# Без копии панели spec.yaml — рукописная спека человека: не переписываем даже при умелом ядре.
+rm -f "$T/etc/spec.json.bak"
+out="$(STEER_SPEC_JSON='{"version":2}' rpcd spec_get 2>/dev/null)"; rc=$?
+check "рукописный spec.yaml (копии панели нет) не переводится" "1;yes;no" \
+      "$rc;$([ -s "$T/etc/spec.yaml" ] && echo yes || echo no);$([ -e "$T/etc/spec.json" ] && echo yes || echo no)"
 rm -f "$T/etc/spec.yaml"
 # Ядро ведёт steer-box-connector: своя спека не заводится и служба steer не поднимается — иначе
 # открытие страницы ставило бы службу steer со своей спекой рядом с ядром коннектора, а сам
