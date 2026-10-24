@@ -1342,5 +1342,37 @@ check "TERM: прогон завершился, а не продолжил ра�
 check "TERM: замок снят" "no" "$([ -d "$T/var/update.lock" ] && echo yes || echo no)"
 pkill -f "$T/bin/curl" 2>/dev/null
 
+# ---- подгонка под память называет числа, а не молчит и не говорит «как есть» (I-545) ----------
+#
+# `steer fit` склеивает соседние подсети, и список после него — другой: меньше записей и больше
+# охват. Журнал и ответ обновления обязаны это сказать, с числами.
+rm -rf "$T/lists" "$T/var/last-update" "$T/var/update.lock"
+mkdir -p "$T/lists/domains"
+cat > "$T/bin/steer" <<'EOF'
+#!/bin/sh
+case "${1:-}" in
+    fit)
+        src=""; rep=""
+        while [ $# -gt 0 ]; do
+            case "$1" in --report) rep="$2"; shift 2 ;; --budget) shift 2 ;; fit) shift ;; *) src="$1"; shift ;; esac
+        done
+        printf '%s\n' "10.0.0.0/8" > /dev/null
+        head -n 1 "$src"
+        printf '{"source":2,"kept":1,"waste_addresses":300,"level":1,"min_count":2,"malformed":0,"truncated":false,"fits":%s,"punched":0}\n' "${FIT_FITS:-true}" > "$rep"
+        ;;
+    apply) exit 0 ;;
+esac
+exit 0
+EOF
+chmod +x "$T/bin/steer"
+: > "$T/syslog"
+run_update
+check "подгонка сработала — журнал называет числа" "yes" \
+      "$(grep -q 'подогнан под память: было 2 записей, стало 1.*лишних адресов 300' "$T/syslog" && echo yes || echo no)"
+rm -rf "$T/lists" "$T/var/last-update" "$T/var/update.lock"; mkdir -p "$T/lists/domains"; : > "$T/syslog"
+FIT_FITS=false run_update
+check "не влезло — журнал не говорит «как есть» и называет склейку" "yes;no" \
+      "$(grep -q 'не влезает в бюджет.*было 2 записей.*лишних адресов 300.*без обрезки' "$T/syslog" && echo yes || echo no);$(grep -q 'загружаем как есть' "$T/syslog" && echo yes || echo no)"
+
 printf '\n%s\n' "$([ "$fails" -eq 0 ] && echo 'все проверки прошли' || echo 'ЕСТЬ ПРОВАЛЫ')"
 [ "$fails" -eq 0 ]

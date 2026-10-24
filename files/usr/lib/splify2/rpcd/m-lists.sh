@@ -428,12 +428,16 @@ AD_EOF
         lu_rc=$?
         lu_changed="$(grep -c ': обновлён' "$rep" 2>/dev/null)"
         lu_failed="$(grep -c 'оставлен прежний\|не скачался' "$rep" 2>/dev/null)"
+        # Списки, которые подгонка под память переписала (склеила подсети): их строки в `lines`
+        # называют числа, а здесь — сколько их, чтобы интерфейс не искал это по тексту.
+        lu_fitted="$(grep -c ': подогнан под память\|: не влезает в бюджет' "$rep" 2>/dev/null)"
         json_init
         # ok=0 только тогда, когда что-то не обновилось. Прогон без изменений — успех:
         # значит списки уже свежие.
         json_add_boolean ok "$([ "$lu_rc" = 0 ] && echo 1 || echo 0)"
         json_add_int updated "${lu_changed:-0}"
         json_add_int failed "${lu_failed:-0}"
+        json_add_int fitted "${lu_fitted:-0}"
         json_add_array lines
         while read -r lu_line; do
             [ -n "$lu_line" ] && json_add_string "" "$lu_line"
