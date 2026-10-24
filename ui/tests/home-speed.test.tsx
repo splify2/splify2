@@ -48,6 +48,6 @@ describe('обзор: скорость правила', () => {
     it('одно направление — только оно', async () => {
         open({ ch: { Youtube: { down: '5 кбит/с', up: null } }, dev: {} })
         await waitFor(() => expect(screen.getAllByText('↓ 5 кбит/с').length).toBeGreaterThan(0))
-        expect(screen.queryByText(/↑ \d/)).toBeNull()
+        expect(screen.queryByText(/↑ .*бит/)).toBeNull()
     })
 })

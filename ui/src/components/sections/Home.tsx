@@ -606,7 +606,7 @@ function RuleCards({
     const setOf = (name: string): ChannelStatus | undefined =>
         sets.find((s) => (s.channels || []).includes(name)) || sets.find((s) => s.name === name)
     const channels = spec?.channels ?? []
-    const speedOf = (s?: ChannelStatus) => (s ? live.speed.ch[s.name] : undefined)
+    const speedOf = (s?: ChannelStatus) => (s ? live.speed?.ch[s.name] : undefined)
 
     function toggle(i: number) {
         /* Правится только загруженная спека — не та, что из памяти прошлого открытия. */
@@ -894,7 +894,7 @@ function RulesBoard({
                             n={i + 1}
                             row={r}
                             set={setOf(r.name)}
-                            speed={setOf(r.name) ? live.speed.ch[setOf(r.name)!.name] : undefined}
+                            speed={setOf(r.name) ? live.speed?.ch[setOf(r.name)!.name] : undefined}
                             st={live.status?.outputs?.[r.out]}
                             facts={facts[r.out]}
                             share={peak > 0 ? load(r.name) / peak : 0}
