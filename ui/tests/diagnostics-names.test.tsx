@@ -57,6 +57,6 @@ describe('диагностика: недавние имена', () => {
     it('резолвер не запущен — сказано, а не пустой список', async () => {
         vi.spyOn(rpc, 'dnsLog').mockResolvedValue({ running: false, names: [] } as never)
         render(<Diagnostics live={live({ diag: { checks: [], warn: 0, fail: 0 } })} />)
-        expect(await screen.findByText(/резолвер ядра steer не запущен/)).toBeInTheDocument()
+        expect(await screen.findByText(/DNS-служба ядра не запущена/)).toBeInTheDocument()
     })
 })

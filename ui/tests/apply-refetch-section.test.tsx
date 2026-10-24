@@ -60,7 +60,7 @@ describe('раздел после применения', () => {
         render(<Dns />)
         await screen.findByLabelText('имя сервера google')
         await pending.apply()
-        fireEvent.click(screen.getByText('Настоящие адреса'))
+        fireEvent.click(screen.getByText('Настоящие адреса сайтов'))
         await pending.flush()
         expect(set).toHaveBeenCalledTimes(1)
         const out = sent()
@@ -81,7 +81,7 @@ describe('раздел после применения', () => {
         await screen.findByLabelText('имя сервера google')
         const run = pending.apply()
         await waitFor(() => expect(finish).toBeTypeOf('function'))
-        fireEvent.click(screen.getByText('Настоящие адреса'))
+        fireEvent.click(screen.getByText('Настоящие адреса сайтов'))
         // Полсекунды дебаунса прошли бы, но запись ждёт конца применения.
         await new Promise((r) => setTimeout(r, 700))
         expect(set).not.toHaveBeenCalled()

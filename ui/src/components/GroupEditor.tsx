@@ -266,7 +266,7 @@ export default function GroupEditor({ spec, name, live, onSave, onCancel }: {
                                         {g && (
                                             <span className="shrink-0 text-xs text-muted-foreground">
                                                 {g.selected === m ? S.groupEditor.nesetTrafik : g.alive.includes(m) ? S.groupEditor.zhiv : S.groupEditor.neOtvechaet}
-                                                {g.latency?.[m] !== undefined ? S.groupEditor.ms(g.latency[m]) : ''}
+                                                {g.alive.includes(m) && g.latency?.[m] !== undefined ? S.groupEditor.ms(g.latency[m]) : ''}
                                             </span>
                                         )}
                                         {pick === 'balance' && (

@@ -83,6 +83,6 @@ describe('диагностика: соединения через выходы',
         unmount()
         spy.mockResolvedValue({ ok: false, error: 'conntrack недоступен' } as never)
         render(<Diagnostics live={live({ diag: { checks: [], warn: 0, fail: 0 } })} />)
-        expect(await screen.findByText('Ядро steer не отдало соединения.')).toBeInTheDocument()
+        expect(await screen.findByText('Не удалось получить список соединений. Проверьте на главной, что ядро запущено.')).toBeInTheDocument()
     })
 })

@@ -5,6 +5,7 @@ import { cacheGet, cacheSet } from '@/lib/cache'
 import type { Channel, Spec } from '@/lib/model'
 import { encodeSpec, wasV1 } from '@/lib/specv2'
 import { cmpVersion } from '@/lib/engine'
+import { engineErrorText } from '@/lib/engineerr'
 import { missingText } from '@/lib/outrefs'
 
 import { S } from '@/copy'
@@ -80,11 +81,11 @@ const HEAL_LINE = /^splify2: выходам без ключа ipv6 записа�
 
 /** Текст тоста по ответу apply: слова ядра и зон фаервола — без строк самолечения. */
 export function applyText(output: string | undefined): string {
-    return (output ?? '')
+    return engineErrorText((output ?? '')
         .split('\n')
         .filter((l) => !HEAL_LINE.test(l))
         .join('\n')
-        .trim()
+        .trim())
 }
 
 type Listener = () => void
@@ -326,7 +327,7 @@ class PendingStore {
                      * Отказ ещё и ЗАПОМИНАЕТСЯ (saveError): на роутере теперь прежняя спека, и пока
                      * запись не удастся, «Применить» применять не должно (apply), а пилюля — говорить
                      * «Не записано». */
-                    const why = missingText(spec) ?? (('error' in r && r.error) || S.pending.neUdalosSohranit)
+                    const why = missingText(spec) ?? engineErrorText(('error' in r && r.error) || S.pending.neUdalosSohranit)
                     this.saveError = why
                     if (!quiet) notify(why, 'error')
                     this.dirty = true

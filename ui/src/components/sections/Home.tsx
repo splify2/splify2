@@ -9,6 +9,8 @@ import { Block, CardHead, Meter } from '@/components/ui/layout'
 import { LooseBlock, SubBlock, TunnelBlock, type Facts } from '@/components/OutputCards'
 import { deadline, rpc, type SubQuota } from '@/lib/rpc'
 import { subsRemember, subsRemembered } from '@/lib/subs'
+import { explainSummary } from '@/lib/engineerr'
+import { blankInstall } from '@/lib/blank'
 import { human, type DiagCheck, type Live } from '@/lib/live'
 import { pending, usePending } from '@/lib/pending'
 import { useServices } from '@/lib/catalog'
@@ -97,6 +99,8 @@ function verdict(live: Live): Verdict {
         if (live.errorKind === 'router') return { text: live.error, tone: 'bad', why: S.home.obnovitePodstranitsu, notes }
         return { text: S.home.yadroNeOtvechaet, tone: 'bad', why: live.error, notes }
     }
+    /* Пустая установка не поломка: находки диагностики здесь — следствие того, что ничего не настроено. */
+    if (blankInstall(live)) return { text: S.home.pokaNeNastroeno, tone: 'idle', why: S.home.pokaNeNastroenoWhy, notes }
     if (live.diag?.fail)
         return {
             text: S.home.estPolomki, tone: 'bad', why: S.home.proverokSOtkazom(live.diag.fail), notes,
@@ -733,7 +737,7 @@ function RuleCard({
     const shared = (set?.channels?.length ?? 0) > 1
     const where = st?.kind === 'direct'
         ? S.home.napryamuyu
-        : [via, facts?.ping && facts.ping.ms >= 0 ? S.home.ms(facts.ping.ms) : null, grp && !grp.selected ? S.home.chlenyNeOtvechayut : null, outDownWord(st)]
+        : [via, ms(facts, st), grp && !grp.selected ? S.home.chlenyNeOtvechayut : null, outDownWord(st)]
               .filter(Boolean)
               .join(' · ') || (st?.up ? S.home.rabotaet : S.home.nePodnyat2)
 
@@ -966,7 +970,7 @@ function RuleRow({
                             ? S.home.napryamuyu
                             : [
                                   via,
-                                  facts?.ping && facts.ping.ms >= 0 ? S.home.ms(facts.ping.ms) : null,
+                                  ms(facts, st),
                                   grp && !grp.selected ? S.home.chlenyNeOtvechayut : null,
                                   outDownWord(st),
                               ]
@@ -1214,7 +1218,15 @@ const PROTO_NAME: Record<string, string> = {
     socks: 'SOCKS', http: 'HTTP', vmess: 'VMess', interface: 'WireGuard', awg: 'AmneziaWG', xsteer: 'XSTEER',
 }
 
-const ms = (f?: Facts) => (f?.ping && f.ping.ms >= 0 ? S.home.ms(f.ping.ms) : null)
+/** Отклик выхода строкой. Замер — прошлое: пока выход не отвечает (узел молчит, сторож отказал, нет
+ *  ни одного члена), «96 мс» рядом с красной точкой читалось бы как «всё хорошо», поэтому число
+ *  прячется, и слово говорит выход (outDownWord). Не ответивший сам замер (−1) — «нет ответа», а не
+ *  пустое место. */
+function ms(f?: Facts, st?: OutputStatus | null): string | null {
+    if (!f?.ping) return null
+    if (st && (st.up === false || outDown(st) || (st.group && !st.group.selected))) return null
+    return f.ping.ms >= 0 ? S.home.ms(f.ping.ms) : S.home.netOtveta
+}
 
 /** Подписка: имя, расход за период и где сейчас её активный узел. */
 function SubTile({ sub, outs, facts, spec }: {
@@ -1237,7 +1249,7 @@ function SubTile({ sub, outs, facts, spec }: {
                 {used !== null && <span className="text-xs text-muted-foreground">{total ? `/ ${human(total)}` : '/ ∞'}</span>}
             </div>
             <StateLine ok={live ? !!live[1].up && !outDown(live[1]) : null}>
-                <Flag cc={f?.geo?.cc} /> {[country(f?.geo?.cc), ms(f)].filter(Boolean).join(' · ') || (live ? outDownWord(live[1]) || S.home.rabotaet : S.home.nePodnyat2)}
+                <Flag cc={f?.geo?.cc} /> {[country(f?.geo?.cc), live ? ms(f, live[1]) : ms(f), live ? outDownWord(live[1]) : null].filter(Boolean).join(' · ') || (live ? S.home.rabotaet : S.home.nePodnyat2)}
             </StateLine>
             <BoardAddress ip={f?.geo?.ip} />
         </div>
@@ -1259,7 +1271,7 @@ function OutTile({ name, st, facts, out, device }: {
             <TileHead title={name} tag={kind && PROTO_NAME[kind] ? <Badge variant="proto">{PROTO_NAME[kind]}</Badge> : undefined} />
             <div className="truncate font-mono text-xs text-muted-foreground">{device ?? st.device ?? ''}</div>
             <StateLine ok={ok}>
-                <Flag cc={facts?.geo?.cc} /> {[country(facts?.geo?.cc), ms(facts)].filter(Boolean).join(' · ') || outDownWord(st) || (st.up ? S.home.rabotaet : S.home.nePodnyat2)}
+                <Flag cc={facts?.geo?.cc} /> {[country(facts?.geo?.cc), ms(facts, st), outDownWord(st)].filter(Boolean).join(' · ') || (st.up ? S.home.rabotaet : S.home.nePodnyat2)}
             </StateLine>
             <BoardAddress ip={facts?.geo?.ip} />
         </div>
@@ -1281,7 +1293,7 @@ function WarpTile({ name, st, facts }: { name: string; st: OutputStatus; facts?:
             <TileHead title={name} tag={<Badge variant="proto">WARP</Badge>} />
             <div className="text-xs text-muted-foreground">{total > 0 ? S.home.warpTunneley(ok || (sel ? 1 : 0), total) : ''}</div>
             <StateLine ok={!!sel}>
-                <Flag cc={cc} /> {sel ? [country(cc), m?.colo, ms(facts)].filter(Boolean).join(' · ') || S.home.rabotaet : S.home.chlenyNeOtvechayut}
+                <Flag cc={cc} /> {sel ? [country(cc), m?.colo, ms(facts, st)].filter(Boolean).join(' · ') || S.home.rabotaet : S.home.chlenyNeOtvechayut}
             </StateLine>
             <BoardAddress ip={facts?.geo?.ip} />
         </div>
@@ -1302,6 +1314,7 @@ function ExplainCard({ board = false }: { board?: boolean }) {
     const [q, setQ] = useState('')
     const [answer, setAnswer] = useState<string | null>(null)
     const [asking, setAsking] = useState(false)
+    const summary = answer ? explainSummary(answer) : null
 
     async function ask(customQ?: string) {
         const address = (customQ !== undefined ? customQ : q).trim()
@@ -1370,11 +1383,19 @@ function ExplainCard({ board = false }: { board?: boolean }) {
                 ))}
             </div>
 
-            {answer && (
+            {answer && (summary ? (
+                <div className="space-y-2 rounded-xl border border-border bg-muted p-3 text-[13px]">
+                    <p>{summary}</p>
+                    <details className="text-xs text-muted-foreground">
+                        <summary className="cursor-pointer">{S.explain.podrobnosti}</summary>
+                        <pre className="mt-2 overflow-x-auto font-mono leading-relaxed whitespace-pre-wrap">{answer}</pre>
+                    </details>
+                </div>
+            ) : (
                 <pre className="overflow-x-auto rounded-xl border border-border bg-muted p-3 font-mono text-xs leading-relaxed whitespace-pre-wrap">
                     {answer}
                 </pre>
-            )}
+            ))}
         </>
     )
     if (board) {

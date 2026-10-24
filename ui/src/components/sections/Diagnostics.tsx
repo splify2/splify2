@@ -3,6 +3,7 @@ import { Check, ChevronDown, Info, RefreshCw, Search, TriangleAlert, X, XCircle 
 import { Button } from '@/components/ui/button'
 import { ConnsCard, NamesCard } from '@/components/ObserveCards'
 import { Block, CardHead } from '@/components/ui/layout'
+import { blankInstall } from '@/lib/blank'
 import { type Live } from '@/lib/live'
 import { parseLog } from '@/lib/log'
 import { rpc } from '@/lib/rpc'
@@ -80,8 +81,12 @@ export default function Diagnostics({ live, board = false }: { live: Live; board
     const notes = (live.diag?.checks || []).filter((c) => c.verdict === 'note')
     const good = (live.diag?.checks || []).filter((c) => c.verdict === 'ok')
 
+    /* Пустая установка: находки есть, но поломки нет — не красим и говорим, что делать. */
+    const blank = blankInstall(live) && bad.length > 0
     const verdict = live.diagOld
                             ? S.diagnostics.proverkaSostoyaniyaNedostupna
+                            : blank
+                              ? S.diagnostics.pustayaUstanovka
                             : live.diag?.fail
                               ? S.diagnostics.proverokSOtkazom(live.diag.fail)
                               : live.diag?.warn
@@ -177,9 +182,12 @@ export default function Diagnostics({ live, board = false }: { live: Live; board
                 <section className={GROUP}>
                     <h2 className="sp-sub px-1 pt-1">{verdict}</h2>
                     {live.diagOld && <p className="px-1 text-xs text-muted-foreground">{S.diagnostics.obnoviteSteerVRazdele}</p>}
+                    {blank && <p className="px-1 text-xs text-muted-foreground">{S.diagnostics.pustayaUstanovkaSovet}</p>}
                     {bad.map((c, i) => (
-                        <div key={`${c.id}-${i}`} className={`${TILE} flex gap-2.5 text-[13px] ${c.verdict === 'fail' ? 'border-destructive/50' : 'border-warning/50'}`}>
-                            {c.verdict === 'fail'
+                        <div key={`${c.id}-${i}`} className={`${TILE} flex gap-2.5 text-[13px] ${blank ? '' : c.verdict === 'fail' ? 'border-destructive/50' : 'border-warning/50'}`}>
+                            {blank
+                                ? <Info className="mt-0.5 h-4 w-4 shrink-0 text-muted-foreground" aria-hidden="true" />
+                                : c.verdict === 'fail'
                                 ? <XCircle className="mt-0.5 h-4 w-4 shrink-0 text-destructive" aria-hidden="true" />
                                 : <TriangleAlert className="mt-0.5 h-4 w-4 shrink-0 text-warning-fg" aria-hidden="true" />}
                             <div className="min-w-0 flex-1">
@@ -246,6 +254,7 @@ export default function Diagnostics({ live, board = false }: { live: Live; board
                     {live.diagOld && (
                         <p className="text-xs text-muted-foreground">{S.diagnostics.obnoviteSteerVRazdele}</p>
                     )}
+                    {blank && <p className="text-xs text-muted-foreground">{S.diagnostics.pustayaUstanovkaSovet}</p>}
                 {!live.diagOld && (
                     <div className="space-y-2">
                         {bad.map((c, i) => (
@@ -253,12 +262,16 @@ export default function Diagnostics({ live, board = false }: { live: Live; board
                                 key={`${c.id}-${i}`}
                                 className={[
                                     'flex gap-2 rounded-xl border p-2.5 text-[13px]',
-                                    c.verdict === 'fail'
-                                        ? 'border-destructive/40 bg-destructive/10'
-                                        : 'border-warning/40 bg-warning/10',
+                                    blank
+                                        ? 'border-border bg-muted/40'
+                                        : c.verdict === 'fail'
+                                            ? 'border-destructive/40 bg-destructive/10'
+                                            : 'border-warning/40 bg-warning/10',
                                 ].join(' ')}
                             >
-                                {c.verdict === 'fail' ? (
+                                {blank ? (
+                                    <Info className="mt-0.5 h-4 w-4 shrink-0 text-muted-foreground" aria-hidden="true" />
+                                ) : c.verdict === 'fail' ? (
                                     <XCircle className="mt-0.5 h-4 w-4 shrink-0 text-destructive" aria-hidden="true" />
                                 ) : (
                                     <TriangleAlert className="mt-0.5 h-4 w-4 shrink-0 text-warning-fg" aria-hidden="true" />

@@ -52,7 +52,7 @@ describe('выход xsteer под демоном ядра', () => {
 
     it('демон о выходе не знает и файла нет — «состояния нет», а не выдуманные числа', async () => {
         mount({ xa: { helper: null, state: null } })
-        expect(await screen.findByText(/Состояния нет/)).toBeInTheDocument()
+        expect(await screen.findByText(/Состояния пока нет/)).toBeInTheDocument()
     })
 
     it('клиент без демона пишет файл — видны хаб и рукопожатие', async () => {

@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from 'react'
 import { cacheGet, cacheSet } from '@/lib/cache'
+import { engineErrorText } from '@/lib/engineerr'
 import { rpc } from './rpc'
 import { type Releases, type SelfUpdateInfo } from './engine'
 import { type Status } from './model'
@@ -301,7 +302,7 @@ export function useLive(): Live {
             if (o.ok === false || o.ok === 0)
                 /* Текста у отказа может не быть вовсе — тогда своя строка. Слово «бэкенд»
                  * человеку ничего не говорит: для него отказал роутер. */
-                return typeof o.error === 'string' && o.error ? o.error : S.live.routerVernulOshibku
+                return typeof o.error === 'string' && o.error ? engineErrorText(o.error) : S.live.routerVernulOshibku
             return null
         }
         /** Текст исключения вызова — только чтобы отличить «метода нет» от обрыва (регулярка в
