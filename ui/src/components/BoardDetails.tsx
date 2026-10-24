@@ -30,12 +30,14 @@ export function BoardLabels({ labels }: { labels: string[] }) {
             setCount(n)
         }
         measure()
-        const observer = new ResizeObserver(measure)
-        observer.observe(el)
+        /* Под LuCI панель открывает любой браузер роутера, в том числе старый WebView без наблюдателя
+         * размера (main.tsx защищается так же): без него число меток считается один раз. */
+        const observer = typeof ResizeObserver === 'function' ? new ResizeObserver(measure) : null
+        observer?.observe(el)
         // Шрифт может приехать после первого измерения.
         let stopped = false
         document.fonts?.ready.then(() => { if (!stopped) measure() })
-        return () => { stopped = true; observer.disconnect() }
+        return () => { stopped = true; observer?.disconnect() }
     }, [key])
     useEffect(() => {
         if (!open) return

@@ -81,6 +81,9 @@ describe.skipIf(!existsSync(DIST))('собранный бандл', () => {
         host.className = 'splify-react-root'
         document.body.appendChild(host)
 
+        // Доска измеряет подписи наблюдателем размера; jsdom его не имеет, а настоящий браузер — имеет.
+        if (typeof ResizeObserver !== 'function') (window as never as Record<string, unknown>).ResizeObserver = class { observe() {} disconnect() {} unobserve() {} }
+
         await import(/* @vite-ignore */ DIST)
         const mount = (window as never as Record<string, (el: Element) => void>).__splifyMount
         mount(host)
