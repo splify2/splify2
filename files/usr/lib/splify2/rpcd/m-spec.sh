@@ -683,7 +683,24 @@ case "$2" in
         read -r input
         json_load "$input" 2>/dev/null || fail "неразбираемый запрос"
         json_get_var spec spec
+        json_get_var rev rev
         [ -n "$spec" ] || fail "пустая спецификация"
+        # Правка поверх чужой записи (D-P2.7): страница пишет спеку целиком, а за время, что она её
+        # держала, файл могли переписать — вторая вкладка, ssh, подписка, самолечение apply. `rev` —
+        # ревизия, с которой страница начала (spec_get); не совпала с лежащей — отказ с текущей
+        # ревизией, и страница сливает правки с тем, что на роутере, вместо молчаливой замены.
+        # Замок группы spec держится на весь вызов, так что между сверкой и записью файл не меняется.
+        # Без `rev` (прежний клиент, ssh) — пишется как раньше.
+        if [ -n "$rev" ]; then
+            cur="$(spec_rev)"
+            if [ -n "$cur" ] && [ "$cur" != "$rev" ]; then
+                json_init; json_add_boolean ok 0; json_add_boolean conflict 1
+                json_add_string rev "$cur"
+                json_add_string error "спека на роутере изменилась после того, как её открыли"
+                json_dump
+                exit 0
+            fi
+        fi
         # Спека в spec.yaml, а ядро прежнее: JSON-вида оно не печатает, писать YAML нечем, а
         # второй файл рядом ядро не прочтёт («две спеки»).
         if [ -s "$SPEC_YAML" ] && ! spec_yaml_ok; then
@@ -745,6 +762,8 @@ case "$2" in
         # неработающему каналу.
         json_init; json_add_boolean ok 1
         [ -n "$set_warn" ] && json_add_string warn "$set_warn"
+        # Новая ревизия — чтобы следующая запись страницы шла от неё, не перечитывая спеку.
+        json_add_string rev "$(spec_rev)"
         json_dump
         ;;
 

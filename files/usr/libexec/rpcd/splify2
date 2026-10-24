@@ -527,7 +527,7 @@ list)
     json_add_object live; json_add_boolean diag; json_add_boolean fast; json_close_object
     json_add_object spec_get; json_close_object
     json_add_object applied_get; json_close_object
-    json_add_object spec_set; json_add_string spec; json_close_object
+    json_add_object spec_set; json_add_string spec; json_add_string rev; json_close_object
     json_add_object apply; json_close_object
     json_add_object spec_heal; json_close_object
     json_add_object explain; json_add_string address; json_close_object

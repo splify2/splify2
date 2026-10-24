@@ -151,6 +151,11 @@ function declare<T>(method: string, params: string[] = []) {
 }
 
 const specGetRaw = declare<Spec>('spec_get')
+const revs = new WeakMap<object, string>()
+/** Ревизия спеки, с которой её прочитали (spec_get), или undefined — бэкенд её не отдал. */
+export function revOf(spec: object | null | undefined): string | undefined {
+    return spec ? revs.get(spec) : undefined
+}
 const appliedGetRaw = declare<Spec>('applied_get')
 const listPutRaw = declare<unknown>('list_put',
     ['name', 'kind', 'text', 'url', 'append', 'source', 'filename'])
@@ -249,7 +254,14 @@ export const rpc = {
      *  precisely what must not be reinterpreted on the way through. */
     /** Единственный вход спеки в интерфейс — поэтому и приведение написаний стоит здесь,
      *  а не в четырёх потребителях `match` по отдельности (I-041, splicicd#7). */
-    specGet: () => specGetRaw().then(decodeSpec),
+    specGet: () => specGetRaw().then((raw) => {
+        /* Ревизия (D-P2.7) едет полем `rev` рядом со спекой, но спекой не является: снимается до
+         * разбора и запоминается за объектом (revOf), чтобы остальной код спеку не менял. */
+        const { rev, ...body } = (raw && typeof raw === 'object' ? raw : {}) as Spec & { rev?: unknown }
+        const spec = decodeSpec(raw && typeof raw === 'object' ? body : raw)
+        if (typeof rev === 'string' && rev && spec && typeof spec === 'object') revs.set(spec, rev)
+        return spec
+    }),
 
     /** Снимок спеки в момент последнего apply — по нему считается «Применить · N».
      *  На старом бэкенде метода нет: вызывающий обязан ловить отказ (pending.ts ловит,
@@ -257,7 +269,12 @@ export const rpc = {
     appliedGet: () => appliedGetRaw().then(decodeSpec),
     /** warn — сохранение прошло, но что-то требует внимания: например список, который не
      *  скачался, из-за чего его канал не поднимется. Это не ошибка сохранения. */
-    specSet: declare<{ ok: boolean; error?: string; warn?: string }>('spec_set', ['spec']),
+    specSetRaw: declare<{ ok: boolean; error?: string; warn?: string; conflict?: boolean; rev?: string }>('spec_set', ['spec', 'rev']),
+    /** `rev` — ревизия, от которой правка: роутер отказывает (`conflict`), если спеку с тех пор
+     *  переписали. Без неё — пишет как прежде (старый бэкенд параметр не знает и молча теряет). */
+    specSet(spec: string, rev?: string) {
+        return rpc.specSetRaw(...(rev ? [spec, rev] : [spec]))
+    },
 
     /** Compile and install. Separate from spec_set so the UI can save a draft
      *  without steering traffic differently the same second. */

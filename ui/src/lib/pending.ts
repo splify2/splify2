@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react'
 import { notify } from '@/lib/notify'
-import { rpc } from '@/lib/rpc'
+import { rpc, revOf } from '@/lib/rpc'
 import { cacheGet, cacheSet } from '@/lib/cache'
 import type { Channel, Spec } from '@/lib/model'
 import { decodeSpec, encodeSpec, wasV1 } from '@/lib/specv2'
@@ -124,6 +124,11 @@ class PendingStore {
      *  успел поправить, а по разнице между ним и перечитанным — что сделал за это время роутер. */
     private written: Spec | null = null
     applying = false
+    /** Ревизия файла на роутере, от которой начата наша правка (D-P2.7): с spec_get, после удавшегося
+     *  spec_set, после сверки с роутером. Уходит в spec_set — роутер отказывает, если файл с тех пор
+     *  переписали (вторая вкладка, ssh, подписка), и страница сливает правки (reconcile), а не затирает
+     *  чужое. Нет — бэкенд ревизий не отдаёт, пишем без сверки, как прежде. */
+    private rev: string | undefined
     /** Закрывается, когда применение кончилось (любым исходом). Записи, пришедшие за время
      *  применения, ждут его — см. flush. */
     private applyDone: Promise<void> = Promise.resolve()
@@ -286,6 +291,7 @@ class PendingStore {
             this.saved = migrate ? { ...saved, schema: undefined } : saved
             this.written = this.saved
             this.applied = applied ?? this.saved
+            this.rev = revOf(saved)
             this.saveError = null
             this.loadFailed = false
             this.emit()
@@ -313,6 +319,7 @@ class PendingStore {
          * тем, что набрано без неё. Экран отказа правок и не предлагает; это страховка. */
         if (!this.saved) { notify(S.pending.specNeZagruzhena, 'error'); return }
         this.saved = next
+        const prev = this.saved
         this.dirty = true
         this.editSeq++
         this.emit()
@@ -371,11 +378,22 @@ class PendingStore {
                 /* В форме движка (спека v2, specv2.ts): правила с сужением подсетей разворачиваются
                  * в правило и его спутника, пулы — в группы. В памяти и в `applied` остаётся форма
                  * интерфейса — иначе счётчик «Применить · N» сравнивал бы разные формы. */
-                const r = await rpc.specSet(JSON.stringify(encodeSpec(spec)))
-                    .catch((e) => ({ ok: false, error: String(e instanceof Error ? e.message : e) }))
+                const send = () => rpc.specSet(JSON.stringify(encodeSpec(spec)), this.rev)
+                    .catch((e) => ({ ok: false, error: String(e instanceof Error ? e.message : e) } as Awaited<ReturnType<typeof rpc.specSet>>))
+                let r = await send()
+                /* РОУТЕР ОТКАЗАЛ: СПЕКУ ПЕРЕПИСАЛИ ЗА СПИНОЙ (conflict). Читаем, что там лежит, сливаем
+                 * с правкой (reconcile) и пишем слитое от свежей ревизии. Несколько кругов, а не один:
+                 * кто-то мог успеть и между чтением и записью; предел — защита от вечного спора двух
+                 * страниц, не ограничение ради памяти. */
+                for (let n = 0; !r.ok && r.conflict && n < 5; n++) {
+                    if (!(await this.reconcile())) break
+                    if (!this.saved) break
+                    ;({ spec, drafts } = writable(this.saved))
+                    r = await send()
+                }
                 /* Что теперь на роутере — опора слияния после применения. Только при удаче: отказ
                  * ничего там не поменял. */
-                if (r.ok) { this.written = spec; this.saveError = null }
+                if (r.ok) { this.written = spec; this.saveError = null; this.rev = r.rev || undefined }
                 if (!r.ok) {
                     /* Отказ dry-run — это не «потеряно»: спека осталась в памяти, человек
                      * видит причину и правит дальше; следующая правка попробует снова.
@@ -598,6 +616,29 @@ export const pending = new PendingStore()
  * Именно так и пришло сообщение об ошибке (splify2#11: «после создания правила и перезагрузки
  * страницы пропадает правило»). С прежней кнопкой «Сохранить» такого случиться не могло:
  * человек знал, отправил он что-нибудь или нет.
+    /** Спеку на роутере переписали после нашего чтения (spec_set вернул conflict): прочитать её и
+     *  слить с правкой тем же трёхсторонним слиянием, что после применения — основа то, что мы о
+     *  роутере знали (`written`), «моё» — память, «их» — то, что лежит. Если из чужого что-то
+     *  вошло, человеку об этом говорится: правка не потеряна, но экран только что изменился. Код
+     *  `false` — прочитать не удалось: запись отказывает, как при любой другой ошибке. */
+    private async reconcile(): Promise<boolean> {
+        const mine = this.saved
+        if (!mine) return false
+        let disk: Spec
+        try { disk = await this.readSpec([]) } catch { return false }
+        const fresh = wasV1(disk) ? { ...disk, schema: undefined } : disk
+        const merged = mergeSpec(this.written ?? writable(mine).spec, mine, fresh)
+        this.written = fresh
+        this.rev = revOf(disk)
+        if (!same(merged, mine)) {
+            this.saved = merged
+            notify(S.pending.nastroykiIzmenilis, 'info')
+            this.emit()
+            for (const fn of this.replaced) fn(merged)
+        }
+        return true
+    }
+
  *
  * Два крюка, и они делают разное. `visibilitychange`/`pagehide` — попытка ДОПИСАТЬ: браузер
  * ещё разрешает начатый запрос, и в большинстве случаев этого достаточно. `beforeunload` —
@@ -633,6 +674,7 @@ export function usePending() {
         /** Сохранённая спека — та же, что видят разделы. Нужна рельсу для счётчика «Правила N»:
          *  спрашивать её отдельным вызовом значило бы показать в рельсе одно число, а в
          *  разделе рядом другое. null, пока не загружена. */
+                this.rev = disk ? revOf(disk) : undefined
         spec: pending.saved,
         /** Спека для показа: загруженная, а до её прихода — из памяти прошлого открытия. Писать по
          *  ней нельзя — для правок есть `spec`. */
@@ -753,7 +795,60 @@ function merge3(base: unknown, mine: unknown, theirs: unknown): unknown {
             const v = merge3(base[k], mine[k], theirs[k])
             if (v !== undefined) out[k] = v
         }
+            /* Правила — по именам, а не целым списком (D-P2.7): две вкладки добавили по правилу —
+             * в спеке должны остаться оба, а не победитель по времени записи. */
+            const byName = k === 'channels' ? mergeNamed(base[k], mine[k], theirs[k]) : null
+            if (byName) { out[k] = byName; continue }
         return out
     }
     return mine
+}
+
+/** Слияние списка правил по именам: порядок — как у человека (приоритет задаёт он), каждая запись
+ *  сливается с одноимённой (merge3), добавленное и изменённое чужой стороной не теряется, а удалённое
+ *  одной стороной уходит, если вторая его не правила. Правила чужой стороны, которых у нас нет и не
+ *  было, встают после своей предшественницы из её порядка. `null` — слить по именам нельзя (имена
+ *  повторяются или это не списки правил): вызывающий возьмёт прежнее решение. */
+function mergeNamed(base: unknown, mine: unknown, theirs: unknown): unknown[] | null {
+    const lists = [base ?? [], mine ?? [], theirs ?? []]
+    if (!lists.every((l) => Array.isArray(l))) return null
+    const [b, m, t] = lists as Record<string, unknown>[][]
+    const key = (l: Record<string, unknown>[]) => {
+        const names = l.map((c) => (isPlain(c) && typeof c.name === 'string' ? c.name : null))
+        return names.includes(null) || new Set(names).size !== names.length ? null : (names as string[])
+    }
+    const bn = key(b), mn = key(m), tn = key(t)
+    if (!bn || !mn || !tn) return null
+    const at = (l: Record<string, unknown>[], names: string[], n: string) => l[names.indexOf(n)]
+    const out: unknown[] = []
+    for (const n of mn) {
+        const mine1 = at(m, mn, n)
+        const base1 = bn.includes(n) ? at(b, bn, n) : undefined
+        if (!tn.includes(n)) {
+            /* Роутер правило убрал: уходит, если мы его не трогали. */
+            if (base1 !== undefined && same(mine1, base1)) continue
+            out.push(mine1)
+        } else if (base1 === undefined) out.push(mine1)
+        else {
+            try { out.push(merge3(base1, mine1, at(t, tn, n))) } catch (e) {
+                if (e instanceof Unmergeable) out.push(mine1); else throw e
+            }
+        }
+    }
+    /* Мы убрали правило, а роутер его поправил — правка роутера дороже нашего удаления. */
+    for (const n of bn) {
+        if (mn.includes(n) || !tn.includes(n)) continue
+        if (!same(at(t, tn, n), at(b, bn, n))) out.push(at(t, tn, n))
+    }
+    /* Новое на роутере — после предшественницы из его же порядка. */
+    tn.forEach((n, i) => {
+        if (bn.includes(n) || mn.includes(n)) return
+        const idx = (x: string) => out.findIndex((c) => isPlain(c) && c.name === x)
+        let pos = -1
+        for (let j = i - 1; j >= 0 && pos < 0; j--) if (idx(tn[j]) >= 0) pos = idx(tn[j]) + 1
+        /* Предшественниц нет — перед ближайшей последующей, а нет и их — в конец. */
+        for (let j = i + 1; j < tn.length && pos < 0; j++) if (idx(tn[j]) >= 0) pos = idx(tn[j])
+        out.splice(pos < 0 ? out.length : pos, 0, at(t, tn, n))
+    })
+    return out
 }

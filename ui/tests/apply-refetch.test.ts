@@ -538,12 +538,13 @@ describe('трёхстороннее слияние спеки', () => {
         expect(Object.keys(merged.outputs).sort()).toEqual(['a', 'c', 'direct'])
     })
 
-    it('списки не склеиваются поэлементно: правила человека целиком', () => {
+    it('правила сливаются по именам (D-P2.7): своё и чужое остаются, порядок человека', () => {
         const mine = base()
         mine.channels = [RULE, ...mine.channels]
         const theirs = base()
         theirs.channels = [{ ...theirs.channels[0], name: 'другое' }]
-        expect(mergeSpec(base(), mine, theirs).channels).toEqual(mine.channels)
+        // Роутер переименовал правило, которого мы не трогали: старое уходит, новое приходит.
+        expect(mergeSpec(base(), mine, theirs).channels.map((c) => c.name)).toEqual([RULE.name, 'другое'])
     })
 
     it('роутер сменил вид записи, которую правил человек, — вся спека из памяти, без гибрида', () => {

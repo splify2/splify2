@@ -3363,6 +3363,27 @@ check "правил в ней нет — это точная запись тог
       "$(printf '%s' "$out" | python3 -c 'import json,sys; print(len(json.load(sys.stdin).get("rules", [])))')"
 check "и это спека v2, а не прежняя" "2" \
       "$(printf '%s' "$out" | python3 -c 'import json,sys; print(json.load(sys.stdin)["version"])')"
+# РЕВИЗИЯ СПЕКИ (D-P2.7). spec_get несёт `rev` — md5 файла; spec_set со старой ревизией отказывает
+# (conflict) и ничего не пишет, с верной — пишет и отдаёт новую, без `rev` — пишет как прежде.
+printf '{"version":2,"outputs":{"direct":{"kind":"direct"}}}\n' > "$T/etc/spec.json"
+out="$(rpcd spec_get)"
+rev0="$(printf '%s' "$out" | jget rev)"
+check "spec_get: ревизия — md5 файла спеки" "$(md5sum < "$T/etc/spec.json" | cut -c1-32)" "$rev0"
+check "spec_get: и спека при ней целая" "2" \
+      "$(printf '%s' "$out" | python3 -c 'import json,sys; print(json.load(sys.stdin)["version"])')"
+out="$(rpcd spec_set '{"spec":"{\"version\":2,\"outputs\":{\"direct\":{\"kind\":\"direct\"}},\"rules\":[]}","rev":"'"$rev0"'"}')"
+check "spec_set с верной ревизией пишет" "true" "$(printf '%s' "$out" | jget ok)"
+rev1="$(printf '%s' "$out" | jget rev)"
+check "  и отдаёт новую ревизию — ту, что увидит spec_get" "$rev1" "$(rpcd spec_get | jget rev)"
+check "  отличную от прежней" "no" "$([ "$rev1" = "$rev0" ] && echo yes || echo no)"
+before="$(md5sum < "$T/etc/spec.json")"
+out="$(rpcd spec_set '{"spec":"{\"version\":2,\"outputs\":{\"direct\":{\"kind\":\"direct\"}},\"rules\":[{}]}","rev":"'"$rev0"'"}')"
+check "spec_set со старой ревизией отказывает" "false" "$(printf '%s' "$out" | jget ok)"
+check "  признаком conflict" "true" "$(printf '%s' "$out" | jget conflict)"
+check "  называя текущую ревизию" "$rev1" "$(printf '%s' "$out" | jget rev)"
+check "  и файл не тронут" "$before" "$(md5sum < "$T/etc/spec.json")"
+out="$(rpcd spec_set '{"spec":"{\"version\":2,\"outputs\":{\"direct\":{\"kind\":\"direct\"}}}"}')"
+check "spec_set без ревизии пишет, как прежде" "true" "$(printf '%s' "$out" | jget ok)"
 # Рядом лежит spec.yaml — спека ведётся руками: второй файл не заводится вовсе, и запись через
 # интерфейс отвергается словами (движок при двух спеках не читает ни одну).
 rm -f "$T/etc/spec.json"
