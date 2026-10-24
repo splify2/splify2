@@ -540,6 +540,7 @@ export function useLive(): Live {
         const onVisible = () => {
             if (document.hidden) return
             prev.current = null
+            setSpeed({ ch: {}, dev: {} })
             void load('diag')
         }
         document.addEventListener('visibilitychange', onVisible)

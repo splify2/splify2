@@ -657,6 +657,7 @@ export const ru = {
         rabotaet: "работает",
         obschiySchetchik: (p0: unknown) => `общий счётчик: ${p0}`,
         schetchikObschiy: "счётчик общий",
+        skorostSeychas: "скорость сейчас",
         vyhody: "Выходы",
         meryaem: "меряем…",
         proverit: "проверить",
