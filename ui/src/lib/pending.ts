@@ -3,7 +3,7 @@ import { notify } from '@/lib/notify'
 import { rpc } from '@/lib/rpc'
 import { cacheGet, cacheSet } from '@/lib/cache'
 import type { Channel, Spec } from '@/lib/model'
-import { encodeSpec, wasV1 } from '@/lib/specv2'
+import { decodeSpec, encodeSpec, wasV1 } from '@/lib/specv2'
 import { cmpVersion } from '@/lib/engine'
 import { engineErrorText } from '@/lib/engineerr'
 import { missingText } from '@/lib/outrefs'
@@ -63,6 +63,22 @@ import { S } from '@/copy'
 export function isDraft(c: Channel): boolean {
     const m = c.match || {}
     return !m.any && !(m.prefixes_files?.length) && !(m.domains_files?.length) && !(m.srs_files?.length)
+}
+
+/** Спека в том виде, в каком её увидит страница, прочитав записанное: без черновиков (на роутер
+ *  они не едут) и после круга encodeSpec → decodeSpec. Счётчик «Применить · N» обязан сравнивать
+ *  ЭТО, а не память: «применённое» приходит с роутера уже прочитанным, а в памяти правило без
+ *  единого списка (черновик, или последний список убрали) на роутер не записывается вовсе, и
+ *  файлы при сужении портов меняют порядок — разницы нет, а пилюля висела «Применить · 1» после
+ *  успешного применения. Спека, которую не удалось пройти кругом, сравнивается как есть. */
+const written = new WeakMap<object, Spec>()
+function asWritten(spec: Spec): Spec {
+    const hit = written.get(spec)
+    if (hit) return hit
+    let out: Spec
+    try { out = decodeSpec(JSON.parse(JSON.stringify(encodeSpec(writable(spec).spec)))) } catch { out = writable(spec).spec }
+    written.set(spec, out)
+    return out
 }
 
 /** Спека без черновиков — то, что едет на роутер. */
@@ -413,9 +429,9 @@ class PendingStore {
     /** Сколько правил и выходов отличается от применённого. Позиционно по каналам:
      *  порядок — это приоритет, перестановка тоже изменение. */
     count(): number {
-        const a = this.applied
-        const s = this.saved
-        if (!a || !s) return 0
+        if (!this.applied || !this.saved) return 0
+        const a = asWritten(this.applied)
+        const s = asWritten(this.saved)
         let n = 0
         const names = new Set([...Object.keys(a.outputs || {}), ...Object.keys(s.outputs || {})])
         const changed = [...names].filter((name) => same(a.outputs?.[name], s.outputs?.[name]) === false)
