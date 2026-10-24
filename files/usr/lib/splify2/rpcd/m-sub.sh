@@ -98,19 +98,21 @@ sub_kind_of() {  # NAME
 # наоборот) выглядит рабочей. Поэтому признак разбирается ровно раз, здесь, а интерфейс просто
 # рисует то, что пришло.
 #
-# ПРАВИЛО СИЛЬНЕЕ ЛЮБОГО НАЗВАНИЯ, включая вписанное человеком, и это осознанно: источник
-# опознан по ссылке, а название у него одно. Если понадобится обратное — чтобы вписанное имя
-# побеждало, — здесь меняется одна строка: сравнить сохранённое поле с тем, что назвала
-# панель, и подменять только совпадение.
+# ВПИСАННОЕ ЧЕЛОВЕКОМ ИМЯ СИЛЬНЕЕ ВСЕГО (R-115). Опознанный продавец сильнее названия, которое
+# назвала ПАНЕЛЬ (заголовок profile-title), но не имени, которое человек вписал или поправил:
+# иначе подписку нельзя было переименовать — после каждого ответа списка возвращалось имя
+# продавца. Третий параметр `own` говорит «второй параметр — сохранённое имя, а не слово
+# панели»: непустое сохранённое имя остаётся как есть, а имя продавца подставляется только
+# вместо пустого. Без `own` (разбор ответа панели в sub_set) название продавца сильнее.
 #
 # Значения возвращаются переменными, а не строкой с разделителем: разделитель пришлось бы
 # выбирать таким, какого не бывает в названии, а названия у продавцов бывают любые.
-sub_brand() {  # URL ЗАГОЛОВОК -> SUB_BRAND_TITLE, SUB_BRAND_LINK
+sub_brand() {  # URL ЗАГОЛОВОК [own] -> SUB_BRAND_TITLE, SUB_BRAND_LINK
     SUB_BRAND_TITLE="${2:-}"
     SUB_BRAND_LINK=""
     case "${1:-}" in
         *StressKVN_bot*)
-            SUB_BRAND_TITLE='☢️ StressKVN❤️'
+            [ "${3:-}" = own ] && [ -n "${2:-}" ] || SUB_BRAND_TITLE='☢️ StressKVN❤️'
             SUB_BRAND_LINK='https://t.me/StressKVN_bot'
             ;;
     esac
@@ -480,7 +482,7 @@ case "$2" in
             json_add_object ""
             json_add_string name "$SUB_NAME"
             _sb_u="$(sub_get "$SUB_NAME" url)"
-            sub_brand "$_sb_u" "$(sub_get "$SUB_NAME" title)"
+            sub_brand "$_sb_u" "$(sub_get "$SUB_NAME" title)" own
             json_add_string title "$SUB_BRAND_TITLE"
             # Ссылка на продавца — только когда источник опознан; пустую наружу не отдаём,
             # чтобы интерфейсу не пришлось отличать «нет ссылки» от «ссылка пустая».
@@ -594,6 +596,34 @@ case "$2" in
         json_add_int bytes "$(wc -c 2>/dev/null < "$SUB" || echo 0)"
         [ -n "$(sub_answer usable)" ] && json_add_int usable "$(sub_answer usable)"
         sub_userinfo_emit
+        json_dump
+        ;;
+
+    sub_rename)
+        # Назвать подписку по-своему (R-115). Имя человека — единственное, что sub_list не
+        # подменяет названием продавца; пустое имя снимает своё и возвращает названное панелью
+        # или продавцом. Только поле title: ни файл узлов, ни ссылка, ни выходы не трогаются.
+        read -r input
+        json_load "$input" 2>/dev/null || fail "неразбираемый запрос"
+        json_get_var sub_name name
+        json_get_var sub_title title
+        sub_use "$sub_name"
+        # Подписки с таким именем нет: sub_put завёл бы пустую запись-призрак.
+        case " $(sub_names | tr '\n' ' ') " in
+            *" $SUB_NAME "*) ;;
+            *) fail "подписки «$SUB_NAME» нет" ;;
+        esac
+        # Не длиннее 200 байт и без управляющих знаков: название уходит на экран и в уведомления.
+        [ "$(printf '%s' "$sub_title" | wc -c)" -le 200 ] || fail "название слишком длинное"
+        case "$sub_title" in *[[:cntrl:]]*) fail "в названии управляющие знаки" ;; esac
+        uci_file || fail "не удалось создать $UCI_SPLIFY2 — кончилось место?"
+        sub_put "$SUB_NAME" title "$sub_title" || fail "не удалось записать название"
+        uci -q commit splify2
+        sub_brand "$(sub_get "$SUB_NAME" url)" "$sub_title" own
+        json_init
+        json_add_boolean ok 1
+        json_add_string name "$SUB_NAME"
+        json_add_string title "$SUB_BRAND_TITLE"
         json_dump
         ;;
 

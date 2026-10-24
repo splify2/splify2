@@ -486,6 +486,34 @@ export function applyTarget(spec: Spec, index: number, t: Target, caps: Caps = {
     return setOut(place(spec, built, name, {}), name)
 }
 
+/** Выход на узлах подписки: «первый живой» по каждому протоколу подписки (как «Авто» в правиле).
+ *
+ *  Подписка сама выходом не становится: правило ведёт в выход, а выход — это запись спеки. Эта
+ *  функция заводит её тем же способом, каким собирает набор правило (buildTarget/place), поэтому
+ *  такой выход потом читается редактором как обычный набор «Авто». Уже есть выход с тем же
+ *  набором — возвращается он (`created: false`), второй такой же не заводится. Имя — свободное, на
+ *  основе `base`. Без `protos` — VLESS: так же поступает мастер, когда узлов пока не видно. */
+export function addSubOutput(
+    spec: Spec,
+    sub: { path: string; base: string },
+    protos: Proto[],
+    caps: Caps = {},
+): { spec: Spec; name: string; created: boolean } | null {
+    const t: Target = {
+        ...EMPTY_TARGET,
+        subs: { mode: 'order', picks: (protos.length ? protos : ['vless' as Proto]).map((proto) => ({ sub: sub.path, proto })) },
+    }
+    const built = buildTarget(t, caps)
+    if (!built || 'ref' in built) return null
+    const draft: Record<string, Output> = { ...spec.outputs, [built.top.name]: built.top }
+    for (const p of built.owned) draft[p.name] = p
+    const want = shape(draft, built.top.name)
+    const same = Object.keys(spec.outputs).find((n) => !isPart(spec.outputs[n]) && spec.outputs[n].kind !== 'direct' && shape(spec.outputs, n) === want)
+    if (same) return { spec, name: same, created: false }
+    const name = freeName((n) => !!spec.outputs[n], sub.base)
+    return { spec: place(spec, built, name, {}), name, created: true }
+}
+
 /** Убрать правило `index` вместе с выходом, который после этого никому не нужен (его частями). */
 export function dropRule(spec: Spec, index: number): Spec {
     const out = spec.channels[index]?.out

@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { applyTarget, EMPTY_TARGET, sharedWith, shape, targetOf, type Target } from '@/lib/ruleout'
+import { addSubOutput, applyTarget, EMPTY_TARGET, sharedWith, shape, targetOf, type Target } from '@/lib/ruleout'
 import type { Channel, Output, Spec } from '@/lib/model'
 import { decodeSpec, encodeSpec } from '@/lib/specv2'
 import { overridePortOf, withOverridePort } from '@/lib/rulefiles'
@@ -227,5 +227,40 @@ describe('самый быстрый — ядро с pool_latency', () => {
         const back = decodeSpec(doc)
         expect(targetOf(back, back.channels[0].out)).toEqual(t)
         expect(applyTarget(back, 0, t, caps)).toBe(back)
+    })
+})
+
+describe('выход на узлах подписки (addSubOutput)', () => {
+    it('заводит выход «первый живой» на файле подписки, имя — на основе имени подписки', () => {
+        const r = addSubOutput(spec({}, []), { path: SUB, base: 'sub1' }, ['vless'])
+        expect(r).toMatchObject({ name: 'sub1', created: true })
+        expect(r!.spec.outputs.sub1).toMatchObject({ kind: 'vless', sub_file: SUB })
+        expect(r!.spec.outputs.sub1.nodes).toBeUndefined()
+    })
+
+    it('смешанная подписка — пул из частей по протоколам', () => {
+        const r = addSubOutput(spec({}, []), { path: SUB, base: 'sub1' }, ['vless', 'hysteria2'])!
+        expect(r.spec.outputs.sub1.kind).toBe('interface')
+        const parts = Object.values(r.spec.outputs).filter((o) => o.part_of === 'sub1')
+        expect(parts.map((p) => p.kind).sort()).toEqual(['hysteria2', 'vless'])
+    })
+
+    it('повторно не заводит такой же выход: возвращает существующий', () => {
+        const once = addSubOutput(spec({}, []), { path: SUB, base: 'sub1' }, ['vless'])!
+        const twice = addSubOutput(once.spec, { path: SUB, base: 'sub1' }, ['vless'])!
+        expect(twice).toMatchObject({ name: 'sub1', created: false })
+        expect(Object.keys(twice.spec.outputs)).toEqual(Object.keys(once.spec.outputs))
+    })
+
+    it('занятое имя не затирается', () => {
+        const s = spec({ sub1: { name: 'sub1', kind: 'warp' as Output['kind'] } }, [])
+        const r = addSubOutput(s, { path: SUB, base: 'sub1' }, ['vless'])!
+        expect(r.name).not.toBe('sub1')
+        expect(r.spec.outputs.sub1.kind).toBe('warp')
+    })
+
+    it('без названных протоколов — VLESS', () => {
+        const r = addSubOutput(spec({}, []), { path: SUB, base: 'sub1' }, [])!
+        expect(r.spec.outputs[r.name].kind).toBe('vless')
     })
 })

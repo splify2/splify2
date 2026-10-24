@@ -2160,12 +2160,13 @@ check "прямых путей /etc/config/splify2 в коде не остало
 # fetch_mode|fetch_mode_set, lists_source|lists_source_set, zm_fix|zm_fix_set, doh_tunnel_set,
 # telemetry_set и sub_auto. Число растёт вместе с методами, которые пишут в uci, — и это ровно
 # тот случай, когда барьер должен ломаться: новый метод обязан заводить файл той же функцией.
+# Десятым стал sub_rename (R-115): пишет название подписки, и файл заводит той же функцией.
 #
 # Девятым telemetry_set стал не потому, что метод новый, а потому, что он единственный звал
 # uci_file БЕЗ проверки — как и `uci set` с `uci commit` рядом. Ответ `ok 1` у него значил не
 # «согласие записано», а «дошли до конца функции»: на роутере с заполненным флешем ползунок
 # переезжал, страница показывала успех, а в конфигурации оставалось прежнее значение.
-check "файл заводится одной функцией на все места" "8" \
+check "файл заводится одной функцией на все места" "9" \
       "$(rpcd_src | grep -c '^ *uci_file ||')"
 check "перенаправлением файл больше не заводится" "0" \
       "$(rpcd_src | grep -c ': > "\?/etc/config')"
@@ -2229,6 +2230,27 @@ check "название от панели взято движком и сохр�
 out="$(STEER_SUB_JSON='{"ok":true,"url":"https://panel.invalid/s","usable":1,"title":"Панель"}' \
        rpcd sub_set '{"url":"https://panel.invalid/s","title":"моё"}')"
 check "своё название сильнее панельного" "моё" "$(uci_get splify2.main.sub_title)"
+
+# R-115: имя, которое вписал человек, сильнее названия опознанного продавца — подписку можно
+# переименовать. Продавец подставляется вместо ПУСТОГО имени (и вместо слова панели при добавлении).
+out="$(STEER_SUB_JSON='{"ok":true,"url":"https://t.me/StressKVN_bot","usable":1,"title":"Панель"}' \
+       rpcd sub_set '{"name":"brand1","url":"https://panel.invalid/StressKVN_bot/s"}')"
+check "продавец без своего имени: название продавца" "☢️ StressKVN❤️" \
+      "$(rpcd sub_list | python3 -c 'import json,sys
+print(next(s["title"] for s in json.load(sys.stdin)["subs"] if s["name"]=="brand1"))')"
+out="$(rpcd sub_rename '{"name":"brand1","title":"Мой друг"}')"
+check "sub_rename: ответ" "Мой друг" "$(printf '%s' "$out" | jget title)"
+check "sub_list: своё имя сильнее названия продавца" "Мой друг" \
+      "$(rpcd sub_list | python3 -c 'import json,sys
+print(next(s["title"] for s in json.load(sys.stdin)["subs"] if s["name"]=="brand1"))')"
+check "sub_list: ссылка на продавца при своём имени осталась" "https://t.me/StressKVN_bot" \
+      "$(rpcd sub_list | python3 -c 'import json,sys
+print(next(s.get("link","") for s in json.load(sys.stdin)["subs"] if s["name"]=="brand1"))')"
+out="$(rpcd sub_rename '{"name":"brand1","title":""}')"
+check "sub_rename: пустое имя возвращает название продавца" "☢️ StressKVN❤️" "$(printf '%s' "$out" | jget title)"
+out="$(rpcd sub_rename '{"name":"nope","title":"x"}')"
+check "sub_rename: нет такой подписки — отказ" "false" "$(printf '%s' "$out" | jget ok)"
+rpcd sub_del '{"name":"brand1"}' >/dev/null
 
 # Слово панели про устройство доходит до человека дословно. Что именно она сказала — решает
 # движок по своим заголовкам; объект обязан не потерять это по дороге.
@@ -4851,6 +4873,26 @@ out="$(heal_apply apply)"
 check "heal: у зоны masq6=1 — выход без ключа остаётся без ключа" "-" "$(v6of warp)"
 check "heal: и туннель без IPv6 тоже" "-" "$(v6of wgv4)"
 check "heal: и пул тоже" "- -" "$(v6of pm.a) $(v6of pm.b)"
+# Правка ДО ПЕРВОГО apply: снимок применённого заводится из прежней спеки, и пилюля «Применить · N»
+# переживает перезагрузку страницы (applied_get больше не отдаёт новую спеку под видом применённой).
+heal_spec; heal_zones
+rm -f "$T/etc/spec.applied.json"
+cp "$T/etc/spec.json" "$T/spec.before"
+out="$(heal_apply spec_set '{"spec":"{\"version\":2,\"outputs\":{\"direct\":{\"kind\":\"direct\"},\"newone\":{\"kind\":\"direct\"}},\"channels\":[]}"}')"
+check "spec_set без снимка: ответ ok" "true" "$(printf '%s' "$out" | jget ok)"
+check "spec_set без снимка: снимок — прежняя спека" "$(cksum < "$T/spec.before")" "$(cksum < "$T/etc/spec.applied.json")"
+check "spec_set без снимка: applied_get не равен новой спеке" "no" \
+      "$([ "$(rpcd applied_get | cksum)" = "$(rpcd spec_get | cksum)" ] && echo yes || echo no)"
+cp "$T/etc/spec.applied.json" "$T/applied.keep"
+heal_apply spec_set '{"spec":"{\"version\":2,\"outputs\":{\"direct\":{\"kind\":\"direct\"}},\"channels\":[]}"}' >/dev/null
+check "spec_set со снимком: снимок не двигается" "$(cksum < "$T/applied.keep")" "$(cksum < "$T/etc/spec.applied.json")"
+# spec_heal не применяет неприменённые правки человека: снимок есть, но спека от него отличается.
+heal_spec; heal_zones
+printf '{"version":2,"outputs":{"direct":{"kind":"direct"}},"channels":[]}\n' > "$T/etc/spec.applied.json"
+: > "$T/steer.log"
+out="$(heal_apply spec_heal)"
+check "spec_heal: есть неприменённые правки — apply не зовётся" "no" \
+      "$(grep -q '^apply --spec' "$T/steer.log" && echo yes || echo no)"
 # Метод для установки: лечит спеку, а применённую заново применяет; неприменявшуюся не применяет.
 heal_spec; heal_zones
 rm -f "$T/etc/spec.applied.json"; : > "$T/steer.log"

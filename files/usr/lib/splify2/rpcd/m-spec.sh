@@ -721,6 +721,20 @@ case "$2" in
         if [ -s "$SPEC" ] && spec_is_v1 && [ ! -e "$SPEC.v1.bak" ]; then
             cp "$SPEC" "$SPEC.v1.bak" 2>/dev/null
         fi
+        # СНИМОК ПРИМЕНЁННОГО — ДО ПЕРВОЙ ПРАВКИ. Пока снимка нет (свежая установка, ни разу не
+        # нажатое «Применить»), applied_get отдаёт саму спеку, и любая записанная правка выглядела
+        # применённой: страницу перезагрузили — пилюля «Применить · N» пропала, хотя ядро о правке
+        # не знает. Прежняя спека на диске — это и есть то, что исполняет ядро (пустая у свежей
+        # установки), поэтому снимок снимается с неё, как в backup_put, ровно один раз и ПЕРЕД
+        # заменой; дальше его двигает только apply.
+        if [ ! -s "$APPLIED" ]; then
+            if spec_have; then cp "$(spec_json)" "$APPLIED.new.$$" 2>/dev/null
+            else printf '{"version":2}\n' > "$APPLIED.new.$$" 2>/dev/null
+            fi
+            if [ -s "$APPLIED.new.$$" ]; then mv "$APPLIED.new.$$" "$APPLIED" 2>/dev/null || rm -f "$APPLIED.new.$$"
+            else rm -f "$APPLIED.new.$$"
+            fi
+        fi
         # Код возврата mv проверяется: без этого «Сохранено» печаталось независимо от
         # того, легла спека на диск или нет.
         # spec_put (spec.sh): на ядре 2.1 — spec.yaml (переводом), на прежнем — spec.json.
@@ -801,9 +815,14 @@ $out"
         # лечатся только те, что в ней уже стоят.
         box_busy && fail "ядро занято: $BOX_BY"
         net_dump_load
+        # Было ли до лечения всё применено: снимок есть и равен спеке. Снимок теперь заводит и
+        # spec_set (до первой правки), поэтому одного его наличия мало — неприменённые правки
+        # человека лечение применять не должно.
+        _sh_clean=0
+        if [ -s "$APPLIED" ] && cmp -s "$(spec_json)" "$APPLIED" 2>/dev/null; then _sh_clean=1; fi
         if heal_out="$(spec_heal_ipv6)"; then
             healed=1
-            if [ -s "$APPLIED" ]; then
+            if [ "$_sh_clean" = 1 ]; then
                 "$0" call apply </dev/null >/dev/null 2>&1
             fi
         else
