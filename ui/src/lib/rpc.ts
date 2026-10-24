@@ -552,6 +552,22 @@ export const rpc = {
         }
     >('splify2_install', ['version']),
 
+    /** «Удалить splify2». `plan = true` — только план (ничего не меняется): `items` — что будет
+     *  удалено, `notes` — что останется и почему, `packages` — какие пакеты будут сняты.
+     *  Без плана задание запускается ОТСОЕДИНЁННО и ответ приходит сразу (`started`): страница
+     *  после этого перестаёт отвечать, потому что снимается сам интерфейс. */
+    splify2Purge: declare<{
+        ok: boolean
+        error?: string
+        plan?: boolean
+        started?: boolean
+        keep_config?: boolean
+        items?: string[]
+        notes?: string[]
+        packages?: string[]
+        log?: string
+    }>('purge', ['plan', 'keep_config']),
+
     /** Версии движка, доступные в релизах. Спрашиваются у GitHub, а не зашиты: зашитая
      *  версия означает, что интерфейс ставит прошлое, и заметить это можно только по
      *  отсутствию чего-то нужного. */

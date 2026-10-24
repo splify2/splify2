@@ -410,6 +410,12 @@ pkg_list() {
     esac
 }
 
+# Команда снятия пакета текстом — для отсоединённого задания (purge), которое пишется в файл.
+pkg_del_cmd() {  # ИМЯ
+    _pd_verb=remove; [ "$PM" = apk ] && _pd_verb=del
+    printf '%s %s %s' "$PM" "$_pd_verb" "$1"
+}
+
 # Версия пакета ИМЯ в перечне PKGS (pkg_list) — точное имя, пусто, если не стоит.
 pkg_in() {  # ИМЯ
     while read -r _pn _pv; do
@@ -537,6 +543,90 @@ case "$2" in
         # Не старше какой версии должен быть движок — см. STEER_MIN_VERSION в шапке файла.
         json_add_string min_version "$STEER_MIN_VERSION"
         json_add_string ui_version "$ui_ver"
+        json_dump
+        ;;
+
+    purge)
+        # «Удалить splify2» одной кнопкой: следы (splify2-purge) и затем сами пакеты.
+        #
+        # Вход: {plan, keep_config}. С plan=true — ТОЛЬКО план: команда зовётся без --yes и
+        # ничего не меняет; ответ — перечень пунктов, примечания и пакеты, которые будут сняты.
+        # Без plan — запуск.
+        #
+        # ЗАПУСК ОТСОЕДИНЁННЫЙ, и это главное. Метод исполняется внутри rpcd, а снимаемый пакет
+        # (luci-app-splify2) — это сам этот скрипт и страница; к тому же снятие занимает
+        # секунды, а rpcd убивает вызов по сроку. Поэтому задание пишется в файл и запускается
+        # в своём сеансе (setsid) с закрытыми дескрипторами, а метод отвечает сразу. Тот же
+        # приём, что у перезапуска rpcd в splify2_install: пауза, чтобы ответ успел дойти до
+        # браузера, прежде чем что-то исчезнет. Файл задания читается shell-ом по мере
+        # исполнения, но он лежит в /tmp, а не в пакете, и снимается самим заданием в конце.
+        read -r input
+        pg_plan="$(jsonfilter -s "$input" -e '@.plan' 2>/dev/null)"
+        pg_keep="$(jsonfilter -s "$input" -e '@.keep_config' 2>/dev/null)"
+        pg_flag=""; [ "$pg_keep" = true ] && pg_flag="--keep-config"
+        PKGS="$(pkg_list)"
+        pg_pkgs=""
+        for pg_n in $(printf '%s\n' "$PKGS" | cut -d' ' -f1 | grep -E "$PKG_OURS"); do
+            pg_pkgs="$pg_pkgs $pg_n"
+        done
+        pg_pkgs="${pg_pkgs# }"
+        json_init
+        if [ ! -x "$PURGE_BIN" ]; then
+            json_add_boolean ok 0; json_add_string error "нет команды удаления ($PURGE_BIN)"; json_dump; exit 0
+        fi
+        if [ "$pg_plan" = true ]; then
+            pg_out="$("$PURGE_BIN" $pg_flag 2>&1)"
+            json_add_boolean ok 1
+            json_add_boolean plan 1
+            json_add_boolean keep_config "$([ -n "$pg_flag" ] && echo 1 || echo 0)"
+            json_add_array items
+            pg_items="$(printf '%s\n' "$pg_out" | sed -n 's/^splify2-purge: будет сделано: //p')"
+            while IFS= read -r pg_l; do
+                [ -n "$pg_l" ] && json_add_string "" "$pg_l"
+            done <<EOF
+$pg_items
+EOF
+            json_close_array
+            json_add_array notes
+            pg_notes="$(printf '%s\n' "$pg_out" | grep '^splify2-purge: ' | grep -v -e 'будет сделано: ' -e 'ничего не удалено' -e 'чтобы удалить' -e 'пакеты этот скрипт' -e 'следов не найдено' | sed 's/^splify2-purge: //')"
+            while IFS= read -r pg_l; do
+                [ -n "$pg_l" ] && json_add_string "" "$pg_l"
+            done <<EOF
+$pg_notes
+EOF
+            json_close_array
+            json_add_array packages
+            for pg_n in $pg_pkgs; do json_add_string "" "$pg_n"; done
+            json_close_array
+            json_dump; exit 0
+        fi
+        pg_job="$(mktemp /tmp/splify2-purge-job.XXXXXX)"
+        {
+            printf '#!/bin/sh\n'
+            printf 'sleep %s\n' "$PURGE_DELAY"
+            printf '"%s" --yes %s\n' "$PURGE_BIN" "$pg_flag"
+            # Модули и расширения — раньше основного пакета: в таком порядке менеджер не
+            # откажет из-за зависимостей. luci-app-splify2 и steer — последними.
+            pg_first=""; pg_last=""
+            for pg_n in $pg_pkgs; do
+                case "$pg_n" in luci-app-splify2|steer) pg_last="$pg_last $pg_n" ;; *) pg_first="$pg_first $pg_n" ;; esac
+            done
+            for pg_n in $pg_first $pg_last; do
+                printf '%s\n' "$(pkg_del_cmd "$pg_n")"
+            done
+            printf '"%s" restart\n' "$RPCD_INITD"
+            printf 'rm -f "$0"\n'
+        } > "$pg_job"
+        chmod 700 "$pg_job"
+        if command -v setsid >/dev/null 2>&1; then
+            ( setsid sh "$pg_job" </dev/null >"$PURGE_LOG" 2>&1 & )
+        else
+            ( sh "$pg_job" </dev/null >"$PURGE_LOG" 2>&1 & )
+        fi
+        json_add_boolean ok 1
+        json_add_boolean started 1
+        json_add_boolean keep_config "$([ -n "$pg_flag" ] && echo 1 || echo 0)"
+        json_add_string log "$PURGE_LOG"
         json_dump
         ;;
 

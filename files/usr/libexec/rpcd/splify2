@@ -154,6 +154,10 @@ GEO_RETRY="${GEO_RETRY:-60}"
 # выбирается архитектура пакета.
 INITD="${INITD:-/etc/init.d/steer}"
 RPCD_INITD="${RPCD_INITD:-/etc/init.d/rpcd}"
+# Команда полного удаления следов (метод purge) и пауза перед её запуском — швы для стендов.
+PURGE_BIN="${PURGE_BIN:-/usr/sbin/splify2-purge}"
+PURGE_DELAY="${PURGE_DELAY:-2}"
+PURGE_LOG="${PURGE_LOG:-/tmp/splify2-purge.log}"
 OPENWRT_RELEASE="${OPENWRT_RELEASE:-/etc/openwrt_release}"
 # КАТАЛОГ ПО УМОЛЧАНИЮ — splify2-lists, и это тот же файл, который видит человек на вкладке
 # «Каталог»: перечень «какие списки бывают, как называются и где лежит каждый».
@@ -647,6 +651,7 @@ list)
     json_add_object conns; json_close_object
     json_add_object helper; json_add_string output; json_close_object
     json_add_object group_select; json_add_string group; json_add_string member; json_close_object
+    json_add_object purge; json_add_boolean plan; json_add_boolean keep_config; json_close_object
     json_add_object engine_stop; json_close_object
     json_add_object engine_start; json_close_object
     json_add_object splify2_versions; json_close_object
@@ -679,7 +684,7 @@ call)
         lists|list_fetch|lists_update|list_put|list_remove|list_custom|list_get|list_peek|list_srs_put|local_lists|allow_domains|fetch_mode|fetch_mode_set|\
         lists_source|lists_source_set) _grp=lists ;;
         engine|engine_stop|engine_start|steer_versions|splify2_versions|splify2_install|steer_install|ui_get|ui_set|\
-        steer_modules|steer_module_add|steer_module_del) _grp=engine ;;
+        steer_modules|steer_module_add|steer_module_del|purge) _grp=engine ;;
         sub_set|sub_info|sub_quota|sub_list|sub_del|sub_auto|sub_refresh|sub_rename) _grp=sub ;;
         backup_get|backup_put) _grp=backup ;;
         xsteer_link|xsteer_link_put) _grp=xsteer ;;
