@@ -221,6 +221,10 @@ export const ru = {
     },
     /** Выход с устройством, которое не отвечает (lib/outstate.ts). */
     outState: {
+        sostoyanieRabotaet: "работает",
+        sostoyanieProveryaetsya: "подключается",
+        sostoyanieNeRabotaet: "не работает",
+        sostoyanieNeIzvestno: "нет данных",
         neOtvechaet: "не отвечает",
         uzelNeOtvechaet: "узел не отвечает",
         vyhodNeOtvechaet: "Выход не отвечает",
