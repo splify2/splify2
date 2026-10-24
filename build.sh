@@ -151,7 +151,9 @@ ui_build() {
         echo "либо образ node:22-alpine: docker pull node:22-alpine" >&2
         return 1
     }
-    docker run --rm -v "$PWD":/w -w /w/ui node:22-alpine npm run build
+    # -e без значения берёт переменную из окружения как есть: без него приписка к имени выпуска
+    # до сборки в контейнере не доходила и пропадала из интерфейса молча.
+    docker run --rm -e SPLIFY_RELEASE_SUFFIX -v "$PWD":/w -w /w/ui node:22-alpine npm run build
 }
 ui_build > "$BUILD_LOG" 2>&1 || {
     echo "сборка интерфейса провалилась:"
@@ -268,6 +270,13 @@ if ! git describe --tags --exact-match >/dev/null 2>&1; then
     _rev="$(git rev-parse --short HEAD 2>/dev/null || true)"
     [ -n "$_rev" ] && BUILD_ID="$VERSION-$_rev"
     [ -n "$(git status --porcelain 2>/dev/null)" ] && BUILD_ID="$BUILD_ID-dirty"
+fi
+# Приписка к имени выпуска («beta 1», SPLIFY_RELEASE_SUFFIX) тоже меняет страницу, поэтому входит в
+# адрес сборки — суммой, а не словами: на одном теге «beta 1» и «beta 2» иначе дали бы один и тот же
+# `?v=` и один build-id.txt, и браузер, видевший первую, второй не заметил бы (I-210). Знаки суммы
+# те же, что у ревизии, — sed ниже и загрузчик их принимают. VERSION остаётся числом.
+if [ -n "${SPLIFY_RELEASE_SUFFIX:-}" ]; then
+    BUILD_ID="$BUILD_ID-s$(printf '%s' "$SPLIFY_RELEASE_SUFFIX" | cksum | cut -d' ' -f1)"
 fi
 printf '%s\n' "$BUILD_ID" > "$RES/build-id.txt"
 # И номер сборки нужно проштамповать в сами бандлы: npm build оставляет заглушку ?v=0.0.0,
