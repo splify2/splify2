@@ -1,6 +1,10 @@
-import { useRef, useState } from 'react'
+import { useEffect, useId, useRef, useState } from 'react'
 
-/** Термин с пунктиром и подсказкой при наведении.
+/** Термин с пунктиром и подсказкой: наведением (мышь), тапом (телефон) и с клавиатуры.
+ *
+ *  Тап и Enter/Пробел «закрепляют» подсказку: она остаётся, пока не тапнут снова или мимо, или
+ *  не нажмут Escape. Наведение мыши открывает и закрывает без закрепления. Нажатие не
+ *  всплывает к родителю — иначе тап по подсказке в строке или кнопке срабатывал бы как клик по ней.
  *
  *  Подсказка позиционируется от окна, а не от слова. Раньше она была обычным absolute внутри
  *  строки — и её резало: у карточек и таблиц свои переполнения, и подсказка у левого края
@@ -19,19 +23,61 @@ export function Hint({ tip, children }: { tip: string; children?: React.ReactNod
         setAt({ left, top: r.bottom + 6 })
     }
 
+    const id = useId()
+    const pinned = useRef(false)
+
+    function close() {
+        pinned.current = false
+        setAt(null)
+    }
+
+    /* Закрепленную тапом подсказку закрывает тап мимо и Escape. */
+    useEffect(() => {
+        if (!at) return
+        const away = (e: Event) => {
+            if (!anchor.current?.contains(e.target as Node)) close()
+        }
+        const esc = (e: KeyboardEvent) => { if (e.key === 'Escape') close() }
+        document.addEventListener('pointerdown', away)
+        document.addEventListener('keydown', esc)
+        return () => {
+            document.removeEventListener('pointerdown', away)
+            document.removeEventListener('keydown', esc)
+        }
+    }, [at])
+
+    function toggle() {
+        if (at && pinned.current) return close()
+        pinned.current = true
+        show()
+    }
+
     return (
         <span
             ref={anchor}
             className="relative inline-block"
-            onMouseEnter={show}
-            onMouseLeave={() => setAt(null)}
+            onMouseEnter={() => { if (!at) show() }}
+            onMouseLeave={() => { if (!pinned.current) setAt(null) }}
+            onFocus={() => { if (!at) show() }}
+            onBlur={() => close()}
+            onClick={(e) => { e.stopPropagation(); e.preventDefault(); toggle() }}
+            onKeyDown={(e) => {
+                if (e.key === 'Enter' || e.key === ' ') {
+                    e.stopPropagation()
+                    e.preventDefault()
+                    toggle()
+                }
+            }}
+            tabIndex={0}
+            aria-describedby={at ? id : undefined}
         >
-            <span className="cursor-default underline decoration-dotted underline-offset-[3px]">
+            <span className="cursor-help underline decoration-dotted underline-offset-[3px]">
                 {children}
             </span>
             {at && (
                 <span
                     role="tooltip"
+                    id={id}
                     style={{ position: 'fixed', left: at.left, top: at.top, width: W }}
                     className="pointer-events-none z-50 block rounded-md bg-[#1f2333] px-3 py-2 text-xs font-normal normal-case leading-relaxed tracking-normal text-white shadow-lg"
                 >
