@@ -1,7 +1,7 @@
-ui/node_modules/
+ui/node_modules
 ui/dist/
 out/
 build/
-desktop/node_modules/
+desktop/node_modules
 desktop/dist/
 desktop/release/
