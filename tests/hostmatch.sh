@@ -44,6 +44,13 @@ if [ "${1:-}" = spec ] && [ "${2:-}" = convert ]; then
 fi
 echo "$*" >> "$SANDBOX/steer.log"
 case "${1:-}" in
+    sub-quota)
+        # Ответ панели: остаток пишется в файл --info; SUB_QUOTA=none — панель промолчала.
+        [ "${SUB_QUOTA:-ok}" = none ] && exit 1
+        shift; _i=""
+        while [ $# -gt 0 ]; do case "$1" in --info) _i="$2"; shift ;; esac; shift; done
+        printf 'upload=1\ndownload=2\ntotal=10\nexpire=1900000000\nat=1700000000\n' > "$_i"
+        exit 0 ;;
     apply) [ -n "${STEER_ERR:-}" ] && echo "$STEER_ERR" >&2; exit "${STEER_RC:-0}" ;;
 esac
 exit 0
@@ -165,6 +172,13 @@ printf '{"version":2,"lists":{"a":{"domains_file":["%s/domains/a.lst"]}},"output
 check "spec get: JSON-вид спеки в stdout" "2" "$(hostrun spec get | jget version)"
 hostrun spec get "$T/copy.json" >/dev/null
 check "spec get ФАЙЛ: копия в файле" "2" "$(jget version < "$T/copy.json")"
+rm -f "$T/etc/spec.applied.json"
+check "spec get --applied: снимка нет — применённой считается сама спека" "2" "$(hostrun spec get --applied | jget version)"
+printf '{"version":1}\n' > "$T/etc/spec.applied.json"
+check "spec get --applied: снимок применённого в stdout" "1" "$(hostrun spec get --applied | jget version)"
+hostrun spec get --applied "$T/app.json" >/dev/null
+check "spec get --applied ФАЙЛ: копия снимка в файле, обычная спека — своя" "1;2" "$(jget version < "$T/app.json");$(hostrun spec get | jget version)"
+rm -f "$T/etc/spec.applied.json"
 check "spec uses: спека ссылается на путь — код 0, на другой — 1" "0;1" \
       "$(hostrun spec uses "$T/lists/domains/a.lst" >/dev/null; echo $?);$(hostrun spec uses "$T/lists/b.lst" >/dev/null; echo $?)"
 printf '{"version":2}\n' > "$T/cand.json"
@@ -322,5 +336,56 @@ printf '#!/bin/sh\ncat >/dev/null\necho "не JSON"\n' > "$T/hk/lib/alpha/hooks/
 out="$(hkhost hook backup_sections --ctx "$T/ctx.json")"
 check "hook backup_sections: ответ не по форме — статус bad_answer" "bad_answer" \
       "$(printf '%s' "$out" | python3 -c 'import json,sys; print(json.load(sys.stdin)["results"][0]["status"])')"
+
+# sub list|info|refresh: ответы методов каркаса дословно.
+cat > "$T/bin/rpcd-sub" <<'EOF'
+#!/bin/sh
+read -r req
+case "$2" in
+    sub_list) echo '{"subs":[{"name":"main","kind":"url","due":false}],"hwid":"h"}' ;;
+    sub_info) printf '{"name":"main","kind":"url","req":%s}\n' "$(printf '%s' "$req" | sed 's/"/\\"/g; s/^/"/; s/$/"/')" ;;
+    sub_refresh) echo '{"ok":false,"error":"подписка не скачалась"}' ;;
+    *) exit 1 ;;
+esac
+EOF
+RPCD_BIN_FIXTURE="$T/bin/rpcd-sub"
+out="$(hostrun sub list)"
+check "sub list: ответ метода дословно, код 0" "main;0" "$(printf '%s' "$out" | python3 -c 'import json,sys; print(json.load(sys.stdin)["subs"][0]["name"])');$(hostrun sub list >/dev/null; echo $?)"
+check "sub info: имя уходит запросом метода" "yes" "$(hostrun sub info main | jget req | grep -q '"name":"main"' && echo yes || echo no)"
+out="$(hostrun sub refresh main)"; rc=$?
+check "sub refresh: отказ метода — в ответе (ok:false), код 0" "false;0" "$(printf '%s' "$out" | jget ok);$rc"
+check "sub info: имя не из латиницы — отказ до вызова" "false;1" "$(hostrun sub info 'a/b' | jget ok);$(hostrun sub info 'a/b' >/dev/null; echo $?)"
+check "sub info: без имени — использование (код 2)" "2" "$(hostrun sub info >/dev/null; echo $?)"
+unset RPCD_BIN_FIXTURE
+
+# ---- подписки: остаток у панели и своё название ---------------------------------------------
+printf 'vless://a\n' > "$T/etc/sub.txt"
+printf 'vless://b\n' > "$T/etc/subs/hand.txt"
+env UCI_STUB_DB="$T/uci.db" "$T/bin/uci" -q set splify2.main.sub_url=https://panel.invalid/s
+env UCI_STUB_DB="$T/uci.db" "$T/bin/uci" -q set splify2.main.sub_kind=url
+env UCI_STUB_DB="$T/uci.db" "$T/bin/uci" -q set splify2.sub_hand=subscription
+env UCI_STUB_DB="$T/uci.db" "$T/bin/uci" -q set splify2.sub_hand.kind=links
+out="$(hostrun sub quota main)"
+check "sub quota: панель назвала остаток — asked, числа в quota" "true;url;true;10;1900000000" \
+      "$(printf '%s' "$out" | jget ok);$(printf '%s' "$out" | jget kind);$(printf '%s' "$out" | jget asked);$(printf '%s' "$out" | python3 -c 'import json,sys; print(json.load(sys.stdin)["quota"]["total"])');$(printf '%s' "$out" | python3 -c 'import json,sys; print(json.load(sys.stdin)["quota"]["expire"])')"
+out="$(SUB_QUOTA=none hostrun sub quota main)"
+check "sub quota: панель промолчала — не отказ, причина в why" "true;yes" \
+      "$(printf '%s' "$out" | jget ok);$(printf '%s' "$out" | jget why | grep -q 'не сообщила' && echo yes || echo no)"
+out="$(hostrun sub quota hand)"
+check "sub quota: узлы ссылками — не спрашивали, asked false" "true;links;false" \
+      "$(printf '%s' "$out" | jget ok);$(printf '%s' "$out" | jget kind);$(printf '%s' "$out" | jget asked)"
+out="$(hostrun sub quota nothere)"; rc=$?
+check "sub quota: подписки нет — отказ с кодом 1" "false;1" "$(printf '%s' "$out" | jget ok);$(hostrun sub quota nothere >/dev/null; echo $?)"
+out="$(hostrun sub title main 'Моя подписка')"
+check "sub title: название записано и отдано" "true;main;Моя подписка;Моя подписка" \
+      "$(printf '%s' "$out" | jget ok);$(printf '%s' "$out" | jget name);$(printf '%s' "$out" | jget title);$(sed -n 's/^splify2.main.sub_title=//p' "$T/uci.db")"
+check "sub title: пустое название снимает своё" "true;" \
+      "$(hostrun sub title main '' | jget ok);$(sed -n 's/^splify2.main.sub_title=//p' "$T/uci.db")"
+long="$(python3 -c 'print("я" * 101)')"
+check "sub title: длиннее 200 байт — отказ" "false" "$(hostrun sub title main "$long" | jget ok)"
+check "sub title: управляющие знаки — отказ" "false" "$(hostrun sub title main "$(printf 'a\001b')" | jget ok)"
+check "sub title: подписки нет — отказ" "false" "$(hostrun sub title nothere x | jget ok)"
+check "sub title: у именованной подписки — в её секции" "true;Свои" \
+      "$(hostrun sub title hand Свои | jget ok);$(sed -n 's/^splify2.sub_hand.title=//p' "$T/uci.db")"
 
 [ "$fails" = 0 ] && echo "все проверки прошли" || { echo "ПРОВАЛОВ: $fails"; exit 1; }

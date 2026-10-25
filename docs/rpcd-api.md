@@ -10,23 +10,25 @@ splify2 — тонкая обёртка на shell поверх ядра [steer]
 же его изменении. Печатает ядро JSON — обёртка пропускает его без правок; не печатает — обёртка
 отвечает единым объектом ошибки.
 
-## Плагины каркаса: backup и lists-catalog (splify2-api)
+## Плагины каркаса: backup, lists-catalog и subscriptions (splify2-api)
 
 Методы `backup_get`, `backup_put`, `lists`, `list_*`, `local_lists`, `allow_domains`, `fetch_mode*`, `lists_source*`
-(17 методов, вид `moved` в `/usr/lib/splify2/methods.tsv`) вынесены из каркаса в плагины `backup` и `lists-catalog`
+(17 методов), `sub_auto`, `sub_quota` и `sub_rename` (вид `moved` в `/usr/lib/splify2/methods.tsv`) вынесены из каркаса в
+плагины `backup`, `lists-catalog` и `subscriptions`
 (`plugins/`, сборка — `plugins/build.sh`). Имена, входы и ответы **те же**: на объекте `splify2` они остались
 псевдонимами методов плагинов. Без плагина метод отвечает `{ok:false, code:"not_installed", error:"Нужен плагин …"}`.
 
 Точки расширения каркаса — [splify2-api](https://github.com/splify2/plugin-sdk/blob/main/docs/splify2-api.md):
 хуки `pre_spec_set`, `post_spec_set`, `pre_apply` (в ответ `apply` при отказе: `ok:false`, `veto:true`, `error`),
-`post_apply`, `post_apply_fail`, `heal`, `backup_sections`, `support_report`, `purge`, `plugin_changed`. Ответ
+`post_apply`, `post_apply_fail`, `heal`, `backup_sections`, `support_report`, `purge`, `plugin_changed`, `sub_fields`
+(поля плагинов в строках `sub_list` и `sub_info`: `auto`, `auto_at`, `due` дописывает плагин `subscriptions`). Ответ
 `plugins_list` дополнен полями `splify2_api` и `ext_errors`. Метод `spec_set` при предупреждении хука кладёт его в
 `warn`. Архив настроек с разделами плагинов — формат 4 (`[plugin <id> <имя>]`); без них формат 3, как прежде.
 Задачи плагинов — блок crontab `# splify2-plugins begin … end`, запуск `/usr/sbin/splify2-task`.
 
 Плагины пользуются каркасом **только** через API: библиотека `SPLIFY2_LIB` (jshn, `s2_fail`, `s2_setting`) и службы хоста
 `/usr/sbin/splify2-host` (`SPLIFY2_HOST`): `fetch`, `fetch-mode`, `paths`, `spec get|uses|check`, `apply`, `engine`,
-`settings get|set`, `state check|export|import`, `hook backup_sections` (описание — splify2-api, раздел 8). Файлы,
+`settings get|set`, `state check|export|import`, `hook backup_sections`, `sub list|info|refresh|quota|title` (описание — splify2-api, раздел 8). Файлы,
 переменные и функции каркаса плагину не обещаны; `s2p lint --official` и стенд `tests/pluginhygiene.sh` отказывают
 плагину, который к ним обращается. Настройки плагина — в `conf/<id>/settings.json` по схеме плагина (`plugin_settings_get`,
 `plugin_settings_set`), а не в uci каркаса: адрес каталога списков, порог сокращения и тег второго издателя — настройки
@@ -910,9 +912,9 @@ Id с приставкой `itdog:` метод понимает так же, к�
     при молчании СНИМАЮТСЯ: «осталось 68 ГБ» от предыдущей подписки выглядит свежим и ничем не
     отличимо от правды.
 
-### `sub_quota` (write)
+### `sub_quota` (write) — плагин `subscriptions`
 
-Спросить у панели остаток трафика.
+Спросить у панели остаток трафика (плагин зовёт службу хоста `sub quota`).
 
 - **Вход:** `{ "name": "<подписка>" }`. Поля нет — первая подписка (`main`). Ссылку метод берёт из `uci`
   (`splify2.main.sub_url` у первой, `splify2.sub_<имя>.url` у остальных) — второй источник той же
@@ -967,7 +969,7 @@ Id с приставкой `itdog:` метод понимает так же, к�
 - Списком, а не по одной: экран показывает подписки вместе, и десять вызовов ради десяти строк —
   это десять запусков shell на роутере с 64 МБ.
 
-### `sub_rename` (write)
+### `sub_rename` (write) — плагин `subscriptions`
 
 Назвать подписку по-своему (R-115).
 
@@ -978,13 +980,15 @@ Id с приставкой `itdog:` метод понимает так же, к�
   управляющих знаков; подписки с таким именем нет — отказ.
 - Трогает одно поле: файл узлов, ссылка и выходы остаются как были.
 
-### `sub_auto` (write)
+### `sub_auto` (write) — плагин `subscriptions`
 
-Как часто роутер обновляет подписку САМ: минуты, `0` — не обновляет.
+Как часто роутер обновляет подписку САМ: минуты, `0` — не обновляет. Расписание — данные плагина (`conf/subscriptions/schedule`,
+отметки попыток `stamps/`), а не uci каркаса; в ответах `sub_list` и `sub_info` поля `auto`, `auto_at`, `due` добавляет
+плагин хуком `sub_fields` (без плагина их нет).
 
 - **Вход:** `{ "name": "<подписка>", "minutes": <число> }`.
 - **Выход:** `{ "ok": true, "name", "auto": <минуты> }`.
-- Пределы: **30 минут … 4320 минут (трое суток)**. Чаще получаса — это хождение к чужой панели
+- Пределы по умолчанию: **30 минут … 4320 минут (трое суток)**, оба — настройки плагина (`min_interval`, `max_interval`). Чаще получаса — это хождение к чужой панели
   чаще, чем она меняется, и первым от этого страдает тот, кто раздаёт подписку; дольше трёх суток
   — обновление, которого человек не дождётся. Проверяются здесь, а не только в интерфейсе: метод
   зовут и мимо страницы.

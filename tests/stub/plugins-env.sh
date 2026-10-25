@@ -1,4 +1,4 @@
-# Плагины, вынесенные из каркаса (plugins/backup, plugins/lists-catalog), в песочнице стенда.
+# Плагины, вынесенные из каркаса (plugins/backup, plugins/lists-catalog, plugins/subscriptions), в песочнице стенда.
 #
 # Методы backup_* и lists* каркаса стали псевдонимами методов этих плагинов (splify2-api, «Методы»): без плагина
 # они отвечают «нужен плагин», с плагином — как прежде. Стенды, проверяющие эти методы, ставят плагины в
@@ -11,8 +11,8 @@
 
 plugins_provision() {  # КАТАЛОГ [ID...]
     _pp_d="$1"; shift
-    # Без списка — оба официальных плагина; «-» — пустой корень (стенду нужны только свои плагины).
-    [ $# -gt 0 ] || set -- backup lists-catalog
+    # Без списка — официальные плагины (backup, lists-catalog, subscriptions); «-» — пустой корень (стенду нужны только свои плагины).
+    [ $# -gt 0 ] || set -- backup lists-catalog subscriptions
     [ "$1" = - ] && shift
     rm -rf "$_pp_d"
     mkdir -p "$_pp_d/lib" "$_pp_d/conf" "$_pp_d/run" "$_pp_d/state"

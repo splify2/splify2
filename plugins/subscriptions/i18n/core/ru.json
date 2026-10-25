@@ -1,0 +1,9 @@
+{
+  "Subscriptions": "Подписки",
+  "Shortest update interval, minutes": "Самый короткий интервал обновления, минут",
+  "A subscription is not refreshed more often than this. Going to the seller's panel more often than it changes hurts the one who hands the subscription out.": "Чаще подписка не обновляется: ходить к панели продавца чаще, чем она меняется, значит вредить тому, кто раздаёт подписку.",
+  "Longest update interval, minutes": "Самый длинный интервал обновления, минут",
+  "A longer interval is refused: an update nobody waits for.": "Дольше интервал не принимается: такого обновления не дождаться.",
+  "Traffic quota check, minutes": "Проверка остатка трафика, минут",
+  "How often to ask the panel for the traffic left, without refreshing the nodes. 0 - only on request.": "Как часто спрашивать у панели остаток трафика, не обновляя узлы. 0 — только по запросу."
+}

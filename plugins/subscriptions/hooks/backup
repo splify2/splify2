@@ -1,0 +1,99 @@
+#!/bin/sh
+# Хук backup_sections: расписание подписок и настройки плагина в архиве настроек (плагин backup, раздел «Хуки»
+# splify2-api). Разделы: `schedule` — строки «имя минуты» (имя — подписка, main — первая), `settings` — значения
+# настроек плагина (JSON одной строкой). Операции ctx.op: export, check (ничего не меняет), restore.
+. "${STEER_PLUGIN_DIR:?программа запускается хостом splify2 (нет STEER_PLUGIN_DIR)}/lib/base.sh"
+
+input="$(cat)"
+json_load "$input" 2>/dev/null || { echo '{"ok":false,"error":"неразбираемый запрос"}'; exit 0; }
+json_select ctx 2>/dev/null || { echo '{"ok":false,"error":"нет контекста"}'; exit 0; }
+json_get_var op op
+
+# Строка расписания годна: «имя минуты», минуты — число не больше потолка схемы.
+line_ok() {  # СТРОКА
+    case "$1" in *" "*" "*|*"	"*) return 1 ;; esac
+    _lo_n="${1%% *}"; _lo_m="${1#* }"
+    sub_name_ok "$_lo_n" || return 1
+    case "$_lo_m" in ''|*[!0-9]*) return 1 ;; esac
+    [ "$_lo_m" -ge 5 ] && [ "$_lo_m" -le 43200 ]
+}
+
+case "$op" in
+export)
+    json_init
+    json_add_boolean ok 1
+    json_add_object sections
+    [ -s "$SCHEDULE" ] && json_add_string schedule "$(cat "$SCHEDULE")"
+    [ -s "$CONF_DIR/settings.json" ] && json_add_string settings "$(tr -d '\n\r' < "$CONF_DIR/settings.json")"
+    json_close_object
+    json_dump
+    ;;
+check|restore)
+    json_select sections 2>/dev/null || { echo '{"ok":true}'; exit 0; }
+    sched=''; settings_text=''
+    json_get_keys keys
+    for key in $keys; do
+        json_get_var text "$key"
+        case "$key" in
+            schedule) sched="$text" ;;
+            settings) settings_text="$text" ;;
+            *) s2_fail "раздел «$key» не понят" ;;
+        esac
+    done
+    if [ -n "$sched" ]; then
+        while IFS= read -r l; do
+            [ -n "$l" ] || continue
+            line_ok "$l" || s2_fail "строка расписания «$l» не годится"
+        done <<EOT
+$sched
+EOT
+    fi
+    if [ -n "$settings_text" ]; then
+        json_load "$settings_text" 2>/dev/null || s2_fail "настройки плагина в архиве не разбираются"
+    fi
+    [ "$op" = check ] && { echo '{"ok":true}'; exit 0; }
+
+    # ---- restore: с этого места пишем на диск ----
+    warns=""
+    count=0
+    if [ -n "$sched" ]; then
+        mkdir -p "$CONF_DIR"
+        printf '%s\n' "$sched" | grep -v '^$' > "$SCHEDULE.new.$$" && mv "$SCHEDULE.new.$$" "$SCHEDULE" ||
+            { rm -f "$SCHEDULE.new.$$"; warns="расписание не записалось"; }
+        count="$(grep -c . "$SCHEDULE" 2>/dev/null)"
+    fi
+    if [ -n "$settings_text" ]; then
+        json_load "$settings_text"
+        json_get_keys skeys
+        for sk in $skeys; do
+            json_get_var sv "$sk"
+            "$SPLIFY2_HOST" settings set "$sk" "$sv" >/dev/null 2>&1 ||
+                warns="${warns:+$warns
+}настройка $sk не записалась"
+        done
+    fi
+    json_init
+    json_add_boolean ok 1
+    json_add_array restored
+    if [ -n "$sched" ]; then
+        json_add_object ""
+        json_add_string name schedule
+        json_add_string kind schedule
+        json_add_int count "${count:-0}"
+        json_add_int dropped 0
+        json_close_object
+    fi
+    json_close_array
+    if [ -n "$warns" ]; then
+        json_add_array warn
+        while IFS= read -r line; do json_add_string "" "$line"; done <<EOT
+$warns
+EOT
+        json_close_array
+    fi
+    json_dump
+    ;;
+*)
+    echo '{"ok":true}'
+    ;;
+esac

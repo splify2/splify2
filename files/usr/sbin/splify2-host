@@ -5,7 +5,7 @@
 #     splify2-host fetch URL ФАЙЛ [--timeout СЕК]    скачать с обходом закрытого издателя
 #     splify2-host fetch-mode [get | set always|off] режим «качать через туннель»
 #     splify2-host paths                             каталог списков и программа ядра
-#     splify2-host spec get [ФАЙЛ]                   JSON-вид спеки (в stdout или в файл)
+#     splify2-host spec get [--applied] [ФАЙЛ]       JSON-вид спеки или её снимка применённого (в stdout или в файл)
 #     splify2-host spec uses ПУТЬ                    код 0, если спека ссылается на этот путь
 #     splify2-host spec check ФАЙЛ                   проверка спеки ядром
 #     splify2-host apply                             применить сохранённую спеку, как кнопка «Применить»
@@ -14,6 +14,9 @@
 #     splify2-host settings set КЛЮЧ ЗНАЧЕНИЕ        записать настройку плагина (пусто — вернуть умолчание)
 #     splify2-host state check|export|import КАТАЛОГ настройки каркаса: спека, подписки, ключи, выбор, поля uci
 #     splify2-host hook backup_sections --ctx ФАЙЛ [--plugin ID]   вызвать хук у плагинов и собрать ответы
+#     splify2-host sub list | info ИМЯ | refresh ИМЯ  ответы методов sub_list, sub_info, sub_refresh каркаса
+#     splify2-host sub quota ИМЯ                     спросить у панели подписки остаток трафика
+#     splify2-host sub title ИМЯ [НАЗВАНИЕ]          своё название подписки (пусто — снять)
 #
 # Ответ — один объект JSON в stdout, код 0 при успехе и 1 при отказе (`{"ok":false,"error":"…"}`); исключения —
 # `spec get` без файла (печатает спеку), `settings get` (печатает значение) и `apply` (печатает ответ метода).
@@ -41,7 +44,7 @@ fail() { json_init; json_add_boolean ok 0; json_add_string error "$1"; json_dump
 ok_json() { json_init; json_add_boolean ok 1; json_dump; exit 0; }
 
 usage() {
-    echo "использование: splify2-host fetch|fetch-mode|paths|spec|apply|engine|settings|state|hook …" >&2
+    echo "использование: splify2-host fetch|fetch-mode|paths|spec|apply|engine|settings|state|hook|sub …" >&2
     exit 2
 }
 
@@ -108,6 +111,12 @@ cmd_spec() {  # get [ФАЙЛ] | uses ПУТЬ | check ФАЙЛ
         get)
             spec_have || fail "спеки нет"
             _s_v="$(spec_json)"
+            # `--applied` — снимок спеки в момент последнего применения; снимка нет — применённым считается сама спека
+            # (как у метода applied_get): «не применено» без снимка не бывает.
+            if [ "${2:-}" = --applied ]; then
+                shift
+                [ -s "${APPLIED:-/etc/steer/spec.applied.json}" ] && _s_v="${APPLIED:-/etc/steer/spec.applied.json}"
+            fi
             [ -s "$_s_v" ] || fail "спеку не удалось прочитать"
             if [ -n "${2:-}" ]; then
                 cp "$_s_v" "$2" || fail "не удалось записать $2"
@@ -461,13 +470,6 @@ state_check_url() {  # КЛЮЧ ЗНАЧЕНИЕ
     return 0
 }
 
-# Интервал автообновления подписки: число минут в пределах sub_auto (SUB_AUTO_MIN, SUB_AUTO_MAX в m-sub.sh).
-state_check_auto() {  # КЛЮЧ ЗНАЧЕНИЕ
-    case "$2" in ''|*[!0-9]*) echo "$1: ждём число минут"; return 1 ;; esac
-    [ "$2" -ge 30 ] && [ "$2" -le 4320 ] || { echo "$1: от 30 до 4320 минут"; return 1; }
-    return 0
-}
-
 # Поля uci: ключи по белому списку — непонятное поле значит, что архив принесён из другой версии. Значения
 # выключателей проверяются ШИРЕ, чем их пишет интерфейс: читает их fetch_tunnel_on, а он понимает и 1/0, и yes/no.
 state_check_options() {  # ФАЙЛ
@@ -481,8 +483,6 @@ state_check_options() {  # ФАЙЛ
                 state_check_url "$_c_k" "$_c_v" || return 1 ;;
             sub_kind)
                 case "$_c_v" in url|links|none) ;; *) echo "sub_kind: ждём url, links или none"; return 1 ;; esac ;;
-            sub_auto)
-                state_check_auto "$_c_k" "$_c_v" || return 1 ;;
             fetch_via_tunnel)
                 case "$_c_v" in
                     0|1|on|off|yes|no|true|false|always|auto) ;;
@@ -498,7 +498,6 @@ state_check_options() {  # ФАЙЛ
                     url)   state_check_url "$_c_k" "$_c_v" || return 1 ;;
                     kind)  case "$_c_v" in url|links|none) ;; *) echo "$_c_k: ждём url, links или none"; return 1 ;; esac ;;
                     title) ;;
-                    auto)  state_check_auto "$_c_k" "$_c_v" || return 1 ;;
                     *) echo "непонятная настройка: $_c_k"; return 1 ;;
                 esac ;;
             *) echo "непонятная настройка: $_c_k"; return 1 ;;
@@ -580,7 +579,7 @@ state_export() {  # КАТАЛОГ
     # ВСЕ поля splify2.main каркаса, а не часть: те, что человек правил однажды и руками, иначе терялись бы молча.
     # Перечень сверяется с кодом: grep -rhoE 'splify2\.(main|sub_[a-z_]*)\.[a-z_]+' files/ | sort -u
     : > "$_x/options.new"
-    for _x_k in sub_url sub_kind sub_title sub_auto wizard fetch_via_tunnel geo_url; do
+    for _x_k in sub_url sub_kind sub_title wizard fetch_via_tunnel geo_url; do
         _x_v="$(uci -q get "splify2.main.$_x_k")"
         [ -n "$_x_v" ] && printf '%s=%s\n' "$_x_k" "$_x_v" >> "$_x/options.new"
     done
@@ -588,7 +587,7 @@ state_export() {  # КАТАЛОГ
     for _x_s in $(sub_names); do
         [ "$_x_s" = main ] && continue
         case "$_x_s" in ''|*[!A-Za-z0-9_]*) continue ;; esac
-        for _x_k in url kind title auto; do
+        for _x_k in url kind title; do
             _x_v="$(uci -q get "splify2.sub_$_x_s.$_x_k")"
             [ -n "$_x_v" ] && printf 'sub_%s.%s=%s\n' "$_x_s" "$_x_k" "$_x_v" >> "$_x/options.new"
         done
@@ -762,6 +761,69 @@ cmd_hook() {  # ИМЯ --ctx ФАЙЛ [--plugin ID]
     printf '{"ok":true,"results":[%s]}\n' "$HOOK_RES"
 }
 
+# ---- подписки: то, что плагин subscriptions делает с данными каркаса --------------------------------------------
+
+# Остаток трафика у панели и своё название — действия над данными подписок, которыми владеет каркас (файл узлов, файл
+# остатка, uci). Расписанием и методами для интерфейса занимается плагин; здесь — только запись и опрос панели.
+cmd_sub() {  # list | info ИМЯ | refresh ИМЯ | quota ИМЯ | title ИМЯ [НАЗВАНИЕ]
+    case "$1" in
+        list|info|refresh)
+            # Ответ метода каркаса дословно: подписки, их вид, время файла узлов, поля плагинов (хук sub_fields) и
+            # остаток. Код 0, если метод ответил объектом; отказ метода — в самом ответе (`ok:false`).
+            [ "$1" = list ] || [ -n "${2:-}" ] || usage
+            _su_rpcd="${RPCD_BIN:-${RPCD_LIB%/rpcd}/../../libexec/rpcd/splify2}"
+            [ -r "$_su_rpcd" ] || fail "не найден обработчик подписок"
+            case "$1" in
+                list) _su_req='{}' ;;
+                *) case "$2" in *[!A-Za-z0-9_]*) fail "имя подписки: латиница, цифры, подчёркивание" ;; esac
+                   _su_req="{\"name\":\"$2\"}" ;;
+            esac
+            _su_out="$(printf '%s\n' "$_su_req" | sh "$_su_rpcd" call "sub_$1")"
+            case "$_su_out" in '{'*) printf '%s\n' "$_su_out"; exit 0 ;; esac
+            fail "каркас не ответил" ;;
+    esac
+    [ -n "${2:-}" ] || usage
+    . "${SUB_LIB_SH:-$RPCD_LIB/sub-lib.sh}"
+    sub_use "$2"
+    case " $(sub_names | tr '\n' ' ') " in
+        *" $SUB_NAME "*) ;;
+        *) fail "подписки «$SUB_NAME» нет" ;;
+    esac
+    case "$1" in
+        quota)
+            _q_url="$(sub_get "$SUB_NAME" url)"
+            _q_kind="$(sub_kind_of "$SUB_NAME")"
+            json_init
+            json_add_boolean ok 1
+            json_add_string kind "$_q_kind"
+            json_add_string name "$SUB_NAME"
+            if [ "$_q_kind" != url ] || [ -z "$_q_url" ]; then
+                # Спрашивать некого: узлы вставлены ссылками, а ссылка не панель. Отказом это не считается.
+                json_add_boolean asked 0
+                json_add_string why "узлы заданы ссылками — остаток брать негде: его сообщает панель подписки, а не ссылка"
+            elif sub_quota_ask "$_q_url"; then
+                json_add_boolean asked 1
+            else
+                json_add_boolean asked 1
+                json_add_string why "панель не сообщила остаток трафика"
+            fi
+            sub_userinfo_emit
+            json_dump; exit 0 ;;
+        title)
+            _t_title="${3:-}"
+            [ "$(printf '%s' "$_t_title" | wc -c)" -le 200 ] || fail "название слишком длинное"
+            case "$_t_title" in *[[:cntrl:]]*) fail "в названии управляющие знаки" ;; esac
+            call_lock state
+            uci_file || fail "не удалось создать $UCI_SPLIFY2 — кончилось место?"
+            sub_put "$SUB_NAME" title "$_t_title" || fail "не удалось записать название"
+            uci_commit
+            sub_brand "$(sub_get "$SUB_NAME" url)" "$_t_title" own
+            json_init; json_add_boolean ok 1; json_add_string name "$SUB_NAME"; json_add_string title "$SUB_BRAND_TITLE"
+            json_dump; exit 0 ;;
+        *) usage ;;
+    esac
+}
+
 case "${1:-}" in
     fetch) shift; cmd_fetch "$@" ;;
     fetch-mode) shift; cmd_fetch_mode "$@" ;;
@@ -771,5 +833,6 @@ case "${1:-}" in
     settings) shift; cmd_settings "$@" ;;
     state) shift; cmd_state "$@" ;;
     hook) shift; cmd_hook "$@" ;;
+    sub) shift; cmd_sub "$@" ;;
     *) usage ;;
 esac

@@ -170,9 +170,7 @@ cp -r luci/root/usr/share "$PKG/usr/"
 cp files/usr/libexec/rpcd/splify2 "$PKG/usr/libexec/rpcd/splify2"
 # Обновление списков переехало в плагин lists-catalog (plugins/lists-catalog, задача update-lists): строка crontab
 # теперь пишется plugin_sync из манифеста плагина, а не postinst пакета.
-# Автообновление подписок. Отдельным файлом и отдельным заданием крона: у каждой подписки свой
-# интервал (от получаса до трёх суток), и хвостом суточного обновления списков это не сделать.
-cp files/usr/sbin/splify2-update-subs "$PKG/usr/sbin/splify2-update-subs"
+# Автообновление подписок переехало в плагин subscriptions (plugins/subscriptions, задача update-subs).
 # Команда полного удаления следов. В postrm её быть НЕ МОЖЕТ: у opkg обновление пакета это
 # удаление плюс установка, поэтому чистка в postrm сносила бы настройки человека при каждом
 # обновлении. Поэтому — отдельная команда, которую зовут осознанно (см. шапку скрипта).
@@ -224,7 +222,6 @@ mkdir -p "$PKG/lib/upgrade/keep.d"
 cp files/lib/upgrade/keep.d/splify2 "$PKG/lib/upgrade/keep.d/splify2"
 chmod 0644 "$PKG/lib/upgrade/keep.d/splify2"
 chmod 0755 "$PKG/usr/libexec/rpcd/splify2" \
-           "$PKG/usr/sbin/splify2-update-subs" \
            "$PKG/usr/sbin/splify2-purge"
 chmod 0644 "$PKG"/usr/lib/splify2/*.sh "$PKG"/usr/lib/splify2/rpcd/*.sh
 cp files/usr/lib/splify2/plugin-rpcd "$PKG/usr/lib/splify2/plugin-rpcd"
@@ -320,19 +317,10 @@ if grep -q splify2-update-lists /etc/crontabs/root 2>/dev/null; then
     /etc/init.d/cron restart 2>/dev/null
 fi
 # Ссылки объектов плагинов, ACL и блок задач crontab приводятся в согласие с тем, что стоит у менеджера плагинов.
-# Автообновление подписок: задание смотрит по часам, кому пора, и только у тех, у кого
-# интервал задан. Раз в десять минут, потому что наименьший интервал — полчаса: реже значило
-# бы промахиваться мимо получаса на треть, чаще — будить роутер без дела.
-#
-# МИНУТА ЗДЕСЬ НЕ СЛУЧАЙНАЯ, и это не забывчивость: обращение наружу делает не само задание, а
-# только те подписки, чей срок подошёл, — то есть всплеска в одну секунду у тысячи роутеров не
-# получится при любой минуте. Случайность живёт там, где она нужна: у суточного обновления
-# списков.
-if ! grep -q splify2-update-subs /etc/crontabs/root 2>/dev/null; then
-    mkdir -p /etc/crontabs
-    printf '*/10 * * * * /usr/sbin/splify2-update-subs
-' >> /etc/crontabs/root
-    /etc/init.d/cron enable 2>/dev/null
+# Автообновление подписок больше не строка этого пакета: его делает плагин subscriptions (задача update-subs), а строку
+# crontab пишет plugin_sync. Прежняя строка снимается — команды /usr/sbin/splify2-update-subs в пакете нет.
+if grep -q splify2-update-subs /etc/crontabs/root 2>/dev/null; then
+    sed -i '/splify2-update-subs/d' /etc/crontabs/root
     /etc/init.d/cron restart 2>/dev/null
 fi
 # Счётчика установок больше нет: строка крона прежнего отклика (splify2-ping) снимается

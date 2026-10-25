@@ -1,0 +1,15 @@
+#!/bin/sh
+# Хук support_report: раздел отчёта поддержки — пределы, у скольких подписок задан интервал. Без адресов и названий.
+. "${STEER_PLUGIN_DIR:?программа запускается хостом splify2 (нет STEER_PLUGIN_DIR)}/lib/base.sh"
+cat >/dev/null
+n="$(grep -c . "$SCHEDULE" 2>/dev/null)"
+text="intervals: $(min_interval)..$(max_interval) min
+subscriptions on schedule: ${n:-0}
+quota check: $(quota_interval) min"
+json_init
+json_add_boolean ok 1
+json_add_object section
+json_add_string title "subscriptions"
+json_add_string text "$text"
+json_close_object
+json_dump

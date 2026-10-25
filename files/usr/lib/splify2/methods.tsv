@@ -34,9 +34,9 @@ sub_set	frame
 sub_info	frame
 sub_list	frame
 sub_del	frame
-sub_rename	frame
-sub_quota	frame
-sub_auto	frame
+sub_rename	moved	subscriptions
+sub_quota	moved	subscriptions
+sub_auto	moved	subscriptions
 sub_refresh	frame
 backup_get	moved	backup
 backup_put	moved	backup
