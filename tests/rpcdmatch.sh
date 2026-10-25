@@ -400,9 +400,26 @@ cat > "$T/bin/steer" <<'EOF'
 #!/bin/sh
 # Перевод спеки (`steer spec convert [--json] --spec Ф|-`): заглушка отдаёт тело как есть.
 if [ "${1:-}" = spec ] && [ "${2:-}" = convert ]; then
-    shift 2; _f=""
-    while [ $# -gt 0 ]; do case "$1" in --spec) _f="$2"; shift ;; esac; shift; done
-    if [ "$_f" = - ]; then cat; else cat "$_f"; fi
+    shift 2; _f=""; _json=0
+    while [ $# -gt 0 ]; do case "$1" in --spec) _f="$2"; shift ;; --json) _json=1 ;; esac; shift; done
+    _body="$(if [ "$_f" = - ]; then cat; else cat "$_f"; fi)"
+    # Вход не JSON — YAML: заглушка «разбирает» его так: слово BAD — ошибка с адресом, как у ядра, иначе
+    # печатает JSON-вид. Печать YAML (без --json) отдаёт тело как есть.
+    case "$_body" in
+        '{'*|'') ;;
+        *) case "$_json:$_body" in
+               1:*BAD*) echo "steer: stdin:5:3: ошибка YAML: did not find expected key" >&2; exit 2 ;;
+               1:*) printf '{"version":2,"from":"yaml"}\n'; exit 0 ;;
+           esac ;;
+    esac
+    printf '%s\n' "$_body"
+    exit 0
+fi
+# Версия ядра: STEER_VERSION пуст — команды «нет»; STEER_VERSION_JSON=1 — `--json` печатает объект.
+if [ "${1:-}" = version ]; then
+    [ -n "${STEER_VERSION:-}" ] || exit 2
+    if [ "${STEER_VERSION_JSON:-0}" = 1 ] && [ "${2:-}" = --json ]; then printf '{"version":"%s"}\n' "$STEER_VERSION"
+    else printf 'steer %s (базовая сборка, ревизия x)\n' "$STEER_VERSION"; fi
     exit 0
 fi
 echo "$*" >> "$SANDBOX/steer.log"
@@ -786,6 +803,7 @@ rpcd_run() {  # МЕТОД [JSON_ЗАПРОСА]  — вызов метода; �
         BACKUP_IN="$T/var/backup.in" \
         BACKUP_MAX_BYTES="${BACKUP_MAX_BYTES:-262144}" \
         STEER_RC="${STEER_RC:-0}" \
+        STEER_VERSION="${STEER_VERSION:-}" STEER_VERSION_JSON="${STEER_VERSION_JSON:-0}" \
         GH_BODY="${GH_BODY-}" \
         GH_FAIL="${GH_FAIL-}" \
         GH_CACHE="$T/var/releases.json" \
@@ -5233,6 +5251,56 @@ check "spec_check: ядро отвергло — ok false и его слова" 
       "$(printf '%s' "$out" | jget ok);$(printf '%s' "$out" | jget error)"
 check "spec_check: пустой вход — отказ" "false" "$(rpcd spec_check '{}' | jget ok)"
 check "spec_check: после отказа временного файла нет" "$n_etc" "$(ls "$T"/etc/spec.json* 2>/dev/null | wc -l | tr -d ' ')"
+
+# Спека для человека — YAML. spec_yaml печатает её ядром (`spec convert` без --json); spec_check и spec_set
+# принимают YAML: ядро переводит его в JSON и, если не разобрало, называет строку и колонку (line, col).
+rm -f "$T/etc/spec.json" "$T/etc/spec.yaml"; : > "$T/steer.log"
+printf 'version: 2\noutputs: {}\n' > "$T/etc/spec.yaml"
+out="$(rpcd spec_yaml)"
+check "spec_yaml: YAML от ядра и ревизия" "true;version: 2;yes" \
+      "$(printf '%s' "$out" | jget ok);$(printf '%s' "$out" | jget yaml | head -1);$([ -n "$(printf '%s' "$out" | jget rev)" ] && echo yes || echo no)"
+check "spec_yaml: ядро позвано без --json" "yes" "$(grep -q 'convert' "$T/steer.log" || echo yes)"
+out="$(rpcd spec_check '{"spec":"version: 2\noutputs: {}\n"}')"
+check "spec_check: YAML принят" "true" "$(printf '%s' "$out" | jget ok)"
+check "spec_check: по файлу YAML ядру ушёл JSON-перевод" "yes" \
+      "$(grep -q "^apply --dry-run --spec $T/etc/spec.json.chk\." "$T/steer.log" && echo yes || echo no)"
+out="$(rpcd spec_check '{"spec":"version: 2\noutputs: [BAD\n"}')"
+check "spec_check: ошибка разбора — слова ядра без адреса, строка и колонка отдельно" "false;ошибка YAML: did not find expected key;5;3" \
+      "$(printf '%s' "$out" | jget ok);$(printf '%s' "$out" | jget error);$(printf '%s' "$out" | jget line);$(printf '%s' "$out" | jget col)"
+check "spec_check: после отказа разбора временных файлов нет" "" "$(ls "$T"/etc | grep -E 'spec\.(json|yaml)\.(chk|new)\.')"
+out="$(STEER_RC=1 STEER_ERR='steer: /x/spec.json.chk.1:3:1: unknown key frobnicate' rpcd spec_check '{"spec":"version: 2\n"}')"
+check "spec_check: отказ проверки — без адреса временного файла, строки нет (она в чужом JSON)" "false;unknown key frobnicate;" \
+      "$(printf '%s' "$out" | jget ok);$(printf '%s' "$out" | jget error);$(printf '%s' "$out" | jget line)"
+out="$(rpcd spec_check '{"spec":"{\"version\":2}"}')"
+check "spec_check: JSON по-прежнему принимается" "true" "$(printf '%s' "$out" | jget ok)"
+# spec_set: YAML ложится в spec.yaml переводом ядра (в заглушке — тело как есть), разбор не вышел — ничего не тронуто.
+out="$(rpcd spec_set '{"spec":"version: 2\noutputs: [BAD\n"}')"
+check "spec_set: ошибка разбора YAML — отказ со строкой и колонкой" "false;5;3" \
+      "$(printf '%s' "$out" | jget ok);$(printf '%s' "$out" | jget line);$(printf '%s' "$out" | jget col)"
+check "spec_set: после отказа разбора спека прежняя, временных нет" "version: 2|" \
+      "$(head -1 "$T/etc/spec.json")|$(ls "$T"/etc | grep -E 'spec\.(json|yaml)\.(chk|new)\.')"
+out="$(rpcd spec_set '{"spec":"version: 2\noutputs: {}\nlists: {}\n"}')"
+check "spec_set: YAML принят" "true" "$(printf '%s' "$out" | jget ok)"
+check "spec_set: YAML прошёл через ядро (в JSON) до записи на диск" '{"version":2,"from":"yaml"}' "$(cat "$T/etc/spec.json")"
+
+# Менеджер плагинов — с ядра 2.1. Старое ядро: код core_too_old и числа, а не слова «нет такой команды»;
+# версию спрашивают у ядра (`version --json`, у старого — первая строка `steer X.Y.Z`), текст отказа не разбирается.
+plug_reset
+echo 'steer: нет такой команды: plugin' > "$T/plug/fail.list"
+out="$(STEER_VERSION=2.0.5 rpcd plugins_list)"
+check "plugins_list на ядре 2.0.5 (без --json): core_too_old, стоит 2.0.5, нужно 2.1" "false;core_too_old;2.0.5;2.1" \
+      "$(printf '%s' "$out" | jget ok);$(printf '%s' "$out" | jget code);$(printf '%s' "$out" | jget installed);$(printf '%s' "$out" | jget need)"
+out="$(STEER_VERSION=2.0.5 STEER_VERSION_JSON=1 rpcd plugins_list)"
+check "plugins_list: версия из version --json" "core_too_old;2.0.5" "$(printf '%s' "$out" | jget code);$(printf '%s' "$out" | jget installed)"
+out="$(STEER_VERSION=2.1.0 rpcd plugins_list)"
+check "plugins_list: ядро 2.1 отказало — слова менеджера, не core_too_old" "failed" "$(printf '%s' "$out" | jget code)"
+out="$(rpcd plugins_list)"
+check "plugins_list: версия ядра неизвестна — слова менеджера" "failed" "$(printf '%s' "$out" | jget code)"
+echo 'steer: нет такой команды: plugin' > "$T/plug/fail.enable"
+out="$(STEER_VERSION=2.0.5 rpcd plugin_enable '{"id":"vless"}')"
+check "plugin_enable на ядре 2.0.5: тот же код" "core_too_old" "$(printf '%s' "$out" | jget code)"
+rm -f "$T/plug/fail.list" "$T/plug/fail.enable"
+plug_reset
 
 # prefs: что открывать главной страницей. Без выбора — Andromeda, если её сборка в пакете, иначе каркас.
 rm -f "$T/andromeda-build-id" "$T/etc/config/splify2"

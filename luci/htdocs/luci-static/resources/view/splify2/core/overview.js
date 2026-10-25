@@ -64,7 +64,7 @@ return baseclass.extend({
 				rows.push([ T('Outputs'), String(Object.keys(spec.outputs || {}).length) ]);
 				rows.push([ T('Rules'), String((spec.rules || []).length) ]);
 				rows.push([ T('Lists'), String(Object.keys(spec.lists || {}).length) ]);
-				rows.push([ T('Schema of keys'), store.schemaSource === 'core' ? T('From the core') : T('Bundled with the package (the core has no spec-schema command)') ]);
+				rows.push([ T('Schema of keys'), store.schemaSource === 'core' ? T('From the core') : T('The forms follow the package: steer {need} or newer gives them their own schema.', { need: '2.1' }) ]);
 				var checks = (diag.checks || []).map(function(c) {
 					return E('tr', { 'class': 'tr' }, [ E('td', { 'class': 'td' }, verdictCell(c.verdict)), E('td', { 'class': 'td left' }, c.what || c.id),
 						E('td', { 'class': 'td left' }, c.why || '') ]);

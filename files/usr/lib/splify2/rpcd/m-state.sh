@@ -175,6 +175,26 @@ case "$2" in
         printf '{"ok":true,"source":"%s","schema":%s}\n' "$_ss_src" "$out"
         ;;
 
+    spec_yaml)
+        # The spec as the core prints it in YAML (`steer spec convert`, no --json): what the raw editor of the
+        # frame shows. Comments of a hand-written spec.yaml are not kept (the core prints from the parsed spec).
+        # `rev` is the same revision as spec_get gives, so Save can detect a change made meanwhile.
+        if spec_have; then
+            if spec_is_yaml; then _sy_src="$SPEC_YAML"; else _sy_src="$SPEC"; fi
+            _sy_err="$(mktemp 2>/dev/null)" || _sy_err=/dev/null
+            _sy_out="$("$STEER" spec convert --spec "$_sy_src" 2>"$_sy_err")"; _sy_rc=$?
+            [ "$_sy_err" = /dev/null ] || { _sy_e="$(cat "$_sy_err" 2>/dev/null)"; rm -f "$_sy_err"; }
+            [ "$_sy_rc" = 0 ] && [ -n "$_sy_out" ] || fail "${_sy_e:-the core cannot print the spec as YAML}"
+        else
+            _sy_out="version: 2"
+        fi
+        json_init; json_add_boolean ok 1
+        json_add_string yaml "$_sy_out
+"
+        json_add_string rev "$(spec_rev)"
+        json_dump
+        ;;
+
     diag)
         # Проверки состояния — движок печатает JSON сам. Отдаём дословно по той же причине,
         # что и status: свой разбор здесь означал бы вторую модель проверок в shell, которая

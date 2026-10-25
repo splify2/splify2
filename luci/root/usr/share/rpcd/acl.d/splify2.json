@@ -59,6 +59,7 @@
           "repo_key",
           "spec_schema",
           "spec_check",
+          "spec_yaml",
           "prefs_get",
           "i18n_get",
           "plugin_settings_get"

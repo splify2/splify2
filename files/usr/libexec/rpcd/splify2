@@ -284,6 +284,7 @@ list)
     # plugin_settings_set — объект: в сигнатуре его нет (как params у plugin_call).
     json_add_object spec_schema; json_close_object
     json_add_object spec_check; json_add_string spec; json_close_object
+    json_add_object spec_yaml; json_close_object
     json_add_object prefs_get; json_close_object
     json_add_object prefs_set; json_add_string interface; json_close_object
     json_add_object i18n_get; json_add_string lang; json_close_object
@@ -334,7 +335,7 @@ call)
     # /usr/lib/splify2/rpcd. Метод, которого нет ни в одной группе, — отказ здесь же, до
     # чтения чего бы то ни было.
     case "$2" in
-        status|diag|dev_stats|net_info|devices|client_nets|leases|engine_state|outbound_geo|outbound_probe|explain|xsteer_state|vless_nodes|vless_probe|hysteria2_nodes|hysteria2_probe|proxy_nodes|proxy_probe|dns_log|dns_probe|conns|helper|support_report|spec_schema) _grp=state ;;
+        status|diag|dev_stats|net_info|devices|client_nets|leases|engine_state|outbound_geo|outbound_probe|explain|xsteer_state|vless_nodes|vless_probe|hysteria2_nodes|hysteria2_probe|proxy_nodes|proxy_probe|dns_log|dns_probe|conns|helper|support_report|spec_schema|spec_yaml) _grp=state ;;
         spec_set|spec_check|apply|spec_heal) _grp=spec ;;
         # Методы, вынесенные в плагины (plugins/): без плагина — отказ «нужен плагин X», с плагином их берёт реестр
         # расширений выше как псевдонимы (methods.tsv, колонка moved).

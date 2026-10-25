@@ -78,6 +78,19 @@ return baseclass.extend({
 		});
 	},
 
+	// Write the spec from the text of the raw editor (YAML; the core translates it and names the line and the
+	// column of a parse error). `rev` is the revision the text was read at. The loaded state is read again:
+	// the spec of the forms is whatever the core made of the text.
+	saveText: function(text, rev) {
+		var self = this;
+		return api.call('spec_set', { spec: text, rev: rev }).then(function(r) {
+			return self.load().then(function() { return r; });
+		}, function(e) {
+			if (e.reply && e.reply.conflict) { e.conflict = true; if (e.reply.rev) e.currentRev = e.reply.rev; }
+			throw e;
+		});
+	},
+
 	apply: function() {
 		var self = this;
 		return api.call('apply').then(function(r) {

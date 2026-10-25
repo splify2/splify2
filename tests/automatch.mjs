@@ -4,7 +4,7 @@
 // Запуск: node tests/automatch.mjs [--write-strings]   (sh tests/automatch.sh ищет подходящий node)
 import { readFileSync, readdirSync, writeFileSync, existsSync } from 'node:fs'
 import { resolve } from 'node:path'
-import { ROOT, RES, makeLoader, E } from './lib/luci-stub.mjs'
+import { ROOT, RES, makeLoader, E, ui } from './lib/luci-stub.mjs'
 
 let fails = 0, total = 0
 const canon = (v) => JSON.stringify(v, (k, x) => (x && typeof x === 'object' && !Array.isArray(x) ? Object.fromEntries(Object.entries(x).sort(([a], [b]) => a.localeCompare(b))) : x))
@@ -254,7 +254,7 @@ import { scanStrings, stringsFile } from './lib/strings.mjs'
   // параметры: у каждого объявлены в rpcd те же поля, что в api.js (values/spec/…)
   const sig = {}
   for (const m of names) {
-    const mm = listBlock.match(new RegExp(`json_add_object ${m}\\b([^\\n]*)`))
+    const mm = listBlock.match(new RegExp(`json_add_object ${m}\\b([\\s\\S]*?json_close_object)`))
     sig[m] = [...(mm ? mm[1] : '').matchAll(/json_add_(?:string|int|boolean|array) ([a-z_]+)/g)].map((x) => x[1])
   }
   const bad = names.filter((m) => api.methods[m].some((k) => !sig[m].includes(k) && !(m === 'plugin_settings_set' && k === 'values')))
@@ -268,6 +268,78 @@ import { scanStrings, stringsFile } from './lib/strings.mjs'
     try { new Function('baseclass', 'L', 'E', '_', readFileSync(resolve(CORE, f), 'utf8').replace(/^'require [^\n]*\n/gm, '')) } catch (e) { bad.push(f + ': ' + e.message) }
   }
   check('все модули view/splify2/core разбираются без ошибок', [], bad)
+}
+
+// ---- 9. сырой редактор: YAML туда и обратно, ошибка разбора; вкладка плагинов на старом ядре ----------
+{
+  const tick = () => new Promise((r) => setTimeout(r, 0))
+  const find = (el, pred) => { let hit = null; el.walk((n) => { if (!hit && pred(n)) hit = n }); return hit }
+  const click = (el) => el.listeners.click[0]({ preventDefault() {} })
+  const YAML = 'version: 2\n# comment of the core\noutputs:\n  direct:\n    kind: direct\n'
+  const notes = [], modals = []
+  const ui2 = { ...ui, addNotification: (t, el, kind) => notes.push({ text: el.textContent, kind }),
+    showModal: (title, kids) => modals.push({ title, el: E('div', {}, kids) }), hideModal() {} }
+  const rc = [], rr = {
+    spec_get: { version: 2, rev: 'r1', outputs: { direct: { kind: 'direct' } } },
+    spec_schema: { ok: true, source: 'core', schema: FIXTURE },
+    devices: { ok: true, devices: [] }, applied_get: null,
+    spec_yaml: { ok: true, yaml: YAML, rev: 'r1' },
+    spec_check: (a) => a.includes('BAD') ? { ok: false, error: 'ошибка YAML: did not find expected key', line: 5, col: 3 } : { ok: true },
+    spec_set: (a, rev) => rev === 'old' ? { ok: false, conflict: true, rev: 'r2', error: 'changed' } : { ok: true, rev: 'r3' },
+  }
+  const L2 = makeLoader({ rpcCalls: rc, rpcReplies: rr, extra: { ui: ui2 } })
+  const raw = L2.load('view.splify2.core.raw')
+  const store = L2.load('view.splify2.core.store')
+  await store.load()
+  let refreshed = 0
+  const host = { refresh() { refreshed++ } }
+  const el = raw.render(host)
+  await tick()
+  const area = find(el, (n) => n.tag === 'textarea')
+  const btn = (name) => find(el, (n) => n.tag === 'button' && n.textContent === name)
+  const res = () => find(el, (n) => n.attrs && n.attrs['class'] === 'cbi-section').children[3].children.at(-1).textContent
+  check('редактор показывает YAML ядра (spec_yaml), а не JSON', YAML, area.value)
+  check('подпись редактора без слова JSON и без технических пояснений', 'The spec in YAML. Edit it, then press Check or Save.', find(el, (n) => n.tag === 'p').textContent)
+  check('в словаре каркаса нет строк про JSON', [], JSON.parse(readFileSync(stringsFile(CORE), 'utf8')).filter((x) => /JSON/.test(x) && !/JSON Schema/.test(x)))
+  rc.length = 0
+  click(btn('Check')); await tick()
+  check('Check шлёт YAML как есть', [ 'spec_check', YAML ], [ rc[0].method, rc[0].args[0] ])
+  check('Check: ядро приняло', 'The core accepts the spec.', res())
+  area.value = 'version: 2\noutputs: [BAD\n'
+  rc.length = 0
+  click(btn('Check')); await tick()
+  check('ошибка разбора: строка и колонка и слова ядра', 'Line 5, column 3: ошибка YAML: did not find expected key', res())
+  rc.length = 0
+  area.value = YAML + '  extra: 1\n'
+  click(btn('Save')); await tick(); await tick()
+  const set = rc.find((c) => c.method === 'spec_set')
+  check('Save шлёт YAML и ревизию, с которой текст прочитан', [ YAML + '  extra: 1\n', 'r1' ], set && set.args)
+  check('после Save спека и редактор перечитаны', [ true, true, true ], [ rc.some((c) => c.method === 'spec_get'), rc.some((c) => c.method === 'spec_yaml'), refreshed > 0 ])
+  check('после Save сказано, что делать дальше', 'Saved. Press Apply to put the changes into effect.', res())
+  area.value = 'version: 2\noutputs: [BAD\n'
+  rr.spec_set = () => ({ ok: false, error: 'ошибка YAML: x', line: 2, col: 1 })
+  click(btn('Save')); await tick()
+  check('Save: ошибка разбора со строкой и колонкой', 'Line 2, column 1: ошибка YAML: x', res())
+  rr.spec_set = () => ({ ok: false, conflict: true, rev: 'r9', error: 'changed' })
+  click(btn('Save')); await tick()
+  check('Save: спека на роутере изменилась — отдельное сообщение', true, /changed on the router/.test(res()))
+
+  // Плагины на ядре без менеджера: состояние и действие, а не слова отказа ядра.
+  rc.length = 0
+  rr.plugins_list = { ok: false, error: 'ядро 2.0.5 не умеет плагины — нужно 2.1 или новее', code: 'core_too_old', installed: '2.0.5', need: '2.1' }
+  rr.steer_versions = { ok: true, versions: [ '2.1.1-pre', '2.1.0', '2.0.5' ], prerelease: '2.1.1-pre' }
+  rr.steer_install = { ok: true }
+  const pl = L2.load('view.splify2.core.plugins').render(host)
+  await tick(); await tick()
+  check('старое ядро: плагины сказали, что нужно и что стоит', 'Plugins need steer 2.1 or newer. Installed: 2.0.5.', find(pl, (n) => n.attrs && n.attrs['class'] === 'alert-message warning').textContent)
+  check('старое ядро: слов «нет такой команды» нет', false, /команды|steer help/.test(pl.textContent))
+  check('старое ядро: после отказа каталог не запрашивался', false, rc.some((c) => c.method === 'plugins_search'))
+  click(find(pl, (n) => n.tag === 'button' && n.textContent === 'Update the core')); await tick()
+  check('старое ядро: кнопка предлагает свежий выпуск (не предварительный)', 'Update steer to 2.1.0?', modals.at(-1).title)
+  click(find(modals.at(-1).el, (n) => n.tag === 'button' && n.textContent === 'Update the core')); await tick()
+  check('старое ядро: обновление зовёт steer_install с этой версией', [ '2.1.0' ], (rc.find((c) => c.method === 'steer_install') || { args: [] }).args.slice(0, 1))
+  // запасная схема: одна строка на странице разделов
+  check('запасная схема названа одной строкой', true, /follow the package/.test(readFileSync(resolve(CORE, 'sections.js'), 'utf8')))
 }
 
 console.log(`\n${total} проверок, провалов: ${fails}`)
