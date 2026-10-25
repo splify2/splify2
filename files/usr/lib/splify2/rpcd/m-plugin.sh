@@ -60,6 +60,41 @@ plugin_simple() {  # ДЕЙСТВИЕ [ФЛАГИ...]
     fi
 }
 
+# Название и описание стоящих плагинов на языке человека: ключи plugin.name и plugin.description словаря
+# плагина (i18n/<язык>.json, manifest.md). Язык ищется как есть, затем без региона (pt-BR, pt), затем en — каркас
+# английский; нет и там — поле не отдаётся, и интерфейс показывает слова манифеста. Печатает объект
+# {"<id>":{"name":…,"description":…}}.
+plugin_names_json() {  # ЯЗЫК
+    _pn_l="$1"; _pn_c=""
+    case "$_pn_l" in
+        ''|*[!A-Za-z0-9-]*) _pn_l="" ;;
+        [a-z][a-z]|[a-z][a-z][a-z]|[a-z][a-z]-[A-Za-z0-9]*|[a-z][a-z][a-z]-[A-Za-z0-9]*) _pn_c="$_pn_l ${_pn_l%%-*}" ;;
+        *) _pn_l="" ;;
+    esac
+    _pn_c="$_pn_c en"
+    _pn_out=""
+    for _pn_d in "$PLUGIN_ROOT"/*/; do
+        [ -r "${_pn_d}plugin.json" ] || continue
+        _pn_id="${_pn_d%/}"; _pn_id="${_pn_id##*/}"
+        plugin_id_ok "$_pn_id" || continue
+        _pn_dir="$(jsonfilter -i "${_pn_d}plugin.json" -e '@.i18n.dir' 2>/dev/null)"
+        case "$_pn_dir" in ''|/*|*..*) _pn_dir=i18n ;; esac
+        _pn_nm=""; _pn_ds=""
+        for _pn_x in $(printf '%s\n' $_pn_c | awk '!s[$0]++'); do
+            _pn_f="${_pn_d}${_pn_dir}/${_pn_x}.json"
+            [ -r "$_pn_f" ] || continue
+            [ -n "$_pn_nm" ] || _pn_nm="$(jsonfilter -i "$_pn_f" -e '@["plugin.name"]' 2>/dev/null)"
+            [ -n "$_pn_ds" ] || _pn_ds="$(jsonfilter -i "$_pn_f" -e '@["plugin.description"]' 2>/dev/null)"
+        done
+        [ -n "$_pn_nm$_pn_ds" ] || continue
+        _pn_o="{"
+        [ -n "$_pn_nm" ] && _pn_o="$_pn_o\"name\":$(plugin_jstr "$_pn_nm")"
+        [ -n "$_pn_ds" ] && _pn_o="$_pn_o${_pn_nm:+,}\"description\":$(plugin_jstr "$_pn_ds")"
+        _pn_out="${_pn_out:+$_pn_out,}\"$_pn_id\":$_pn_o}"
+    done
+    printf '{%s}' "$_pn_out"
+}
+
 case "$2" in
 
     plugins_list)
@@ -67,6 +102,8 @@ case "$2" in
         # интерфейсов плагинов. Ссылки и ACL приводятся в согласие здесь же: после обновления
         # прошивки (sysupgrade) плагины на месте, а ссылки rpcd — нет; первое открытие вкладки их
         # возвращает.
+        read -r input
+        _pl_lang="$(plugin_in lang)"
         plugin_sync
         plugin_manager list || { plugin_manager_fail; exit 0; }
         _pl_plugins="$(plugin_json_array "$PLUGIN_OUT" plugins)"
@@ -82,10 +119,10 @@ case "$2" in
         _pl_ext="$(ext_errors_json)"
         if [ -n "$_pl_rerr" ]; then
             plugin_ok_raw host_api "$(plugin_jstr "$PLUGIN_HOST_API")" splify2_api "$(plugin_jstr "$PLUGIN_SPLIFY2_API")" \
-                ext_errors "$_pl_ext" plugins "$_pl_plugins" repos "$_pl_repos" repos_error "$(plugin_jstr "$_pl_rerr")"
+                ext_errors "$_pl_ext" names "$(plugin_names_json "$_pl_lang")" plugins "$_pl_plugins" repos "$_pl_repos" repos_error "$(plugin_jstr "$_pl_rerr")"
         else
             plugin_ok_raw host_api "$(plugin_jstr "$PLUGIN_HOST_API")" splify2_api "$(plugin_jstr "$PLUGIN_SPLIFY2_API")" \
-                ext_errors "$_pl_ext" plugins "$_pl_plugins" repos "$_pl_repos"
+                ext_errors "$_pl_ext" names "$(plugin_names_json "$_pl_lang")" plugins "$_pl_plugins" repos "$_pl_repos"
         fi
         ;;
 

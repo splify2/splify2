@@ -41,6 +41,12 @@ return baseclass.extend({
 		var state = { list: null, catalog: null, query: '' };
 		var jobs = {};   // id -> text of the progress
 
+		// Name and description in the language of the person: the core gives the words of the manifest, the
+		// backend adds the ones from the plugin's own dictionary (plugins_list.names).
+		var wordsOf = function(p, field) {
+			var n = state.list && state.list.names && state.list.names[p.id];
+			return (n && n[field]) || p[field] || '';
+		};
 		var repoOf = function(name) {
 			var rs = (state.list && state.list.repos) || [];
 			for (var i = 0; i < rs.length; i++) if (rs[i].name === name) return rs[i];
@@ -159,7 +165,8 @@ return baseclass.extend({
 					api.call('plugin_autoupdate', { id: p.id, enabled: ev.target.checked }).then(function() { load(); }, function(e) { fail(e); load(); });
 				} });
 				return E('tr', { 'class': 'tr', 'data-plugin': p.id }, [
-					E('td', { 'class': 'td' }, [ E('strong', {}, p.id), p.name && p.name !== p.id ? ' ' + p.name : '' ]),
+					E('td', { 'class': 'td' }, [ E('strong', {}, p.id), wordsOf(p, 'name') && wordsOf(p, 'name') !== p.id ? ' ' + wordsOf(p, 'name') : '',
+						wordsOf(p, 'description') ? E('div', { 'class': 'cbi-value-description' }, wordsOf(p, 'description')) : '' ]),
 					E('td', { 'class': 'td' }, [ p.version || '', upd ? badge(T('Update {version}', { version: typeof upd === 'string' ? upd : '' }), '#1565c0') : '' ]),
 					E('td', { 'class': 'td' }, repoBadge(p.repo)),
 					E('td', { 'class': 'td' }, [ busy ? busy : (p.state || ''), p.why ? E('div', { 'class': 'cbi-value-description' }, String(p.why)) : '' ]),
@@ -184,8 +191,8 @@ return baseclass.extend({
 			].concat(cat.map(function(p) {
 				var busy = jobs[p.id];
 				return E('tr', { 'class': 'tr', 'data-catalog': p.id }, [
-					E('td', { 'class': 'td' }, [ E('strong', {}, p.id), p.name && p.name !== p.id ? ' ' + p.name : '',
-						p.description ? E('div', { 'class': 'cbi-value-description' }, p.description) : '' ]),
+					E('td', { 'class': 'td' }, [ E('strong', {}, p.id), wordsOf(p, 'name') && wordsOf(p, 'name') !== p.id ? ' ' + wordsOf(p, 'name') : '',
+						wordsOf(p, 'description') ? E('div', { 'class': 'cbi-value-description' }, wordsOf(p, 'description')) : '' ]),
 					E('td', { 'class': 'td' }, p.version || ''),
 					E('td', { 'class': 'td' }, repoBadge(p.repo)),
 					E('td', { 'class': 'td' }, busy ? busy : (have[p.id] ? T('Installed') :
@@ -262,7 +269,7 @@ return baseclass.extend({
 				function(e) { state.catalog = []; draw(); fail(e); });
 		};
 		var load = function() {
-			api.call('plugins_list').then(function(r) { state.list = r; draw(); loadCatalog(); },
+			api.call('plugins_list', { lang: i18n.lang }).then(function(r) { state.list = r; draw(); loadCatalog(); },
 				function(e) { var o = oldCore(e); state.list = o ? { old: o } : { error: e.message }; draw(); });
 		};
 		root.appendChild(body);
