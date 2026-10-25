@@ -94,6 +94,8 @@ return baseclass.extend({
 			T('The spec on this router is in the old format (v1). Open Spec to convert it, or use the Andromeda interface.')));
 		build();
 		return E('div', {}, [
+			store.schemaSource === 'core' ? '' :
+				E('div', { 'class': 'alert-message warning' }, T('The forms follow the package: steer {need} or newer gives them their own schema.', { need: '2.1' })),
 			def.keys.every(function(k) { return !!(store.schema.properties || {})[k]; }) ? '' :
 				E('div', { 'class': 'alert-message warning' }, T('The core does not know some keys of this section.')),
 			holder,

@@ -835,6 +835,51 @@ heal_report() {  # ВЫВОД spec_heal_ipv6
     return 0
 }
 
+# ТЕКСТ СПЕКИ ОТ КАРКАСА — YAML (его показывают человеку) или JSON (Andromeda, прежние клиенты, ssh).
+# Текст, начинающийся с «{», идёт как JSON без перевода. Иное переводит ядро: `steer spec convert --json
+# --spec -` (stdin) — оно же и разбирает YAML, и называет строку и колонку разбора: «stdin:5:1: …».
+# Комментарии YAML при записи теряются: спеку на диск кладёт перевод ядром (spec_put), а не присланный текст.
+SPEC_ERR_LINE=""; SPEC_ERR_COL=""
+
+# Слова отказа ядра без адреса «steer: файл:строка:колонка: » — в SPEC_ERR_MSG (без подоболочки: значения
+# переменных нужны вызывающему); строка и колонка — в SPEC_ERR_LINE/COL, когда адрес есть и $2 = keep
+# (разбор самого текста: номера строк — те, что видит человек).
+spec_err_split() {  # ТЕКСТ [keep]
+    SPEC_ERR_LINE=""; SPEC_ERR_COL=""; SPEC_ERR_MSG="$1"
+    _se_a="$(printf '%s' "$1" | sed -n '1s/^\(steer: \)\{0,1\}[^ :]*:\([0-9][0-9]*\):\([0-9][0-9]*\): .*/\2 \3/p')"
+    [ -n "$_se_a" ] || return 0
+    if [ "${2:-}" = keep ]; then SPEC_ERR_LINE="${_se_a% *}"; SPEC_ERR_COL="${_se_a#* }"; fi
+    SPEC_ERR_MSG="$(printf '%s' "$1" | sed '1s/^\(steer: \)\{0,1\}[^ :]*:[0-9][0-9]*:[0-9][0-9]*: //')"
+}
+
+# Отказ спеки: {ok:false, error[, line, col]}.
+spec_refuse() {  # СЛОВА
+    json_init; json_add_boolean ok 0; json_add_string error "$1"
+    if [ -n "$SPEC_ERR_LINE" ]; then json_add_int line "$SPEC_ERR_LINE"; json_add_int col "$SPEC_ERR_COL"; fi
+    json_dump
+    exit 0
+}
+
+# Текст спеки в JSON-файл. Код 1 — ядро не разобрало: слова в SPEC_ERR (+ SPEC_ERR_LINE/COL).
+spec_text_to_json() {  # ТЕКСТ ФАЙЛ_JSON
+    _st_t="$2.txt"
+    printf '%s' "$1" > "$_st_t" || { rm -f "$_st_t"; SPEC_ERR="не удалось записать спецификацию — кончилось место?"; return 1; }
+    _st_c="$(sed -n '/[^[:space:]]/{s/^[[:space:]]*\(.\).*/\1/p;q}' "$_st_t")"
+    if [ "$_st_c" = "{" ]; then
+        mv "$_st_t" "$2" || { rm -f "$_st_t" "$2"; SPEC_ERR="не удалось записать спецификацию — кончилось место?"; return 1; }
+        return 0
+    fi
+    _st_e="$("$STEER" spec convert --json --spec - < "$_st_t" 2>&1 > "$2")"; _st_rc=$?
+    rm -f "$_st_t"
+    if [ "$_st_rc" != 0 ] || [ ! -s "$2" ]; then
+        rm -f "$2"
+        spec_err_split "${_st_e:-ядро не разобрало спецификацию}" keep
+        SPEC_ERR="$SPEC_ERR_MSG"
+        return 1
+    fi
+    return 0
+}
+
 case "$2" in
 
     spec_set)
@@ -868,7 +913,7 @@ case "$2" in
         # Ровно так уже сделано в download() выше, по той же причине.
         mkdir -p "$(dirname "$SPEC")"
         tmp="$SPEC.new.$$"
-        printf '%s' "$spec" > "$tmp" || { rm -f "$tmp"; fail "не удалось записать спецификацию — кончилось место?"; }
+        if ! spec_text_to_json "$spec" "$tmp"; then spec_refuse "$SPEC_ERR"; fi
         # Списки, на которые ссылается ПРИСЛАННАЯ спека, доскачиваем ДО проверки: движок
         # умирает на отсутствующем файле, и без этого выбор нового сервиса не сохранялся вовсе
         # (см. fetch_missing_lists). Предупреждения о нескачанном не отменяют сохранение —
@@ -892,6 +937,7 @@ case "$2" in
             # движка называет следствие — «cannot read a channel's list» — и отправляет
             # человека искать испорченный файл, которого никогда не было на диске. Проверено:
             # при недоступном списке ответ был ровно таким, без единого слова о загрузке.
+            spec_err_split "$err"; err="$SPEC_ERR_MSG"
             fail "${set_warn:+$set_warn; }${err:-ядро отвергло спецификацию}"
         fi
         # СНИМОК ПРИМЕНЁННОГО — ДО ПЕРВОЙ ПРАВКИ. Пока снимка нет (свежая установка, ни разу не
@@ -942,9 +988,11 @@ case "$2" in
         [ -n "$spec" ] || fail "empty spec"
         mkdir -p "$(dirname "$SPEC")"
         chk="$SPEC.chk.$$"
-        printf '%s' "$spec" > "$chk" || { rm -f "$chk"; fail "cannot write the temporary file - disk full?"; }
+        # YAML (what the frame shows) or JSON: the core translates YAML first and names the line and column.
+        if ! spec_text_to_json "$spec" "$chk"; then spec_refuse "$SPEC_ERR"; fi
         err="$(engine_check "$chk")"; rc=$?
         rm -f "$chk"
+        spec_err_split "$err"; err="$SPEC_ERR_MSG"
         json_init
         if [ "$rc" = 0 ]; then
             json_add_boolean ok 1

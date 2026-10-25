@@ -12,6 +12,16 @@
 
 var T = i18n.T.bind(i18n);
 
+// Versions as numbers by parts: -1, 0, 1.
+function cmpVer(a, b) {
+	var x = String(a).split('.').map(Number), y = String(b).split('.').map(Number);
+	for (var i = 0; i < Math.max(x.length, y.length); i++) {
+		var d = (x[i] || 0) - (y[i] || 0);
+		if (d) return d < 0 ? -1 : 1;
+	}
+	return 0;
+}
+
 function badge(text, color, title) {
 	return E('span', { title: title || '', style: 'display:inline-block;margin-left:6px;padding:1px 7px;border-radius:3px;font-size:85%;color:#fff;background:' + color }, text);
 }
@@ -20,7 +30,14 @@ return baseclass.extend({
 	render: function(host) {
 		var root = E('div', {});
 		var note = function(msg, kind) { ui.addNotification(null, E('p', msg), kind || 'info'); };
-		var fail = function(e) { note(e.message || String(e), 'danger'); };
+		// The core before 2.1 has no plugin manager: the backend says it with the code core_too_old and the
+		// numbers (installed, need), and the words are ours.
+		var oldCore = function(e) { return e && e.code === 'core_too_old' ? { installed: e.reply.installed || '?', need: e.reply.need || '2.1' } : null; };
+		var oldText = function(o) { return T('Plugins need steer {need} or newer. Installed: {installed}.', { need: o.need, installed: o.installed }); };
+		var fail = function(e) {
+			var o = oldCore(e);
+			note(o ? oldText(o) : (e.message || String(e)), 'danger');
+		};
 		var state = { list: null, catalog: null, query: '' };
 		var jobs = {};   // id -> text of the progress
 
@@ -193,6 +210,28 @@ return baseclass.extend({
 			})));
 		};
 
+		// Update the core to the newest release the frame works with (steer_versions, steer_install): the
+		// call downloads a package, so the timeout of the call is raised, as the Andromeda page does.
+		var updateCore = function(o) {
+			var go = function(version) {
+				if (typeof L !== 'undefined' && L.env && !(Number(L.env.rpctimeout) >= 120)) L.env.rpctimeout = 120;
+				ui.showModal(T('Updating steer'), [ E('p', { 'class': 'spinning' }, T('Working...')) ]);
+				api.call('steer_install', { version: version }).then(function() {
+					ui.hideModal();
+					note(T('steer updated to {version}.', { version: version }));
+					load();
+				}, function(e) { ui.hideModal(); fail(e); });
+			};
+			api.call('steer_versions').then(function(r) {
+				var vs = (r.versions || []).filter(function(v) { return v !== r.prerelease && /^\d+(\.\d+)+$/.test(v) && cmpVer(v, o.need) >= 0; });
+				var newest = vs.reduce(function(m, v) { return !m || cmpVer(v, m) > 0 ? v : m; }, null);
+				if (!newest) { note(T('No steer {need} or newer is available for this router.', { need: o.need }), 'warning'); return; }
+				ui.showModal(T('Update steer to {version}?', { version: newest }), [
+					E('div', { 'class': 'right' }, [ E('button', { 'class': 'btn', click: ui.hideModal }, T('Cancel')), ' ',
+						E('button', { 'class': 'btn cbi-button-action', click: function() { ui.hideModal(); go(newest); } }, T('Update the core')) ]) ]);
+			}, fail);
+		};
+
 		var search = E('input', { type: 'text', 'class': 'cbi-input-text', placeholder: T('Search the catalog'), keyup: function(ev) {
 			if (ev.key === 'Enter') { state.query = ev.target.value; loadCatalog(); }
 		} });
@@ -202,6 +241,13 @@ return baseclass.extend({
 		var draw = function() {
 			body.innerHTML = '';
 			if (!state.list) { body.appendChild(E('p', {}, T('Loading...'))); return; }
+			if (state.list.old) {
+				body.appendChild(E('div', { 'class': 'cbi-section' }, [
+					E('div', { 'class': 'alert-message warning' }, oldText(state.list.old)),
+					E('div', { 'class': 'cbi-page-actions' }, [
+						E('button', { 'class': 'cbi-button cbi-button-action', click: function() { updateCore(state.list.old); } }, T('Update the core')) ]) ]));
+				return;
+			}
 			if (state.list.error) { body.appendChild(E('div', { 'class': 'alert-message warning' }, state.list.error)); return; }
 			body.appendChild(E('div', { 'class': 'cbi-section' }, [ E('h3', {}, T('Installed')), installedRows(), E('div', { 'class': 'cbi-page-actions' }, [ autoAll ]) ]));
 			body.appendChild(E('div', { 'class': 'cbi-section' }, [ E('h3', {}, T('Catalog')),
@@ -217,7 +263,7 @@ return baseclass.extend({
 		};
 		var load = function() {
 			api.call('plugins_list').then(function(r) { state.list = r; draw(); loadCatalog(); },
-				function(e) { state.list = { error: e.message }; draw(); });
+				function(e) { var o = oldCore(e); state.list = o ? { old: o } : { error: e.message }; draw(); });
 		};
 		root.appendChild(body);
 		draw();

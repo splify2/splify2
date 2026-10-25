@@ -19,6 +19,9 @@ var M = {
 	applied_get: [],
 	spec_set: [ 'spec', 'rev' ],
 	spec_check: [ 'spec' ],
+	spec_yaml: [],
+	steer_versions: [],
+	steer_install: [ 'version' ],
 	spec_schema: [],
 	apply: [],
 	devices: [],
@@ -60,7 +63,7 @@ return baseclass.extend({
 			if (r == null) throw new Error('no answer from ' + name);
 			if (r.ok === false || (r.error && r.ok == null)) {
 				var e = new Error(r.error || 'failed');
-				e.code = r.code; e.reply = r;
+				e.code = r.code; e.reply = r; e.line = r.line; e.col = r.col;
 				throw e;
 			}
 			return r;

@@ -96,6 +96,7 @@ repo_del	final
 plugin_call	final
 spec_schema	frame
 spec_check	frame
+spec_yaml	frame
 prefs_get	final
 prefs_set	final
 i18n_get	frame

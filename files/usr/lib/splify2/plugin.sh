@@ -148,6 +148,27 @@ plugin_manager() {  # ДЕЙСТВИЕ [АРГУМЕНТЫ...]
     return $PLUGIN_RC
 }
 
+# ЯДРО БЕЗ МЕНЕДЖЕРА ПЛАГИНОВ. Менеджер — с ядра 2.1; на более старом `steer plugin` отвечает «нет такой
+# команды», и эти слова человеку ничего не говорят. Приговор — по версии ядра (`steer version --json`, у
+# ядер без --json — первая строка `steer X.Y.Z …`), а не по тексту отказа, и только когда менеджер отказал.
+PLUGIN_CORE_MIN="${PLUGIN_CORE_MIN:-2.1}"
+
+# Версия ядра — цифры и точки; пусто, если ядро не ответило.
+plugin_core_version() {
+    _cv="$("$STEER" version --json 2>/dev/null)"
+    case "$_cv" in
+        '{'*) _cv="$(jsonfilter -s "$_cv" -e '@.version' 2>/dev/null)" ;;
+        *) _cv="$(printf '%s\n' "$_cv" | sed -n '1s/^steer \([0-9][0-9.]*\).*/\1/p')" ;;
+    esac
+    printf '%s' "$_cv" | sed -n 's/^v\{0,1\}\([0-9][0-9.]*\).*/\1/p'
+}
+
+# Версия $1 младше PLUGIN_CORE_MIN.
+plugin_core_old() {  # ВЕРСИЯ
+    [ -n "$1" ] || return 1
+    [ "$(printf '%s\n%s\n' "$1" "$PLUGIN_CORE_MIN" | sort -V | head -n 1)" != "$PLUGIN_CORE_MIN" ]
+}
+
 # Текст отказа по итогам plugin_manager: поле `error` JSON-ответа, иначе stderr, иначе stdout, иначе
 # слова про код. Менеджер называет причину числами и именами (место, совместимость, выходы) — они
 # доходят до человека как есть.
@@ -174,6 +195,18 @@ plugin_manager_error() {
 # Отказ менеджера по-русски: ответ `{ok:false, error, code}`. Менеджер, ответивший «busy» (параллельный
 # запрос под его замком), получает код busy.
 plugin_manager_fail() {
+    # Ядро старше 2.1: код core_too_old и числа — интерфейс говорит человеку своими словами.
+    _pf_v="$(plugin_core_version)"
+    if plugin_core_old "$_pf_v"; then
+        json_init
+        json_add_boolean ok 0
+        json_add_string error "ядро $_pf_v не умеет плагины — нужно $PLUGIN_CORE_MIN или новее"
+        json_add_string code core_too_old
+        json_add_string installed "$_pf_v"
+        json_add_string need "$PLUGIN_CORE_MIN"
+        json_dump
+        return 1
+    fi
     _pf="$(plugin_manager_error)"
     _pf_code=failed
     case "$_pf" in busy|busy:*|*" busy"*) _pf_code=busy ;; esac
