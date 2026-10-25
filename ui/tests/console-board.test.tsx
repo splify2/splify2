@@ -19,12 +19,9 @@ const nav = (name: string | RegExp) => screen.getAllByRole('button', { name })[0
 describe('доска под LuCI', () => {
     beforeEach(() => {
         vi.restoreAllMocks()
-        vi.spyOn(rpc, 'status').mockResolvedValue(STATUS)
-        vi.spyOn(rpc, 'diag').mockResolvedValue({ warn: 0, fail: 0, checks: [] })
-        vi.spyOn(rpc, 'netInfo').mockResolvedValue({ uptime: 15120, active_clients: 9 })
+        vi.spyOn(rpc, 'live').mockResolvedValue({ status: STATUS, devices: {}, net: { uptime: 15120, active_clients: 9 }, diag: { warn: 0, fail: 0, checks: [] } } as never)
         vi.spyOn(rpc, 'engine').mockResolvedValue({ present: true, vless: true, version: '1.1.2', enabled: true, running: true })
         vi.spyOn(rpc, 'devices').mockResolvedValue({ devices: [{ name: 'wg0', up: true, kind: 'wireguard' }] })
-        vi.spyOn(rpc, 'devStats').mockResolvedValue({ devices: {} })
         vi.spyOn(rpc, 'engineState').mockResolvedValue({ instances: {}, log: [] })
         vi.spyOn(rpc, 'subInfo').mockResolvedValue({ kind: 'none', path: '', present: false } as never)
         vi.spyOn(rpc, 'uiGet').mockResolvedValue({ state: JSON.stringify({ setup: 1 }) } as never)

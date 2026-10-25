@@ -46,14 +46,9 @@ describe('роутер не ответил — состояние и дейст�
     })
     afterEach(() => { pending.appliedAt = 0 })
 
-    it('объекта splify2 нет: опрос уходит на прежние вызовы, и текст исключения не доезжает до error', async () => {
-        // «Object not found» узнаётся как «метода нет» — и круг идёт прежними вызовами, а они
-        // отказывают тем же исключением: именно оно и показывалось на экране.
+    it('объекта splify2 нет: текст исключения не доезжает до error', async () => {
+        // «Object not found» — rpcd перечитывает объекты; исключение не должно попасть на экран.
         vi.spyOn(rpc, 'live').mockRejectedValue(new Error(RAW))
-        vi.spyOn(rpc, 'status').mockRejectedValue(new Error(RAW))
-        vi.spyOn(rpc, 'devStats').mockRejectedValue(new Error(RAW))
-        vi.spyOn(rpc, 'netInfo').mockRejectedValue(new Error(RAW))
-        vi.spyOn(rpc, 'diag').mockRejectedValue(new Error(RAW))
         const { result } = renderHook(() => useLive())
         for (let i = 0; i < 4 && result.current.error === null; i++) await poll()
         await waitFor(() => expect(result.current.error).toBe('Роутер не ответил'))
@@ -112,10 +107,6 @@ describe('роутер не ответил — состояние и дейст�
     it('со страницы целиком: отказ объекта rpcd не оставляет на экране ни слова исключения', async () => {
         mockHomeRpc()
         vi.spyOn(rpc, 'live').mockRejectedValue(new Error(RAW))
-        vi.spyOn(rpc, 'status').mockRejectedValue(new Error(RAW))
-        vi.spyOn(rpc, 'devStats').mockRejectedValue(new Error(RAW))
-        vi.spyOn(rpc, 'netInfo').mockRejectedValue(new Error(RAW))
-        vi.spyOn(rpc, 'diag').mockRejectedValue(new Error(RAW))
         function Page() {
             const l = useLive()
             return <Home live={l} onSection={() => {}} onAddRule={() => {}} />

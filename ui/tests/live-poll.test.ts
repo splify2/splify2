@@ -36,10 +36,6 @@ describe('круг опроса: один вызов вместо пяти', () 
 
     it('спрашивает роутер ОДНИМ вызовом, а не пятью', async () => {
         const live = mockLive()
-        const status = vi.spyOn(rpc, 'status')
-        const devStats = vi.spyOn(rpc, 'devStats')
-        const netInfo = vi.spyOn(rpc, 'netInfo')
-        const diag = vi.spyOn(rpc, 'diag')
         const engineState = vi.spyOn(rpc, 'engineState')
         vi.spyOn(rpc, 'engine').mockResolvedValue({ present: true, vless: true } as never)
         vi.spyOn(rpc, 'steerVersions').mockResolvedValue({} as never)
@@ -53,7 +49,6 @@ describe('круг опроса: один вызов вместо пяти', () 
         // не пять отдельных вызовов, каждый из которых заново разбирает 250-килобайтный
         // скрипт объекта.
         expect(live.mock.calls.length).toBeLessThanOrEqual(2)
-        for (const gone of [status, devStats, netInfo, diag]) expect(gone).not.toHaveBeenCalled()
         // Журнал движка круга больше не касается вовсе: его читает экран диагностики, пока
         // открыт. На стенде это 350 мс каждые пять секунд ради строк, которых на экране нет.
         expect(engineState).not.toHaveBeenCalled()
@@ -193,29 +188,9 @@ describe('круг опроса: один вызов вместо пяти', () 
         expect(live).toHaveBeenLastCalledWith(true, false)
     })
 
-    it('объект старее интерфейса: круг идёт прежними вызовами, а экран не пустеет', async () => {
-        // Пакет обновили, rpcd не перезапустили — метода `live` в объекте нет. Это не отказ
-        // роутера и человеку показывать нечего: переходим на прежние вызовы молча.
-        vi.spyOn(rpc, 'live').mockRejectedValue(new Error('Method not found'))
-        const status = vi.spyOn(rpc, 'status').mockResolvedValue(STATUS as never)
-        const devStats = vi.spyOn(rpc, 'devStats').mockResolvedValue({ devices: DEVICES } as never)
-        const netInfo = vi.spyOn(rpc, 'netInfo').mockResolvedValue(NET as never)
-        const diag = vi.spyOn(rpc, 'diag').mockResolvedValue(DIAG as never)
-
-        const { result } = renderHook(() => useLive())
-        await waitFor(() => expect(result.current.status).not.toBeNull())
-        expect(status).toHaveBeenCalled()
-        expect(devStats).toHaveBeenCalled()
-        expect(netInfo).toHaveBeenCalled()
-        expect(diag).toHaveBeenCalled()
-        expect(result.current.devs).toEqual(DEVICES)
-        expect(result.current.error).toBeNull()
-    })
-
-    it('«Object not found» — rpcd перечитывает объекты: прежние вызовы не включаются навсегда (I-549)', async () => {
+    it('«Object not found» — rpcd перечитывает объекты: опрос продолжается (I-549)', async () => {
         const live = vi.spyOn(rpc, 'live')
             .mockRejectedValue(new Error('RPC call to splify2/live failed with error -32000: Object not found'))
-        const status = vi.spyOn(rpc, 'status').mockResolvedValue(STATUS as never)
         vi.spyOn(rpc, 'engine').mockResolvedValue({ present: true, vless: true } as never)
         vi.spyOn(rpc, 'steerVersions').mockResolvedValue({} as never)
         vi.spyOn(rpc, 'splify2Versions').mockResolvedValue({} as never)
@@ -224,7 +199,6 @@ describe('круг опроса: один вызов вместо пяти', () 
         const { result } = renderHook(() => useLive())
         for (let i = 0; i < 4; i++) await act(async () => { await vi.advanceTimersByTimeAsync(5000) })
         expect(result.current.errorKind).toBe('router')
-        expect(status).not.toHaveBeenCalled()
         expect(live.mock.calls.length).toBeGreaterThan(2)
     })
 
@@ -235,22 +209,6 @@ describe('круг опроса: один вызов вместо пяти', () 
         renderHook(() => useLive())
         await act(async () => { await vi.advanceTimersByTimeAsync(2 * (45_000 + 5000) + 100) })
         expect(live.mock.calls.length).toBeGreaterThan(2)
-    })
-
-    it('объект старее интерфейса и движок молчит: снимок из памяти помечен прошлым, а не живым', async () => {
-        // В прежнем круге finish() звался ВСЕГДА, в том числе при отказе status, и его
-        // setStale(false) затирал setStale(true), выставленный failed() на первом промолчавшем
-        // круге. Снимок из памяти браузера показывался как живое состояние с зелёной точкой.
-        window.localStorage.setItem('splify2:live', JSON.stringify({ status: STATUS, diag: DIAG, build: null }))
-        vi.spyOn(rpc, 'live').mockRejectedValue(new Error('Method not found'))
-        vi.spyOn(rpc, 'status').mockResolvedValue({ ok: false, error: 'ядро не ответило' } as never)
-        vi.spyOn(rpc, 'devStats').mockResolvedValue({ devices: DEVICES } as never)
-        vi.spyOn(rpc, 'netInfo').mockResolvedValue(NET as never)
-        vi.spyOn(rpc, 'diag').mockResolvedValue(DIAG as never)
-        const { result } = renderHook(() => useLive())
-        await waitFor(() => expect(rpc.status).toHaveBeenCalled())
-        await waitFor(() => expect(result.current.devs).toEqual(DEVICES))
-        expect(result.current.stale).toBe(true)
     })
 
     it('беда приезжает успешным ответом — и не принимается за состояние', async () => {

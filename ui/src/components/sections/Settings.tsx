@@ -68,7 +68,6 @@ export default function Settings({
                         <div className="space-y-4">
                             <ClientNetsCard
                                 spec={editable}
-                                status={live.status}
                                 onChange={(next) => {
                                     setEditable(next)
                                     pending.edit(next)

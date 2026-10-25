@@ -58,9 +58,7 @@ export default function Diagnostics({ live, board = false }: { live: Live; board
 
     /* Пустая установка: находки есть, но поломки нет — не красим и говорим, что делать. */
     const blank = blankInstall(live) && bad.length > 0
-    const verdict = live.diagOld
-                            ? S.diagnostics.proverkaSostoyaniyaNedostupna
-                            : blank
+    const verdict = blank
                               ? S.diagnostics.pustayaUstanovka
                             : live.diag?.fail
                               ? S.diagnostics.proverokSOtkazom(live.diag.fail)
@@ -144,7 +142,6 @@ export default function Diagnostics({ live, board = false }: { live: Live; board
             <div className="space-y-4">
                 <section className={GROUP}>
                     <h2 className="sp-sub px-1 pt-1">{verdict}</h2>
-                    {live.diagOld && <p className="px-1 text-xs text-muted-foreground">{S.diagnostics.obnoviteSteerVRazdele}</p>}
                     {blank && <p className="px-1 text-xs text-muted-foreground">{S.diagnostics.pustayaUstanovkaSovet}</p>}
                     {bad.map((c, i) => (
                         <div key={`${c.id}-${i}`} className={`${TILE} flex gap-2.5 text-[13px] ${blank ? '' : c.verdict === 'fail' ? 'border-destructive/50' : 'border-warning/50'}`}>
@@ -204,67 +201,59 @@ export default function Diagnostics({ live, board = false }: { live: Live; board
                 <CardHead
                     title={verdict}
                 />
-                    {/* Объяснять, ЧТО такое проверки, на экране незачем: об этом не
-                        спрашивают. Остаётся то, после чего человек делает следующий шаг —
-                        движок старый и проверок не умеет. */}
-                    {live.diagOld && (
-                        <p className="text-xs text-muted-foreground">{S.diagnostics.obnoviteSteerVRazdele}</p>
-                    )}
                     {blank && <p className="text-xs text-muted-foreground">{S.diagnostics.pustayaUstanovkaSovet}</p>}
-                {!live.diagOld && (
-                    <div className="space-y-2">
-                        {bad.map((c, i) => (
-                            <div
-                                key={`${c.id}-${i}`}
-                                className={[
-                                    'flex gap-2 rounded-xl border p-2.5 text-[13px]',
-                                    blank
-                                        ? 'border-border bg-muted/40'
-                                        : c.verdict === 'fail'
-                                            ? 'border-destructive/40 bg-destructive/10'
-                                            : 'border-warning/40 bg-warning/10',
-                                ].join(' ')}
-                            >
-                                {blank ? (
+                <div className="space-y-2">
+                    {bad.map((c, i) => (
+                        <div
+                            key={`${c.id}-${i}`}
+                            className={[
+                                'flex gap-2 rounded-xl border p-2.5 text-[13px]',
+                                blank
+                                    ? 'border-border bg-muted/40'
+                                    : c.verdict === 'fail'
+                                        ? 'border-destructive/40 bg-destructive/10'
+                                        : 'border-warning/40 bg-warning/10',
+                            ].join(' ')}
+                        >
+                            {blank ? (
+                                <Info className="mt-0.5 h-4 w-4 shrink-0 text-muted-foreground" aria-hidden="true" />
+                            ) : c.verdict === 'fail' ? (
+                                <XCircle className="mt-0.5 h-4 w-4 shrink-0 text-destructive" aria-hidden="true" />
+                            ) : (
+                                <TriangleAlert className="mt-0.5 h-4 w-4 shrink-0 text-warning-fg" aria-hidden="true" />
+                            )}
+                            <div className="min-w-0 flex-1">
+                                <div>{c.what}</div>
+                                {c.why && <div className="text-xs text-muted-foreground">{c.why}</div>}
+                            </div>
+                        </div>
+                    ))}
+                    {notes.length > 0 && (
+                        <div className="space-y-2 border-t border-border pt-2">
+                            {notes.map((c, i) => (
+                                <div key={`${c.id}-note-${i}`} className="flex gap-2 text-[13px]">
                                     <Info className="mt-0.5 h-4 w-4 shrink-0 text-muted-foreground" aria-hidden="true" />
-                                ) : c.verdict === 'fail' ? (
-                                    <XCircle className="mt-0.5 h-4 w-4 shrink-0 text-destructive" aria-hidden="true" />
-                                ) : (
-                                    <TriangleAlert className="mt-0.5 h-4 w-4 shrink-0 text-warning-fg" aria-hidden="true" />
-                                )}
-                                <div className="min-w-0 flex-1">
-                                    <div>{c.what}</div>
-                                    {c.why && <div className="text-xs text-muted-foreground">{c.why}</div>}
+                                    <div className="min-w-0">
+                                        <div>{c.what}</div>
+                                        {c.why && (
+                                            <div className="text-xs text-muted-foreground">{c.why}</div>
+                                        )}
+                                    </div>
                                 </div>
-                            </div>
-                        ))}
-                        {notes.length > 0 && (
-                            <div className="space-y-2 border-t border-border pt-2">
-                                {notes.map((c, i) => (
-                                    <div key={`${c.id}-note-${i}`} className="flex gap-2 text-[13px]">
-                                        <Info className="mt-0.5 h-4 w-4 shrink-0 text-muted-foreground" aria-hidden="true" />
-                                        <div className="min-w-0">
-                                            <div>{c.what}</div>
-                                            {c.why && (
-                                                <div className="text-xs text-muted-foreground">{c.why}</div>
-                                            )}
-                                        </div>
-                                    </div>
-                                ))}
-                            </div>
-                        )}
-                        {good.length > 0 && (
-                            <div className="space-y-1 border-t border-border pt-2">
-                                {good.map((c, i) => (
-                                    <div key={`${c.id}-ok-${i}`} className="flex gap-2 text-[13px]">
-                                        <Check className="mt-0.5 h-4 w-4 shrink-0 text-success" aria-hidden="true" />
-                                        <span className="text-muted-foreground">{c.what}</span>
-                                    </div>
-                                ))}
-                            </div>
-                        )}
-                    </div>
-                )}
+                            ))}
+                        </div>
+                    )}
+                    {good.length > 0 && (
+                        <div className="space-y-1 border-t border-border pt-2">
+                            {good.map((c, i) => (
+                                <div key={`${c.id}-ok-${i}`} className="flex gap-2 text-[13px]">
+                                    <Check className="mt-0.5 h-4 w-4 shrink-0 text-success" aria-hidden="true" />
+                                    <span className="text-muted-foreground">{c.what}</span>
+                                </div>
+                            ))}
+                        </div>
+                    )}
+                </div>
             </Block>
 
             <Block>

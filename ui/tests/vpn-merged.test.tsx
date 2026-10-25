@@ -24,7 +24,6 @@ describe('VPN: один экран', () => {
         vi.spyOn(rpc, 'devices').mockResolvedValue({ devices: [] } as never)
         vi.spyOn(rpc, 'subList').mockResolvedValue(SUBS as never)
         vi.spyOn(rpc, 'outboundGeo').mockResolvedValue({} as never)
-        vi.spyOn(rpc, 'helper').mockResolvedValue({ code: 1, stdout: '' })
     })
 
     it('подписки, свои туннели, узлы подписок и XSTEER — на одном экране', async () => {
@@ -57,11 +56,8 @@ describe('VPN: один экран', () => {
     })
 
     it('приложение для компьютера (доска со слоем настроек) показывает тот же экран', async () => {
-        vi.spyOn(rpc, 'status').mockResolvedValue({ schema: 1, outputs: {}, channels: [] } as never)
-        vi.spyOn(rpc, 'diag').mockResolvedValue({ warn: 0, fail: 0, checks: [] })
-        vi.spyOn(rpc, 'netInfo').mockResolvedValue({ uptime: 1, active_clients: 0 })
+        vi.spyOn(rpc, 'live').mockResolvedValue({ status: { schema: 1, outputs: {}, channels: [] } as never, devices: {}, net: { uptime: 1, active_clients: 0 }, diag: { warn: 0, fail: 0, checks: [] } } as never)
         vi.spyOn(rpc, 'engine').mockResolvedValue({ present: true, vless: true, version: '1.1.2', enabled: true, running: true })
-        vi.spyOn(rpc, 'devStats').mockResolvedValue({ devices: {} })
         vi.spyOn(rpc, 'engineState').mockResolvedValue({ instances: {}, log: [] })
         vi.spyOn(rpc, 'uiGet').mockResolvedValue({ state: JSON.stringify({ setup: 1 }) } as never)
         render(<Console board settingsHost={document.createElement('div')} />)

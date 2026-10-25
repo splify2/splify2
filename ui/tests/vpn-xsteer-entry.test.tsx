@@ -21,7 +21,6 @@ describe('VPN: вход XSTEER', () => {
         vi.spyOn(rpc, 'devices').mockResolvedValue({ devices: [{ name: 'xa', up: true, kind: 'tun' }] } as never)
         vi.spyOn(rpc, 'subList').mockResolvedValue({ subs: [] } as never)
         vi.spyOn(rpc, 'outboundGeo').mockResolvedValue({} as never)
-        vi.spyOn(rpc, 'helper').mockResolvedValue({ code: 1, stdout: '' })
     })
 
     it('выход kind: xsteer назван в строке входа', async () => {

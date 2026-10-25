@@ -16,7 +16,6 @@ export function live(patch: Partial<Live> = {}): Live {
         errorKind: null,
         phase: null,
         diag: null,
-        diagOld: false,
         devs: null,
         speed: { ch: {}, dev: {} },
         history: new History(),

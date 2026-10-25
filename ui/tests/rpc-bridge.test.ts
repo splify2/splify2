@@ -22,7 +22,7 @@ describe('мост к ubus', () => {
         ;(window as unknown as Record<string, unknown>).luci_rpc = {
             declare: vi.fn(() => call),
         }
-        await expect(rpc.status()).resolves.toEqual({ schema: 1, outputs: {}, channels: [] })
+        await expect(rpc.conns()).resolves.toEqual({ schema: 1, outputs: {}, channels: [] })
         expect(call).toHaveBeenCalled()
     })
 
@@ -30,13 +30,13 @@ describe('мост к ubus', () => {
         const { rpc } = await import('@/lib/rpc')
         const declare = vi.fn(() => async () => ({}))
         ;(window as unknown as Record<string, unknown>).luci_rpc = { declare }
-        await rpc.status()
-        await rpc.status()
+        await rpc.conns()
+        await rpc.conns()
         expect(declare).toHaveBeenCalledTimes(1)
     })
 
     it('моста нет вовсе — отказ с причиной, а не выдуманные данные', async () => {
         const { rpc } = await import('@/lib/rpc')
-        await expect(rpc.status()).rejects.toThrow(/ubus is unavailable/)
+        await expect(rpc.conns()).rejects.toThrow(/ubus is unavailable/)
     })
 })

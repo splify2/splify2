@@ -19,12 +19,9 @@ describe('вкладки не гаснут после первого опрос�
     beforeEach(() => {
         vi.restoreAllMocks()
         window.localStorage.clear()
-        vi.spyOn(rpc, 'status').mockResolvedValue(STATUS)
-        vi.spyOn(rpc, 'diag').mockResolvedValue({ warn: 0, fail: 0, checks: [] })
-        vi.spyOn(rpc, 'netInfo').mockResolvedValue({ uptime: 60, active_clients: 2 })
+        vi.spyOn(rpc, 'live').mockResolvedValue({ status: STATUS, devices: {}, net: { uptime: 60, active_clients: 2 }, diag: { warn: 0, fail: 0, checks: [] } } as never)
         vi.spyOn(rpc, 'engine').mockResolvedValue({ present: true, vless: true, version: '1.2.3', enabled: true, running: true })
         vi.spyOn(rpc, 'devices').mockResolvedValue({ devices: [{ name: 'wg0', up: true, kind: 'wireguard' }] })
-        vi.spyOn(rpc, 'devStats').mockResolvedValue({ devices: {} })
         vi.spyOn(rpc, 'engineState').mockResolvedValue({ instances: {}, log: [] })
         vi.spyOn(rpc, 'localLists').mockResolvedValue({ files: {} })
         vi.spyOn(rpc, 'subInfo').mockResolvedValue({ kind: 'none', path: '', present: false } as never)

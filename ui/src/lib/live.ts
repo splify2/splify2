@@ -109,7 +109,6 @@ export interface Live {
     diag: Diag | null
     /** Движок старее проверок состояния. Не ошибка страницы, а отдельное сообщение: иначе
      *  выглядело бы как поломка интерфейса на исправном роутере. */
-    diagOld: boolean
     devs: Record<string, { rx: string; tx: string }> | null
     /** Скорость прямо сейчас, готовыми строками. Пусто до второго опроса и когда трафика
      *  нет: нуль там был бы неправдой — мы его не измеряли. */
@@ -226,7 +225,6 @@ export function useLive(): Live {
      * а перезапускаться от каждого нового ответа эффект не должен. */
     const statusNow = useRef<Status | null>(saved.current?.status ?? null)
     useEffect(() => { statusNow.current = status }, [status])
-    const [diagOld, setDiagOld] = useState(false)
     const [devs, setDevs] = useState<Record<string, { rx: string; tx: string }> | null>(null)
     const [speed, setSpeed] = useState<Live['speed']>({ ch: {}, dev: {} })
     const [build, setBuild] = useState<Build | null>(null)
@@ -316,11 +314,6 @@ export function useLive(): Live {
          * вкладку — и раз в двадцать секунд просто так. */
         const DIAG_EVERY = 4
         let round = 0
-        /* Объект ubus старее интерфейса: пакет обновили, rpcd не перезапустили. Тогда
-         * метода `live` нет, и круг идёт прежними пятью вызовами. Проверяется один раз за
-         * жизнь эффекта: отказ метода — это не «сеть моргнула», он не пройдёт и в
-         * следующий раз. */
-        let legacy = false
         /* Первый круг — БЫСТРЫЙ: просим движок отдать запомненное состояние, чтобы экран
          * нарисовался без ожидания, и тут же идём вторым кругом за свежим.
          *
@@ -393,32 +386,6 @@ export function useLive(): Live {
          *  них нечего сделать, и на экран он не идёт: состояние словами, действие — в карточке. */
         const routerSilent = () => failed(S.live.routerNeOtvetil, 'router')
 
-        /** Один круг прежними вызовами — для объекта, который не знает `live`.
-         *
-         *  Памяти движка здесь нет и не будет: объект, не знающий `live`, тем более не знает
-         *  про `--fast`, а второй путь с той же политикой разошёлся бы с первым. Старый
-         *  роутер получает то, что получал всегда. */
-        const loadLegacy = async (withDiag: boolean) => {
-            /* allSettled, а не all: отказ одного источника не должен уносить остальные.
-             * Проверок состояния нет у старого движка, и это не повод гасить экран. */
-            const [s, d, g, ni] = await Promise.allSettled([
-                rpc.status(), rpc.devStats(),
-                withDiag ? rpc.diag() : Promise.resolve(null), rpc.netInfo(),
-            ])
-            if (stop) return
-            if (s.status === 'fulfilled' && !failure(s.value)) { setStatus(foldStatus(s.value)); setFault(null); fails.current = 0 }
-            else if (s.status === 'fulfilled') failed(failure(s.value)!)
-            else routerSilent()
-            const devices = d.status === 'fulfilled' && !failure(d.value) ? d.value.devices || {} : null
-            if (withDiag) {
-                if (g.status === 'fulfilled' && g.value && !failure(g.value)) {
-                    setDiag(g.value); setDiagOld(false)
-                } else setDiagOld(true)
-            }
-            const netv = ni.status === 'fulfilled' && !failure(ni.value) ? ni.value : null
-            finish(s.status === 'fulfilled' && !failure(s.value) ? foldStatus(s.value) : null, devices, netv, null)
-        }
-
         const finish = (
             st: Status | null,
             devices: Record<string, { rx: string; tx: string }> | null,
@@ -432,9 +399,9 @@ export function useLive(): Live {
              * снимать признак здесь значило бы объявить память измерением ровно в тот
              * момент, когда мы её и попросили.
              *
-             * И только когда состояние ПРИШЛО: прежний круг (loadLegacy) зовёт finish и при
-             * отказе status, и снятие признака здесь затирало `stale`, выставленный failed() на
-             * первом промолчавшем круге, — снимок из памяти браузера показывался живым, с
+             * И только когда состояние ПРИШЛО: finish зовётся и при отказе status, и снятие
+             * признака без этой проверки затирало бы `stale`, выставленный failed() на первом
+             * промолчавшем круге, — снимок из памяти браузера показывался бы живым, с
              * зелёной точкой. */
             if (st) setStale(cachedNow)
             if (devices) setDevs(devices)
@@ -542,31 +509,13 @@ export function useLive(): Live {
             try {
                 /* Тело круга — отдельной функцией, а не ветками с `return` прямо здесь: из
                  * этого места надо ВСЕГДА дойти до догоняющего круга ниже, а ранний `return`
-                 * пропускал бы его. На этом уже попался старый объект: он уходит в прежние
-                 * вызовы первым же `return`, и проверки не приезжали к нему вовсе. */
+                 * пропускал бы его. */
                 await (async () => {
-                    if (legacy) { await loadLegacy(withDiag); return }
                     /* Со сроком: вызов, на который роутер не ответил, иначе держал круг до предела LuCI
                      * (две минуты), и опрос стоял всё это время. Срок вышел — как обрыв: роутер молчит. */
                     const r = await deadline(rpc.live(withDiag, fast), LIVE_DEADLINE_MS).catch((e) => asText(e))
                     if (stop) return
                     if (typeof r === 'string') {
-                        /* Метода нет — это не отказ роутера, а старый объект. Переходим на
-                         * прежние вызовы молча: человеку показывать нечего, всё работает.
-                         *
-                         * ТОЛЬКО ПО ЭТОМУ ОТКАЗУ. Любой другой обрыв — перезапуск rpcd во
-                         * время применения, таймаут, оборванный запрос — прежде тоже включал
-                         * прежние вызовы, навсегда и молча: круг дорожал впятеро, а текст
-                         * исключения уезжал на экран как причина «Движок не отвечает».
-                         *
-                         * «Object not found» сюда не входит: так отвечает rpcd, пока
-                         * перечитывает объекты после установки или перезапуска, — объект
-                         * вернётся через секунды, а прежние вызовы остались бы навсегда. */
-                        if (/Method not found|not supported|unavailable outside LuCI/i.test(r)) {
-                            legacy = true
-                            await loadLegacy(withDiag)
-                            return
-                        }
                         routerSilent()
                         return
                     }
@@ -580,10 +529,7 @@ export function useLive(): Live {
                     /* Ответ движка ЗАПОМНЕННЫЙ — значит показанное всё ещё прошлое, и свежий
                      * круг уже выпущен ниже. Экран говорит «Обновление…» до его ответа. */
                     cachedNow = r.status?.cached === true
-                    if (withDiag) {
-                        if (r.diag) { setDiag(r.diag); setDiagOld(false) }
-                        else if (r.diag_old) setDiagOld(true)
-                    }
+                    if (withDiag && r.diag) setDiag(r.diag)
                     finish(r.status, r.devices || null, r.net || null, r.diag ?? null)
                 })()
                 if (feedDone) await feedDone
@@ -727,7 +673,7 @@ export function useLive(): Live {
           : null
 
     return {
-        status, error, errorKind: fault?.kind ?? null, diag, diagOld, devs, speed, history: history.current, conns, dnsLog, engineLog, want, build, net, releases, selfUpdate, stale, phase,
+        status, error, errorKind: fault?.kind ?? null, diag, devs, speed, history: history.current, conns, dnsLog, engineLog, want, build, net, releases, selfUpdate, stale, phase,
         refresh: () => setNonce((n) => n + 1),
     }
 }

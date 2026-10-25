@@ -212,12 +212,9 @@ describe('Console в режиме LuCI (без board)', () => {
     it('нет кнопки «Применить», а сохранённое и не применённое применяется само', async () => {
         await open(withRule(1), BASE)
         const STATUS: Status = { schema: 1, outputs: {}, channels: [] } as unknown as Status
-        vi.spyOn(rpc, 'status').mockResolvedValue(STATUS)
-        vi.spyOn(rpc, 'diag').mockResolvedValue({ warn: 0, fail: 0, checks: [] })
-        vi.spyOn(rpc, 'netInfo').mockResolvedValue({ uptime: 1, active_clients: 0 })
+        vi.spyOn(rpc, 'live').mockResolvedValue({ status: STATUS, devices: {}, net: { uptime: 1, active_clients: 0 }, diag: { warn: 0, fail: 0, checks: [] } } as never)
         vi.spyOn(rpc, 'engine').mockResolvedValue({ present: true, vless: true, version: '1.1.2', enabled: true, running: true })
         vi.spyOn(rpc, 'devices').mockResolvedValue({ devices: [] })
-        vi.spyOn(rpc, 'devStats').mockResolvedValue({ devices: {} })
         vi.spyOn(rpc, 'engineState').mockResolvedValue({ instances: {}, log: [] })
         vi.spyOn(rpc, 'subInfo').mockResolvedValue({ kind: 'none', path: '', present: false } as never)
         const { container } = render(<Console />)

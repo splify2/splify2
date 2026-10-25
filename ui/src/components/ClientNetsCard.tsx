@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useState } from 'react'
 import { Block, CardHead } from '@/components/ui/layout'
 import { Button } from '@/components/ui/button'
-import { devList, isTunnelKind, type ClientNet, type Spec, type Status } from '@/lib/model'
+import { devList, isTunnelKind, type ClientNet, type Spec } from '@/lib/model'
 import { rpc } from '@/lib/rpc'
 
 import { S } from '@/copy'
@@ -48,10 +48,6 @@ import { S } from '@/copy'
 interface Props {
     /** null — спека ещё не пришла. */
     spec: Spec | null
-    /** Живое состояние движка. Нужно ровно для одного: узнать, понимает ли он перечень
-     *  устройств вообще. Ответ `status` отдаёт `lan_devices` всегда, какой бы формой они ни
-     *  были записаны в спеке; поля нет — движок старее перечня. */
-    status: Status | null
     onChange: (next: Spec) => void
 }
 
@@ -59,7 +55,7 @@ interface Props {
  *  бы человеку не то, что применено. */
 const DEFAULT_DEV = 'br-lan'
 
-export default function ClientNetsCard({ spec, status, onChange }: Props) {
+export default function ClientNetsCard({ spec, onChange }: Props) {
     const [nets, setNets] = useState<ClientNet[] | null>(null)
     /** Почему щелчок ничего не сделал. На экране, а не всплывашкой: отказ здесь — это
      *  правило движка, и человек должен видеть его, пока смотрит на флажки. */
@@ -147,15 +143,6 @@ export default function ClientNetsCard({ spec, status, onChange }: Props) {
         onChange({ ...rest, lan_devices: chosen } as Spec)
     }
 
-    /** Движок старее перечня устройств. Незнакомый ключ спеки его разбор пропускает МОЛЧА:
-     *  отказа нет, правила есть, трафик идёт мимо — ровно тот вид поломки, из-за которого
-     *  обращение и написано. Жалуемся только когда выбор ОТЛИЧАЕТСЯ от умолчания движка: на
-     *  одном br-lan старая версия делает ровно то же самое, и пугать нечем. */
-    const engineOld =
-        !!status &&
-        !('lan_devices' in status) &&
-        !(chosen.length === 1 && chosen[0] === DEFAULT_DEV)
-
     /** Выбранное, что источником быть не может. Чаще всего так и появляется: устройство
      *  выбрали сетью клиентов, а потом завели на него выход. Молча снять отметку нельзя —
      *  это настройка человека, — поэтому здесь она называется вслух. */
@@ -242,11 +229,6 @@ export default function ClientNetsCard({ spec, status, onChange }: Props) {
                 </div>
 
                 {why && <p className="text-xs text-destructive">{why}</p>}
-
-                {engineOld && (
-                    <p className="text-xs text-warning-fg">
-                        {S.clientNetsCard.yadroEtoyVersiiPerechnya}</p>
-                )}
 
                 {anyAbsent && (
                     <p className="text-xs text-muted-foreground">

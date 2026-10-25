@@ -246,9 +246,6 @@ export interface DnsLog {
 }
 
 export const rpc = {
-    /** Live engine state: outputs with up/nat, per-channel counters, warnings. */
-    status: declare<Status>('status'),
-
     /** The spec as stored. The UI edits a copy and writes it back whole: a partial
      *  update would need the backend to understand channel ordering, and ordering is
      *  precisely what must not be reinterpreted on the way through. */
@@ -710,20 +707,6 @@ export const rpc = {
         'minutes',
     ]),
 
-    /** Обновить подписку по сохранённой ссылке. Этим методом ходит расписание; кнопка
-     *  «Обновить» на странице работает через subSet, у которого на входе ссылка.
-     *
-     *  `changed` — изменились ли узлы. Туннель перечитывает их только тогда: подписку
-     *  опрашивают по часам, а узлы у панели меняются редко. */
-    subRefresh: declare<{
-        ok: boolean
-        error?: string
-        name?: string
-        changed?: boolean
-        bytes?: number
-        usable?: number
-    }>('sub_refresh', ['name']),
-
     /** Удалить подписку: файл узлов, запомненный остаток и ключи. Отказ, пока на неё
      *  ссылается выход: движок читает файл при подъёме, и снос под живым выходом оставил бы
      *  правило вести в туннель без единого узла. */
@@ -865,41 +848,7 @@ export const rpc = {
         devices: Record<string, { rx: string; tx: string; rx_packets: string; tx_packets: string }>
         net: { uptime: number; active_clients: number }
         diag?: { checks: { id: string; verdict: 'ok' | 'note' | 'warn' | 'fail'; what: string; why: string }[]; warn: number; fail: number }
-        /** Проверок не умеет сам движок (не объект): отдельное сообщение, а не молчание. */
-        diag_old?: true
     }>('live', ['diag', 'fast']),
-
-    /** Счётчики устройств из /sys/class/net.
-     *
-     *  Нужны потому, что счётчик канала в nft считает только путь «наружу»: он стоит на
-     *  правиле, ставящем метку, а обратный поток под него не подпадает. У туннельного
-     *  устройства rx — это скачанное, tx — отданное. Числа приходят строками: байты на
-     *  сутках работы не влезают в 32 бита. */
-    devStats: declare<{
-        devices: Record<string, { rx: string; tx: string; rx_packets: string; tx_packets: string }>
-    }>('dev_stats'),
-
-    /** Проверки состояния: движок спрашивает ЯДРО и живые процессы, а не спеку.
-     *
-     *  Нужно потому, что `status` отвечает «что применено», и человек, у которого сайт не
-     *  открывается, сам угадывал, какие из полей важны. Здесь у каждой проверки есть приговор
-     *  и причина, и есть то, чего в status нет вовсе: пустой набор при непустом списке,
-     *  отсутствующий редирект DNS, незапущенный резолвер, обход DNS браузером и утечка IPv6. */
-    diag: declare<{
-        /* `note` — четвёртый вердикт движка: совет, а не находка (I-015). Тип обязан
-         * его знать, иначе switch по вердикту с exhaustive-проверкой молча съест
-         * неизвестное значение — ровно так «советы» и красились тревожным цветом. */
-        checks: { id: string; verdict: 'ok' | 'note' | 'warn' | 'fail'; what: string; why: string }[]
-        warn: number
-        fail: number
-    }>('diag'),
-
-    /** Время работы движка и сколько устройств сейчас ходит в сеть.
-     *
-     *  Одним вызовом, а не тремя: каждый стоит запуска shell, а страница опрашивает по кругу.
-     *  active_clients — это устройства В СЕТИ, а не «через туннель»: привязать соединение к
-     *  выходу нечем, движок помечает пакет, а не соединение, и в conntrack следа выхода нет. */
-    netInfo: declare<{ uptime: number; active_clients: number }>('net_info'),
 
     /** Отклик по одному выходу. По одному за вызов: проверка упирается в таймаут, и «проверить
      *  все» не уложилось бы в срок жизни вызова ubus.
@@ -967,13 +916,6 @@ export const rpc = {
      *  «не указан выход» — вызывающий тогда спрашивает по любому выходу на этой подписке. */
     vlessNodesOfSub: declare<VlessNodesReply>('vless_nodes', ['sub', 'insecure']),
 
-    /** Проверить узел и замерить время ответа. По одному за вызов: проверка упирается в
-     *  таймаут, и «проверить все» не уложилось бы в срок жизни вызова ubus. node = -1
-     *  означает «до первого рабочего» — то же решение, что примет движок при подъёме. */
-    vlessProbe: declare<{ output?: string; results?: VlessProbe[]; working?: number; error?: string }>(
-        'vless_probe',
-        ['output', 'node'],
-    ),
     /** Та же проверка — у ПОДПИСКИ, путём к её файлу, как vlessNodesOfSub: узел выбирают там,
      *  где выход собирают, и знать «какой из них живой» надо до того, как выход заведён.
      *  Бэкенд постарше параметра не знает и отвечает «не указан выход». */
@@ -1019,13 +961,6 @@ export const rpc = {
 
     /** Соединения, которые движок повёл в свои выходы (до 2000 записей). */
     conns: declare<ConnsReply>('conns'),
-
-    /** Живое состояние помощников выхода из памяти демона — ответ управляющего сокета как есть:
-     *  `{code, stdout}`, где stdout — строка JSON на помощника. */
-    helper: declare<{ code?: number; stdout?: string; stderr?: string; error?: string }>('helper', ['output']),
-
-    /** Выбрать член группы `pick: manual` без apply. */
-    groupSelect: declare<{ ok: boolean; error?: string }>('group_select', ['group', 'member']),
 
     /** Откуда роутер берёт КАТАЛОГ списков — перечень «какие списки бывают и где лежит
      *  каждый». Пустая ссылка в `listsSourceSet` означает «вернуть свой каталог»: человек,
