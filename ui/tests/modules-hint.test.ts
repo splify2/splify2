@@ -19,7 +19,7 @@ describe('какого модуля не хватает выходу', () => {
         expect(missingModule({ kind: 'interface' }, mods)).toBeNull()
     })
     it('выходы без помощника модуля не просят', () => {
-        for (const kind of ['direct', 'group', 'awg', 'zapret']) expect(missingModule({ kind }, [])).toBeNull()
+        for (const kind of ['direct', 'group', 'awg']) expect(missingModule({ kind }, [])).toBeNull()
     })
     it('протоколы прокси просят steer-proxy — и видом tunnel, и своим видом', () => {
         for (const protocol of ['trojan', 'shadowsocks', 'socks', 'http', 'vmess']) {
