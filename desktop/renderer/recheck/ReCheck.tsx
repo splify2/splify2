@@ -5,7 +5,7 @@ import { Segmented } from '@/components/ui/layout'
 import { Switch } from '@/components/ui/switch'
 import { useConfirm } from '@/components/ui/confirm'
 import { inputCls } from '@/components/formbits'
-import { useRemembered } from '@/lib/cache'
+import { cacheGet, cacheSet } from '@/lib/cache'
 import type { ExtraSection } from '@/components/Console'
 import { desk } from '../desk'
 import { groupFamilies, groupSites, parseEvents, parseMemory } from './state'
@@ -62,22 +62,52 @@ const day = (ms: number) => (ms > 0 ? new Date(ms).toLocaleDateString('ru-RU', {
 const stamp = (ms: number) => (ms > 0 ? new Date(ms).toLocaleString('ru-RU', { day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' }) : '')
 
 async function call(method: string, args: Record<string, unknown> = {}): Promise<Info & { ok?: boolean; error?: string }> {
-    const r = (await desk.api.call(method, args)) as Info & { ok?: boolean; error?: string }
+    let r: Info & { ok?: boolean; error?: string }
+    try {
+        r = (await desk.api.call(method, args)) as Info & { ok?: boolean; error?: string }
+    } catch (e) {
+        /* Шлюз постарше приложения методов ReCheck не знает. */
+        if ((e as { code?: string })?.code === 'no_method') throw new Error('Роутер не знает ReCheck — обновите splify2 на роутере')
+        throw e
+    }
     if (r && r.ok === false) throw new Error(r.error || 'не получилось')
     return r
 }
 
-function ReCheck() {
+const CACHE_KEY = 'recheck:info'
+
+/** Состояние ReCheck с роутера: сразу — из памяти прошлого открытия, дальше опрос раз в 5 с.
+ *  Отказ не глотается: без него экран висел бы на «Загрузка…», пока роутер не ответит, и ни слова
+ *  о причине. Ответы приходят по порядку (запоздавший старый не затирает новый), а окно, скрытое
+ *  в трей, роутер не опрашивает. */
+function useInfo(): { info: Info | null; error: string; reload: () => void } {
+    const [info, setInfo] = useState<Info | null>(() => cacheGet<Info>(CACHE_KEY))
+    const [error, setError] = useState('')
     const [tick, setTick] = useState(0)
-    const info = useRemembered<Info>('recheck:info', () => call('recheck_info'), { deps: [tick] })
+    useEffect(() => {
+        let alive = true
+        const n = ++seq
+        call('recheck_info').then(
+            (r) => { if (alive && n === seq) { cacheSet(CACHE_KEY, r); setInfo(r); setError('') } },
+            (e: Error) => { if (alive && n === seq) setError(e.message) },
+        )
+        return () => { alive = false }
+    }, [tick])
+    useEffect(() => {
+        const t = setInterval(() => { if (!document.hidden) setTick((x) => x + 1) }, 5000)
+        const onShow = () => { if (!document.hidden) setTick((x) => x + 1) }
+        document.addEventListener('visibilitychange', onShow)
+        return () => { clearInterval(t); document.removeEventListener('visibilitychange', onShow) }
+    }, [])
+    return { info, error, reload: () => setTick((x) => x + 1) }
+}
+let seq = 0
+
+function ReCheck() {
+    const { info, error, reload } = useInfo()
     const [busy, setBusy] = useState(false)
     const [err, setErr] = useState('')
     const [ask, dialog] = useConfirm()
-
-    useEffect(() => {
-        const t = setInterval(() => setTick((n) => n + 1), 5000)
-        return () => clearInterval(t)
-    }, [])
 
     async function set(args: SetArgs) {
         setBusy(true)
@@ -88,11 +118,11 @@ function ReCheck() {
             setErr(e instanceof Error ? e.message : String(e))
         } finally {
             setBusy(false)
-            setTick((n) => n + 1)
+            reload()
         }
     }
 
-    if (!info) return <div className="desk-note">Загрузка…</div>
+    if (!info) return error ? <div className="desk-error">{error}</div> : <div className="desk-note">Загрузка…</div>
 
     const mem = parseMemory(info.state || '')
     const sites = groupSites(mem.sites)
@@ -112,7 +142,7 @@ function ReCheck() {
                     <b>На роутере нет ReCheck.</b> Обход заработает, когда пакет recheck будет установлен.
                 </div>
             )}
-            {err && <div className="desk-error">{err}</div>}
+            {(err || error) && <div className="desk-error">{err || error}</div>}
 
             <section className={GROUP}>
                 <header className="flex flex-wrap items-center gap-3 px-1 pt-1">
@@ -135,7 +165,7 @@ function ReCheck() {
                     {tileHead('Сайты', mem.saved ? <span className="desk-note">на {stamp(mem.saved)}</span> : undefined)}
                     {sites.length === 0
                         ? <div className="desk-note">{info.running ? 'Пока ничего: сайты появятся, когда понадобится обход' : 'Пусто'}</div>
-                        : <Sites rows={sites} />}
+                        : <div className="max-h-[420px] overflow-auto"><Sites rows={sites} /></div>}
                 </div>
 
                 <div className="grid gap-3 sm:grid-cols-2 sm:items-start">
@@ -145,7 +175,7 @@ function ReCheck() {
                             ? <div className="desk-note">Пусто</div>
                             : (
                                 <ul className="max-h-[320px] space-y-1 overflow-auto text-[12.5px]">
-                                    {events.slice(0, 40).map((e, i) => (
+                                    {events.map((e, i) => (
                                         <li key={i} className="flex min-w-0 items-center gap-2">
                                             <span className="desk-warp-dot" data-state={e.tone} aria-hidden="true" />
                                             <span className="shrink-0 tabular-nums text-muted-foreground">{e.time}</span>
