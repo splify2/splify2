@@ -1082,6 +1082,7 @@ EOF
         ;;
 
     ui_get|ui_set)
+        UI_STATE_MAX=65536
         # Память мастера: какие выходы он создал, как человек их назвал, что в каждом.
         #
         # Отдельно от спеки, и это принципиально. Спека — вход движка, и «как человек назвал
@@ -1101,7 +1102,12 @@ EOF
             read -r input
             json_load "$input" 2>/dev/null || fail "неразбираемый запрос"
             json_get_var state state
-            uci -q set splify2.main.wizard="$state"
+            # Память мастера — несколько отметок и имён, а не хранилище: без предела туда можно
+            # положить сколько угодно в настройку роутера (I-329). Отказ называет число.
+            _sz="$(printf '%s' "$state" | wc -c)"
+            [ "$_sz" -le "$UI_STATE_MAX" ] ||
+                fail "память интерфейса больше $((UI_STATE_MAX / 1024)) КБ: $_sz байт"
+            uci -q set splify2.main.wizard="$state" || fail "не удалось записать память интерфейса"
             uci -q commit splify2
             json_init; json_add_boolean ok 1; json_dump
         else

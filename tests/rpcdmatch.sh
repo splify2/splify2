@@ -2166,15 +2166,13 @@ check "прямых путей /etc/config/splify2 в коде не остало
       "$(grep -c '/etc/config/splify2' "$SCRIPT")"
 # Десять мест: sub_set, sub_put (ключи подписок), ветка настроек, ui_get|ui_set,
 # fetch_mode|fetch_mode_set, lists_source|lists_source_set, zm_fix|zm_fix_set, doh_tunnel_set,
-# telemetry_set и sub_auto. Число растёт вместе с методами, которые пишут в uci, — и это ровно
+# и sub_auto (telemetry_set убран вместе со счётчиком установок). Число растёт вместе с методами, которые пишут в uci, — и это ровно
 # тот случай, когда барьер должен ломаться: новый метод обязан заводить файл той же функцией.
 # Десятым стал sub_rename (R-115): пишет название подписки, и файл заводит той же функцией.
 #
-# Девятым telemetry_set стал не потому, что метод новый, а потому, что он единственный звал
-# uci_file БЕЗ проверки — как и `uci set` с `uci commit` рядом. Ответ `ok 1` у него значил не
-# «согласие записано», а «дошли до конца функции»: на роутере с заполненным флешем ползунок
-# переезжал, страница показывала успех, а в конфигурации оставалось прежнее значение.
-check "файл заводится одной функцией на все места" "9" \
+# Ответ `ok 1` обязан значить «записано», а не «дошли до конца функции»: на роутере с заполненным
+# флешем ползунок переезжал, страница показывала успех, а в конфигурации оставалось прежнее.
+check "файл заводится одной функцией на все места" "8" \
       "$(rpcd_src | grep -c '^ *uci_file ||')"
 check "перенаправлением файл больше не заводится" "0" \
       "$(rpcd_src | grep -c ': > "\?/etc/config')"
@@ -2339,6 +2337,11 @@ print(next(d.get("auto") for d in json.load(sys.stdin)["subs"] if d["name"]=="au
 # «раз в трое суток» обновлял бы подписку немедленно, при первом же тике расписания.
 check "сразу после настройки обновлять не пора" "yes"       "$(now=$(date -u +%s); at=$(cat "$T/etc/subs/auto1.auto"); [ $((now - at)) -lt 60 ] && echo yes || echo no)"
 
+# Отказ записи интервала — отказ, а не «ok» (I-329: `A && x || y` запускал вторую ветку).
+out="$(UCI_SET_FAIL=splify2.sub_auto1.auto rpcd sub_auto '{"name":"auto1","minutes":90}')"
+check "sub_auto: отказ записи интервала назван отказом" "false" "$(printf '%s' "$out" | jget ok)"
+check "и прежний интервал остался" "60" "$(uci_get splify2.sub_auto1.auto)"
+
 out="$(rpcd sub_auto '{"name":"auto1","minutes":0}')"
 check "ноль выключает обновление" "true;0"       "$(printf '%s' "$out" | jget ok);$(printf '%s' "$out" | jget auto)"
 
@@ -2402,6 +2405,16 @@ d=next(d for d in json.load(sys.stdin)["subs"] if d["name"]=="main"); print("%s;
 out="$(UCI_SET_FAIL=splify2.main.sub_url rpcd sub_set '{"url":"https://second.invalid/sub","name":"main"}')"
 check "sub_set: отказ записи ссылки не стирает прежнюю" "https://panel.invalid/sub/main" \
       "$(uci_get splify2.main.sub_url)"
+
+# Память мастера ограничена (I-329): без предела в настройку роутера клали сколько угодно. Отказ
+# называет число; обычная запись проходит.
+out="$(rpcd ui_set '{"state":"{\"setup\":1}"}')"
+check "ui_set: обычная память записана" "true;{\"setup\":1}" "$(printf '%s' "$out" | jget ok);$(uci_get splify2.main.wizard)"
+big="$(python3 -c 'print("x" * 70000)')"
+out="$(rpcd ui_set "{\"state\":\"$big\"}")"
+check "ui_set: слишком большая память отвергнута" "false" "$(printf '%s' "$out" | jget ok)"
+check "и отказ называет предел в КБ" "yes" "$(printf '%s' "$out" | jget error | grep -q '64 КБ' && echo yes || echo no)"
+check "и прежняя память осталась" "{\"setup\":1}" "$(uci_get splify2.main.wizard)"
 
 # Панель молчит — отметка всё равно свежая: повторять поход каждые десять минут при мёртвой
 # панели значит стучаться к ней 144 раза в сутки вместо одного-двух.
@@ -3026,6 +3039,20 @@ out="$(printf '%s\n' 'splify2-backup 1' '[sub]' 'trojan://p@h:443#t' 'ss://YWVzL
 check "подписка из ссылок прокси в архиве принимается" "no" \
       "$(printf '%s' "$out" | jget error | grep -q 'подписка: ждём' && echo yes || echo no)"
 
+# Подписка в виде JSON (движок кладёт её так при запросе с /json) в архиве принимается, в том числе
+# массивом со строкой, начинающейся с `[` — разборщик архива не должен принять её за заголовок
+# раздела (I-329); негодный JSON и обрубок отвергаются.
+out="$(printf '%s\n' 'splify2-backup 1' '[sub]' '{"outbounds":[{"type":"vless","server":"h"}]}' | backup_put)"
+check "подписка JSON-объектом принимается" "no" \
+      "$(printf '%s' "$out" | jget error | grep -q 'подписка' && echo yes || echo no)"
+out="$(printf '%s\n' 'splify2-backup 1' '[sub]' '[' '  {"type":"vless","server":"h"}' ']' | backup_put)"
+check "подписка JSON-массивом по строкам принимается" "no" \
+      "$(printf '%s' "$out" | jget error | grep -qE 'подписка|раздел' && echo yes || echo no)"
+out="$(printf '%s\n' 'splify2-backup 1' '[sub]' '{"outbounds":[' | backup_put)"
+check "оборванный JSON подпиской не считается" "false" "$(printf '%s' "$out" | jget ok)"
+check "и называется подпиской в виде JSON" "yes" \
+      "$(printf '%s' "$out" | jget error | grep -q 'в виде JSON' && echo yes || echo no)"
+
 out="$(printf '%s\n' 'splify2-backup 1' '[options]' 'sub_url=https://x/$(reboot)' | backup_put)"
 check "ссылка подписки с подстановкой отвергается" "false" "$(printf '%s' "$out" | jget ok)"
 
@@ -3098,6 +3125,24 @@ check "снимок применённого снят с ПРЕЖНЕЙ спек
       "$([ -s "$T/etc/spec.applied.json" ] && ! grep -q 'br-lan' "$T/etc/spec.applied.json" && echo yes || echo no)"
 check "накопленный файл убран за собой" "no" \
       "$([ -f "$T/var/backup.in" ] && echo yes || echo no)"
+
+# Восстановление подписки в виде JSON: файл ложится на место байт в байт, строка с `[` в начале —
+# его содержимое (I-329).
+rm -f "$T/var/backup.in" "$T/etc/spec.applied.json" "$T/var/vless-dirty" "$T/etc/sub.txt"
+printf '{"schema":1,"outputs":{},"channels":[]}\n' > "$T/etc/spec.json"
+out="$(printf '%s\n' \
+  'splify2-backup 1' \
+  '[spec]' \
+  '{"schema":1,"lan_device":"br-lan","outputs":{"direct":{"kind":"direct"}},"channels":[]}' \
+  '[sub]' \
+  '[' \
+  '  {"type":"vless","server":"h","server_port":443}' \
+  ']' \
+  '[options]' \
+  'sub_kind=links' | backup_put)"
+check "архив с подпиской-массивом JSON принимается" "true" "$(printf '%s' "$out" | jget ok)"
+check "подписка JSON легла на место целиком" "[;  {\"type\":\"vless\",\"server\":\"h\",\"server_port\":443};]" \
+      "$(tr '\n' ';' < "$T/etc/sub.txt" | sed 's/;$//')"
 # Заголовок у архива выше — намеренно ПРЕЖНЕЙ версии: у людей уже лежат файлы, собранные
 # до появления ключей и стратегий, и обновление пакета не имеет права превратить их в
 # нечитаемые. Проверка отдельной строкой, чтобы отказ читался как «сломали старые архивы»,

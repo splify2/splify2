@@ -539,7 +539,12 @@ case "$2" in
                 ;;
         esac
         uci_file || fail "не удалось создать $UCI_SPLIFY2 — кончилось место?"
-        [ "$minutes" = 0 ] && sub_put "$SUB_NAME" auto "" || sub_put "$SUB_NAME" auto "$minutes"
+        # if/else, а не `A && x || y`: отказ записи первой ветки запускал бы вторую (I-329).
+        if [ "$minutes" = 0 ]; then
+            sub_put "$SUB_NAME" auto "" || fail "не удалось записать интервал"
+        else
+            sub_put "$SUB_NAME" auto "$minutes" || fail "не удалось записать интервал"
+        fi
         uci -q commit splify2
         # Отметка о последней попытке снимается: человек только что задал интервал, и первое
         # обновление должно случиться от ЭТОГО момента, а не от давно просроченного прежнего.
