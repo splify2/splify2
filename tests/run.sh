@@ -37,6 +37,9 @@ run pkgmatch   sh "$ROOT/tests/pkgmatch.sh"
 # Плагины: методы вкладки «Плагины» над менеджером ядра (заглушка), диспетчер методов плагинов, ACL из
 # манифеста, ссылки объектов splify2.p.<id>, шлюз /v1/plugin/*.
 run pluginmatch sh "$ROOT/tests/pluginmatch.sh"
+# Точки расширения каркаса (splify2-api): хуки, задачи, события, псевдонимы и переопределения плагинов, безопасный
+# режим, архив настроек с разделами плагинов, сборка .s2p плагинов каркаса.
+run exttest sh "$ROOT/tests/exttest.sh"
 # ReCheck: таблица nftables для IPv4 и IPv6, служба и rpcd без движка.
 run recheckmatch sh "$ROOT/tests/recheckmatch.sh"
 # Спека в spec.yaml (spec.sh): JSON-вид, запись переводом ядра, перевод при обновлении ядра.

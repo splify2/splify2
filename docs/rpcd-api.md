@@ -10,6 +10,20 @@ splify2 — тонкая обёртка на shell поверх ядра [steer]
 же его изменении. Печатает ядро JSON — обёртка пропускает его без правок; не печатает — обёртка
 отвечает единым объектом ошибки.
 
+## Плагины каркаса: backup и lists-catalog (splify2-api)
+
+Методы `backup_get`, `backup_put`, `lists`, `list_*`, `local_lists`, `allow_domains`, `fetch_mode*`, `lists_source*`
+(17 методов, вид `moved` в `/usr/lib/splify2/methods.tsv`) вынесены из каркаса в плагины `backup` и `lists-catalog`
+(`plugins/`, сборка — `plugins/build.sh`). Имена, входы и ответы **те же**: на объекте `splify2` они остались
+псевдонимами методов плагинов. Без плагина метод отвечает `{ok:false, code:"not_installed", error:"Нужен плагин …"}`.
+
+Точки расширения каркаса — [splify2-api](https://github.com/splify2/plugin-sdk/blob/main/docs/splify2-api.md):
+хуки `pre_spec_set`, `post_spec_set`, `pre_apply` (в ответ `apply` при отказе: `ok:false`, `veto:true`, `error`),
+`post_apply`, `post_apply_fail`, `heal`, `backup_sections`, `support_report`, `purge`, `plugin_changed`. Ответ
+`plugins_list` дополнен полями `splify2_api` и `ext_errors`. Метод `spec_set` при предупреждении хука кладёт его в
+`warn`. Архив настроек с разделами плагинов — формат 4 (`[plugin <id> <имя>]`); без них формат 3, как прежде.
+Задачи плагинов — блок crontab `# splify2-plugins begin … end`, запуск `/usr/sbin/splify2-task`.
+
 ## Соглашения
 
 - **Транспорт.** Каждый метод, принимающий вход, читает его как **JSON на stdin**, а не позиционным
@@ -735,7 +749,7 @@ id вида `itdog:telegram` — имя источника (`id` в ответе
 - **Выход:** `{ "ok": true, "updated": <сменившихся файлов>, "failed": <оставшихся прежними>,
   "lines": ["<строки прогона>"] }`.
 
-Метод не делает работу сам, а запускает `/usr/sbin/splify2-update-lists` — тот же прогон, что
+Метод не делает работу сам, а запускает `bin/update-lists` плагина lists-catalog (прежний `/usr/sbin/splify2-update-lists`) — тот же прогон, что
 ходит по расписанию: скачивание, подгонка адресных списков под память (`steer fit`), проверка
 скачанного до подмены, откат на прежние копии при отказе ядра и `apply` в конце. Вторая
 реализация этого в rpcd разошлась бы с первой на первом же изменении.

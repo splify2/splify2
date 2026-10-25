@@ -94,3 +94,10 @@ repo_key	final
 repo_add	final
 repo_del	final
 plugin_call	final
+spec_schema	frame
+spec_check	frame
+prefs_get	final
+prefs_set	final
+i18n_get	frame
+plugin_settings_get	final
+plugin_settings_set	final
