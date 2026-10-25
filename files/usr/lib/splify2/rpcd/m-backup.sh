@@ -314,7 +314,20 @@ backup_check_select() {  # ФАЙЛ
 # отстаёт от появления второго — та же ловушка, что с lan_device и lan_devices выше.
 backup_check_url() {  # КЛЮЧ ЗНАЧЕНИЕ
     case "$2" in http://*|https://*) ;; *) echo "$1: нужна ссылка http:// или https://"; return 1 ;; esac
-    case "$2" in *[\ \"\'\`\$\;\|\&\<\>]*) echo "$1: недопустимые символы в ссылке"; return 1 ;; esac
+    # `&` и `;` — законные знаки ссылки (`?token=…&format=…`), и sub_set такую ссылку принимает; отвергать
+    # их здесь значило бы выдать архив, который свой же роутер не примет обратно. Опасны для
+    # командной строки только подстановки, кавычки, пробелы и перенаправления — они остаются
+    # под запретом; сама ссылка везде идёт в кавычках.
+    case "$2" in *[\ \"\'\`\$\|\<\>]*) echo "$1: недопустимые символы в ссылке"; return 1 ;; esac
+    return 0
+}
+
+# Интервал автообновления подписки из архива: число минут в тех же пределах, что у sub_auto
+# (SUB_AUTO_MIN, SUB_AUTO_MAX в m-sub.sh). Диспетчер подключает ровно одну группу, поэтому
+# числа здесь свои, и стенд следит, чтобы они не разошлись.
+backup_check_auto() {  # КЛЮЧ ЗНАЧЕНИЕ
+    case "$2" in ''|*[!0-9]*) echo "$1: ждём число минут"; return 1 ;; esac
+    [ "$2" -ge 30 ] && [ "$2" -le 4320 ] || { echo "$1: от 30 до 4320 минут"; return 1; }
     return 0
 }
 
@@ -337,6 +350,9 @@ backup_check_options() {  # ФАЙЛ
                 ;;
             sub_kind)
                 case "$v" in url|links|none) ;; *) echo "sub_kind: ждём url, links или none"; return 1 ;; esac
+                ;;
+            sub_auto)
+                backup_check_auto "$k" "$v" || return 1
                 ;;
             fetch_via_tunnel)
                 case "$v" in
@@ -367,6 +383,7 @@ backup_check_options() {  # ФАЙЛ
                     url)   backup_check_url "$k" "$v" || return 1 ;;
                     kind)  case "$v" in url|links|none) ;; *) echo "$k: ждём url, links или none"; return 1 ;; esac ;;
                     title) ;;
+                    auto)  backup_check_auto "$k" "$v" || return 1 ;;
                     *) echo "непонятная настройка: $k"; return 1 ;;
                 esac
                 ;;
@@ -629,7 +646,7 @@ case "$2" in
                     *) uci -q set "splify2.main.$k=${ln#*=}" ;;
                 esac
             done < "$D/options"
-            uci -q commit splify2
+            uci -q commit splify2 || backup_giveup "настройка не записалась — кончилось место на флеше?"
         fi
         spec_done=0
         if [ -f "$D/spec" ]; then

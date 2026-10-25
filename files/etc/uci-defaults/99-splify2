@@ -129,6 +129,19 @@ for _k in doh_managed doh_out doh_prev_enabled doh_via_tunnel zapret_autoselect 
     uci -q get "splify2.main.$_k" >/dev/null 2>&1 && { uci -q delete "splify2.main.$_k"; _old26=1; }
 done
 [ -n "$_old26" ] && uci -q commit splify2
+# Интервал автообновления первой подписки в прежних версиях писался в sub_title (sub_uci_key отдавал этот
+# ключ на любое поле, кроме url и kind): название подписки было «60», а интервал читался из него же.
+# Целое число минут в пределах sub_auto (30..4320) на месте названия — это он; переносится в
+# sub_auto. Настоящее название из одних цифр в такой промежуток не попадает на деле никогда.
+_t="$(uci -q get splify2.main.sub_title 2>/dev/null)"
+case "$_t" in
+    ''|*[!0-9]*) ;;
+    *)
+        if [ "$_t" -ge 30 ] && [ "$_t" -le 4320 ] && [ -z "$(uci -q get splify2.main.sub_auto 2>/dev/null)" ]; then
+            uci -q set "splify2.main.sub_auto=$_t" && uci -q delete splify2.main.sub_title && uci -q commit splify2
+        fi
+        ;;
+esac
 _n=0
 while [ "$_n" -lt 32 ] && ip rule show 2>/dev/null | grep -q '^29000:.* lookup 290'; do
     ip rule del pref 29000 table 290 2>/dev/null || break

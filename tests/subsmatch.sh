@@ -138,6 +138,8 @@ case "$3" in
     sub_refresh)
         printf '%s\n' "$4" >> "$SANDBOX/refresh.log"
         [ "${UBUS_REFRESH_RC:-0}" = 0 ] || { printf 'отказ\n'; exit "$UBUS_REFRESH_RC"; }
+        # Настоящий отказ метода (`fail` в rpcd): ответ ok:false и код 0, ubus о нём молчит.
+        [ "${UBUS_REFRESH_FAIL:-}" = 1 ] && { printf '{"ok":false,"error":"подписка не скачалась: нет сети"}\n'; exit 0; }
         printf '{"ok":true,"changed":%s,"usable":3}\n' "${UBUS_CHANGED:-false}"
         ;;
     *) exit 1 ;;
@@ -159,7 +161,7 @@ run() {  # запускает скрипт в песочнице
     : > "$T/log.txt"
     env SANDBOX="$T" PATH="$T/bin:$PATH" LOCK="$T/lock" \
         UBUS_LIST_RC="${UBUS_LIST_RC:-0}" UBUS_REFRESH_RC="${UBUS_REFRESH_RC:-0}" \
-        UBUS_CHANGED="${UBUS_CHANGED:-false}" \
+        UBUS_CHANGED="${UBUS_CHANGED:-false}" UBUS_REFRESH_FAIL="${UBUS_REFRESH_FAIL:-}" \
         sh "$SCRIPT" >/dev/null 2>&1
 }
 
@@ -220,6 +222,13 @@ check "смена узлов названа в журнале" "yes" \
 UBUS_CHANGED=false run
 check "и неизменность тоже" "yes" \
       "$(grep -q 'узлы прежние' "$T/log.txt" && echo yes || echo no)"
+
+# 8. Отказ самого метода приходит ответом ok:false с кодом 0 (ubus о нём молчит): в журнал он
+#    обязан попасть как неудача с причиной, а не как «обновлена: узлы прежние».
+subs '[{"name":"a","auto":30,"due":true}]'
+UBUS_REFRESH_FAIL=1 run
+check "отказ метода назван неудачей, а не обновлением" "yes;no" \
+      "$(grep -q 'не обновилась (подписка не скачалась: нет сети)' "$T/log.txt" && echo yes || echo no);$(grep -q 'узлы прежние' "$T/log.txt" && echo yes || echo no)"
 
 echo
 if [ "$fails" -gt 0 ]; then echo "ЕСТЬ ПРОВАЛЫ: $fails"; exit 1; fi
