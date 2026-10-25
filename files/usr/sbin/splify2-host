@@ -15,6 +15,8 @@
 #     splify2-host state check|export|import КАТАЛОГ настройки каркаса: спека, подписки, ключи, выбор, поля uci
 #     splify2-host hook backup_sections --ctx ФАЙЛ [--plugin ID]   вызвать хук у плагинов и собрать ответы
 #     splify2-host sub list | info ИМЯ | refresh ИМЯ  ответы методов sub_list, sub_info, sub_refresh каркаса
+#     splify2-host call МЕТОД < запрос               ответ метода узлов или проверки каркаса дословно
+#     splify2-host probe geo|ident ВЫХОД             страна выхода, замеренная через сам выход; признак устройства выхода
 #     splify2-host sub quota ИМЯ                     спросить у панели подписки остаток трафика
 #     splify2-host sub title ИМЯ [НАЗВАНИЕ]          своё название подписки (пусто — снять)
 #
@@ -44,7 +46,7 @@ fail() { json_init; json_add_boolean ok 0; json_add_string error "$1"; json_dump
 ok_json() { json_init; json_add_boolean ok 1; json_dump; exit 0; }
 
 usage() {
-    echo "использование: splify2-host fetch|fetch-mode|paths|spec|apply|engine|settings|state|hook|sub …" >&2
+    echo "использование: splify2-host fetch|fetch-mode|paths|spec|apply|engine|settings|state|hook|sub|call|probe …" >&2
     exit 2
 }
 
@@ -824,6 +826,55 @@ cmd_sub() {  # list | info ИМЯ | refresh ИМЯ | quota ИМЯ | title ИМЯ
     esac
 }
 
+# ---- методы проверки узлов и замеры через выход --------------------------------------------------------------------
+
+# Вызвать метод каркаса, не заходя в rpcd (у rpcd свой срок вызова, а перебор узлов идёт долго). Только методы узлов и
+# проверок: чего нет в списке — недостающая часть API, а не повод звать любой метод. Запрос — со стандартного ввода, ответ —
+# дословно; код 0, если метод ответил объектом (отказ метода — в ответе, `ok:false`).
+cmd_call() {  # МЕТОД < запрос
+    case "${1:-}" in
+        vless_nodes|hysteria2_nodes|proxy_nodes|vless_probe|hysteria2_probe|proxy_probe|outbound_probe) ;;
+        '') usage ;;
+        *) fail "метод $1 хост программам плагинов не вызывает" ;;
+    esac
+    _c_rpcd="${RPCD_BIN:-${RPCD_LIB%/rpcd}/../../libexec/rpcd/splify2}"
+    [ -r "$_c_rpcd" ] || fail "не найден обработчик методов"
+    _c_out="$(sh "$_c_rpcd" call "$1")"
+    case "$_c_out" in '{'*) printf '%s\n' "$_c_out"; exit 0 ;; esac
+    fail "каркас не ответил"
+}
+
+# Страна выхода, замеренная ЧЕРЕЗ САМ ВЫХОД (curl --interface), и признак устройства выхода: по нему плагин узнаёт, что
+# выход пересоздали и прежний замер уже не о нём. Кэш и сроки — у плагина node-check.
+cmd_probe() {  # geo|ident ВЫХОД
+    [ -n "${2:-}" ] || usage
+    case "$2" in *[!a-zA-Z0-9_-]*) fail "недопустимое имя выхода" ;; esac
+    . "${GEO_LIB_SH:-$RPCD_LIB/geo-lib.sh}"
+    case "$1" in
+        ident)
+            json_init; json_add_boolean ok 1
+            json_add_string ident "$(geo_ident "$2")"
+            command -v "$GEO_CURL" >/dev/null 2>&1 || json_add_boolean curl 0
+            json_dump; exit 0 ;;
+        geo)
+            if geo_measure "$2"; then
+                json_init; json_add_boolean ok 1
+                json_add_string output "$2"
+                json_add_string ip "$GEO_IP"
+                [ -n "$GEO_CC" ] && json_add_string cc "$GEO_CC"
+                json_add_int ms "$GEO_MS"
+                json_add_string ident "$(geo_ident "$2")"
+                json_dump; exit 0
+            fi
+            json_init; json_add_boolean ok 0
+            json_add_string error "через выход не ответили"
+            json_add_string why "$GEO_WHY"
+            [ "$GEO_WHY" = no_curl ] && json_add_boolean curl 0
+            json_dump; exit 1 ;;
+        *) usage ;;
+    esac
+}
+
 case "${1:-}" in
     fetch) shift; cmd_fetch "$@" ;;
     fetch-mode) shift; cmd_fetch_mode "$@" ;;
@@ -834,5 +885,7 @@ case "${1:-}" in
     state) shift; cmd_state "$@" ;;
     hook) shift; cmd_hook "$@" ;;
     sub) shift; cmd_sub "$@" ;;
+    call) shift; cmd_call "$@" ;;
+    probe) shift; cmd_probe "$@" ;;
     *) usage ;;
 esac

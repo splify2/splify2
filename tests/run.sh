@@ -51,6 +51,8 @@ run recheckmatch sh "$ROOT/tests/recheckmatch.sh"
 run specfilematch sh "$ROOT/tests/specfilematch.sh"
 # Автоприменение на роутере (плагин autoapply): хук после записи спеки, пауза, склейка правок, sweep, события.
 run autoapplymatch sh "$ROOT/tests/autoapplymatch.sh"
+# Проверка узлов и выходов на роутере (плагин node-check): страна выхода с кэшем, перебор узлов подписки, лучший узел.
+run nodecheckmatch sh "$ROOT/tests/nodecheckmatch.sh"
 # Плагин subscriptions: расписание автообновления (задача зовёт методы каркаса только по тем подпискам, у которых срок
 # вышел), остаток трафика, название, поля sub_list через хук, архив. Стенд про то, кого позвали и кого не тронули.
 run subsmatch  sh "$ROOT/tests/subsmatch.sh"

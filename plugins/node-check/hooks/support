@@ -1,0 +1,16 @@
+#!/bin/sh
+# Хук support_report: раздел отчёта поддержки — пределы, сколько запомнено замеров страны и переборов. Без адресов и имён.
+. "${STEER_PLUGIN_DIR:?программа запускается хостом splify2 (нет STEER_PLUGIN_DIR)}/lib/base.sh"
+cat >/dev/null
+geo="$(ls "$GEO_CACHE"/geo-* 2>/dev/null | grep -vc '\.try$')"
+chk="$(ls -d "$CHECK_DIR"/*/ 2>/dev/null | grep -c .)"
+text="parallel: $(setting_num parallel 3), interval: $(setting_num interval 0) min
+geo measurements: ${geo:-0}
+subscription checks stored: ${chk:-0}"
+json_init
+json_add_boolean ok 1
+json_add_object section
+json_add_string title "node-check"
+json_add_string text "$text"
+json_close_object
+json_dump

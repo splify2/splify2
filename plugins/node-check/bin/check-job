@@ -1,0 +1,71 @@
+#!/bin/sh
+# Перебор узлов одной подписки: узлы спрашиваются у трёх клиентов ядра (VLESS, hysteria2, прокси), каждый узел
+# проверяется методом своего протокола; одновременно — не больше настройки `parallel`. Результат — файлы в
+# $STEER_PLUGIN_STATE/check/<подписка>/ (читает nodes_result). Зовётся методом nodes_check (в фоне) и задачей check-nodes.
+#
+#   check-job ИМЯ ПУТЬ_К_ФАЙЛУ_УЗЛОВ [insecure]
+. "${STEER_PLUGIN_DIR:?программа запускается хостом splify2 (нет STEER_PLUGIN_DIR)}/lib/base.sh"
+NAME="${1:?нет имени подписки}"; SUBPATH="${2:?нет пути}"; INSECURE="${3:-0}"
+subname_ok "$NAME" || exit 1
+D="$CHECK_DIR/$NAME"
+rm -rf "$D"; mkdir -p "$D"
+printf '%s\n' "$$" > "$D/pid"
+printf '%s\n' "$(now)" > "$D/started"
+P="$(setting_num parallel 3)"
+[ "$P" -ge 1 ] || P=1
+
+req() {  # УЗЕЛ(или пусто)
+    if [ -n "$1" ]; then printf '{"sub":"%s","node":%s,"insecure":%s}\n' "$SUBPATH" "$1" "$INSECURE"
+    else printf '{"sub":"%s","insecure":%s}\n' "$SUBPATH" "$INSECURE"; fi
+}
+
+# ---- 1. какие узлы есть ----
+: > "$D/nodes.tsv"
+for proto in vless hysteria2 proxy; do
+    ans="$(req | "$SPLIFY2_HOST" call "${proto}_nodes" 2>/dev/null)" || continue
+    printf '%s' "$ans" | jsonfilter -e '@.nodes[*]' 2>/dev/null | while IFS= read -r row; do
+        [ -n "$row" ] || continue
+        ex="$(jsonfilter -s "$row" -e '@.excluded' 2>/dev/null)"
+        [ "$ex" = true ] && continue
+        idx="$(jsonfilter -s "$row" -e '@.index' 2>/dev/null)"
+        case "$idx" in ''|*[!0-9]*) continue ;; esac
+        nm="$(jsonfilter -s "$row" -e '@.name' 2>/dev/null | tr -d '\000-\037' | head -c 200)"
+        if [ "$proto" = proxy ]; then
+            ty="$(jsonfilter -s "$row" -e '@.type' 2>/dev/null)"
+            case "$ty" in trojan|shadowsocks|socks|http|vmess) ;; *) continue ;; esac
+            # У файла номера прокси сквозные по всем его протоколам: проверка спрашивает именно их.
+            printf '%s\t%s\t%s\t%s\n' "$ty" proxy_probe "$idx" "$nm" >> "$D/nodes.tsv"
+        else
+            printf '%s\t%s\t%s\t%s\n' "$proto" "${proto}_probe" "$idx" "$nm" >> "$D/nodes.tsv"
+        fi
+    done
+done
+total="$(grep -c . "$D/nodes.tsv")"
+printf '%s\n' "$total" > "$D/total"
+
+# ---- 2. проверка по одному узлу, не больше P сразу ----
+probe_one() {  # НОМЕР_СТРОКИ МЕТОД УЗЕЛ
+    ans="$(req "$3" | "$SPLIFY2_HOST" call "$2" 2>/dev/null)"
+    ok="$(printf '%s' "$ans" | jsonfilter -e '@.results[0].ok' 2>/dev/null)"
+    if [ "$ok" = true ]; then
+        ms="$(probe_ms "$(printf '%s' "$ans" | jsonfilter -e '@.results[0].ttfb_ms' 2>/dev/null)" \
+                       "$(printf '%s' "$ans" | jsonfilter -e '@.results[0].handshake_ms' 2>/dev/null)")"
+        printf '1\t%s\t\n' "$(num_or "$ms" 0)" > "$D/res.$1"
+    else
+        why="$(printf '%s' "$ans" | jsonfilter -e '@.results[0].why' 2>/dev/null)"
+        [ -n "$why" ] || why="$(printf '%s' "$ans" | jsonfilter -e '@.error' 2>/dev/null)"
+        printf '0\t0\t%s\n' "$(printf '%s' "$why" | tr -d '\000-\037' | head -c 200)" > "$D/res.$1"
+    fi
+}
+n=0; running=0
+while IFS="$(printf '\t')" read -r proto method idx nm; do
+    n=$((n + 1))
+    [ -e "$D/stop" ] && break
+    probe_one "$n" "$method" "$idx" &
+    running=$((running + 1))
+    if [ "$running" -ge "$P" ]; then wait; running=0; fi
+done < "$D/nodes.tsv"
+wait
+printf '%s\n' "$(now)" > "$D/done"
+rm -f "$D/pid"
+exit 0

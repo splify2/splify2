@@ -1973,30 +1973,10 @@ check "vless_probe: флаг вместо имени выхода — отказ
 out="$(rpcd outbound_probe '{"output":"a/b"}')"
 check "outbound_probe: имя с косой — отказ" "false" "$(printf '%s' "$out" | jget ok)"
 
-# БЕЗ curl страна и отклик выходов не меряются вовсе, и обзор молча оставлял пустые строки
-# (splify2#32): «выход молчит» и «мерить нечем» выглядели одинаково. Ответ обязан сказать
-# второе полем curl=false — и не говорить его там, где curl есть.
-export GEO_CURL=/nonexistent/curl
-out="$(rpcd outbound_geo '{"output":"vless"}')"
-check "outbound_geo без curl: так и сказано" "false" "$(printf '%s' "$out" | jget curl)"
-out="$(rpcd outbound_geo '{"output":"vless","fresh":true}')"
-check "outbound_geo без curl, свежий запрос: так и сказано" "false" "$(printf '%s' "$out" | jget curl)"
-unset GEO_CURL
-out="$(rpcd outbound_geo '{"output":"vless"}')"
-check "outbound_geo с curl: поля curl нет" "" "$(printf '%s' "$out" | jget curl)"
-
-# ФОНОВЫЙ ЗАМЕР — НЕ НА КАЖДЫЙ ОПРОС. Пока у выхода нет ни одного удачного замера, каждый опрос
-# страницы запускал в фоне curl через выход: на узле, который не отвечает, замер не удаётся
-# никогда, запуски шли на каждом опросе и накладывались, и каждый тянул ядро открыть соединение
-# с узлом (чат splify2: «дикий флуд tcp на vless-инбаунд, почти каждые 0,02 с, хоть он и не в
-# правиле»). Теперь — не чаще раза в GEO_RETRY на выход. Фоновый замер виден по вызову
-# `steer status` (им geo_refresh ищет устройство выхода).
-export GEO_DIR="$T/geo"; rm -rf "$GEO_DIR"
-: > "$T/steer.log"
-for _i in 1 2 3 4 5; do rpcd outbound_geo '{"output":"vless"}' >/dev/null; done
-sleep 1
-check "outbound_geo: пять опросов подряд без замера — один фоновый замер" "1" "$(grep -c '^status' "$T/steer.log")"
-unset GEO_DIR
+# Страна выхода (outbound_geo), её кэш, фоновое обновление и пределы — плагин node-check (tests/nodecheckmatch.sh); здесь
+# остаётся отклик выхода (outbound_probe) и его машинное слово исхода.
+out="$(rpcd outbound_probe '{"output":"vless"}')"
+check "outbound_probe: исход назван машинным словом code" "yes" "$(printf '%s' "$out" | jget code | grep -qE '^(ok|no_answer|no_device)$' && echo yes || echo no)"
 
 # ИМЯ ПОДПИСКИ НЕ ЛАТИНИЦЕЙ. sub_slug оставлял от «Дом» пустоту (tr побайтно превращал каждый
 # байт UTF-8 в подчёркивание, sed снимал хвост), а sub_use на пустом имени подставлял main —

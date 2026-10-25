@@ -1,0 +1,24 @@
+#!/bin/sh
+# Хук purge: следов в conf у плагина нет, кроме настроек (settings.json остаются при keep_config); замеры и переборы — в памяти.
+. "${STEER_PLUGIN_DIR:?программа запускается хостом splify2 (нет STEER_PLUGIN_DIR)}/lib/base.sh"
+input="$(cat)"
+json_load "$input" 2>/dev/null
+json_select ctx 2>/dev/null
+json_get_var dry dry_run
+json_get_var keep keep_config
+plan=""
+if [ "$keep" != 1 ] && [ "$keep" != true ] && [ -e "$CONF_DIR/settings.json" ]; then
+    plan="$CONF_DIR/settings.json"
+    [ "$dry" = 1 ] || [ "$dry" = true ] || rm -f "$CONF_DIR/settings.json"
+fi
+[ "$dry" = 1 ] || [ "$dry" = true ] || rm -rf "${RUN_DIR:?}"/* 2>/dev/null
+json_init
+json_add_boolean ok 1
+json_add_array plan
+while IFS= read -r line; do
+    [ -n "$line" ] && json_add_string "" "$line"
+done <<EOT
+$plan
+EOT
+json_close_array
+json_dump

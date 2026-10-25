@@ -44,6 +44,7 @@ if [ "${1:-}" = spec ] && [ "${2:-}" = convert ]; then
 fi
 echo "$*" >> "$SANDBOX/steer.log"
 case "${1:-}" in
+    status) printf '{"outputs":{"vless":{"device":"tun0","up":true}}}\n' ;;
     sub-quota)
         # Ответ панели: остаток пишется в файл --info; SUB_QUOTA=none — панель промолчала.
         [ "${SUB_QUOTA:-ok}" = none ] && exit 1
@@ -62,6 +63,7 @@ out=""; url=""
 while [ $# -gt 0 ]; do case "$1" in -o) out="$2"; shift 2 ;; http*) url="$1"; shift ;; *) shift ;; esac; done
 echo "$url" >> "$SANDBOX/requested"
 case "$url" in
+    *1.1.1.1*|*trace*) printf 'ip=203.0.113.7\nloc=DE\n\nsplify_ms=0.250\n'; exit 0 ;;
     *down*) exit 22 ;;
     *) printf 'body of %s\n' "$url" > "$out" ;;
 esac
@@ -79,8 +81,8 @@ host() {  # СЛУЖБА [АРГУМЕНТЫ…] — службы хоста т�
         SUBS_DIR="$T/etc/subs" APPLIED="$T/etc/spec.applied.json" UCI_SPLIFY2="$T/etc/config-splify2" \
         UCI_STUB_DB="$T/uci.db" XSTEER_DIR="$T/etc/xs" RC_D="${RC_D_FIXTURE:-$T/rc.d}" STEER_INIT="$T/bin/initd-steer" \
         RPCD_BIN="${RPCD_BIN_FIXTURE:-$T/bin/rpcd-apply}" \
-        STEER_RC="${STEER_RC:-0}" STEER_ERR="${STEER_ERR:-}" \
-        "$@" 2>"$T/stderr" </dev/null
+        STEER_RC="${STEER_RC:-0}" STEER_ERR="${STEER_ERR:-}" GEO_CURL="${GEO_CURL_FIXTURE:-$T/bin/curl}" \
+        "$@" 2>"$T/stderr" <"${HOST_IN:-/dev/null}"
 }
 hostrun() { host sh "$HOST" "$@"; }
 
@@ -357,6 +359,39 @@ check "sub refresh: отказ метода — в ответе (ok:false), ко
 check "sub info: имя не из латиницы — отказ до вызова" "false;1" "$(hostrun sub info 'a/b' | jget ok);$(hostrun sub info 'a/b' >/dev/null; echo $?)"
 check "sub info: без имени — использование (код 2)" "2" "$(hostrun sub info >/dev/null; echo $?)"
 unset RPCD_BIN_FIXTURE
+
+# ---- call и probe: методы проверки узлов и замер страны выхода ----------------------------------------------------
+cat > "$T/bin/rpcd-call" <<'EOF'
+#!/bin/sh
+read -r req
+printf '%s\n' "$req" > "$SANDBOX/call.req"
+printf '{"method":"%s"}\n' "$2"
+EOF
+RPCD_BIN_FIXTURE="$T/bin/rpcd-call"
+printf '{"output":"vless"}\n' > "$T/in.json"
+out="$(HOST_IN="$T/in.json" hostrun call outbound_probe)"; rc=$?
+check "call: ответ метода дословно, запрос дошёл, код 0" "outbound_probe;yes;0" \
+      "$(printf '%s' "$out" | jget method);$(grep -q '"output":"vless"' "$T/call.req" && echo yes || echo no);$rc"
+check "call: метод вне списка (purge) — отказ, код 1" "false;1" \
+      "$(hostrun call purge | jget ok);$(hostrun call purge >/dev/null; echo $?)"
+for m in vless_nodes hysteria2_nodes proxy_nodes vless_probe hysteria2_probe proxy_probe; do
+    check "call: $m разрешён" "$m" "$(HOST_IN="$T/in.json" hostrun call $m | jget method)"
+done
+check "call без метода — использование (код 2)" "2" "$(hostrun call >/dev/null; echo $?)"
+unset RPCD_BIN_FIXTURE
+out="$(hostrun probe ident vless)"
+check "probe ident: признак устройства выхода" "true;tun0:0" "$(printf '%s' "$out" | jget ok);$(printf '%s' "$out" | jget ident)"
+check "probe ident: выхода нет среди поднятых — none" "none" "$(hostrun probe ident nothere | jget ident)"
+out="$(hostrun probe geo vless)"
+check "probe geo: адрес, страна, отклик в мс, признак устройства" "true;203.0.113.7;DE;250;tun0:0" \
+      "$(printf '%s' "$out" | jget ok);$(printf '%s' "$out" | jget ip);$(printf '%s' "$out" | jget cc);$(printf '%s' "$out" | jget ms);$(printf '%s' "$out" | jget ident)"
+out="$(hostrun probe geo nothere)"; rc=$?
+check "probe geo: выхода нет — отказ no_device, код 1" "false;no_device;1" \
+      "$(printf '%s' "$out" | jget ok);$(printf '%s' "$out" | jget why);$(hostrun probe geo nothere >/dev/null; echo $?)"
+out="$(GEO_CURL_FIXTURE=/nonexistent/curl hostrun probe geo vless)"
+check "probe geo: нет curl — why no_curl и curl:false" "no_curl;false" "$(printf '%s' "$out" | jget why);$(printf '%s' "$out" | jget curl)"
+check "probe: имя выхода с косой — отказ" "false" "$(hostrun probe geo 'a/b' | jget ok)"
+check "probe: неизвестная проба — использование (код 2)" "2" "$(hostrun probe other vless >/dev/null; echo $?)"
 
 # ---- подписки: остаток у панели и своё название ---------------------------------------------
 printf 'vless://a\n' > "$T/etc/sub.txt"

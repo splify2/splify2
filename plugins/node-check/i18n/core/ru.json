@@ -1,0 +1,11 @@
+{
+  "Node check": "Проверка узлов",
+  "Checks at once": "Проверок одновременно",
+  "Each check opens a real connection to the node through the core and measures the answer. The router has one processor and one channel out: more at once measures its own queue, not the node.": "Каждая проверка поднимает через ядро настоящее соединение до узла и меряет ответ. Роутер однопроцессорный и с одним каналом наружу: больше сразу — замер собственной очереди, а не узла.",
+  "Check all subscriptions every, minutes": "Проверять все подписки раз в, минут",
+  "How often the router checks every node of every subscription by itself. 0 - only on request.": "Как часто роутер сам проверяет каждый узел каждой подписки. 0 — только по запросу.",
+  "Exit country is fresh for, seconds": "Страна выхода свежа, секунд",
+  "A measurement of where an output exits is reused for this long; an older one is renewed in the background.": "Замер того, где выходит выход, используется столько; более старый обновляется в фоне.",
+  "Retry exit country not more often than, seconds": "Повторять замер страны не чаще, секунд",
+  "An output whose country could not be measured is tried again no sooner than this.": "Выход, у которого страну измерить не удалось, пробуется заново не раньше этого срока."
+}

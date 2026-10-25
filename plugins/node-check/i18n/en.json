@@ -1,0 +1,4 @@
+{
+  "plugin.name": "Node check",
+  "plugin.description": "Checks subscription nodes and outputs from the router: probe all, measure, exit country, best node"
+}
