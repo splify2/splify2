@@ -1,0 +1,40 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "Node check",
+  "type": "object",
+  "properties": {
+    "parallel": {
+      "type": "integer",
+      "minimum": 1,
+      "maximum": 8,
+      "title": "Checks at once",
+      "description": "Each check opens a real connection to the node through the core and measures the answer. The router has one processor and one channel out: more at once measures its own queue, not the node.",
+      "default": 3
+    },
+    "interval": {
+      "type": "integer",
+      "minimum": 0,
+      "maximum": 10080,
+      "title": "Check all subscriptions every, minutes",
+      "description": "How often the router checks every node of every subscription by itself. 0 - only on request.",
+      "default": 0
+    },
+    "geo_ttl_s": {
+      "type": "integer",
+      "minimum": 60,
+      "maximum": 86400,
+      "title": "Exit country is fresh for, seconds",
+      "description": "A measurement of where an output exits is reused for this long; an older one is renewed in the background.",
+      "default": 900
+    },
+    "geo_retry_s": {
+      "type": "integer",
+      "minimum": 10,
+      "maximum": 3600,
+      "title": "Retry exit country not more often than, seconds",
+      "description": "An output whose country could not be measured is tried again no sooner than this.",
+      "default": 60
+    }
+  },
+  "additionalProperties": false
+}

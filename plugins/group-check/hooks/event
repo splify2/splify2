@@ -1,0 +1,18 @@
+#!/bin/sh
+# Событие ядра (подписка switched, failed): в историю группы — кто, куда, почему. `switched` у группы несёт `member`;
+# `failed` приходит один раз, на перемене, а не на каждом проходе сторожа. Ответа не требуется.
+. "${STEER_PLUGIN_DIR:?программа запускается хостом splify2 (нет STEER_PLUGIN_DIR)}/lib/base.sh"
+in="$(cat)"
+ev="$(printf '%s' "$in" | jsonfilter -e '@.event.ev' 2>/dev/null)"
+out="$(printf '%s' "$in" | jsonfilter -e '@.event.out' 2>/dev/null)"
+name_ok "$out" || exit 0
+# Событие интересно только у групп: файл состояния заводит проба группы, и без него это не группа плагина.
+groups_of_spec | grep -q "^$out " || exit 0
+case "$ev" in
+    switched)
+        m="$(printf '%s' "$in" | jsonfilter -e '@.event.member' 2>/dev/null)"
+        why="$(printf '%s' "$in" | jsonfilter -e '@.event.why' 2>/dev/null)"
+        hist_add "$out" switched "${m:-?}${why:+ ($why)}" ;;
+    failed) hist_add "$out" failed "$(printf '%s' "$in" | jsonfilter -e '@.event.why' 2>/dev/null)" ;;
+esac
+exit 0

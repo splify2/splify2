@@ -1,0 +1,9 @@
+#!/bin/sh
+# Событие ядра (подписка applied, failed): применили без нас — отвергнутое прошлое больше не причина молчать, а исход
+# виден в autoapply_status. Ответа не требуется.
+. "${STEER_PLUGIN_DIR:?программа запускается хостом splify2 (нет STEER_PLUGIN_DIR)}/lib/base.sh"
+cat >/dev/null
+mkdir -p "$RUN_DIR"
+printf '%s %s\n' "${SPLIFY2_EVENT:-}" "$(date -u +%s)" > "$RUN_DIR/last-event"
+[ "${SPLIFY2_EVENT:-}" = applied ] && rm -f "$FAILED"
+exit 0

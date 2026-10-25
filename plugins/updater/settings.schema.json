@@ -1,0 +1,24 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "Updater",
+  "type": "object",
+  "properties": {
+    "check": {
+      "type": "boolean",
+      "title": "Check for new versions by itself",
+      "description": "Every six hours ask the releases index which versions of the core and of splify2 are out, and remember whether the installed ones are older. Off - only when asked.",
+      "default": false
+    },
+    "channel": {
+      "type": "string",
+      "enum": [
+        "stable",
+        "prerelease"
+      ],
+      "title": "Release channel",
+      "description": "stable - only finished releases count as new. prerelease - the current pre-release counts too.",
+      "default": "stable"
+    }
+  },
+  "additionalProperties": false
+}

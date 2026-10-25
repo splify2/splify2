@@ -335,15 +335,15 @@ call)
     # /usr/lib/splify2/rpcd. Метод, которого нет ни в одной группе, — отказ здесь же, до
     # чтения чего бы то ни было.
     case "$2" in
-        status|diag|dev_stats|net_info|devices|client_nets|leases|engine_state|outbound_geo|outbound_probe|explain|xsteer_state|vless_nodes|vless_probe|hysteria2_nodes|hysteria2_probe|proxy_nodes|proxy_probe|dns_log|dns_probe|conns|helper|support_report|spec_schema|spec_yaml) _grp=state ;;
+        status|diag|dev_stats|net_info|devices|client_nets|leases|engine_state|outbound_probe|explain|xsteer_state|vless_nodes|vless_probe|hysteria2_nodes|hysteria2_probe|proxy_nodes|proxy_probe|dns_log|dns_probe|conns|helper|support_report|spec_schema|spec_yaml) _grp=state ;;
         spec_set|spec_check|apply|spec_heal) _grp=spec ;;
         # Методы, вынесенные в плагины (plugins/): без плагина — отказ «нужен плагин X», с плагином их берёт реестр
         # расширений выше как псевдонимы (methods.tsv, колонка moved).
         lists|list_fetch|lists_update|list_put|list_remove|list_custom|list_get|list_peek|list_srs_put|local_lists|allow_domains|fetch_mode|fetch_mode_set|\
-        lists_source|lists_source_set|backup_get|backup_put) _grp=moved ;;
-        engine|engine_stop|engine_start|steer_versions|splify2_versions|splify2_install|steer_install|ui_get|ui_set|\
+        lists_source|lists_source_set|backup_get|backup_put|sub_quota|sub_auto|sub_rename|outbound_geo|steer_versions|splify2_versions|splify2_install|steer_install) _grp=moved ;;
+        engine|engine_stop|engine_start|ui_get|ui_set|\
         steer_modules|steer_module_add|steer_module_del|purge|prefs_get|prefs_set|i18n_get) _grp=engine ;;
-        sub_set|sub_info|sub_quota|sub_list|sub_del|sub_auto|sub_refresh|sub_rename) _grp=sub ;;
+        sub_set|sub_info|sub_list|sub_del|sub_refresh) _grp=sub ;;
         xsteer_link|xsteer_link_put) _grp=xsteer ;;
         recheck_info|recheck_set) _grp=recheck ;;
         plugins_list|plugins_search|repos_list|plugin_status|plugin_job|plugin_install|plugin_update|plugin_remove|\
@@ -357,8 +357,8 @@ call)
     # и архив — у них общие файлы и общий учёт зон; установка пакетов — своя (долгая, и спеку
     # ей держать незачем).
     case "$2" in
-        spec_set|apply|spec_heal|sub_set|sub_auto|sub_del|sub_refresh|sub_rename) call_lock state ;;
-        steer_install|splify2_install|steer_module_add|steer_module_del) call_lock install ;;
+        spec_set|apply|spec_heal|sub_set|sub_del|sub_refresh) call_lock state ;;
+        steer_module_add|steer_module_del) call_lock install ;;
     esac
     # Где спека и как её читать (spec.yaml ядра 2.1 или spec.json): читать — `spec_json`, писать —
     # `spec_put`. Файл — /usr/lib/splify2/spec.sh, рядом с каталогом групп.

@@ -1,0 +1,11 @@
+{
+  "Group check": "Проверка групп",
+  "Check groups by schedule": "Проверять группы по расписанию",
+  "Every few minutes probe each member of each output group. Off - only on request.": "Раз в несколько минут пробовать каждого члена каждой группы выходов. Выключено — только по запросу.",
+  "Check every, minutes": "Проверять раз в, минут",
+  "How often members are probed. The schedule ticks every five minutes, so shorter values behave as five.": "Как часто пробуются члены. Расписание тикает раз в пять минут, поэтому меньшие значения работают как пять.",
+  "Member is dead after failures in a row": "Член мёртв после отказов подряд",
+  "A member that failed this many probes in a row is called dead; fewer - unstable.": "Член, не прошедший столько проб подряд, назван мёртвым; меньше — нестабильным.",
+  "History entries per group": "Записей истории на группу",
+  "How many of the latest verdict changes and core events are kept for each group. The history lives in memory and is lost on reboot.": "Сколько последних перемен приговора и событий ядра хранится по каждой группе. История в памяти и пропадает при перезагрузке."
+}

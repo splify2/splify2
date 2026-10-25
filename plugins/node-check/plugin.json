@@ -1,0 +1,81 @@
+{
+  "schema": 1,
+  "id": "node-check",
+  "version": "1.0.0",
+  "name": "Node check",
+  "description": "Checks subscription nodes and outputs from the router: probe all, measure, exit country, best node",
+  "homepage": "https://github.com/splify2/splify2",
+  "compat": {
+    "splify2-api": "^1.0"
+  },
+  "arch": "all",
+  "permissions": [
+    "splify2.hooks"
+  ],
+  "i18n": {
+    "languages": [
+      "ru",
+      "en"
+    ]
+  },
+  "rpc": {
+    "prog": "bin/nodecheck",
+    "methods": {
+      "outbound_geo": {
+        "access": "read",
+        "timeout_s": 30
+      },
+      "nodes_check": {
+        "access": "write",
+        "timeout_s": 30
+      },
+      "nodes_result": {
+        "access": "read",
+        "timeout_s": 30
+      },
+      "nodes_best": {
+        "access": "read",
+        "timeout_s": 30
+      },
+      "nodes_cancel": {
+        "access": "write",
+        "timeout_s": 30
+      }
+    }
+  },
+  "splify2": {
+    "hooks": {
+      "backup_sections": {
+        "prog": "hooks/backup",
+        "timeout_s": 30
+      },
+      "support_report": {
+        "prog": "hooks/support"
+      },
+      "purge": {
+        "prog": "hooks/purge"
+      }
+    },
+    "tasks": [
+      {
+        "name": "check-nodes",
+        "every": "10m",
+        "prog": "bin/check-nodes",
+        "only_if": "engine-enabled",
+        "timeout_s": 1200
+      }
+    ],
+    "methods": {
+      "alias": {
+        "outbound_geo": "outbound_geo",
+        "nodes_check": "nodes_check",
+        "nodes_result": "nodes_result",
+        "nodes_best": "nodes_best",
+        "nodes_cancel": "nodes_cancel"
+      }
+    },
+    "settings": {
+      "schema": "settings.schema.json"
+    }
+  }
+}

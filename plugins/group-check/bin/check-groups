@@ -1,0 +1,16 @@
+#!/bin/sh
+# Задача check-groups (раз в пять минут): если проверка по расписанию включена и с прошлой прошёл интервал — проба каждого
+# члена каждой группы из спеки. Приговор и история — в памяти плагина (читает group_status).
+. "${STEER_PLUGIN_DIR:?программа запускается хостом splify2 (нет STEER_PLUGIN_DIR)}/lib/base.sh"
+[ "$(setting enabled)" = false ] && exit 0
+gap=$(( $(setting_num interval 5) * 60 ))
+groups="$(groups_of_spec)" || exit 0
+printf '%s\n' "$groups" | while IFS= read -r line; do
+    [ -n "$line" ] || continue
+    g="${line%% *}"
+    last="$(num_or "$(cat "$STATE_DIR/$g/checked" 2>/dev/null)" 0)"
+    # Тик — пять минут, поэтому допуск: прогон не должен «промахиваться» на секунды мимо интервала.
+    [ $(( $(now) - last + 30 )) -ge "$gap" ] || continue
+    check_group_line "$line"
+done
+exit 0

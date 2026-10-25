@@ -1,0 +1,83 @@
+{
+  "schema": 1,
+  "id": "autoapply",
+  "version": "1.0.0",
+  "name": "Auto-apply",
+  "description": "Applies the saved settings by itself after a pause, even when no page is open",
+  "homepage": "https://github.com/splify2/splify2",
+  "compat": {
+    "splify2-api": "^1.0"
+  },
+  "arch": "all",
+  "permissions": [
+    "splify2.hooks"
+  ],
+  "i18n": {
+    "languages": [
+      "ru",
+      "en"
+    ]
+  },
+  "rpc": {
+    "prog": "bin/autoapply",
+    "methods": {
+      "autoapply_status": {
+        "access": "read",
+        "timeout_s": 30
+      },
+      "autoapply_now": {
+        "access": "write",
+        "timeout_s": 120
+      },
+      "autoapply_cancel": {
+        "access": "write",
+        "timeout_s": 30
+      }
+    }
+  },
+  "splify2": {
+    "hooks": {
+      "post_spec_set": {
+        "prog": "hooks/spec-saved",
+        "timeout_s": 5
+      },
+      "backup_sections": {
+        "prog": "hooks/backup",
+        "timeout_s": 30
+      },
+      "support_report": {
+        "prog": "hooks/support"
+      },
+      "purge": {
+        "prog": "hooks/purge"
+      }
+    },
+    "tasks": [
+      {
+        "name": "sweep",
+        "every": "5m",
+        "prog": "bin/sweep",
+        "only_if": "spec-present",
+        "timeout_s": 300
+      }
+    ],
+    "events": {
+      "subscribe": [
+        "applied",
+        "failed"
+      ],
+      "prog": "hooks/event",
+      "timeout_s": 5
+    },
+    "methods": {
+      "alias": {
+        "autoapply_status": "autoapply_status",
+        "autoapply_now": "autoapply_now",
+        "autoapply_cancel": "autoapply_cancel"
+      }
+    },
+    "settings": {
+      "schema": "settings.schema.json"
+    }
+  }
+}

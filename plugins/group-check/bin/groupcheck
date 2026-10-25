@@ -1,0 +1,107 @@
+#!/bin/sh
+# Программа rpc плагина group-check: $1 — метод, параметры — JSON в stdin, ответ — объект JSON.
+#
+#   group_status {group?}      приговор по каждому члену каждой группы (или одной): alive, unstable, dead, unknown;
+#                              отклик, серия отказов, с какого времени; подсказки — кто мёртв
+#   group_history {group, limit?}  последние перемены приговоров и события ядра (switched, failed)
+#   group_check {group?}       проверить сейчас, не дожидаясь расписания
+. "${STEER_PLUGIN_DIR:?программа запускается хостом splify2 (нет STEER_PLUGIN_DIR)}/lib/base.sh"
+METHOD="${1:?нет метода}"
+read -r input 2>/dev/null || true
+[ -n "$input" ] || input='{}'
+json_load "$input" 2>/dev/null || s2_fail "неразбираемый запрос"
+group=''; limit=''
+json_get_var group group; json_get_var limit limit
+[ -z "$group" ] || name_ok "$group" || s2_fail "недопустимое имя группы"
+
+group_check() {
+    groups="$(groups_of_spec)" || s2_fail "спеки нет"
+    n=0
+    while IFS= read -r line; do
+        [ -n "$line" ] || continue
+        [ -z "$group" ] || [ "${line%% *}" = "$group" ] || continue
+        check_group_line "$line"; n=$((n + 1))
+    done <<EOT
+$groups
+EOT
+    [ -z "$group" ] || [ "$n" -gt 0 ] || s2_fail "группы «$group» нет"
+    json_init; json_add_boolean ok 1; json_add_int checked "$n"; json_dump
+}
+
+group_status() {
+    groups="$(groups_of_spec)" || s2_fail "спеки нет"
+    json_init
+    json_add_boolean ok 1
+    json_add_array groups
+    hints=""
+    while IFS= read -r line; do
+        [ -n "$line" ] || continue
+        g="${line%% *}"
+        [ -z "$group" ] || [ "$g" = "$group" ] || continue
+        set -- $line; shift
+        json_add_object ""
+        json_add_string name "$g"
+        json_add_int checked "$(num_or "$(cat "$STATE_DIR/$g/checked" 2>/dev/null)" 0)"
+        alive=0; total=0
+        json_add_array members
+        for m in "$@"; do
+            total=$((total + 1))
+            v=''; ms=''; streak=0; since=0
+            [ -s "$STATE_DIR/$g/members/$m" ] && read -r v ms streak since < "$STATE_DIR/$g/members/$m"
+            [ -n "$v" ] || v=unknown
+            [ "$v" = alive ] && alive=$((alive + 1))
+            json_add_object ""
+            json_add_string name "$m"
+            json_add_string verdict "$v"
+            [ "$v" = alive ] && json_add_int ms "$(num_or "$ms" 0)"
+            json_add_int failures "$(num_or "$streak" 0)"
+            [ "$(num_or "$since" 0)" -gt 0 ] && json_add_int since "$since"
+            json_close_object
+            [ "$v" = dead ] && hints="$hints $g:$m"
+        done
+        json_close_array
+        json_add_int alive "$alive"
+        json_add_int total "$total"
+        json_close_object
+    done <<EOT
+$groups
+EOT
+    json_close_array
+    json_add_array hints
+    for h in $hints; do
+        json_add_object ""
+        json_add_string code member_dead
+        json_add_string group "${h%%:*}"
+        json_add_string member "${h#*:}"
+        json_close_object
+    done
+    json_close_array
+    json_dump
+}
+
+group_history() {
+    name_ok "$group" || s2_fail "не указана группа"
+    lim="$(num_or "$limit" 50)"
+    json_init
+    json_add_boolean ok 1
+    json_add_array entries
+    if [ -s "$STATE_DIR/$group/history" ]; then
+        # Через файл, а не трубу: цикл за трубой идёт в подоболочке, и всё, что он добавил в ответ jshn, пропало бы.
+        tail -n "$lim" "$STATE_DIR/$group/history" > "$STATE_DIR/$group/history.view"
+        while IFS="$(printf '\t')" read -r at kind text; do
+            json_add_object ""
+            json_add_int at "$(num_or "$at" 0)"
+            json_add_string kind "$kind"
+            json_add_string text "$text"
+            json_close_object
+        done < "$STATE_DIR/$group/history.view"
+        rm -f "$STATE_DIR/$group/history.view"
+    fi
+    json_close_array
+    json_dump
+}
+
+case "$METHOD" in
+    group_status|group_history|group_check) "$METHOD" ;;
+    *) echo "нет такого метода: $METHOD" >&2; exit 2 ;;
+esac

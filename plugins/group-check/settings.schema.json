@@ -1,0 +1,38 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "Group check",
+  "type": "object",
+  "properties": {
+    "enabled": {
+      "type": "boolean",
+      "title": "Check groups by schedule",
+      "description": "Every few minutes probe each member of each output group. Off - only on request.",
+      "default": true
+    },
+    "interval": {
+      "type": "integer",
+      "minimum": 5,
+      "maximum": 1440,
+      "title": "Check every, minutes",
+      "description": "How often members are probed. The schedule ticks every five minutes, so shorter values behave as five.",
+      "default": 5
+    },
+    "dead_after": {
+      "type": "integer",
+      "minimum": 1,
+      "maximum": 20,
+      "title": "Member is dead after failures in a row",
+      "description": "A member that failed this many probes in a row is called dead; fewer - unstable.",
+      "default": 3
+    },
+    "history": {
+      "type": "integer",
+      "minimum": 10,
+      "maximum": 5000,
+      "title": "History entries per group",
+      "description": "How many of the latest verdict changes and core events are kept for each group. The history lives in memory and is lost on reboot.",
+      "default": 200
+    }
+  },
+  "additionalProperties": false
+}

@@ -50,68 +50,6 @@ nodes_ask() {  # INSECURE(1|0) КОМАНДА ПУТЬ [АРГУМЕНТЫ...]
     "$STEER" "$_na_c" "$_na_p" --insecure "$@" 2>&1
 }
 
-# Измерить, где выходит трафик выхода, и запомнить. Ничего не печатает: зовётся и из
-# фонового процесса, где печатать некуда, и из синхронной ветки метода, где ответ собирает
-# сам метод. Код возврата: 0 — измерили и записали.
-#
-# Запрос уходит ЧЕРЕЗ УСТРОЙСТВО ВЫХОДА (`curl --interface`), поэтому способ один на все виды
-# туннелей: у vless устройство создаёт сам движок, у остальных оно и так есть.
-# Чем этот выход был, когда мы мерили. Номер устройства в системе: при смене узла или
-# перечитывании подписки движок пересоздаёт TUN, и номер меняется. Ровно это и означает «мы
-# теперь выходим в другом месте» — даже когда выбран «первый рабочий» и спека не менялась.
-geo_ident() {  # ВЫХОД
-    _gi_dev="$("$STEER" status --spec "$SPEC" 2>/dev/null |
-        sed -n "s/.*\"$1\":{[^}]*\"device\":\"\([^\"]*\)\".*/\1/p" | head -1)"
-    [ -n "$_gi_dev" ] || { printf 'none'; return; }
-    printf '%s:%s' "$_gi_dev" "$(cat "/sys/class/net/$_gi_dev/ifindex" 2>/dev/null || echo 0)"
-}
-
-geo_refresh() {  # ВЫХОД
-    _gr_dev="$("$STEER" status --spec "$SPEC" 2>/dev/null |
-        sed -n "s/.*\"$1\":{[^}]*\"device\":\"\([^\"]*\)\".*/\1/p" | head -1)"
-    [ -n "$_gr_dev" ] || return 1
-    command -v "$GEO_CURL" >/dev/null 2>&1 || return 1
-    _gr_url="$(uci -q get splify2.main.geo_url)"
-    [ -n "$_gr_url" ] || _gr_url="$GEO_URL_DEFAULT"
-    # ОДИН запрос на всё: адрес, страна и время ответа. Времени здесь взяться неоткуда,
-    # кроме как отсюда, — и незачем: соединение через устройство выхода уже установлено,
-    # а отдельная проверка отклика (outbound_probe) поднимает его ВТОРОЙ раз и через
-    # движок. Замерено на роутере: такая проверка занимает девятнадцать секунд на выход,
-    # то есть на четырёх выходах экран больше минуты стоит с надписью «меряем…».
-    #
-    # `time_total` — это весь путь: установка соединения, TLS и ответ. Оно и есть та
-    # задержка, которую человек чувствует, открывая страницу через этот выход; ICMP до
-    # узла к ней ближе не становится, а через TUN он и не ходит.
-    _gr_out="$("$GEO_CURL" -4 -fsS --interface "$_gr_dev" --connect-timeout 4 --max-time 8 \
-        -w '\nsplify_ms=%{time_total}\n' "$_gr_url" 2>/dev/null)"
-    _gr_ip="$(printf '%s\n' "$_gr_out" | sed -n 's/^ip=\(.*\)$/\1/p' | head -1)"
-    _gr_cc="$(printf '%s\n' "$_gr_out" | sed -n 's/^loc=\([A-Za-z][A-Za-z]\)$/\1/p' | head -1)"
-    # Секунды с дробью -> миллисекунды целым: считает awk, потому что shell дробей не знает.
-    _gr_ms="$(printf '%s\n' "$_gr_out" | sed -n 's/^splify_ms=\(.*\)$/\1/p' | head -1 |
-        awk '{ printf "%d", $1 * 1000 }' 2>/dev/null)"
-    case "${_gr_ms:-}" in ''|*[!0-9]*) _gr_ms=0 ;; esac
-    [ -n "$_gr_ip" ] || return 1
-    mkdir -p "$GEO_DIR" 2>/dev/null
-    # Время ответа дописано ПЯТЫМ полем, а не вставлено в середину: строки, записанные
-    # прежней версией, читаются теми же четырьмя переменными, и пятая просто остаётся пустой.
-    printf '%s %s %s %s %s\n' "$(date +%s)" "${_gr_cc:--}" "$_gr_ip" "$(geo_ident "$1")" \
-        "$_gr_ms" > "$GEO_DIR/geo-$1" 2>/dev/null
-}
-
-# Фоновый замер, но не чаще раза в GEO_RETRY на выход: отметка попытки ставится ДО запуска, и
-# следующий опрос, пришедший, пока curl ещё ждёт, или после неудачи, в сеть не идёт.
-geo_try_bg() {  # ВЫХОД
-    _gt_f="$GEO_DIR/geo-$1.try"
-    _gt_now="$(date +%s)"
-    _gt_at=0
-    [ -s "$_gt_f" ] && read -r _gt_at < "$_gt_f"
-    case "${_gt_at:-}" in ''|*[!0-9]*) _gt_at=0 ;; esac
-    [ $(( _gt_now - _gt_at )) -ge "$GEO_RETRY" ] || return 0
-    mkdir -p "$GEO_DIR" 2>/dev/null
-    printf '%s\n' "$_gt_now" > "$_gt_f" 2>/dev/null || return 0
-    geo_refresh "$1" >/dev/null 2>&1 &
-}
-
 # Достать JSON из вывода движка, к которому подмешаны его же человеческие строки.
 #
 # Движок пишет предупреждения в stderr («соединился, пропущено мёртвых адресов: 2 из 15»), а
@@ -642,103 +580,6 @@ case "$2" in
         json_dump
         ;;
 
-    outbound_geo)
-        # Где выходит трафик этого выхода: страна и адрес, как их видит внешняя сторона.
-        #
-        # ЗАЧЕМ МЕРИТЬ, А НЕ ЧИТАТЬ. Имя узла подписки («🇩🇪 Германия №2») пишет продавец, и
-        # это подпись, а не факт: узел мог переехать, а у выходов поверх WireGuard и xsteer
-        # имени нет вовсе. Поэтому спрашиваем у внешней стороны — и спрашиваем ЧЕРЕЗ САМ
-        # ВЫХОД, привязав запрос к его устройству (`curl --interface`). Тогда ответ описывает
-        # ровно ту точку, из которой роутер выходит в интернет, и способ один на все виды
-        # выходов: у vless устройство создаёт сам движок, у остальных оно и так есть.
-        #
-        # ПОЧЕМУ ОТВЕТ ЗАПОМИНАЕТСЯ. Обращение наружу стоит секунд, а страница открывается
-        # часто. Свежее измерение отдаётся из файла мгновенно, и только устаревшее (старше
-        # GEO_TTL) заставляет сходить в сеть. Интерфейс к тому же рисует запомненное ещё до
-        # ответа метода — вместе это и убирает паузу на открытии.
-        read -r input
-        json_load "$input" 2>/dev/null || fail "неразбираемый запрос"
-        json_get_var output output
-        json_get_var fresh fresh
-        [ -n "$output" ] || fail "не указан выход"
-        case "$output" in *[!a-zA-Z0-9_-]*) fail "недопустимое имя выхода" ;; esac
-
-        _geo_f="$GEO_DIR/geo-$output"
-        _geo_now="$(date +%s)"
-        _geo_ip=''; _geo_cc=''; _geo_at=0; _geo_ms=''
-        if [ -s "$_geo_f" ]; then
-            read -r _geo_at _geo_cc _geo_ip _geo_id _geo_ms < "$_geo_f"
-            case "${_geo_at:-}" in ''|*[!0-9]*) _geo_at=0 ;; esac
-            # Прочерк в файле означает «страну не назвали»: поле в строке обязано быть,
-            # иначе следующее (адрес) прочиталось бы на его место.
-            [ "${_geo_cc:-}" = "-" ] && _geo_cc=''
-            # Выход с тех пор пересоздали — значит и выходим мы теперь в другом месте.
-            # Прежнее измерение не отдаём вовсе: «Эстония» рядом с только что выбранной
-            # Польшей хуже пустоты, потому что выглядит как ответ.
-            if [ -n "${_geo_id:-}" ] && [ "$_geo_id" != "$(geo_ident "$output")" ]; then
-                _geo_at=0; _geo_cc=''; _geo_ip=''; _geo_ms=''
-            fi
-        fi
-        _geo_age=$(( _geo_now - _geo_at ))
-
-        # БЕЗ `fresh` МЕТОД НЕ ХОДИТ В СЕТЬ ВООБЩЕ — и это главное в нём.
-        #
-        # LuCI складывает вызовы страницы в ОДИН запрос к ubus и выполняет их подряд, поэтому
-        # медленный вызов задерживает все остальные: пока этот метод ждал ответа из сети,
-        # обзор восемь секунд писал «Загрузка…», хотя состояние движка было готово через
-        # четверть секунды. Замерено на роутере: пакет вызовов занимал 5,6 с при 150-250 мс
-        # на каждый вызов по отдельности.
-        #
-        # Поэтому обычный вызов отвечает тем, что запомнено (пусть даже пустотой), а
-        # устаревшее измерение обновляется В ФОНЕ и приедет к следующему опросу. Поток
-        # фонового процесса уводится в /dev/null нарочно: иначе он держал бы открытой
-        # трубу, из которой rpcd читает ответ, и вызов не завершился бы до конца curl.
-        if [ "$fresh" != "1" ] && [ "$fresh" != "true" ]; then
-            if [ "$_geo_at" -le 0 ] || [ "$_geo_age" -ge "$GEO_TTL" ]; then
-                geo_try_bg "$output"
-            fi
-            json_init
-            json_add_string output "$output"
-            # Без curl мерить нечем вовсе, и это не то же, что «выход молчит»: человеку нужно
-            # знать, что поставить (splify2#32), а не гадать по пустым строкам.
-            command -v "$GEO_CURL" >/dev/null 2>&1 || json_add_boolean curl 0
-            [ -n "$_geo_ip" ] && json_add_string ip "$_geo_ip"
-            [ -n "$_geo_cc" ] && json_add_string cc "$_geo_cc"
-            # Время ответа того же запроса. Ноль означает «не мерили» — так читаются и
-            # строки, записанные прежней версией, где пятого поля не было вовсе.
-            [ "${_geo_ms:-0}" -gt 0 ] 2>/dev/null && json_add_int ms "$_geo_ms"
-            [ "$_geo_at" -gt 0 ] && json_add_int at "$_geo_at"
-            json_add_boolean cached 1
-            json_dump
-            exit 0
-        fi
-
-        json_init
-        json_add_string output "$output"
-        # Без curl мерить нечем вовсе, и это не то же, что «выход молчит»: человеку нужно
-        # знать, что поставить (splify2#32), а не гадать по пустым строкам.
-        command -v "$GEO_CURL" >/dev/null 2>&1 || json_add_boolean curl 0
-        if geo_refresh "$output"; then
-            read -r _geo_at _geo_cc _geo_ip _geo_id _geo_ms < "$GEO_DIR/geo-$output"
-            [ "${_geo_cc:-}" = "-" ] && _geo_cc=''
-            unset _geo_id
-            json_add_string ip "$_geo_ip"
-            [ -n "$_geo_cc" ] && json_add_string cc "$_geo_cc"
-            [ "${_geo_ms:-0}" -gt 0 ] 2>/dev/null && json_add_int ms "$_geo_ms"
-            json_add_int at "$_geo_at"
-            json_add_boolean cached 0
-        else
-            # Измерить не вышло. Прежнее измерение всё равно отдаём: «где мы выходили в
-            # прошлый раз» полезнее пустоты, а его возраст виден по полю at.
-            [ -n "$_geo_ip" ] && json_add_string ip "$_geo_ip"
-            [ -n "$_geo_cc" ] && json_add_string cc "$_geo_cc"
-            [ "${_geo_ms:-0}" -gt 0 ] 2>/dev/null && json_add_int ms "$_geo_ms"
-            [ "$_geo_at" -gt 0 ] && json_add_int at "$_geo_at"
-            json_add_string why "через выход не ответили — выход не поднят, нет curl или молчит адрес проверки"
-        fi
-        json_dump
-        ;;
-
     outbound_probe)
         # Отклик по ОДНОМУ выходу за вызов — по той же причине, что у vless_probe: проверка
         # упирается в таймаут, и «проверить все» не уложилось бы в срок жизни вызова ubus.
@@ -779,20 +620,20 @@ case "$2" in
             ms="$(printf '%s' "$out" | sed -n "s/.*\"ok\":true,\"handshake_ms\":\(-*[0-9]*\),\"ttfb_ms\":\(-*[0-9]*\).*/\1 \2/p" | head -1)"
             case "$_pf" in ttfb_ms) ms="${ms#* }" ;; *) ms="${ms% *}" ;; esac
             case "$ms" in
-                ''|*[!0-9]*) json_add_string state 'нет ответа'; json_add_int ms -1 ;;
-                *) json_add_string state ok; json_add_int ms "$ms" ;;
+                ''|*[!0-9]*) json_add_string code no_answer; json_add_string state 'нет ответа'; json_add_int ms -1 ;;
+                *) json_add_string code ok; json_add_string state ok; json_add_int ms "$ms" ;;
             esac
             json_add_string how 'через туннель: ICMP по нему не ходит, меряет ядро steer'
         else
             dev="$("$STEER" status --spec "$SPEC" 2>/dev/null |
                    sed -n "s/.*\"$output\":{[^}]*\"device\":\"\([^\"]*\)\".*/\1/p" | head -1)"
             if [ -z "$dev" ]; then
-                json_add_string state 'нет устройства'; json_add_int ms -1
+                json_add_string code no_device; json_add_string state 'нет устройства'; json_add_int ms -1
             else
                 r="$(ping -c 1 -W 3 -I "$dev" 1.1.1.1 2>/dev/null | sed -n 's/.*time=\([0-9.]*\).*/\1/p' | head -1)"
                 case "$r" in
-                    '') json_add_string state 'нет ответа'; json_add_int ms -1 ;;
-                    *)  json_add_string state ok; json_add_int ms "${r%%.*}" ;;
+                    '') json_add_string code no_answer; json_add_string state 'нет ответа'; json_add_int ms -1 ;;
+                    *)  json_add_string code ok; json_add_string state ok; json_add_int ms "${r%%.*}" ;;
                 esac
             fi
             json_add_string how 'ping через устройство выхода'

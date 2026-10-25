@@ -44,6 +44,14 @@ if [ "${1:-}" = spec ] && [ "${2:-}" = convert ]; then
 fi
 echo "$*" >> "$SANDBOX/steer.log"
 case "${1:-}" in
+    status) printf '{"outputs":{"vless":{"device":"tun0","up":true}}}\n' ;;
+    sub-quota)
+        # Ответ панели: остаток пишется в файл --info; SUB_QUOTA=none — панель промолчала.
+        [ "${SUB_QUOTA:-ok}" = none ] && exit 1
+        shift; _i=""
+        while [ $# -gt 0 ]; do case "$1" in --info) _i="$2"; shift ;; esac; shift; done
+        printf 'upload=1\ndownload=2\ntotal=10\nexpire=1900000000\nat=1700000000\n' > "$_i"
+        exit 0 ;;
     apply) [ -n "${STEER_ERR:-}" ] && echo "$STEER_ERR" >&2; exit "${STEER_RC:-0}" ;;
 esac
 exit 0
@@ -55,6 +63,7 @@ out=""; url=""
 while [ $# -gt 0 ]; do case "$1" in -o) out="$2"; shift 2 ;; http*) url="$1"; shift ;; *) shift ;; esac; done
 echo "$url" >> "$SANDBOX/requested"
 case "$url" in
+    *1.1.1.1*|*trace*) printf 'ip=203.0.113.7\nloc=DE\n\nsplify_ms=0.250\n'; exit 0 ;;
     *down*) exit 22 ;;
     *) printf 'body of %s\n' "$url" > "$out" ;;
 esac
@@ -72,8 +81,9 @@ host() {  # СЛУЖБА [АРГУМЕНТЫ…] — службы хоста т�
         SUBS_DIR="$T/etc/subs" APPLIED="$T/etc/spec.applied.json" UCI_SPLIFY2="$T/etc/config-splify2" \
         UCI_STUB_DB="$T/uci.db" XSTEER_DIR="$T/etc/xs" RC_D="${RC_D_FIXTURE:-$T/rc.d}" STEER_INIT="$T/bin/initd-steer" \
         RPCD_BIN="${RPCD_BIN_FIXTURE:-$T/bin/rpcd-apply}" \
-        STEER_RC="${STEER_RC:-0}" STEER_ERR="${STEER_ERR:-}" \
-        "$@" 2>"$T/stderr" </dev/null
+        STEER_RC="${STEER_RC:-0}" STEER_ERR="${STEER_ERR:-}" GEO_CURL="${GEO_CURL_FIXTURE:-$T/bin/curl}" \
+        OPENWRT_RELEASE="$T/openwrt_release" PM_FIXTURE="${PM_FIXTURE_HOST:-apk}" PKG_DB="$T/pkgdb" \
+        "$@" 2>"$T/stderr" <"${HOST_IN:-/dev/null}"
 }
 hostrun() { host sh "$HOST" "$@"; }
 
@@ -165,6 +175,13 @@ printf '{"version":2,"lists":{"a":{"domains_file":["%s/domains/a.lst"]}},"output
 check "spec get: JSON-вид спеки в stdout" "2" "$(hostrun spec get | jget version)"
 hostrun spec get "$T/copy.json" >/dev/null
 check "spec get ФАЙЛ: копия в файле" "2" "$(jget version < "$T/copy.json")"
+rm -f "$T/etc/spec.applied.json"
+check "spec get --applied: снимка нет — применённой считается сама спека" "2" "$(hostrun spec get --applied | jget version)"
+printf '{"version":1}\n' > "$T/etc/spec.applied.json"
+check "spec get --applied: снимок применённого в stdout" "1" "$(hostrun spec get --applied | jget version)"
+hostrun spec get --applied "$T/app.json" >/dev/null
+check "spec get --applied ФАЙЛ: копия снимка в файле, обычная спека — своя" "1;2" "$(jget version < "$T/app.json");$(hostrun spec get | jget version)"
+rm -f "$T/etc/spec.applied.json"
 check "spec uses: спека ссылается на путь — код 0, на другой — 1" "0;1" \
       "$(hostrun spec uses "$T/lists/domains/a.lst" >/dev/null; echo $?);$(hostrun spec uses "$T/lists/b.lst" >/dev/null; echo $?)"
 printf '{"version":2}\n' > "$T/cand.json"
@@ -322,5 +339,123 @@ printf '#!/bin/sh\ncat >/dev/null\necho "не JSON"\n' > "$T/hk/lib/alpha/hooks/
 out="$(hkhost hook backup_sections --ctx "$T/ctx.json")"
 check "hook backup_sections: ответ не по форме — статус bad_answer" "bad_answer" \
       "$(printf '%s' "$out" | python3 -c 'import json,sys; print(json.load(sys.stdin)["results"][0]["status"])')"
+
+# sub list|info|refresh: ответы методов каркаса дословно.
+cat > "$T/bin/rpcd-sub" <<'EOF'
+#!/bin/sh
+read -r req
+case "$2" in
+    sub_list) echo '{"subs":[{"name":"main","kind":"url","due":false}],"hwid":"h"}' ;;
+    sub_info) printf '{"name":"main","kind":"url","req":%s}\n' "$(printf '%s' "$req" | sed 's/"/\\"/g; s/^/"/; s/$/"/')" ;;
+    sub_refresh) echo '{"ok":false,"error":"подписка не скачалась"}' ;;
+    *) exit 1 ;;
+esac
+EOF
+RPCD_BIN_FIXTURE="$T/bin/rpcd-sub"
+out="$(hostrun sub list)"
+check "sub list: ответ метода дословно, код 0" "main;0" "$(printf '%s' "$out" | python3 -c 'import json,sys; print(json.load(sys.stdin)["subs"][0]["name"])');$(hostrun sub list >/dev/null; echo $?)"
+check "sub info: имя уходит запросом метода" "yes" "$(hostrun sub info main | jget req | grep -q '"name":"main"' && echo yes || echo no)"
+out="$(hostrun sub refresh main)"; rc=$?
+check "sub refresh: отказ метода — в ответе (ok:false), код 0" "false;0" "$(printf '%s' "$out" | jget ok);$rc"
+check "sub info: имя не из латиницы — отказ до вызова" "false;1" "$(hostrun sub info 'a/b' | jget ok);$(hostrun sub info 'a/b' >/dev/null; echo $?)"
+check "sub info: без имени — использование (код 2)" "2" "$(hostrun sub info >/dev/null; echo $?)"
+unset RPCD_BIN_FIXTURE
+
+# ---- call и probe: методы проверки узлов и замер страны выхода ----------------------------------------------------
+cat > "$T/bin/rpcd-call" <<'EOF'
+#!/bin/sh
+read -r req
+printf '%s\n' "$req" > "$SANDBOX/call.req"
+printf '{"method":"%s"}\n' "$2"
+EOF
+RPCD_BIN_FIXTURE="$T/bin/rpcd-call"
+printf '{"output":"vless"}\n' > "$T/in.json"
+out="$(HOST_IN="$T/in.json" hostrun call outbound_probe)"; rc=$?
+check "call: ответ метода дословно, запрос дошёл, код 0" "outbound_probe;yes;0" \
+      "$(printf '%s' "$out" | jget method);$(grep -q '"output":"vless"' "$T/call.req" && echo yes || echo no);$rc"
+check "call: метод вне списка (purge) — отказ, код 1" "false;1" \
+      "$(hostrun call purge | jget ok);$(hostrun call purge >/dev/null; echo $?)"
+for m in vless_nodes hysteria2_nodes proxy_nodes vless_probe hysteria2_probe proxy_probe; do
+    check "call: $m разрешён" "$m" "$(HOST_IN="$T/in.json" hostrun call $m | jget method)"
+done
+check "call без метода — использование (код 2)" "2" "$(hostrun call >/dev/null; echo $?)"
+unset RPCD_BIN_FIXTURE
+out="$(hostrun probe ident vless)"
+check "probe ident: признак устройства выхода" "true;tun0:0" "$(printf '%s' "$out" | jget ok);$(printf '%s' "$out" | jget ident)"
+check "probe ident: выхода нет среди поднятых — none" "none" "$(hostrun probe ident nothere | jget ident)"
+out="$(hostrun probe geo vless)"
+check "probe geo: адрес, страна, отклик в мс, признак устройства" "true;203.0.113.7;DE;250;tun0:0" \
+      "$(printf '%s' "$out" | jget ok);$(printf '%s' "$out" | jget ip);$(printf '%s' "$out" | jget cc);$(printf '%s' "$out" | jget ms);$(printf '%s' "$out" | jget ident)"
+out="$(hostrun probe geo nothere)"; rc=$?
+check "probe geo: выхода нет — отказ no_device, код 1" "false;no_device;1" \
+      "$(printf '%s' "$out" | jget ok);$(printf '%s' "$out" | jget why);$(hostrun probe geo nothere >/dev/null; echo $?)"
+out="$(GEO_CURL_FIXTURE=/nonexistent/curl hostrun probe geo vless)"
+check "probe geo: нет curl — why no_curl и curl:false" "no_curl;false" "$(printf '%s' "$out" | jget why);$(printf '%s' "$out" | jget curl)"
+check "probe: имя выхода с косой — отказ" "false" "$(hostrun probe geo 'a/b' | jget ok)"
+check "probe: неизвестная проба — использование (код 2)" "2" "$(hostrun probe other vless >/dev/null; echo $?)"
+
+# ---- release, pkg, engine modules: выпуски, пакеты, протоколы ядра -------------------------------------------------
+printf "DISTRIB_ARCH='aarch64_cortex-a53'\n" > "$T/openwrt_release"
+cat > "$T/bin/apk" <<'EOF'
+#!/bin/sh
+case "$1" in
+    list) echo "steer-core-2.1.0-r1 aarch64_cortex-a53 {steer-core} (GPL-2.0) [installed]" ; echo "splify2-26.10.3-r1 noarch {splify2} (MIT) [installed]" ;;
+    add) echo "add $*" >> "$SANDBOX/apk.log"; [ -n "${APK_FAIL:-}" ] && { echo "ERROR: unable to select packages" >&2; exit 1; }; echo OK ;;
+    *) exit 0 ;;
+esac
+EOF
+chmod +x "$T/bin/apk"
+out="$(hostrun pkg info)"
+check "pkg info: менеджер, расширение, архитектура, минимум ядра" "true;apk;apk;noarch.apk;aarch64_cortex-a53" \
+      "$(printf '%s' "$out" | jget ok);$(printf '%s' "$out" | jget manager);$(printf '%s' "$out" | jget ext);$(printf '%s' "$out" | jget noarch);$(printf '%s' "$out" | jget arch)"
+check "pkg info: установленные версии по именам пакетов" "2.1.0;26.10.3" \
+      "$(printf '%s' "$out" | python3 -c 'import json,sys; print(json.load(sys.stdin)["versions"]["steer-core"])');$(printf '%s' "$out" | python3 -c 'import json,sys; print(json.load(sys.stdin)["versions"]["splify2"])')"
+check "pkg info: минимум версии ядра задан" "yes" "$(printf '%s' "$out" | jget steer_min | grep -qE '^[0-9]+(\.[0-9]+)+$' && echo yes || echo no)"
+check "release fetch: продукт не из двух — отказ" "false;1" "$(hostrun release fetch other 1.0 a.apk "$T/dl/x" | jget ok);$(hostrun release fetch other 1.0 a.apk "$T/dl/x" >/dev/null; echo $?)"
+check "release fetch: версия не цифрами — отказ до сети" "false" "$(hostrun release fetch steer '1.0;x' a.apk "$T/dl/x" | jget ok)"
+check "release fetch: имя файла со слэшем — отказ" "false" "$(hostrun release fetch steer 1.0 ../a.apk "$T/dl/x" | jget ok)"
+check "release versions: продукт не из двух — использование (код 2)" "2" "$(hostrun release versions other >/dev/null; echo $?)"
+printf 'x' > "$T/pk.apk"
+check "pkg install: пакет вне /tmp и рабочего каталога плагина — отказ" "false;1" "$(hostrun pkg install /etc/passwd | jget ok);$(hostrun pkg install /etc/passwd >/dev/null; echo $?)"
+check "pkg install: файла нет — отказ" "false" "$(hostrun pkg install /tmp/no-such-file.apk | jget ok)"
+check "pkg install без файлов — использование (код 2)" "2" "$(hostrun pkg install >/dev/null; echo $?)"
+printf '{"version":2,"outputs":{"direct":{"kind":"direct"},"t":{"kind":"tunnel","protocol":"trojan"},"o":{"kind":"interface","device":"wg0","obfs":{"server":"a:1","listen":"b:2"}}}}\n' > "$T/etc/spec.json"
+out="$(hostrun engine modules)"
+check "engine modules: нужные спеке протоколы в порядке карточки" "proxy obfs" "$(printf '%s' "$out" | python3 -c 'import json,sys; print(" ".join(json.load(sys.stdin)["modules"]))')"
+out="$(hostrun engine modules --want hysteria2)"
+check "engine modules --want: просимый добавлен к нужным" "hysteria2 proxy obfs" "$(printf '%s' "$out" | python3 -c 'import json,sys; print(" ".join(json.load(sys.stdin)["modules"]))')"
+out="$(hostrun engine modules --want wireguard)"
+check "engine modules: неизвестный — отказ, названо имя, код 1" "false;yes;1" "$(printf '%s' "$out" | jget ok);$(printf '%s' "$out" | jget error | grep -q wireguard && echo yes || echo no);$(hostrun engine modules --want wireguard >/dev/null; echo $?)"
+rm -f "$T/etc/spec.json"
+
+# ---- подписки: остаток у панели и своё название ---------------------------------------------
+printf 'vless://a\n' > "$T/etc/sub.txt"
+printf 'vless://b\n' > "$T/etc/subs/hand.txt"
+env UCI_STUB_DB="$T/uci.db" "$T/bin/uci" -q set splify2.main.sub_url=https://panel.invalid/s
+env UCI_STUB_DB="$T/uci.db" "$T/bin/uci" -q set splify2.main.sub_kind=url
+env UCI_STUB_DB="$T/uci.db" "$T/bin/uci" -q set splify2.sub_hand=subscription
+env UCI_STUB_DB="$T/uci.db" "$T/bin/uci" -q set splify2.sub_hand.kind=links
+out="$(hostrun sub quota main)"
+check "sub quota: панель назвала остаток — asked, числа в quota" "true;url;true;10;1900000000" \
+      "$(printf '%s' "$out" | jget ok);$(printf '%s' "$out" | jget kind);$(printf '%s' "$out" | jget asked);$(printf '%s' "$out" | python3 -c 'import json,sys; print(json.load(sys.stdin)["quota"]["total"])');$(printf '%s' "$out" | python3 -c 'import json,sys; print(json.load(sys.stdin)["quota"]["expire"])')"
+out="$(SUB_QUOTA=none hostrun sub quota main)"
+check "sub quota: панель промолчала — не отказ, причина в why" "true;yes" \
+      "$(printf '%s' "$out" | jget ok);$(printf '%s' "$out" | jget why | grep -q 'не сообщила' && echo yes || echo no)"
+out="$(hostrun sub quota hand)"
+check "sub quota: узлы ссылками — не спрашивали, asked false" "true;links;false" \
+      "$(printf '%s' "$out" | jget ok);$(printf '%s' "$out" | jget kind);$(printf '%s' "$out" | jget asked)"
+out="$(hostrun sub quota nothere)"; rc=$?
+check "sub quota: подписки нет — отказ с кодом 1" "false;1" "$(printf '%s' "$out" | jget ok);$(hostrun sub quota nothere >/dev/null; echo $?)"
+out="$(hostrun sub title main 'Моя подписка')"
+check "sub title: название записано и отдано" "true;main;Моя подписка;Моя подписка" \
+      "$(printf '%s' "$out" | jget ok);$(printf '%s' "$out" | jget name);$(printf '%s' "$out" | jget title);$(sed -n 's/^splify2.main.sub_title=//p' "$T/uci.db")"
+check "sub title: пустое название снимает своё" "true;" \
+      "$(hostrun sub title main '' | jget ok);$(sed -n 's/^splify2.main.sub_title=//p' "$T/uci.db")"
+long="$(python3 -c 'print("я" * 101)')"
+check "sub title: длиннее 200 байт — отказ" "false" "$(hostrun sub title main "$long" | jget ok)"
+check "sub title: управляющие знаки — отказ" "false" "$(hostrun sub title main "$(printf 'a\001b')" | jget ok)"
+check "sub title: подписки нет — отказ" "false" "$(hostrun sub title nothere x | jget ok)"
+check "sub title: у именованной подписки — в её секции" "true;Свои" \
+      "$(hostrun sub title hand Свои | jget ok);$(sed -n 's/^splify2.sub_hand.title=//p' "$T/uci.db")"
 
 [ "$fails" = 0 ] && echo "все проверки прошли" || { echo "ПРОВАЛОВ: $fails"; exit 1; }

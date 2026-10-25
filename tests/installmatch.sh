@@ -528,7 +528,7 @@ check "при коннекторе служба steer не включается"
 
 # Модули перечислены одинаково в установщике, бэкенде и интерфейсе.
 check "перечень модулей установщика = бэкенда" \
-    "$(sed -n 's/^STEER_MODULES="\(.*\)"/\1/p' "$ROOT/files/usr/lib/splify2/rpcd/m-engine.sh")" "$STEER_MODULES"
+    "$(sed -n 's/^STEER_MODULES="\(.*\)"/\1/p' "$ROOT/files/usr/lib/splify2/rpcd/pkg-lib.sh")" "$STEER_MODULES"
 check "перечень модулей установщика = интерфейса" "$STEER_MODULES" \
     "$(sed -n "s/^export const STEER_MODULES = \[\(.*\)\]/\1/p" "$ROOT/ui/src/lib/engine.ts" | tr -d "'," )"
 check "умолчание установщика = интерфейса" "$STEER_DEFAULT_MODULES" \

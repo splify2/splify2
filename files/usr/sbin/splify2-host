@@ -5,7 +5,7 @@
 #     splify2-host fetch URL ФАЙЛ [--timeout СЕК]    скачать с обходом закрытого издателя
 #     splify2-host fetch-mode [get | set always|off] режим «качать через туннель»
 #     splify2-host paths                             каталог списков и программа ядра
-#     splify2-host spec get [ФАЙЛ]                   JSON-вид спеки (в stdout или в файл)
+#     splify2-host spec get [--applied] [ФАЙЛ]       JSON-вид спеки или её снимка применённого (в stdout или в файл)
 #     splify2-host spec uses ПУТЬ                    код 0, если спека ссылается на этот путь
 #     splify2-host spec check ФАЙЛ                   проверка спеки ядром
 #     splify2-host apply                             применить сохранённую спеку, как кнопка «Применить»
@@ -14,6 +14,16 @@
 #     splify2-host settings set КЛЮЧ ЗНАЧЕНИЕ        записать настройку плагина (пусто — вернуть умолчание)
 #     splify2-host state check|export|import КАТАЛОГ настройки каркаса: спека, подписки, ключи, выбор, поля uci
 #     splify2-host hook backup_sections --ctx ФАЙЛ [--plugin ID]   вызвать хук у плагинов и собрать ответы
+#     splify2-host sub list | info ИМЯ | refresh ИМЯ  ответы методов sub_list, sub_info, sub_refresh каркаса
+#     splify2-host release versions steer|splify2    перечень выпусков продукта (version.json, api.github.com, VERSION)
+#     splify2-host release fetch ПРОДУКТ ВЕРСИЯ ИМЯ ФАЙЛ   скачать файл выпуска с проверкой sha256 и обходом закрытого издателя
+#     splify2-host pkg info                          менеджер пакетов, архитектура, установленные версии
+#     splify2-host pkg install ФАЙЛ… [--replace ИМЯ…] [--restart-rpcd]   поставить пакеты одной транзакцией
+#     splify2-host engine modules [--want a,b] | settle [модуль…]   протоколы ядра: что нужно спеке; довести после установки
+#     splify2-host call МЕТОД < запрос               ответ метода узлов или проверки каркаса дословно
+#     splify2-host probe geo|ident ВЫХОД             страна выхода, замеренная через сам выход; признак устройства выхода
+#     splify2-host sub quota ИМЯ                     спросить у панели подписки остаток трафика
+#     splify2-host sub title ИМЯ [НАЗВАНИЕ]          своё название подписки (пусто — снять)
 #
 # Ответ — один объект JSON в stdout, код 0 при успехе и 1 при отказе (`{"ok":false,"error":"…"}`); исключения —
 # `spec get` без файла (печатает спеку), `settings get` (печатает значение) и `apply` (печатает ответ метода).
@@ -41,7 +51,7 @@ fail() { json_init; json_add_boolean ok 0; json_add_string error "$1"; json_dump
 ok_json() { json_init; json_add_boolean ok 1; json_dump; exit 0; }
 
 usage() {
-    echo "использование: splify2-host fetch|fetch-mode|paths|spec|apply|engine|settings|state|hook …" >&2
+    echo "использование: splify2-host fetch|fetch-mode|paths|spec|apply|engine|settings|state|hook|sub|call|probe|release|pkg …" >&2
     exit 2
 }
 
@@ -108,6 +118,12 @@ cmd_spec() {  # get [ФАЙЛ] | uses ПУТЬ | check ФАЙЛ
         get)
             spec_have || fail "спеки нет"
             _s_v="$(spec_json)"
+            # `--applied` — снимок спеки в момент последнего применения; снимка нет — применённым считается сама спека
+            # (как у метода applied_get): «не применено» без снимка не бывает.
+            if [ "${2:-}" = --applied ]; then
+                shift
+                [ -s "${APPLIED:-/etc/steer/spec.applied.json}" ] && _s_v="${APPLIED:-/etc/steer/spec.applied.json}"
+            fi
             [ -s "$_s_v" ] || fail "спеку не удалось прочитать"
             if [ -n "${2:-}" ]; then
                 cp "$_s_v" "$2" || fail "не удалось записать $2"
@@ -155,7 +171,10 @@ cmd_engine() {
     [ -e "$1" ] && _e_en=1
     if [ "$_e_known" = 1 ] && "$_e_init" running >/dev/null 2>&1; then _e_run=1; fi
     json_init; json_add_boolean ok 1; json_add_boolean known "$_e_known"
-    json_add_boolean enabled "$_e_en"; json_add_boolean running "$_e_run"; json_dump
+    json_add_boolean enabled "$_e_en"; json_add_boolean running "$_e_run"
+    # Ядро ведёт коннектор (podkop, forkop): его пакеты — не наши, ставить поверх нельзя.
+    box_busy && json_add_string busy "$BOX_BY"
+    json_dump
 }
 
 # ---- настройки плагина ------------------------------------------------------------------------------------------
@@ -461,13 +480,6 @@ state_check_url() {  # КЛЮЧ ЗНАЧЕНИЕ
     return 0
 }
 
-# Интервал автообновления подписки: число минут в пределах sub_auto (SUB_AUTO_MIN, SUB_AUTO_MAX в m-sub.sh).
-state_check_auto() {  # КЛЮЧ ЗНАЧЕНИЕ
-    case "$2" in ''|*[!0-9]*) echo "$1: ждём число минут"; return 1 ;; esac
-    [ "$2" -ge 30 ] && [ "$2" -le 4320 ] || { echo "$1: от 30 до 4320 минут"; return 1; }
-    return 0
-}
-
 # Поля uci: ключи по белому списку — непонятное поле значит, что архив принесён из другой версии. Значения
 # выключателей проверяются ШИРЕ, чем их пишет интерфейс: читает их fetch_tunnel_on, а он понимает и 1/0, и yes/no.
 state_check_options() {  # ФАЙЛ
@@ -481,8 +493,6 @@ state_check_options() {  # ФАЙЛ
                 state_check_url "$_c_k" "$_c_v" || return 1 ;;
             sub_kind)
                 case "$_c_v" in url|links|none) ;; *) echo "sub_kind: ждём url, links или none"; return 1 ;; esac ;;
-            sub_auto)
-                state_check_auto "$_c_k" "$_c_v" || return 1 ;;
             fetch_via_tunnel)
                 case "$_c_v" in
                     0|1|on|off|yes|no|true|false|always|auto) ;;
@@ -498,7 +508,6 @@ state_check_options() {  # ФАЙЛ
                     url)   state_check_url "$_c_k" "$_c_v" || return 1 ;;
                     kind)  case "$_c_v" in url|links|none) ;; *) echo "$_c_k: ждём url, links или none"; return 1 ;; esac ;;
                     title) ;;
-                    auto)  state_check_auto "$_c_k" "$_c_v" || return 1 ;;
                     *) echo "непонятная настройка: $_c_k"; return 1 ;;
                 esac ;;
             *) echo "непонятная настройка: $_c_k"; return 1 ;;
@@ -580,7 +589,7 @@ state_export() {  # КАТАЛОГ
     # ВСЕ поля splify2.main каркаса, а не часть: те, что человек правил однажды и руками, иначе терялись бы молча.
     # Перечень сверяется с кодом: grep -rhoE 'splify2\.(main|sub_[a-z_]*)\.[a-z_]+' files/ | sort -u
     : > "$_x/options.new"
-    for _x_k in sub_url sub_kind sub_title sub_auto wizard fetch_via_tunnel geo_url; do
+    for _x_k in sub_url sub_kind sub_title wizard fetch_via_tunnel geo_url; do
         _x_v="$(uci -q get "splify2.main.$_x_k")"
         [ -n "$_x_v" ] && printf '%s=%s\n' "$_x_k" "$_x_v" >> "$_x/options.new"
     done
@@ -588,7 +597,7 @@ state_export() {  # КАТАЛОГ
     for _x_s in $(sub_names); do
         [ "$_x_s" = main ] && continue
         case "$_x_s" in ''|*[!A-Za-z0-9_]*) continue ;; esac
-        for _x_k in url kind title auto; do
+        for _x_k in url kind title; do
             _x_v="$(uci -q get "splify2.sub_$_x_s.$_x_k")"
             [ -n "$_x_v" ] && printf 'sub_%s.%s=%s\n' "$_x_s" "$_x_k" "$_x_v" >> "$_x/options.new"
         done
@@ -762,14 +771,289 @@ cmd_hook() {  # ИМЯ --ctx ФАЙЛ [--plugin ID]
     printf '{"ok":true,"results":[%s]}\n' "$HOOK_RES"
 }
 
+# ---- подписки: то, что плагин subscriptions делает с данными каркаса --------------------------------------------
+
+# Остаток трафика у панели и своё название — действия над данными подписок, которыми владеет каркас (файл узлов, файл
+# остатка, uci). Расписанием и методами для интерфейса занимается плагин; здесь — только запись и опрос панели.
+cmd_sub() {  # list | info ИМЯ | refresh ИМЯ | quota ИМЯ | title ИМЯ [НАЗВАНИЕ]
+    case "$1" in
+        list|info|refresh)
+            # Ответ метода каркаса дословно: подписки, их вид, время файла узлов, поля плагинов (хук sub_fields) и
+            # остаток. Код 0, если метод ответил объектом; отказ метода — в самом ответе (`ok:false`).
+            [ "$1" = list ] || [ -n "${2:-}" ] || usage
+            _su_rpcd="${RPCD_BIN:-${RPCD_LIB%/rpcd}/../../libexec/rpcd/splify2}"
+            [ -r "$_su_rpcd" ] || fail "не найден обработчик подписок"
+            case "$1" in
+                list) _su_req='{}' ;;
+                *) case "$2" in *[!A-Za-z0-9_]*) fail "имя подписки: латиница, цифры, подчёркивание" ;; esac
+                   _su_req="{\"name\":\"$2\"}" ;;
+            esac
+            _su_out="$(printf '%s\n' "$_su_req" | sh "$_su_rpcd" call "sub_$1")"
+            case "$_su_out" in '{'*) printf '%s\n' "$_su_out"; exit 0 ;; esac
+            fail "каркас не ответил" ;;
+    esac
+    [ -n "${2:-}" ] || usage
+    . "${SUB_LIB_SH:-$RPCD_LIB/sub-lib.sh}"
+    sub_use "$2"
+    case " $(sub_names | tr '\n' ' ') " in
+        *" $SUB_NAME "*) ;;
+        *) fail "подписки «$SUB_NAME» нет" ;;
+    esac
+    case "$1" in
+        quota)
+            _q_url="$(sub_get "$SUB_NAME" url)"
+            _q_kind="$(sub_kind_of "$SUB_NAME")"
+            json_init
+            json_add_boolean ok 1
+            json_add_string kind "$_q_kind"
+            json_add_string name "$SUB_NAME"
+            if [ "$_q_kind" != url ] || [ -z "$_q_url" ]; then
+                # Спрашивать некого: узлы вставлены ссылками, а ссылка не панель. Отказом это не считается.
+                json_add_boolean asked 0
+                json_add_string why "узлы заданы ссылками — остаток брать негде: его сообщает панель подписки, а не ссылка"
+            elif sub_quota_ask "$_q_url"; then
+                json_add_boolean asked 1
+            else
+                json_add_boolean asked 1
+                json_add_string why "панель не сообщила остаток трафика"
+            fi
+            sub_userinfo_emit
+            json_dump; exit 0 ;;
+        title)
+            _t_title="${3:-}"
+            [ "$(printf '%s' "$_t_title" | wc -c)" -le 200 ] || fail "название слишком длинное"
+            case "$_t_title" in *[[:cntrl:]]*) fail "в названии управляющие знаки" ;; esac
+            call_lock state
+            uci_file || fail "не удалось создать $UCI_SPLIFY2 — кончилось место?"
+            sub_put "$SUB_NAME" title "$_t_title" || fail "не удалось записать название"
+            uci_commit
+            sub_brand "$(sub_get "$SUB_NAME" url)" "$_t_title" own
+            json_init; json_add_boolean ok 1; json_add_string name "$SUB_NAME"; json_add_string title "$SUB_BRAND_TITLE"
+            json_dump; exit 0 ;;
+        *) usage ;;
+    esac
+}
+
+# ---- методы проверки узлов и замеры через выход --------------------------------------------------------------------
+
+# Вызвать метод каркаса, не заходя в rpcd (у rpcd свой срок вызова, а перебор узлов идёт долго). Только методы узлов и
+# проверок: чего нет в списке — недостающая часть API, а не повод звать любой метод. Запрос — со стандартного ввода, ответ —
+# дословно; код 0, если метод ответил объектом (отказ метода — в ответе, `ok:false`).
+cmd_call() {  # МЕТОД < запрос
+    case "${1:-}" in
+        vless_nodes|hysteria2_nodes|proxy_nodes|vless_probe|hysteria2_probe|proxy_probe|outbound_probe) ;;
+        '') usage ;;
+        *) fail "метод $1 хост программам плагинов не вызывает" ;;
+    esac
+    _c_rpcd="${RPCD_BIN:-${RPCD_LIB%/rpcd}/../../libexec/rpcd/splify2}"
+    [ -r "$_c_rpcd" ] || fail "не найден обработчик методов"
+    _c_out="$(sh "$_c_rpcd" call "$1")"
+    case "$_c_out" in '{'*) printf '%s\n' "$_c_out"; exit 0 ;; esac
+    fail "каркас не ответил"
+}
+
+# Страна выхода, замеренная ЧЕРЕЗ САМ ВЫХОД (curl --interface), и признак устройства выхода: по нему плагин узнаёт, что
+# выход пересоздали и прежний замер уже не о нём. Кэш и сроки — у плагина node-check.
+cmd_probe() {  # geo|ident ВЫХОД
+    [ -n "${2:-}" ] || usage
+    case "$2" in *[!a-zA-Z0-9_-]*) fail "недопустимое имя выхода" ;; esac
+    . "${GEO_LIB_SH:-$RPCD_LIB/geo-lib.sh}"
+    case "$1" in
+        ident)
+            json_init; json_add_boolean ok 1
+            json_add_string ident "$(geo_ident "$2")"
+            command -v "$GEO_CURL" >/dev/null 2>&1 || json_add_boolean curl 0
+            json_dump; exit 0 ;;
+        geo)
+            if geo_measure "$2"; then
+                json_init; json_add_boolean ok 1
+                json_add_string output "$2"
+                json_add_string ip "$GEO_IP"
+                [ -n "$GEO_CC" ] && json_add_string cc "$GEO_CC"
+                json_add_int ms "$GEO_MS"
+                json_add_string ident "$(geo_ident "$2")"
+                json_dump; exit 0
+            fi
+            json_init; json_add_boolean ok 0
+            json_add_string error "через выход не ответили"
+            json_add_string why "$GEO_WHY"
+            [ "$GEO_WHY" = no_curl ] && json_add_boolean curl 0
+            json_dump; exit 1 ;;
+        *) usage ;;
+    esac
+}
+
+# ---- выпуски, пакеты, довод ядра после установки ---------------------------------------------------------------------
+
+# Что и когда ставить решает плагин updater; здесь — как: перечень выпусков с запасными источниками, скачивание со суммой и
+# зеркалами, менеджер пакетов (apk, opkg) с разрешением конфликта по имени, довод ядра (протоколы-плагины, автозапуск, спека,
+# перезапуск).
+pkg_load() {
+    need_fetch
+    . "${PLUGIN_SH:-${SPLIFY2_LIBDIR:-/usr/lib/splify2}/plugin.sh}"
+    . "${PKG_LIB_SH:-$RPCD_LIB/pkg-lib.sh}"
+}
+
+cmd_release() {  # versions steer|splify2 | fetch ПРОДУКТ ВЕРСИЯ ИМЯ ФАЙЛ
+    pkg_load
+    case "${1:-}" in
+        versions)
+            case "${2:-}" in
+                steer)
+                    gh_load splify2/steer
+                    json_init; json_add_boolean ok 1
+                    json_add_string arch "$(pkg_arch)"
+                    gh_add_releases
+                    json_dump; exit 0 ;;
+                splify2)
+                    gh_load splify2/splify2
+                    json_init; json_add_boolean ok 1
+                    _r_cur="$(pkg_version splify2)"
+                    [ -n "$_r_cur" ] || _r_cur="$(pkg_version luci-app-splify2)"
+                    json_add_string current "$_r_cur"
+                    gh_add_releases
+                    json_dump; exit 0 ;;
+                *) usage ;;
+            esac ;;
+        fetch)
+            [ $# -ge 5 ] || usage
+            case "$2" in steer|splify2) ;; *) fail "продукт бывает steer или splify2" ;; esac
+            case "$3" in ''|*[!0-9.]*) fail "в версии допустимы только цифры и точки" ;; esac
+            case "$4" in ''|*[!A-Za-z0-9._+-]*|.*) fail "недопустимое имя файла" ;; esac
+            FETCH_NOTE=""
+            rm -f "$5"
+            # Адреса и sha256 — из перечня выпусков (rel_asset), затем прежняя лестница download() по прямой ссылке: она
+            # перенаправляет на release-assets.githubusercontent.com, и там, где этот хост закрыт, обновление не работало
+            # вовсе (splify2#15).
+            rel_asset "$2" "$3" "$4"
+            if download_rel "$5" "$REL_SUM" "https://github.com/splify2/$2/releases/download/v$3/$4" $REL_URLS; then
+                json_init; json_add_boolean ok 1
+                [ -n "$FETCH_NOTE" ] && json_add_string via "$FETCH_NOTE"
+                json_dump; exit 0
+            fi
+            rm -f "$5"
+            json_init; json_add_boolean ok 0; json_add_string error "не скачалось"
+            [ -n "$FETCH_NOTE" ] && json_add_string note "$FETCH_NOTE"
+            json_dump; exit 1 ;;
+        *) usage ;;
+    esac
+}
+
+cmd_pkg() {  # info | install ФАЙЛ… [--replace ИМЯ…] [--restart-rpcd]
+    pkg_load
+    case "${1:-}" in
+        info)
+            json_init; json_add_boolean ok 1
+            json_add_string manager "$PM"
+            json_add_string ext "$(pkg_ext)"
+            json_add_string noarch "$(pkg_noarch)"
+            json_add_string arch "$(pkg_arch)"
+            json_add_string steer_min "$STEER_MIN_VERSION"
+            json_add_object versions
+            json_add_string steer-core "$(pkg_version steer-core)"
+            json_add_string splify2 "$(pkg_version splify2)"
+            json_add_string luci-app-splify2 "$(pkg_version luci-app-splify2)"
+            json_close_object
+            json_dump; exit 0 ;;
+        install)
+            shift
+            _p_files=""; _p_repl=""; _p_rpcd=""; _p_mode=files
+            while [ $# -gt 0 ]; do
+                case "$1" in
+                    --replace) _p_mode=repl ;;
+                    --restart-rpcd) _p_rpcd=1 ;;
+                    *) if [ "$_p_mode" = repl ]; then _p_repl="$_p_repl $1"; else _p_files="$_p_files $1"; fi ;;
+                esac
+                shift
+            done
+            [ -n "$_p_files" ] || usage
+            # Пути — только в /tmp или в рабочем каталоге плагина: менеджер пакетов исполняет скрипты пакета от root.
+            for _p_f in $_p_files; do
+                case "$_p_f" in
+                    /tmp/*|"${STEER_PLUGIN_STATE:-/nonexistent}"/*) ;;
+                    *) fail "пакет можно ставить только из /tmp или из рабочего каталога плагина" ;;
+                esac
+                [ -f "$_p_f" ] || fail "нет файла $_p_f"
+            done
+            # Место на флеше — до менеджера пакетов (flash_room_ok, common.sh).
+            # shellcheck disable=SC2086
+            flash_room_ok $_p_files || fail "$ROOM_ERR"
+            call_lock install
+            # shellcheck disable=SC2086
+            pkg_install "${_p_files# }" $_p_repl
+            _p_rc=$?
+            json_init
+            if [ "$_p_rc" != 0 ]; then
+                json_add_boolean ok 0; json_add_string error "$PKG_OUT"; json_add_string output "$PKG_OUT"
+                json_add_boolean removed "$PKG_REMOVED"
+                json_dump; exit 1
+            fi
+            # Перезапуск rpcd — часть установки интерфейса: список методов ubus и ACL читаются им при старте. В фоне и с
+            # задержкой, потому что вызывающий — сам rpcd: перезапусти его сейчас, и ответ до браузера не доедет.
+            [ -n "$_p_rpcd" ] && ( sleep 2; "$RPCD_INITD" restart ) </dev/null >/dev/null 2>&1 &
+            json_add_boolean ok 1; json_add_string output "$PKG_OUT"
+            json_add_boolean removed "$PKG_REMOVED"
+            json_dump; exit 0 ;;
+        *) usage ;;
+    esac
+}
+
+# Протоколы ядра, которые нужны спеке и которые просили (`--want vless,proxy`): имена и порядок — те же, что у карточки
+# модулей. Имя неизвестного — отказ ДО скачивания.
+engine_modules() {  # [--want a,b]
+    pkg_load
+    _m_want=""
+    [ "${1:-}" = --want ] && _m_want="$(printf '%s' "${2:-}" | tr ',' ' ')"
+    for _m_m in $_m_want; do
+        case " $STEER_MODULES " in *" $_m_m "*) ;; *) fail "неизвестный модуль: $_m_m" ;; esac
+    done
+    spec_mods
+    _m_have=" $_m_want $SPEC_MODS "
+    _m_mods=""
+    for _m_m in $STEER_MODULES; do
+        case "$_m_have" in *" $_m_m "*) _m_mods="$_m_mods $_m_m" ;; esac
+    done
+    json_init; json_add_boolean ok 1
+    json_add_array modules
+    for _m_m in $_m_mods; do json_add_string "" "$_m_m"; done
+    json_close_array
+    json_dump; exit 0
+}
+
+# После установки ядра: довести протоколы-плагины (до службы: перезапуск ядра со спекой, которой плагина ещё нет, поставил бы
+# её выходы в on_fail), включить автозапуск, перевести спеку в spec.yaml, перезапустить службу при спеке. Отказ менеджера ядра
+# установку не отменяет (ядро уже встало): о нём говорит ensure_error.
+engine_settle() {  # [модуль…]
+    pkg_load
+    _s_err=""
+    if [ $# -gt 0 ]; then
+        # shellcheck disable=SC2086
+        plugin_manager ensure "$@" || _s_err="$(plugin_manager_error)"
+        plugin_sync
+        plugin_sync_reload
+    fi
+    "${INITD:-/etc/init.d/steer}" enable >/dev/null 2>&1 || true
+    spec_migrate
+    _s_rs=0
+    if spec_have; then "${INITD:-/etc/init.d/steer}" restart >/dev/null 2>&1 && _s_rs=1; fi
+    json_init; json_add_boolean ok 1; json_add_boolean restarted "$_s_rs"
+    [ -n "$_s_err" ] && json_add_string ensure_error "$_s_err"
+    json_dump; exit 0
+}
+
 case "${1:-}" in
     fetch) shift; cmd_fetch "$@" ;;
     fetch-mode) shift; cmd_fetch_mode "$@" ;;
     spec) shift; cmd_spec "$@" ;;
     apply) cmd_apply ;;
-    engine) cmd_engine ;;
+    engine) shift; case "${1:-}" in modules) shift; engine_modules "$@" ;; settle) shift; engine_settle "$@" ;; *) cmd_engine ;; esac ;;
     settings) shift; cmd_settings "$@" ;;
     state) shift; cmd_state "$@" ;;
     hook) shift; cmd_hook "$@" ;;
+    sub) shift; cmd_sub "$@" ;;
+    call) shift; cmd_call "$@" ;;
+    probe) shift; cmd_probe "$@" ;;
+    release) shift; cmd_release "$@" ;;
+    pkg) shift; cmd_pkg "$@" ;;
     *) usage ;;
 esac

@@ -179,6 +179,11 @@ check "backup_get без плагина: код not_installed" "not_installed" "
 check "и отказ называет плагин backup" "yes" "$(printf '%s' "$out" | grep -q 'плагин backup' && echo yes || echo no)"
 out="$(rpc lists)"
 check "lists без плагина: нужен lists-catalog" "not_installed;yes" "$(printf '%s' "$out" | pj 'd["code"]');$(printf '%s' "$out" | grep -q 'lists-catalog' && echo yes || echo no)"
+for _mp in "sub_auto subscriptions" "sub_quota subscriptions" "sub_rename subscriptions" "outbound_geo node-check" "steer_install updater" "steer_versions updater" "splify2_install updater" "splify2_versions updater"; do
+    set -- $_mp
+    out="$(rpc "$1" '{}')"
+    check "$1 без плагина: нужен $2" "not_installed;yes" "$(printf '%s' "$out" | pj 'd["code"]');$(printf '%s' "$out" | grep -q "$2" && echo yes || echo no)"
+done
 check "методы каркаса отвечают как раньше (spec_get)" "2" "$(rpc spec_get | pj 'd["version"]')"
 check "реестр заведён и пуст: версия и режим" "api	1.0.0|safe	0" "$(reg | head -2 | tr '\n' '|' | sed 's/|$//')"
 
@@ -709,7 +714,7 @@ SDK="${PLUGIN_SDK:-$ROOT/../plugin-sdk}"
 if { command -v s2p >/dev/null 2>&1 || [ -x "$SDK/bin/s2p" ] || { [ -f "$SDK/build.sh" ] && command -v go >/dev/null 2>&1; }; }; then
     mkdir -p "$T/dist"
     if PLUGIN_SDK="$SDK" S2P_OUT_DIR="$T/dist" sh "$ROOT/plugins/build.sh" >"$T/build.log" 2>&1; then built=ok; else built=fail; cat "$T/build.log"; fi
-    check "plugins/build.sh: lint и сборка обоих плагинов" "ok;2" "$built;$(ls "$T/dist" | grep -c '\.s2p$')"
+    check "plugins/build.sh: lint и сборка всех плагинов каркаса" "ok;$(ls -d "$ROOT"/plugins/*/plugin.json | wc -l)" "$built;$(ls "$T/dist" | grep -c '\.s2p$')"
     reset
     for id in backup lists-catalog; do
         mkdir -p "$PL/lib/$id"

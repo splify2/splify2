@@ -1,0 +1,79 @@
+#!/bin/sh
+# Задача update-subs (раз в десять минут): обновляет подписки, у которых задан свой интервал и он вышел, и, если включена
+# проверка остатка, спрашивает у панелей остаток трафика.
+#
+# Десять минут — потому что наименьший интервал полчаса: реже значило бы промахиваться мимо него на треть, чаще — будить
+# роутер без дела. Минута не случайная: наружу ходят только подписки, чей срок подошёл, всплеска у тысячи роутеров не
+# получится при любой минуте.
+#
+# Скачивание, разбор заголовков панели, выбор формата и учёт остатка — у каркаса (`splify2-host sub refresh`,
+# `splify2-host sub quota`): вторая реализация того же разошлась бы с первой на первой же смене соглашения панелей, и
+# разошлась бы молча. Туннель перечитывается только при изменившихся узлах — это решает sub_refresh.
+set -u
+. "${STEER_PLUGIN_DIR:?программа запускается хостом splify2 (нет STEER_PLUGIN_DIR)}/lib/base.sh"
+
+log() {
+    logger -t splify2-subs "$*"
+    [ -t 1 ] && echo "$*"
+    return 0
+}
+
+list="$("$SPLIFY2_HOST" sub list 2>/dev/null)" || { log "объект splify2 не отвечает — пропускаю прогон"; exit 0; }
+case "$list" in '{'*) ;; *) log "объект splify2 ответил не по форме — пропускаю прогон"; exit 0 ;; esac
+
+qi="$(quota_interval)"
+now="$(date -u +%s)"
+names=""
+# Каждая подписка приезжает отдельной строкой JSON, а не тремя выровненными списками: у подписки без остатка поля нет, и
+# списки разъехались бы на одну строку.
+rows="$(printf '%s' "$list" | jsonfilter -e '@.subs[*]' 2>/dev/null)"
+printf '%s\n' "$rows" | while read -r row; do
+    [ -n "$row" ] || continue
+    n="$(jsonfilter -s "$row" -e '@.name' 2>/dev/null)"
+    sub_name_ok "$n" || continue
+    kind="$(jsonfilter -s "$row" -e '@.kind' 2>/dev/null)"
+    mtime="$(jsonfilter -s "$row" -e '@.mtime' 2>/dev/null)"
+
+    if sched_due "$n" "$kind" "${mtime:-0}"; then
+        stamp_put "$n"
+        out="$("$SPLIFY2_HOST" sub refresh "$n" 2>&1)" || {
+            log "подписка $n: не обновилась ($(printf '%s' "$out" | head -1))"; continue; }
+        # Отказ метода приходит ответом `ok: false` с кодом 0: без этой проверки неудача записывалась бы успехом.
+        ok="$(printf '%s' "$out" | jsonfilter -e '@.ok' 2>/dev/null)"
+        if [ "$ok" != true ] && [ "$ok" != 1 ]; then
+            log "подписка $n: не обновилась ($(printf '%s' "$out" | jsonfilter -e '@.error' 2>/dev/null | head -1))"
+            continue
+        fi
+        changed="$(printf '%s' "$out" | jsonfilter -e '@.changed' 2>/dev/null)"
+        usable="$(printf '%s' "$out" | jsonfilter -e '@.usable' 2>/dev/null)"
+        if [ "$changed" = true ] || [ "$changed" = 1 ]; then
+            log "подписка $n обновлена: узлы изменились${usable:+, пригодных $usable}"
+        else
+            log "подписка $n обновлена: узлы прежние${usable:+, пригодных $usable}"
+        fi
+    fi
+
+    # Остаток трафика по расписанию: не чаще настройки, считая от запомненного ответа панели и от прошлой попытки.
+    if [ "$qi" != 0 ] && [ "$kind" = url ]; then
+        qat="$(num_or "$(jsonfilter -s "$row" -e '@.quota.at' 2>/dev/null)" 0)"
+        qst="$(stamp_get "$n" quota)"
+        [ "$qst" -gt "$qat" ] && qat="$qst"
+        if [ $((now - qat)) -ge $((qi * 60)) ]; then
+            stamp_put "$n" quota
+            "$SPLIFY2_HOST" sub quota "$n" >/dev/null 2>&1 || log "подписка $n: остаток трафика не получен"
+        fi
+    fi
+done
+
+# Подписок, которых больше нет, в расписании быть не должно: имя могут завести заново, и оно унаследовало бы чужой
+# интервал. Чистка только по полному ответу каркаса.
+live="$(printf '%s' "$list" | jsonfilter -e '@.subs[*].name' 2>/dev/null)"
+if [ -s "$SCHEDULE" ]; then
+    while read -r n m; do
+        [ -n "$n" ] || continue
+        printf '%s\n' "$live" | grep -qx "$n" && continue
+        sched_set "$n" 0
+        rm -f "$STAMPS/$n" "$STAMPS/$n.quota"
+    done < "$SCHEDULE"
+fi
+exit 0

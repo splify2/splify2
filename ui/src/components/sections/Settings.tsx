@@ -93,7 +93,7 @@ export default function Settings({
                                 onInstalled={live.refresh}
                             />
                             <AppearanceCard />
-                            <SelfUpdateCard info={live.selfUpdate} installed={live.build?.ui_version} onInstalled={live.refresh} />
+                            <SelfUpdateCard info={live.selfUpdate} installed={live.build?.ui_version} help={live.build?.update} onInstalled={live.refresh} />
                             <PurgeCard />
                         </div>
                     )}

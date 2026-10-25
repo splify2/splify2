@@ -92,6 +92,38 @@ if [ -n "$_mig_old" ]; then
     fi
 fi
 # <<< перенос настроек каталога списков
+# РАСПИСАНИЕ ОБНОВЛЕНИЯ ПОДПИСОК ПЕРЕЕХАЛО В ПЛАГИН subscriptions. Интервал был полем uci (splify2.main.sub_auto у первой
+# подписки, splify2.sub_<имя>.auto у остальных), отметка последней попытки — файлом рядом с файлом узлов. Теперь это данные
+# плагина — conf/subscriptions/schedule («имя минуты») и conf/subscriptions/stamps/<имя>. Перенос один раз (если расписания
+# плагина ещё нет): человек не должен потерять интервал при обновлении; поля uci снимаются, отметки перекладываются.
+# >>> перенос расписания подписок
+_pc="${SPLIFY2_TEST_ROOT:-}/etc/steer/plugins/conf/subscriptions"
+_sched=""
+for _n in main $(uci -q show splify2 2>/dev/null | sed -n "s/^splify2\.sub_\([A-Za-z0-9_]*\)=subscription\$/\1/p"); do
+    if [ "$_n" = main ]; then
+        _m="$(uci -q get splify2.main.sub_auto 2>/dev/null)"; _stf="${SPLIFY2_TEST_ROOT:-}/etc/steer/sub.auto"
+    else
+        _m="$(uci -q get "splify2.sub_$_n.auto" 2>/dev/null)"; _stf="${SPLIFY2_TEST_ROOT:-}/etc/steer/subs/$_n.auto"
+    fi
+    [ -n "$_m" ] || continue
+    case "$_m" in *[!0-9]*) continue ;; esac
+    _sched="$_sched$_n $_m
+"
+    if [ ! -e "$_pc/schedule" ] && [ -s "$_stf" ]; then
+        mkdir -p "$_pc/stamps" 2>/dev/null && cp "$_stf" "$_pc/stamps/$_n" 2>/dev/null
+    fi
+done
+if [ -n "$_sched" ]; then
+    [ -e "$_pc/schedule" ] || { mkdir -p "$_pc" 2>/dev/null && printf '%s' "$_sched" > "$_pc/schedule" 2>/dev/null; }
+    if [ -s "$_pc/schedule" ]; then
+        uci -q delete splify2.main.sub_auto 2>/dev/null
+        for _n in $(uci -q show splify2 2>/dev/null | sed -n "s/^splify2\.sub_\([A-Za-z0-9_]*\)=subscription\$/\1/p"); do
+            uci -q delete "splify2.sub_$_n.auto" 2>/dev/null
+        done
+        uci -q commit splify2
+    fi
+fi
+# <<< перенос расписания подписок
 # ПУСТАЯ СПЕКА ПРИ УСТАНОВКЕ — иначе чистый роутер выглядит сломанным.
 #
 # Движок читает настройку из одного файла и без него не отвечает никому: `steer status`

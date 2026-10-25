@@ -46,6 +46,8 @@ export interface Build {
     version?: string
     /** Не старше какой версии должен быть движок для этого интерфейса — см. rpc.engine. */
     min_version?: string
+    /** Как обновиться без плагина updater (страница выпусков и команда установщика) — см. rpc.engine. */
+    update?: { url: string; command: string }
     /** Модули, стоящие рядом с ядром (vless, hysteria2, proxy, xsteer, obfs, tgws). */
     modules?: string[]
     /** Кем занято ядро, если его ведёт steer-box-connector (podkop, forkop) — см. rpc.engine. */

@@ -1,0 +1,32 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "Subscriptions",
+  "type": "object",
+  "properties": {
+    "min_interval": {
+      "type": "integer",
+      "minimum": 5,
+      "maximum": 4320,
+      "title": "Shortest update interval, minutes",
+      "description": "A subscription is not refreshed more often than this. Going to the seller's panel more often than it changes hurts the one who hands the subscription out.",
+      "default": 30
+    },
+    "max_interval": {
+      "type": "integer",
+      "minimum": 60,
+      "maximum": 43200,
+      "title": "Longest update interval, minutes",
+      "description": "A longer interval is refused: an update nobody waits for.",
+      "default": 4320
+    },
+    "quota_interval": {
+      "type": "integer",
+      "minimum": 0,
+      "maximum": 43200,
+      "title": "Traffic quota check, minutes",
+      "description": "How often to ask the panel for the traffic left, without refreshing the nodes. 0 - only on request.",
+      "default": 0
+    }
+  },
+  "additionalProperties": false
+}

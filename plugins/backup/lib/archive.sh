@@ -321,6 +321,7 @@ backup_legacy() {  # КАТАЛОГ
     done
     [ -f "$1/options" ] || return 0
     _bl_set=""
+    _bl_sched=""
     _bl_keep="$1/options.keep"
     : > "$_bl_keep"
     json_init
@@ -331,9 +332,17 @@ backup_legacy() {  # КАТАЛОГ
             manifest_url) json_add_string manifest_url "$_bl_v"; _bl_set=1 ;;
             list_shrink_factor)
                 case "$_bl_v" in ''|*[!0-9]*) printf '%s\n' "$_bl_ln" >> "$_bl_keep" ;; *) json_add_int list_shrink_factor "$_bl_v"; _bl_set=1 ;; esac ;;
+            # Интервалы автообновления подписок — данные плагина subscriptions: раздел `schedule` («имя минуты»).
+            *.auto) _bl_sn="${_bl_k%%.*}"; _bl_sched="${_bl_sched}${_bl_sn#*_} $_bl_v
+" ;;
+            *_auto) _bl_sched="${_bl_sched}main $_bl_v
+" ;;
             *) printf '%s\n' "$_bl_ln" >> "$_bl_keep" ;;
         esac
     done < "$1/options"
+    if [ -n "$_bl_sched" ] && [ ! -f "$1/plug.subscriptions.schedule" ]; then
+        printf '%s' "$_bl_sched" > "$1/plug.subscriptions.schedule"
+    fi
     if [ -n "$_bl_set" ] && [ ! -f "$1/plug.$LEGACY_LISTS_PLUGIN.settings" ]; then
         json_dump > "$1/plug.$LEGACY_LISTS_PLUGIN.settings"
     fi

@@ -26,7 +26,7 @@ ENV_SH="$ROOT/files/usr/lib/splify2/env.sh"
 # usr/lib/splify2/rpcd. Проверки по ТЕКСТУ объекта смотрят во все его файлы разом.
 RPCD_DIR="$ROOT/files/usr/lib/splify2/rpcd"
 # backup и lists-catalog — плагины (plugins/): их код живёт там, и проверки по тексту смотрят и в него.
-RPCD_ALL="$SCRIPT $ROOT/files/usr/lib/splify2/env.sh $RPCD_DIR/common.sh $RPCD_DIR/m-*.sh $ROOT/files/usr/sbin/splify2-host"
+RPCD_ALL="$SCRIPT $ROOT/files/usr/lib/splify2/env.sh $RPCD_DIR/*.sh $ROOT/files/usr/sbin/splify2-host"
 # Исходники плагинов: их проверки по тексту смотрят отдельно (plugin_src).
 plugin_src() { cat "$ROOT"/plugins/backup/lib/*.sh "$ROOT"/plugins/lists-catalog/lib/*.sh "$ROOT"/plugins/lists-catalog/bin/*; }
 rpcd_src() { cat $RPCD_ALL; }  # shellcheck disable=SC2086
@@ -45,7 +45,8 @@ check() {  # ОПИСАНИЕ ОЖИДАЕМОЕ ПОЛУЧЕННОЕ
 }
 
 mkdir -p "$T/bin" "$T/lists/domains" "$T/etc" "$T/var"
-# Официальные плагины (backup, lists-catalog), вынесенные из каркаса: методы backup_*, lists* — их псевдонимы.
+# Официальные плагины (backup, lists-catalog, subscriptions), вынесенные из каркаса: методы backup_*, lists*, sub_auto,
+# sub_quota, sub_rename — их псевдонимы; поля расписания в sub_list и sub_info добавляет хук sub_fields плагина subscriptions.
 # Свой корень $T/off, отдельно от $T/plug (там проверки менеджера плагинов с заглушкой ядра): rpcd_run выбирает
 # корень по имени метода.
 . "$ROOT/tests/stub/plugins-env.sh"
@@ -760,7 +761,7 @@ rpcd() {  # МЕТОД [JSON_ЗАПРОСА]
 rpcd_run() {  # МЕТОД [JSON_ЗАПРОСА]  — вызов метода; для перечня методов есть rpcd_list
     case "$1" in
         # Методы, вынесенные в плагины, видят официальные плагины; остальным нужен менеджер плагинов с заглушкой ядра.
-        backup_get|backup_put|lists|list_*|lists_*|local_lists|allow_domains|fetch_mode|fetch_mode_set) _rr_pl="$T/off" ;;
+        backup_get|backup_put|lists|list_*|lists_*|local_lists|allow_domains|fetch_mode|fetch_mode_set|sub_*|steer_versions|steer_install|splify2_versions|splify2_install) _rr_pl="$T/off" ;;
         *) _rr_pl="$T/plug" ;;
     esac
     # Проверка, которой нужны плагины каталога (хуки довоза списков) на методе каркаса, называет корень сама.
@@ -1096,9 +1097,13 @@ check "engine видит снятый автозапуск (R-017)" \
 out="$(rpcd engine)"
 check "engine называет минимальную версию движка (цифры и точки)" "yes" \
       "$(printf '%s' "$out" | jget min_version | grep -qE '^[0-9]+(\.[0-9]+)+$' && echo yes || echo no)"
-check "минимум — та константа, что объявлена в m-engine.sh" \
-      "$(sed -n 's/^STEER_MIN_VERSION=//p' "$ROOT/files/usr/lib/splify2/rpcd/m-engine.sh")" \
+check "минимум — та константа, что объявлена в pkg-lib.sh" \
+      "$(sed -n 's/^STEER_MIN_VERSION=//p' "$ROOT/files/usr/lib/splify2/rpcd/pkg-lib.sh")" \
       "$(printf '%s' "$out" | jget min_version)"
+# Минимум обновления, который каркас оставляет у себя (решение О-2 открыто): метод engine отдаёт страницу выпусков и команду
+# установщика — интерфейс показывает их там, где плагина updater нет.
+check "engine: страница выпусков и команда установщика" "https://github.com/splify2/splify2/releases/latest;yes" \
+      "$(printf '%s' "$out" | python3 -c 'import json,sys; print(json.load(sys.stdin)["update"]["url"])');$(printf '%s' "$out" | python3 -c 'import json,sys; print("yes" if "install.sh" in json.load(sys.stdin)["update"]["command"] else "no")')"
 # Интерфейс читает спеку JSON-видом ядра (`steer spec convert --json`, с 2.1.0): минимум младше
 # 2.1.0 одобрял бы ядро, на котором не прочтётся и не запишется ни одна правка.
 check "минимум — не младше 2.1.0" "2.1.0" \
@@ -1499,7 +1504,7 @@ relclean; reset_logs
 # ---- ядро: steer-core одним пакетом, плагины — менеджером ---------------------------------
 # Ядро — пакет steer-core, протоколы — плагины (ядро 2.1): модулей-пакетов steer-<модуль> нет. После
 # установки метод доводит менеджером (`steer plugin ensure`) просимые плагины и нужные спеке.
-apk_adds() { grep '^add' "$T/apk.log" | sed 's|/tmp/steer-\([a-z0-9]*\)-[0-9.]*-1_aarch64_cortex-a53.apk|\1|g; s/^add add //; s/^--allow-untrusted --force-overwrite //'; }
+apk_adds() { grep '^add' "$T/apk.log" | sed 's|[^ ]*/steer-\([a-z0-9]*\)-[0-9.]*-1_aarch64_cortex-a53.apk|\1|g; s/^add add //; s/^--allow-untrusted --force-overwrite //'; }
 spec_keep="$T/etc/spec.json.keep2"; cp "$T/etc/spec.json" "$spec_keep" 2>/dev/null || rm -f "$spec_keep"
 rm -f "$T/etc/spec.json"
 relclean; reset_logs
@@ -1555,7 +1560,7 @@ out="$(PM_FIXTURE=opkg rpcd steer_install '{"version":"2.1.1"}')"
 check "opkg: один install, ничего не снимается" \
       "install" "$(awk '$1 != "list-installed" {print $1}' "$T/opkg.log" | tr '\n' '|' | sed 's/|$//')"
 check "  установка удалась, в ней steer-core 2.1.1 (ipk)" "true;1" \
-      "$(printf '%s' "$out" | jget ok);$(grep '^install' "$T/opkg.log" | head -1 | tr ' ' '\n' | grep -c '/tmp/steer-core-2.1.1-1_aarch64_cortex-a53.ipk')"
+      "$(printf '%s' "$out" | jget ok);$(grep '^install' "$T/opkg.log" | head -1 | tr ' ' '\n' | grep -c 'off/state/updater/steer-core-2.1.1-1_aarch64_cortex-a53.ipk')"
 mv "$T/bin/opkg.orig" "$T/bin/opkg"; rm -f "$T/opkg.lists" "$T/opkg.log"
 plug_reset; relclean; reset_logs
 [ -f "$spec_keep" ] && mv "$spec_keep" "$T/etc/spec.json"
@@ -1972,30 +1977,10 @@ check "vless_probe: флаг вместо имени выхода — отказ
 out="$(rpcd outbound_probe '{"output":"a/b"}')"
 check "outbound_probe: имя с косой — отказ" "false" "$(printf '%s' "$out" | jget ok)"
 
-# БЕЗ curl страна и отклик выходов не меряются вовсе, и обзор молча оставлял пустые строки
-# (splify2#32): «выход молчит» и «мерить нечем» выглядели одинаково. Ответ обязан сказать
-# второе полем curl=false — и не говорить его там, где curl есть.
-export GEO_CURL=/nonexistent/curl
-out="$(rpcd outbound_geo '{"output":"vless"}')"
-check "outbound_geo без curl: так и сказано" "false" "$(printf '%s' "$out" | jget curl)"
-out="$(rpcd outbound_geo '{"output":"vless","fresh":true}')"
-check "outbound_geo без curl, свежий запрос: так и сказано" "false" "$(printf '%s' "$out" | jget curl)"
-unset GEO_CURL
-out="$(rpcd outbound_geo '{"output":"vless"}')"
-check "outbound_geo с curl: поля curl нет" "" "$(printf '%s' "$out" | jget curl)"
-
-# ФОНОВЫЙ ЗАМЕР — НЕ НА КАЖДЫЙ ОПРОС. Пока у выхода нет ни одного удачного замера, каждый опрос
-# страницы запускал в фоне curl через выход: на узле, который не отвечает, замер не удаётся
-# никогда, запуски шли на каждом опросе и накладывались, и каждый тянул ядро открыть соединение
-# с узлом (чат splify2: «дикий флуд tcp на vless-инбаунд, почти каждые 0,02 с, хоть он и не в
-# правиле»). Теперь — не чаще раза в GEO_RETRY на выход. Фоновый замер виден по вызову
-# `steer status` (им geo_refresh ищет устройство выхода).
-export GEO_DIR="$T/geo"; rm -rf "$GEO_DIR"
-: > "$T/steer.log"
-for _i in 1 2 3 4 5; do rpcd outbound_geo '{"output":"vless"}' >/dev/null; done
-sleep 1
-check "outbound_geo: пять опросов подряд без замера — один фоновый замер" "1" "$(grep -c '^status' "$T/steer.log")"
-unset GEO_DIR
+# Страна выхода (outbound_geo), её кэш, фоновое обновление и пределы — плагин node-check (tests/nodecheckmatch.sh); здесь
+# остаётся отклик выхода (outbound_probe) и его машинное слово исхода.
+out="$(rpcd outbound_probe '{"output":"vless"}')"
+check "outbound_probe: исход назван машинным словом code" "yes" "$(printf '%s' "$out" | jget code | grep -qE '^(ok|no_answer|no_device)$' && echo yes || echo no)"
 
 # ИМЯ ПОДПИСКИ НЕ ЛАТИНИЦЕЙ. sub_slug оставлял от «Дом» пустоту (tr побайтно превращал каждый
 # байт UTF-8 в подчёркивание, sed снимал хвост), а sub_use на пустом имени подставлял main —
@@ -2126,12 +2111,13 @@ check "прямых путей /etc/config/splify2 в коде не остало
 # fetch_mode|fetch_mode_set, lists_source|lists_source_set, zm_fix|zm_fix_set, doh_tunnel_set,
 # и sub_auto (telemetry_set убран вместе со счётчиком установок). Число растёт вместе с методами, которые пишут в uci, — и это ровно
 # тот случай, когда барьер должен ломаться: новый метод обязан заводить файл той же функцией.
-# Десятым стал sub_rename (R-115): пишет название подписки, и файл заводит той же функцией.
+# Десятым стал sub_rename (R-115): пишет название подписки, и файл заводит той же функцией. Позже sub_auto и sub_rename
+# переехали в плагин subscriptions (sub_rename пишет название службой хоста `sub title`, которая заводит файл той же функцией).
 # Следом — prefs_set каркаса на LuCI JS (выбор главной страницы).
 #
 # Ответ `ok 1` обязан значить «записано», а не «дошли до конца функции»: на роутере с заполненным
 # флешем ползунок переезжал, страница показывала успех, а в конфигурации оставалось прежнее.
-check "файл заводится одной функцией на все места" "8" \
+check "файл заводится одной функцией на все места" "7" \
       "$(rpcd_src | grep -c '^ *uci_file ||')"
 check "перенаправлением файл больше не заводится" "0" \
       "$(rpcd_src | grep -c ': > "\?/etc/config')"
@@ -2285,21 +2271,27 @@ check "интервал дольше трёх суток отвергнут" "fa
 out="$(rpcd sub_auto '{"name":"auto1","minutes":"каждый час"}')"
 check "интервал не числом отвергнут" "false" "$(printf '%s' "$out" | jget ok)"
 
-rm -f "$T/etc/subs/auto1.auto"
+# Расписание — данные плагина subscriptions: conf/subscriptions/schedule и отметки попыток stamps/<имя>.
+SUBCONF="$T/off/conf/subscriptions"
+rm -rf "$SUBCONF"
 out="$(rpcd sub_auto '{"name":"auto1","minutes":60}')"
 check "час принят" "true;60" "$(printf '%s' "$out" | jget ok);$(printf '%s' "$out" | jget auto)"
-check "отметка времени поставлена сразу" "yes"       "$([ -s "$T/etc/subs/auto1.auto" ] && echo yes || echo no)"
+check "отметка времени поставлена сразу" "yes"       "$([ -s "$SUBCONF/stamps/auto1" ] && echo yes || echo no)"
 check "перечень называет интервал" "60"       "$(rpcd sub_list | python3 -c 'import json,sys
 print(next(d.get("auto") for d in json.load(sys.stdin)["subs"] if d["name"]=="auto1"))')"
 
 # Отметка ставится ОТ МОМЕНТА НАСТРОЙКИ, а не от давно просроченного прошлого: иначе выбор
 # «раз в трое суток» обновлял бы подписку немедленно, при первом же тике расписания.
-check "сразу после настройки обновлять не пора" "yes"       "$(now=$(date -u +%s); at=$(cat "$T/etc/subs/auto1.auto"); [ $((now - at)) -lt 60 ] && echo yes || echo no)"
+check "сразу после настройки обновлять не пора" "yes"       "$(now=$(date -u +%s); at=$(cat "$SUBCONF/stamps/auto1"); [ $((now - at)) -lt 60 ] && echo yes || echo no)"
 
-# Отказ записи интервала — отказ, а не «ok» (I-329: `A && x || y` запускал вторую ветку).
-out="$(UCI_SET_FAIL=splify2.sub_auto1.auto rpcd sub_auto '{"name":"auto1","minutes":90}')"
-check "sub_auto: отказ записи интервала назван отказом" "false" "$(printf '%s' "$out" | jget ok)"
-check "и прежний интервал остался" "60" "$(uci_get splify2.sub_auto1.auto)"
+# Отказ записи интервала — отказ, а не «ok» (I-329: `A && x || y` запускал вторую ветку): расписание записать нельзя.
+chmod 500 "$SUBCONF"
+out="$(rpcd sub_auto '{"name":"auto1","minutes":90}')"
+chmod 700 "$SUBCONF"
+if [ "$(id -u)" != 0 ]; then
+    check "sub_auto: отказ записи интервала назван отказом" "false" "$(printf '%s' "$out" | jget ok)"
+fi
+check "и прежний интервал остался" "auto1 60" "$(grep '^auto1 ' "$SUBCONF/schedule")"
 
 out="$(rpcd sub_auto '{"name":"auto1","minutes":0}')"
 check "ноль выключает обновление" "true;0"       "$(printf '%s' "$out" | jget ok);$(printf '%s' "$out" | jget auto)"
@@ -2314,16 +2306,17 @@ check "ссылкам vless:// интервал не назначить" "false"
 out="$(rpcd sub_set '{"url":"https://panel.invalid/sub/mainauto","title":"Моя подписка"}')"
 out="$(rpcd sub_auto '{"minutes":60}')"
 check "main: интервал принят" "true;60" "$(printf '%s' "$out" | jget ok);$(printf '%s' "$out" | jget auto)"
-check "main: интервал лёг в sub_auto" "60" "$(uci_get splify2.main.sub_auto)"
+check "main: интервал лёг в расписание плагина под именем main" "main 60" "$(grep '^main ' "$SUBCONF/schedule")"
+check "и в uci каркаса его нет" "" "$(uci_get splify2.main.sub_auto)"
 check "main: название не тронуто" "Моя подписка" "$(uci_get splify2.main.sub_title)"
 check "main: перечень называет интервал и название" "60;Моя подписка" "$(rpcd sub_list | python3 -c 'import json,sys
 d=next(d for d in json.load(sys.stdin)["subs"] if d["name"]=="main")
 print("%s;%s" % (d.get("auto"), d.get("title")))')"
 out="$(rpcd sub_auto '{"minutes":0}')"
-check "main: ноль снимает интервал" "true;;Моя подписка" "$(printf '%s' "$out" | jget ok);$(uci_get splify2.main.sub_auto);$(uci_get splify2.main.sub_title)"
+check "main: ноль снимает интервал" "true;;Моя подписка" "$(printf '%s' "$out" | jget ok);$(grep '^main ' "$SUBCONF/schedule");$(uci_get splify2.main.sub_title)"
 rpcd sub_auto '{"minutes":90}' >/dev/null
 out="$(rpcd sub_del '{"name":"main"}')"
-check "main: удаление подписки снимает и интервал" ";;" "$(uci_get splify2.main.sub_auto);$(uci_get splify2.main.sub_url);$(uci_get splify2.main.sub_title)"
+check "main: удаление подписки снимает ссылку и название" ";" "$(uci_get splify2.main.sub_url);$(uci_get splify2.main.sub_title)"
 
 # Источник сменился на ссылки: остаток трафика и интервал прежней панели уходят вместе с нею.
 out="$(rpcd sub_set '{"url":"https://panel.invalid/sub/swap","name":"swap1"}')"
@@ -2332,7 +2325,9 @@ printf 'total=100\nat=1\n' > "$T/etc/subs/swap1.userinfo"
 out="$(rpcd sub_set '{"url":"vless://k@h:443#n","name":"swap1"}')"
 check "ссылки вместо панели: остатка трафика больше нет" "no;no" \
       "$([ -e "$T/etc/subs/swap1.userinfo" ] && echo yes || echo no);$(printf '%s' "$out" | grep -q '"quota"' && echo yes || echo no)"
-check "и интервала обновления тоже" "" "$(uci_get splify2.sub_swap1.auto)"
+# Интервал остаётся в расписании плагина, но для подписки из ссылок он не действует: хук sub_fields отдаёт auto 0.
+check "и интервал обновления для неё не действует" "0" "$(rpcd sub_list | python3 -c 'import json,sys
+print(next(d.get("auto") for d in json.load(sys.stdin)["subs"] if d["name"]=="swap1"))')"
 rpcd sub_del '{"name":"swap1"}' >/dev/null
 
 # Обновление по сохранённой ссылке. Узлы прежние — туннель не трогаем.
@@ -2410,8 +2405,6 @@ check "explain: «--флаг» вместо адреса отвергнут" "fa
 
 # Отказ `uci commit` (нет места на флеше) — отказ метода, а не «ok»: иначе сохранённое исчезло бы
 # после перезагрузки при зелёном ответе страницы.
-out="$(UCI_COMMIT_FAIL=1 rpcd sub_auto '{"name":"auto1","minutes":90}')"
-check "sub_auto: отказ commit назван отказом" "false" "$(printf '%s' "$out" | jget ok)"
 out="$(UCI_COMMIT_FAIL=1 rpcd ui_set '{"state":"{\"a\":1}"}')"
 check "ui_set: отказ commit назван отказом" "false" "$(printf '%s' "$out" | jget ok)"
 out="$(UCI_COMMIT_FAIL=1 rpcd fetch_mode_set '{"mode":"always"}')"
@@ -2433,16 +2426,12 @@ check "ui_set: слишком большая память отвергнута" 
 check "и отказ называет предел в КБ" "yes" "$(printf '%s' "$out" | jget error | grep -q '64 КБ' && echo yes || echo no)"
 check "и прежняя память осталась" "{\"setup\":1}" "$(uci_get splify2.main.wizard)"
 
-# Панель молчит — отметка всё равно свежая: повторять поход каждые десять минут при мёртвой
-# панели значит стучаться к ней 144 раза в сутки вместо одного-двух.
-printf '0\n' > "$T/etc/subs/auto1.auto"
+# Панель молчит — обновление названо отказом. Отметку попытки ставит расписание плагина (subsmatch.sh), а не метод.
 out="$(STEER_SUB_RC=1 rpcd sub_refresh '{"name":"auto1"}')"
 check "неудача обновления названа отказом" "false" "$(printf '%s' "$out" | jget ok)"
-check "и отметка попытки всё равно обновлена" "yes"       "$(now=$(date -u +%s); at=$(cat "$T/etc/subs/auto1.auto" 2>/dev/null || echo 0); [ $((now - at)) -lt 60 ] && echo yes || echo no)"
 
 rpcd sub_del '{"name":"auto1"}' >/dev/null 2>&1
 rpcd sub_del '{"name":"hand1"}' >/dev/null 2>&1
-check "удаление подписки уносит и отметку" "no"       "$([ -e "$T/etc/subs/auto1.auto" ] && echo yes || echo no)"
 
 # ---- несколько подписок ------------------------------------------------------
 #
@@ -3075,14 +3064,16 @@ check "ссылка подписки с подстановкой отверга�
 # возвращаться на роутер, а не отвергаться как «недопустимые символы».
 out="$(printf '%s\n' 'splify2-backup 1' '[options]' 'sub_url=https://panel.invalid/sub?token=abc&format=json' \
         'sub_auto=60' 'sub_work.url=https://w.invalid/s?a=1&b=2' 'sub_work.auto=120' | backup_put)"
-check "ссылка с & и интервалы автообновления принимаются из архива" "true;https://panel.invalid/sub?token=abc&format=json;60;120" \
-      "$(printf '%s' "$out" | jget ok);$(uci_get splify2.main.sub_url);$(uci_get splify2.main.sub_auto);$(uci_get splify2.sub_work.auto)"
-out="$(printf '%s\n' 'splify2-backup 1' '[options]' 'sub_auto=5' | backup_put)"
-check "интервал вне 30..4320 минут отвергается" "false" "$(printf '%s' "$out" | jget ok)"
+# Интервалы автообновления — данные плагина subscriptions: архив формата 3 несёт их полями uci, плагин backup переводит их в
+# раздел плагина, а каркас полей `auto` больше не знает.
+check "ссылка с & принимается из архива, интервалы уезжают в расписание плагина" "true;https://panel.invalid/sub?token=abc&format=json;main 60,work 120;;" \
+      "$(printf '%s' "$out" | jget ok);$(uci_get splify2.main.sub_url);$(tr '\n' ',' < "$SUBCONF/schedule" | sed 's/,$//');$(uci_get splify2.main.sub_auto);$(uci_get splify2.sub_work.auto)"
+out="$(printf '%s\n' 'splify2-backup 1' '[options]' 'sub_auto=2' | backup_put)"
+check "интервал вне пределов плагина отвергается" "false" "$(printf '%s' "$out" | jget ok)"
 out="$(printf '%s\n' 'splify2-backup 1' '[options]' 'sub_work.auto=часто' | backup_put)"
 check "интервал не числом отвергается" "false" "$(printf '%s' "$out" | jget ok)"
-check "и экспорт несёт интервалы обратно" "yes;yes" \
-      "$(backup_doc | grep -q '^sub_auto=60$' && echo yes || echo no);$(backup_doc | grep -q '^sub_work.auto=120$' && echo yes || echo no)"
+check "и экспорт несёт интервалы обратно разделом плагина" "yes;yes" \
+      "$(backup_doc | grep -q '^ main 60$' && echo yes || echo no);$(backup_doc | grep -q '^ work 120$' && echo yes || echo no)"
 
 out="$(printf '%s\n' 'splify2-backup 1' '[options]' 'root_password=x' | backup_put)"
 check "неизвестное поле настроек отвергается" "yes" \

@@ -127,6 +127,49 @@ export interface SubCheck {
     why?: string
 }
 
+/** Ответ плагина node-check (методы `nodes_check`, `nodes_result`, `nodes_cancel`). */
+interface RouterCheck {
+    ok?: boolean
+    state?: 'running' | 'done' | 'stopped' | 'none'
+    total?: number
+    done?: number
+    ok_count?: number
+    best?: { name: string; ms: number }
+    why?: string
+}
+
+const ROUTER_POLL_MS = 1000
+
+/** Перебор на самом роутере (плагин node-check): страницу можно закрыть, перебор идёт. null — плагина нет или он отказал,
+ *  вызывающий перебирает сам, как прежде. */
+async function checkOnRouter(
+    path: string,
+    stopped: () => boolean,
+    onStep: (c: SubCheck) => void,
+): Promise<SubCheck | null> {
+    const call = (method: string, params: object) =>
+        rpc.pluginCall('node-check', method, params).then((r) => r as RouterCheck)
+    const insecure = false
+    try {
+        const start = await call('nodes_check', { sub: path, insecure })
+        if (!start || start.ok === false) return null
+    } catch {
+        return null
+    }
+    for (;;) {
+        if (stopped()) { void call('nodes_cancel', { sub: path }).catch(() => undefined); return null }
+        await new Promise((r) => setTimeout(r, ROUTER_POLL_MS))
+        let r: RouterCheck
+        try { r = await call('nodes_result', { sub: path }) } catch { return null }
+        if (!r || r.ok === false) return null
+        const c: SubCheck = { total: r.total ?? 0, done: r.done ?? 0, ok: r.ok_count ?? 0 }
+        if (r.best) c.best = { name: r.best.name, ms: r.best.ms }
+        if (r.why) c.why = r.why
+        if (r.state !== 'running') return c
+        onStep(c)
+    }
+}
+
 /** Проверить ВСЕ серверы подписки одной кнопкой, каждый — методом своего протокола (STEER-CORE-762).
  *
  *  Прежде проверка была только в редакторе выхода и по протоколам: у смешанной подписки (VLESS,
@@ -139,6 +182,10 @@ export async function checkSubAll(
     stopped: () => boolean,
     onStep: (c: SubCheck) => void,
 ): Promise<SubCheck> {
+    /* Есть плагин node-check — перебор идёт на роутере; нет — как прежде, в браузере. */
+    const routed = await checkOnRouter(path, stopped, onStep)
+    if (routed) return routed
+    if (stopped()) return { total: nodes.length, done: 0, ok: 0 }
     const c: SubCheck = { total: nodes.length, done: 0, ok: 0 }
     const queue = nodes.slice()
     const worker = async () => {

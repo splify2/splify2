@@ -1,0 +1,14 @@
+#!/bin/sh
+# Замер страны выхода и запись в кэш (фоновый процесс метода outbound_geo и его синхронная ветка). $1 — выход.
+. "${STEER_PLUGIN_DIR:?программа запускается хостом splify2 (нет STEER_PLUGIN_DIR)}/lib/base.sh"
+out="${1:?нет выхода}"
+output_ok "$out" || exit 1
+mkdir -p "$GEO_CACHE"
+r="$("$SPLIFY2_HOST" probe geo "$out" 2>/dev/null)" || exit 1
+json_load "$r" 2>/dev/null || exit 1
+json_get_var ip ip; json_get_var cc cc; json_get_var ms ms; json_get_var ident ident
+[ -n "$ip" ] || exit 1
+# Пять полей через пробел, прочерк — «страну не назвали»: поле в строке обязано быть, иначе следующее прочиталось бы на его
+# место.
+printf '%s %s %s %s %s\n' "$(now)" "${cc:--}" "$ip" "${ident:-none}" "$(num_or "$ms" 0)" > "$GEO_CACHE/geo-$out.new" &&
+    mv "$GEO_CACHE/geo-$out.new" "$GEO_CACHE/geo-$out"

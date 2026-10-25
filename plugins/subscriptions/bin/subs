@@ -1,0 +1,78 @@
+#!/bin/sh
+# Программа rpc плагина subscriptions: $1 — метод, параметры — одна строка JSON в stdin, ответ — один объект JSON в stdout.
+# Методы объявлены в plugin.json (rpc.methods) и видны на объекте splify2 прежними именами (splify2.methods.alias).
+#
+#   sub_auto {name?, minutes}   интервал автообновления подписки (0 — не обновлять)
+#   sub_quota {name?}           спросить у панели остаток трафика (подписку не подменяет)
+#   sub_rename {name?, title}   своё название (пусто — снять)
+#   subs_schedule               расписание всех подписок: интервал и время последней попытки
+. "${STEER_PLUGIN_DIR:?программа запускается хостом splify2 (нет STEER_PLUGIN_DIR)}/lib/base.sh"
+
+METHOD="${1:-}"
+read -r input 2>/dev/null || true
+[ -n "$input" ] || input='{}'
+json_load "$input" 2>/dev/null || s2_fail "неразбираемый запрос"
+name=''; minutes=''; title=''
+json_get_var name name
+json_get_var minutes minutes
+json_get_var title title
+[ -n "$name" ] || name=main
+sub_name_ok "$name" || s2_fail "имя подписки: латиница, цифры, подчёркивание"
+
+# Ответ службы хоста — как есть: отказ службы уже объект {"ok":false,"error":…}.
+pass() { _p="$("$SPLIFY2_HOST" "$@")"; printf '%s\n' "$_p"; exit 0; }
+
+sub_auto() {
+        # Как часто обновлять подписку саму. Минуты; ноль — не обновлять. У каждой подписки свой интервал: у одной панели
+        # узлы меняются раз в сутки, у другой — при каждой смене сервера, и общая настройка означала бы либо лишние
+        # хождения к первой, либо устаревшие узлы у второй. Пределы — настройки плагина, проверяются здесь, а не только в
+        # интерфейсе: метод зовут и мимо него.
+        case "$minutes" in
+            ''|0) minutes=0 ;;
+            *[!0-9]*) s2_fail "интервал задаётся числом минут" ;;
+            *)
+                lo="$(min_interval)"; hi="$(max_interval)"
+                [ "$minutes" -ge "$lo" ] || s2_fail "реже, чем раз в $lo мин, нельзя: это наименьший интервал"
+                [ "$minutes" -le "$hi" ] || s2_fail "дольше $hi мин интервал не бывает"
+                ;;
+        esac
+        info="$("$SPLIFY2_HOST" sub info "$name")" || s2_fail "подписки «$name» нет"
+        kind="$(jsonfilter -s "$info" -e '@.kind' 2>/dev/null)"
+        if [ "$minutes" != 0 ]; then
+            [ "$kind" = url ] || s2_fail "узлы заданы ссылками — обновлять нечем"
+        fi
+        sched_set "$name" "$minutes" || s2_fail "не удалось записать интервал"
+        # Отметка попытки — от ЭТОГО момента: человек только что задал интервал, и первое обновление наступает через
+        # него, а не немедленно из-за давней отметки.
+        if [ "$minutes" = 0 ]; then rm -f "$STAMPS/$name"; else stamp_put "$name"; fi
+        json_init
+        json_add_boolean ok 1
+        json_add_string name "$name"
+        json_add_int auto "$minutes"
+        json_dump
+}
+sub_quota() { pass sub quota "$name"; }
+sub_rename() { pass sub title "$name" "$title"; }
+subs_schedule() {
+        json_init
+        json_add_boolean ok 1
+        json_add_array subs
+        if [ -s "$SCHEDULE" ]; then
+            while read -r n m; do
+                [ -n "$n" ] || continue
+                json_add_object ""
+                json_add_string name "$n"
+                json_add_int auto "$(sched_get "$n")"
+                json_add_int auto_at "$(stamp_get "$n")"
+                json_close_object
+            done < "$SCHEDULE"
+        fi
+        json_close_array
+        json_dump
+}
+
+# Имена методов определены здесь же функциями, поэтому диспетчер — вызов по имени из списка объявленных.
+case "$METHOD" in
+    sub_auto|sub_quota|sub_rename|subs_schedule) "$METHOD" ;;
+    *) echo "нет такого метода: $METHOD" >&2; exit 2 ;;
+esac

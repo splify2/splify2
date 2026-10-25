@@ -34,9 +34,9 @@ sub_set	frame
 sub_info	frame
 sub_list	frame
 sub_del	frame
-sub_rename	frame
-sub_quota	frame
-sub_auto	frame
+sub_rename	moved	subscriptions
+sub_quota	moved	subscriptions
+sub_auto	moved	subscriptions
 sub_refresh	frame
 backup_get	moved	backup
 backup_put	moved	backup
@@ -46,7 +46,7 @@ support_report	frame
 net_info	frame
 outbound_probe	frame
 dns_probe	frame
-outbound_geo	frame
+outbound_geo	moved	node-check
 leases	frame
 engine_state	frame
 ui_get	frame
@@ -70,10 +70,10 @@ helper	frame
 purge	frame
 engine_stop	frame
 engine_start	frame
-splify2_versions	frame
-splify2_install	frame
-steer_versions	frame
-steer_install	frame
+splify2_versions	moved	updater
+splify2_install	moved	updater
+steer_versions	moved	updater
+steer_install	moved	updater
 steer_modules	frame
 recheck_info	frame
 recheck_set	frame

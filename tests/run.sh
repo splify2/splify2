@@ -49,8 +49,16 @@ run hostmatch sh "$ROOT/tests/hostmatch.sh"
 run recheckmatch sh "$ROOT/tests/recheckmatch.sh"
 # Спека в spec.yaml (spec.sh): JSON-вид, запись переводом ядра, перевод при обновлении ядра.
 run specfilematch sh "$ROOT/tests/specfilematch.sh"
-# Автообновление подписок: задание крона само ничего не качает — оно зовёт объект rpcd по тем
-# подпискам, у которых срок вышел. Стенд про то, кого позвали и кого не тронули.
+# Автоприменение на роутере (плагин autoapply): хук после записи спеки, пауза, склейка правок, sweep, события.
+run autoapplymatch sh "$ROOT/tests/autoapplymatch.sh"
+# Проверка узлов и выходов на роутере (плагин node-check): страна выхода с кэшем, перебор узлов подписки, лучший узел.
+run nodecheckmatch sh "$ROOT/tests/nodecheckmatch.sh"
+# Проверки групп выходов (плагин group-check): приговор по членам, подсказка, история, события, расписание.
+run groupcheckmatch sh "$ROOT/tests/groupcheckmatch.sh"
+# Версии и установка ядра и splify2 (плагин updater): порядок шагов, проверки до сети, итог проверки выпусков, задача.
+run updatermatch sh "$ROOT/tests/updatermatch.sh"
+# Плагин subscriptions: расписание автообновления (задача зовёт методы каркаса только по тем подпискам, у которых срок
+# вышел), остаток трафика, название, поля sub_list через хук, архив. Стенд про то, кого позвали и кого не тронули.
 run subsmatch  sh "$ROOT/tests/subsmatch.sh"
 # Команда полного удаления: убирает ТОЛЬКО записанное за нами и по умолчанию ничего не
 # делает вовсе. Стенд про порядок (проброс уходит раньше зоны — иначе fw4 не перезагрузится)
@@ -69,6 +77,8 @@ run protohandler sh "$ROOT/tests/protohandler.sh"
 # Каркас на классическом LuCI JS (view/splify2/core): автоформа «схема ключей ядра -> поля» с покрытием каждого
 # ключа фикстуры, словарь T(), список строк strings.json, методы rpcd каркаса. Настоящие модули, LuCI-заглушки.
 run automatch sh "$ROOT/tests/automatch.sh"
+# Языковые плагины lang-ru и lang-en: словари каркаса и Andromeda, i18n_get, сборка с lint --official.
+run langmatch sh "$ROOT/tests/langmatch.sh"
 
 # Интерфейс. Пропускается вслух, а не молча: молчаливый пропуск читается как «прошло», и
 # ровно так стенд однажды и превратился в фикцию.
