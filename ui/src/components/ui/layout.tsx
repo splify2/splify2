@@ -197,7 +197,7 @@ export function Segmented<T extends string>({
                         type="button"
                         aria-pressed={on}
                         onClick={() => onChange(it.value)}
-                        className={`h-9 min-w-0 flex-1 truncate rounded-lg px-2 text-sm transition-colors duration-200 focus:outline-none focus-visible:ring-2 focus-visible:ring-primary ${
+                        className={`min-h-9 min-w-0 flex-1 rounded-lg px-2 py-1 text-sm leading-tight transition-colors duration-200 focus:outline-none focus-visible:ring-2 focus-visible:ring-primary ${
                             on ? 'bg-primary font-medium text-primary-foreground' : 'bg-transparent text-subtle hover:text-foreground'
                         }`}
                     >

@@ -1465,7 +1465,7 @@ export const ru = {
         dobavlyaem: "Добавляем…",
         dobavit: "Добавить",
         nazvanie: "Название",
-        nazvanieHint: "Своё название сильнее названия панели и продавца",
+        nazvanieHint: "Показывается вместо названия от продавца",
         sohranitNazvanie: "Сохранить название",
         nazvanieNeSohraneno: "название не сохранилось",
         imyaLabel: "Название (необязательно)",

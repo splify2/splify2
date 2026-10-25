@@ -107,9 +107,9 @@ function SubRow({ sub, onChanged }: { sub: Sub; onChanged: () => void }) {
                 </div>
             </div>
             {sub.url && (
-                <Button variant="outline" size="sm" onClick={refresh} disabled={!!busy}>
+                <Button variant="outline" size="sm" onClick={refresh} disabled={!!busy} aria-label={S.vlessScreen.obnovit} title={S.vlessScreen.obnovit}>
                     {busy === 'refresh' ? <LoaderCircle className="animate-spin" aria-hidden="true" /> : <RefreshCw aria-hidden="true" />}
-                    {S.vlessScreen.obnovit}
+                    <span className="hidden sm:inline">{S.vlessScreen.obnovit}</span>
                 </Button>
             )}
             <Button
@@ -117,10 +117,11 @@ function SubRow({ sub, onChanged }: { sub: Sub; onChanged: () => void }) {
                 size="sm"
                 onClick={remove}
                 disabled={!!busy || !!sub.used}
-                title={sub.used ? S.subsBoard.snachalaUberiteIzPravil : undefined}
+                title={sub.used ? S.subsBoard.snachalaUberiteIzPravil : S.vlessScreen.udalit2}
+                aria-label={S.vlessScreen.udalit2}
                 className="text-destructive"
             >
-                <Trash2 aria-hidden="true" /> {S.vlessScreen.udalit2}
+                <Trash2 aria-hidden="true" /> <span className="hidden sm:inline">{S.vlessScreen.udalit2}</span>
             </Button>
             {dialog}
         </div>
@@ -171,7 +172,6 @@ function AddCard({ existing, onDone, onCancel }: { existing: Sub[]; onDone: () =
                     className={inputCls + ' w-full'}
                     value={title}
                     onChange={(e) => setTitle(e.currentTarget.value)}
-                    placeholder={S.vlessScreen.imyaNeobyazatelno}
                 />
             </label>
             <div className="flex gap-2">

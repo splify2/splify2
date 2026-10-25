@@ -35,5 +35,16 @@ export function countryCodes(): string[] {
 export function country(cc?: string): string {
     const c = (cc || '').trim().toUpperCase()
     if (!/^[A-Z]{2}$/.test(c)) return ''
-    return NAMES[c] || c
+    return NAMES[c] || intlName(c) || c
+}
+
+/** Название из браузера для кодов вне своего списка («AL», «NG» читаются хуже, чем «Албания»).
+ *  Нет Intl.DisplayNames или он не знает код — пусто, и показывается сам код. */
+function intlName(c: string): string {
+    try {
+        const n = new Intl.DisplayNames(['ru'], { type: 'region' }).of(c)
+        return n && n !== c ? n.charAt(0).toUpperCase() + n.slice(1) : ''
+    } catch {
+        return ''
+    }
 }

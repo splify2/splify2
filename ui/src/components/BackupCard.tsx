@@ -1,5 +1,6 @@
 import { useRef, useState } from 'react'
-import { Download, Loader2, Upload } from 'lucide-react'
+import { Download, Loader2 } from 'lucide-react'
+import { FileButton } from '@/components/formbits'
 import { Block, CardHead } from '@/components/ui/layout'
 import { Button } from '@/components/ui/button'
 import { useConfirm } from '@/components/ui/confirm'
@@ -193,21 +194,13 @@ export default function BackupCard({
                             <Download className="h-4 w-4" />
                         )}
                         {S.backupCard.skachatArhiv}</Button>
-                    <label className="inline-flex items-center gap-2 text-xs text-muted-foreground">
-                        <Upload className="h-4 w-4" aria-hidden="true" />
-                        <input
-                            ref={fileRef}
-                            type="file"
-                            accept=".txt,text/plain"
-                            aria-label={S.backupCard.faylSNastroykami}
-                            disabled={busy !== ''}
-                            onChange={(e) => {
-                                const f = e.currentTarget.files?.[0]
-                                if (f) void importAll(f)
-                            }}
-                            className="text-xs file:mr-2 file:rounded-md file:border file:border-input file:bg-transparent file:px-3 file:py-1.5 file:text-sm"
-                        />
-                    </label>
+                    <FileButton
+                        ref={fileRef}
+                        accept=".txt,text/plain"
+                        label={S.backupCard.faylSNastroykami}
+                        disabled={busy !== ''}
+                        onFile={(f) => void importAll(f)}
+                    />
                 </div>
 
                 <p className="text-xs text-muted-foreground">

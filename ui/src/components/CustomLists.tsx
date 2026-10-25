@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from 'react'
 import { Loader2, Pencil, Plus, Trash2, X } from 'lucide-react'
 import { Block, CardHead } from '@/components/ui/layout'
 import { Button } from '@/components/ui/button'
+import { FileButton } from '@/components/formbits'
 import { notify } from '@/lib/notify'
 import { rpc } from '@/lib/rpc'
 import { customServices } from '@/lib/model'
@@ -334,17 +335,12 @@ export default function CustomLists({
                         <Button onClick={putText} disabled={busy || !nameOk || !text.trim()}>
                             {busy ? <Loader2 className="h-4 w-4 animate-spin" /> : <Plus className="h-4 w-4" />}
                             {S.customLists.sohranit}</Button>
-                        <input
+                        <FileButton
                             ref={fileRef}
-                            type="file"
                             accept=".lst,.txt,text/plain"
-                            aria-label={S.customLists.faylSoSpiskom}
+                            label={S.customLists.faylSoSpiskom}
                             disabled={busy || !nameOk}
-                            onChange={(e) => {
-                                const f = e.currentTarget.files?.[0]
-                                if (f) void putFile({ name, kind }, f)
-                            }}
-                            className="text-xs text-muted-foreground file:mr-2 file:rounded-md file:border file:border-input file:bg-transparent file:px-3 file:py-1.5 file:text-sm"
+                            onFile={(f) => void putFile({ name, kind }, f)}
                         />
                     </div>
                 </div>
@@ -432,24 +428,20 @@ function ListEditor({
         <div className="mt-2 space-y-3 rounded-md border border-border bg-background/50 p-3">
             {(list.source === 'file' || list.source === '') && (
                 <div>
-                    <label className="text-xs text-muted-foreground" htmlFor="sp-edit-file">
+                    <span className="text-xs text-muted-foreground">
                         {list.filename
                             ? S.customLists.seychasIzFaylaVyberite(list.filename)
                             : S.customLists.vyberiteFaylOnZamenit}
-                    </label>
-                    <input
-                        id="sp-edit-file"
-                        ref={fileRef}
-                        type="file"
-                        accept=".lst,.txt,text/plain"
-                        aria-label={S.customLists.drugoyFaylDlyaSpiska(list.name)}
-                        disabled={busy}
-                        onChange={(e) => {
-                            const f = e.currentTarget.files?.[0]
-                            if (f) void onFile(f)
-                        }}
-                        className="mt-1 block text-xs text-muted-foreground file:mr-2 file:rounded-md file:border file:border-input file:bg-transparent file:px-3 file:py-1.5 file:text-sm"
-                    />
+                    </span>
+                    <div className="mt-1">
+                        <FileButton
+                            ref={fileRef}
+                            accept=".lst,.txt,text/plain"
+                            label={S.customLists.drugoyFaylDlyaSpiska(list.name)}
+                            disabled={busy}
+                            onFile={(f) => void onFile(f)}
+                        />
+                    </div>
                 </div>
             )}
 
