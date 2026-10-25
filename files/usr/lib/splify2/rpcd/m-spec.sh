@@ -805,6 +805,20 @@ spec_heal_zapret() {
 }
 
 # Имена выходов с этим режимом из вывода spec_heal_ipv6, через пробел.
+# Лечение спеки плагинами (хук heal, splify2-api): рабочая копия спеки идёт по плагинам по порядку, изменённую
+# копию, которую приняло ядро, кладём на место. Печатает, что сказали плагины; возврат 0 — спека изменена.
+spec_heal_plugins() {
+    need_ext && ext_has_hook heal || return 1
+    _hp="$SPEC.heal.$$"
+    cp "$(spec_json)" "$_hp" 2>/dev/null || return 1
+    if ext_heal "$_hp" && engine_check "$_hp" >/dev/null && spec_put "$_hp"; then
+        printf '%s' "${EXT_HEAL_MSG:-плагин поправил спеку}"
+        return 0
+    fi
+    rm -f "$_hp"
+    return 1
+}
+
 heal_names() {  # РЕЖИМ ВЫВОД
     printf '%s\n' "$2" | sed -n "s/^$1 //p" | tr '\n' ' ' | sed 's/ $//'
 }
@@ -859,6 +873,15 @@ case "$2" in
         # умирает на отсутствующем файле, и без этого выбор нового сервиса не сохранялся вовсе
         # (см. fetch_missing_lists). Предупреждения о нескачанном не отменяют сохранение —
         # спека с недоступным списком остаётся верной, просто её канал не поднимется.
+        # Хук pre_spec_set (splify2-api): плагины могут переписать присланную спеку (transform) или отказать (veto).
+        # Раньше доскачивания и проверки: списки качаются под спеку, какой она станет, а судья — по-прежнему ядро.
+        # Упавший хук ничего не останавливает: только предупреждение в ответе.
+        hook_warn=""
+        if need_ext; then
+            ext_pre_spec_set "$tmp"
+            if [ -n "$EXT_VETO" ]; then rm -f "$tmp"; fail "$EXT_VETO"; fi
+            hook_warn="$EXT_WARN"
+        fi
         set_warn="$(fetch_missing_lists "$tmp")"
         # Компилятор — единственный судья: он же будет это применять. Проверка до
         # записи означает, что на диске не окажется спеки, которую движок отвергнет
@@ -889,6 +912,14 @@ case "$2" in
         # того, легла спека на диск или нет.
         # spec_put (spec.sh): spec.yaml (переводом ядром).
         spec_put "$tmp" || fail "не удалось заменить спецификацию"
+        # Хук post_spec_set: плагины узнают, что новая спека легла (так плагин ставит отложенное применение).
+        if need_ext; then
+            ext_gate post_spec_set "{\"rev\":$(plugin_jstr "$(spec_rev)")}"
+            [ -n "$EXT_WARN" ] && hook_warn="${hook_warn:+$hook_warn
+}$EXT_WARN"
+        fi
+        [ -n "$hook_warn" ] && set_warn="${set_warn:+$set_warn
+}$hook_warn"
         # Предупреждение о нескачанном списке едет В ОТВЕТЕ, а не в журнал: сохранение
         # прошло, спека верна, но канал, ссылающийся на недоступный список, не поднимется —
         # и узнать об этом человек должен там же, где нажимал, а не догадываться позже по
@@ -940,6 +971,11 @@ case "$2" in
         zone_msg="$(fw_sync 2>&1)"
         [ -n "$zap_msg" ] && zone_msg="$zap_msg${zone_msg:+
 $zone_msg}"
+        # Лечение плагинов (хук heal) — после зашитых: они приводят спеку к принимаемой, плагин дополняет.
+        if heal_plug="$(spec_heal_plugins)"; then
+            zone_msg="${zone_msg:+$zone_msg
+}splify2: $heal_plug"
+        fi
         # Самолечение выходов без ipv6 (spec_heal_ipv6, шапка там же): после fw_sync, потому что
         # устройство попадает в нашу зону именно им, и до `steer apply`, чтобы тот же apply
         # довёл правку до ядра — отдельной перезагрузки не нужно. В ответ apply — что записано и
@@ -952,6 +988,19 @@ $zone_msg}"
         # интерфейса (splify2 spec_set — не единственный способ), да и файл мог быть удалён
         # уборкой между сохранением и применением.
         fetch_warn="$(fetch_missing_lists "$(spec_json)")"
+        # Хук pre_apply (splify2-api): veto останавливает применение с причиной плагина, warn — строка в ответе.
+        hook_warn=""
+        if need_ext; then
+            ext_gate pre_apply "{\"spec\":$(plugin_jstr "$(spec_json)")}"
+            if [ -n "$EXT_VETO" ]; then
+                json_init; json_add_boolean ok 0; json_add_boolean veto 1
+                json_add_string error "$EXT_VETO"
+                json_add_string output "splify2: применение остановил плагин: $EXT_VETO"
+                json_dump
+                exit 0
+            fi
+            hook_warn="$EXT_WARN"
+        fi
         out="$("$STEER" apply --spec "$SPEC" 2>&1)"; rc=$?
         # Снимок — только на успехе: неудавшийся apply ничего не изменил в ядре, и счётчик
         # обязан продолжать это показывать.
@@ -979,6 +1028,15 @@ $zone_msg}"
 $out"
         [ -n "$zone_msg" ] && out="$zone_msg
 $out"
+        [ -n "$hook_warn" ] && out="$hook_warn
+$out"
+        # Хуки post_apply и post_apply_fail: плагины узнают исход. Исход они не меняют; их предупреждения — в конец.
+        if need_ext; then
+            if [ "$rc" -eq 0 ]; then _pa_hook=post_apply; else _pa_hook=post_apply_fail; fi
+            ext_gate "$_pa_hook" "{\"rc\":$rc,\"output\":$(plugin_jstr "$out")}"
+            [ -n "$EXT_WARN" ] && out="$out
+$EXT_WARN"
+        fi
 
         # ПОМОЩНИКОВ (клиенты VLESS и hysteria2, xsteer, обфускатор, мост Telegram) И РЕЗОЛВЕР
         # БОЛЬШЕ НЕ ПЕРЕЗАПУСКАЕМ САМИ. Их держит демон движка (`steerd --supervise`): `steer
@@ -1010,6 +1068,8 @@ $out"
         _sh_clean=0
         if [ -s "$APPLIED" ] && cmp -s "$(spec_json)" "$APPLIED" 2>/dev/null; then _sh_clean=1; fi
         healed=0
+        # Лечение плагинов (хук heal) идёт первым по времени записи, а применяется вместе с остальным через apply.
+        spec_heal_plugins >/dev/null && healed=1
         zap_msg="$(spec_heal_zapret)" && healed=1
         if heal_out="$(spec_heal_ipv6)"; then
             healed=1

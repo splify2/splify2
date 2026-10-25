@@ -47,7 +47,7 @@ CRONTAB=${CRONTAB:-/etc/crontabs/root}
 # одним `grep -v` иначе не выбрать, а разводить их в два прохода значит завести второе место,
 # где перечислено, что здесь наше. Забытая строка — не мелочь: она зовёт каждый час команду,
 # которой на роутере уже нет.
-CRON_MARK=${CRON_MARK:-splify2-update-lists|splify2-ping|splify2-update-subs}
+CRON_MARK=${CRON_MARK:-splify2-update-lists|splify2-ping|splify2-update-subs|splify2-task|splify2-plugins}
 CRON_INITD=${CRON_INITD:-/etc/init.d/cron}
 INITD=${INITD:-/etc/init.d/steer}
 FW_INITD=${FW_INITD:-/etc/init.d/firewall}
@@ -71,7 +71,7 @@ RPCD_TIMEOUT=${RPCD_TIMEOUT:-120}
 # Состояние и признаки в /var: чьей-либо настройкой они не являются и переживать чистку им
 # незачем. Каталог движка (/var/lib/steer) и готовые конфигурации туннелей (/var/run/xsteer)
 # тоже здесь: пакеты снимают вместе, и половина следов — это не «убрано».
-STATE_PATHS=${STATE_PATHS:-"/var/lib/splify2 /var/lib/steer /var/run/xsteer \
+STATE_PATHS=${STATE_PATHS:-"/var/lib/splify2 /var/run/splify2 /var/lib/steer /var/run/xsteer \
 /tmp/splify2-ping \
 /var/lock/splify2-update.lock"}
 
@@ -400,7 +400,26 @@ say_packages() {
     return 0
 }
 
+# ---- плагины splify2 -----------------------------------------------------------------
+# Хук purge (splify2-api): каждый включённый плагин, подключивший его, называет свои следы (при показе) или убирает
+# их и называет сделанное (с --yes). Всё, что хук сказал, идёт строками общего плана. Хуки зовутся в подоболочке с
+# библиотеками каркаса: если пакета уже нет (чистку зовут и после снятия), библиотек тоже нет, и этот шаг молчит.
+EXT_LIB_SH=${EXT_LIB_SH:-/usr/lib/splify2/ext.sh}
+purge_plugins() {
+    [ -r "$EXT_LIB_SH" ] || return 0
+    _pp_out="$( set +u
+        . "${JSHN_SH:-/usr/share/libubox/jshn.sh}" 2>/dev/null || exit 0
+        . "${PLUGIN_SH:-/usr/lib/splify2/plugin.sh}"
+        . "$EXT_LIB_SH"
+        ext_purge "$DO" "$KEEP" )"
+    [ -n "$_pp_out" ] || return 0
+    printf '%s\n' "$_pp_out" | while IFS= read -r _pp_l; do plan "$_pp_l"; done
+    FOUND=1
+    return 0
+}
+
 purge_engine
+purge_plugins
 purge_recheck
 purge_firewall
 purge_nft

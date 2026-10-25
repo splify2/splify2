@@ -1,5 +1,5 @@
 #!/bin/sh
-# Стенд для splify2-update-lists: проверяется выбор URL по списку из спеки.
+# Стенд для plugins/lists-catalog/bin/update-lists (прежний splify2-update-lists): проверяется выбор URL по списку из спеки.
 #
 # Зачем именно так. Скрипт целиком состоит из обращений к системе — uci, jsonfilter,
 # curl, steer, /etc/init.d — поэтому «вызвать функцию и посмотреть на результат» здесь
@@ -19,7 +19,7 @@
 set -u
 
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
-SCRIPT="$ROOT/files/usr/sbin/splify2-update-lists"
+SCRIPT="$ROOT/plugins/lists-catalog/bin/update-lists"
 T="$(mktemp -d /tmp/listsmatch.XXXXXX)"
 trap 'rm -rf "$T"' EXIT INT TERM
 
@@ -35,11 +35,16 @@ check() {  # ОПИСАНИЕ ОЖИДАЕМОЕ ПОЛУЧЕННОЕ
 }
 
 mkdir -p "$T/bin" "$T/lists/domains" "$T/etc" "$T/var"
+# Методы каталога списков — псевдонимы плагина lists-catalog (plugins/), поставленного в песочницу.
+. "$ROOT/tests/stub/plugins-env.sh"
+plugins_provision "$T/plugins" lists-catalog
 
 # ---- заглушки внешних команд -------------------------------------------------
 # jsonfilter: поддерживаются ровно те выражения, которые использует скрипт.
 cat > "$T/bin/jsonfilter" <<'EOF'
 #!/bin/sh
+# Выражения плагинов (манифест, state.json, ответы хуков) — общая заглушка tests/stub/jsonfilter.
+[ -n "${JSONFILTER_PLUGIN:-}" ] && case "$*" in *plugins\[*|*@.splify2*|*@.compat*|*@.rpc*|*@.ui.*|*@.ok*|*@.error*|*@.warn*|*@.plan*|*@.section*|*@.message*) exec sh "$JSONFILTER_PLUGIN" "$@" ;; esac
 # НЕСКОЛЬКО -e В ОДНОМ ВЫЗОВЕ, как это делает настоящий jsonfilter. Прежняя заглушка
 # запоминала только последнее выражение, и вызов `-e prefixes_files -e domains_files`
 # (именно так спрашивает fetch_missing_lists) отдавал одни доменные списки. Из-за этого

@@ -1,0 +1,28 @@
+#!/bin/sh
+# Единственная на роутер подписка на события ядра steer (`steer ctl subscribe`) и раздача их плагинам splify2.
+#
+# Службу поднимает plugin_sync, когда у какого-нибудь включённого плагина есть `splify2.events`, и останавливает,
+# когда последнего не осталось (plugin-sdk/docs/splify2-api.md, «События»). Подписчиков у ядра не больше
+# восьми, поэтому плагины подписываются не сами, а получают события отсюда: каждое — программе `events.prog`
+# плагина, если имя события есть в его `events.subscribe`.
+#
+# Ядро ещё не поднялось или перезапущено — соединение закрывается, через несколько секунд подписка
+# возобновляется; пропущенные события не повторяются (так устроен `subscribe`).
+. "${JSHN_SH:-/usr/share/libubox/jshn.sh}"
+. "${PLUGIN_SH:-/usr/lib/splify2/plugin.sh}"
+. "${EXT_SH:-${SPLIFY2_LIBDIR:-/usr/lib/splify2}/ext.sh}"
+. "${SPEC_SH:-${SPLIFY2_LIBDIR:-/usr/lib/splify2}/spec.sh}"
+
+STEER="${STEER:-/usr/sbin/steer}"
+EVENTS_RETRY="${EVENTS_RETRY:-5}"
+# Стенду достаточно одного соединения: EVENTS_ONCE=1.
+while :; do
+    "$STEER" ctl subscribe 2>/dev/null | while IFS= read -r _ev_line; do
+        case "$_ev_line" in
+            '{'*'"ev"'*) ext_event_dispatch "$_ev_line" ;;
+        esac
+    done
+    [ -n "${EVENTS_ONCE:-}" ] && break
+    sleep "$EVENTS_RETRY"
+done
+exit 0

@@ -1,0 +1,28 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "Каталог списков",
+  "type": "object",
+  "properties": {
+    "manifest_url": {
+      "type": "string",
+      "title": "Каталог",
+      "description": "Адрес файла каталога списков. Пусто — каталог splify2-lists.",
+      "default": "https://github.com/splify2/splify2-lists/releases/latest/download/lists.json"
+    },
+    "fetch_via_tunnel": {
+      "type": "string",
+      "enum": ["off", "always"],
+      "title": "Загрузка списков",
+      "description": "Качать списки через туннель, если сервер издателя закрыт.",
+      "default": "off"
+    },
+    "list_shrink_factor": {
+      "type": "integer",
+      "minimum": 0,
+      "title": "Порог сокращения списка",
+      "description": "Список, уменьшившийся при обновлении во столько раз и больше, не применяется. 0 — без порога.",
+      "default": 4
+    }
+  },
+  "additionalProperties": false
+}

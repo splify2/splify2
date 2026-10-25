@@ -1,0 +1,5 @@
+#!/bin/sh
+# Задача update-lists плагина lists-catalog: суточное обновление используемых списков (бывший
+# /usr/sbin/splify2-update-lists, его строка crontab из postinst пакета). Запускает splify2-task по расписанию из
+# манифеста; сама логика — bin/update-lists.
+exec "${STEER_PLUGIN_DIR:?}/bin/update-lists"

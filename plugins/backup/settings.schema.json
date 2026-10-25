@@ -1,0 +1,8 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "Архив настроек",
+  "description": "У плагина нет настроек: он выгружает и восстанавливает то, что настроено в каркасе и у других плагинов.",
+  "type": "object",
+  "properties": {},
+  "additionalProperties": false
+}

@@ -1,0 +1,15 @@
+#!/bin/sh
+# Запуск периодической задачи плагина: `splify2-task <плагин> <имя задачи>`.
+#
+# Строку crontab с этой командой пишет plugin_sync (блок «# splify2-plugins begin … end») из `splify2.tasks[]`
+# манифестов включённых плагинов (plugin-sdk/docs/splify2-api.md, «Периодические задачи»). Условие only_if,
+# замок на задачу и предел по времени — в ext_task_run; безопасный режим задачи пропускает.
+. "${JSHN_SH:-/usr/share/libubox/jshn.sh}"
+. "${PLUGIN_SH:-/usr/lib/splify2/plugin.sh}"
+. "${EXT_SH:-${SPLIFY2_LIBDIR:-/usr/lib/splify2}/ext.sh}"
+. "${SPEC_SH:-${SPLIFY2_LIBDIR:-/usr/lib/splify2}/spec.sh}"
+
+[ $# -eq 2 ] || { echo "использование: splify2-task <плагин> <задача>" >&2; exit 2; }
+plugin_id_ok "$1" || { echo "недопустимое имя плагина" >&2; exit 2; }
+ext_task_run "$1" "$2"
+exit 0

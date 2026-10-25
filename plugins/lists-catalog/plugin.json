@@ -1,0 +1,112 @@
+{
+  "schema": 1,
+  "id": "lists-catalog",
+  "version": "1.0.0",
+  "name": "Каталог списков",
+  "description": "Списки сервисов и сайтов: каталог, загрузка, свои списки и обновление раз в сутки",
+  "homepage": "https://github.com/splify2/splify2",
+  "compat": {
+    "splify2-api": "^1.0"
+  },
+  "arch": "all",
+  "permissions": [],
+  "rpc": {
+    "prog": "bin/lists",
+    "methods": {
+      "lists": {
+        "access": "read",
+        "timeout_s": 120
+      },
+      "local_lists": {
+        "access": "read",
+        "timeout_s": 120
+      },
+      "allow_domains": {
+        "access": "read",
+        "timeout_s": 120
+      },
+      "list_custom": {
+        "access": "read",
+        "timeout_s": 120
+      },
+      "list_get": {
+        "access": "read",
+        "timeout_s": 120
+      },
+      "list_peek": {
+        "access": "read",
+        "timeout_s": 120
+      },
+      "fetch_mode": {
+        "access": "read",
+        "timeout_s": 120
+      },
+      "lists_source": {
+        "access": "read",
+        "timeout_s": 120
+      },
+      "list_fetch": {
+        "access": "write",
+        "timeout_s": 120
+      },
+      "lists_update": {
+        "access": "write",
+        "timeout_s": 120
+      },
+      "list_remove": {
+        "access": "write",
+        "timeout_s": 120
+      },
+      "list_put": {
+        "access": "write",
+        "timeout_s": 120
+      },
+      "list_srs_put": {
+        "access": "write",
+        "timeout_s": 120
+      },
+      "fetch_mode_set": {
+        "access": "write",
+        "timeout_s": 120
+      },
+      "lists_source_set": {
+        "access": "write",
+        "timeout_s": 120
+      }
+    }
+  },
+  "splify2": {
+    "tasks": [
+      {
+        "name": "update-lists",
+        "cron": "M 5 * * *",
+        "jitter": "random-minute",
+        "prog": "bin/task-update-lists",
+        "only_if": "spec-present",
+        "timeout_s": 1800
+      }
+    ],
+    "methods": {
+      "alias": {
+        "lists": "lists",
+        "local_lists": "local_lists",
+        "allow_domains": "allow_domains",
+        "list_custom": "list_custom",
+        "list_get": "list_get",
+        "list_peek": "list_peek",
+        "fetch_mode": "fetch_mode",
+        "lists_source": "lists_source",
+        "list_fetch": "list_fetch",
+        "lists_update": "lists_update",
+        "list_remove": "list_remove",
+        "list_put": "list_put",
+        "list_srs_put": "list_srs_put",
+        "fetch_mode_set": "fetch_mode_set",
+        "lists_source_set": "lists_source_set"
+      }
+    },
+    "settings": {
+      "schema": "settings.schema.json"
+    }
+  }
+}

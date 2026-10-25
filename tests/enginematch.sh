@@ -18,6 +18,9 @@ fi
 T="$(mktemp -d /tmp/enginematch.XXXXXX)"
 trap 'rm -rf "$T"' EXIT
 mkdir -p "$T/etc" "$T/lists" "$T/bin"
+# Методы каталога списков — псевдонимы плагина backup lists-catalog (plugins/), поставленного в песочницу.
+. "$ROOT/tests/stub/plugins-env.sh"
+plugins_provision "$T/plugins" backup lists-catalog
 pass=0; fail=0
 check() {  # ИМЯ ОЖИДАЛОСЬ ПОЛУЧЕНО
     if [ "$2" = "$3" ]; then pass=$((pass + 1)); printf '%-60s ok\n' "$1"
@@ -41,6 +44,8 @@ req() { python3 -c 'import json,sys; print(json.dumps({"spec": sys.argv[1]}))' "
 # jsonfilter роутера (машина разработки его не имеет): только `-i файл -e '@.ключ'` верхнего уровня.
 cat > "$T/bin/jsonfilter" <<'EOF'
 #!/bin/sh
+# Выражения плагинов (манифест, state.json, ответы хуков) — общая заглушка tests/stub/jsonfilter.
+[ -n "${JSONFILTER_PLUGIN:-}" ] && case "$*" in *plugins\[*|*@.splify2*|*@.compat*|*@.rpc*|*@.ui.*|*@.ok*|*@.error*|*@.warn*|*@.plan*|*@.section*|*@.message*) exec sh "$JSONFILTER_PLUGIN" "$@" ;; esac
 python3 -c 'import json,sys
 d = json.load(open(sys.argv[1], encoding="utf-8"))
 k = sys.argv[2][2:]

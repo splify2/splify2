@@ -90,7 +90,7 @@ check "общие куски укладываются в пакет катало
 check "на отсутствие подключаемого файла стоит барьер" "1" \
     "$(grep -c "grep -ho '/usr/lib/splify2/" build.sh)"
 check "обе половины подключают общее скачивание" "2" \
-    "$(grep -c 'FETCH_SH:-/usr/lib/splify2/fetch.sh' files/usr/libexec/rpcd/splify2 files/usr/sbin/splify2-update-lists | awk -F: '{s+=$2} END {print s}')"
+    "$(grep -c 'FETCH_SH:-.*/fetch.sh' files/usr/lib/splify2/env.sh plugins/lists-catalog/bin/update-lists | awk -F: '{s+=$2} END {print s}')"
 # Быстрый путь опроса подключается ТОЛЬКО из объекта rpcd, и подключений там несколько: круг
 # опроса, чтение спеки и старые методы, отдающие те же числа. Если файл переименуют, а барьер
 # укладки промолчит — объект перестанет отвечать на самый частый вызов.
@@ -369,8 +369,10 @@ check "post-install отклик для счётчика не ставит" "0" 
     "$(grep -c "printf '%s \\* \\* \\* \\* /usr/sbin/splify2-ping" "$PI")"
 check "и убирает строку прежнего отклика" "1" \
     "$(grep -c "sed -i '/splify2-ping/d' /etc/crontabs/root" "$PI")"
-check "а обновление списков осталось суточным" "1" \
-    "$(grep -c "printf '%s 5 \\* \\* \\* /usr/sbin/splify2-update-lists" "$PI")"
+check "обновление списков — не строка post-install, а задача плагина lists-catalog" "0;1" \
+    "$(grep -c "printf '%s 5 \\* \\* \\* /usr/sbin/splify2-update-lists" "$PI");$(grep -c '"cron": "M 5 \* \* \*"' plugins/lists-catalog/plugin.json)"
+check "post-install снимает прежнюю строку обновления списков" "1" \
+    "$(grep -c "sed -i '/splify2-update-lists/d' /etc/crontabs/root" "$PI")"
 check "пакет не везёт команду отклика" "0" \
     "$(grep -c 'cp files/usr/sbin/splify2-ping' build.sh)"
 check "и в дереве её нет" "no" "$([ -e files/usr/sbin/splify2-ping ] && echo yes || echo no)"
@@ -596,7 +598,7 @@ check "rpcd не знает telemetry_state и telemetry_set" "0" \
 # и интерфейса, обзор списков — разом), создаются mktemp, а не по общему имени: общее имя — смесь двух
 # ответов, имя с номером процесса в /tmp предсказуемо.
 check "кэш local_lists и ответы GitHub пишутся в свои файлы (mktemp)" "0;1;1;1" \
-    "$(grep -c '_ll_c\.tmp' files/usr/lib/splify2/rpcd/m-lists.sh);$(grep -c 'mktemp \"${GH_CACHE:-/tmp/splify2-releases.json}.api.XXXXXX' files/usr/lib/splify2/rpcd/m-engine.sh);$(grep -c 'mktemp \"${GH_CACHE:-/tmp/splify2-releases.json}.version.XXXXXX' files/usr/lib/splify2/rpcd/m-engine.sh);$(grep -c 'mktemp \"$_ll_c.XXXXXX' files/usr/lib/splify2/rpcd/m-lists.sh)"
+    "$(grep -c '_ll_c\.tmp' plugins/lists-catalog/lib/lists.sh);$(grep -c 'mktemp \"${GH_CACHE:-/tmp/splify2-releases.json}.api.XXXXXX' files/usr/lib/splify2/rpcd/m-engine.sh);$(grep -c 'mktemp \"${GH_CACHE:-/tmp/splify2-releases.json}.version.XXXXXX' files/usr/lib/splify2/rpcd/m-engine.sh);$(grep -c 'mktemp \"$_ll_c.XXXXXX' plugins/lists-catalog/lib/lists.sh)"
 # Методы, отдающие секреты (архив с приватными ключами туннелей, ссылка xs:// с ключом), — только в
 # группе write: учётная запись «только чтение» их получить не должна.
 check "backup_get и xsteer_link — в write и не в read" "yes" \

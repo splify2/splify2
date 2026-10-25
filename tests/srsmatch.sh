@@ -41,6 +41,9 @@ fi
 T="$(mktemp -d /tmp/srsmatch.XXXXXX)"
 trap '[ -n "${KEEP:-}" ] || rm -rf "$T"' EXIT INT TERM
 mkdir -p "$T/etc" "$T/lists" "$T/bin" "$T/srv" "$T/var"
+# Методы каталога списков — псевдонимы плагина lists-catalog (plugins/), поставленного в песочницу.
+. "$ROOT/tests/stub/plugins-env.sh"
+plugins_provision "$T/plugins" lists-catalog
 pass=0; fail=0
 check() {  # ИМЯ ОЖИДАЛОСЬ ПОЛУЧЕНО
     if [ "$2" = "$3" ]; then pass=$((pass + 1)); printf '%-66s ok\n' "$1"
@@ -83,6 +86,8 @@ EOF
 # по полю (`@.domain_lists[@.url='…'].file`). Несколько -e печатают совпадения по всем.
 cat > "$T/bin/jsonfilter" <<'EOF'
 #!/bin/sh
+# Выражения плагинов (манифест, state.json, ответы хуков) — общая заглушка tests/stub/jsonfilter.
+[ -n "${JSONFILTER_PLUGIN:-}" ] && case "$*" in *plugins\[*|*@.splify2*|*@.compat*|*@.rpc*|*@.ui.*|*@.ok*|*@.error*|*@.warn*|*@.plan*|*@.section*|*@.message*) exec sh "$JSONFILTER_PLUGIN" "$@" ;; esac
 file=""; str=""; exprs=""
 while [ $# -gt 0 ]; do
     case "$1" in
@@ -169,7 +174,7 @@ nightly() {
         LOCK="$T/var/update.lock" FETCH_SH="$ROOT/files/usr/lib/splify2/fetch.sh" \
         AD_SH="$ROOT/files/usr/share/splify2/allow-domains.sh" AD_STAMP="$T/etc/allow-domains.tag" \
         STEER_INIT="$T/bin/initd" RC_D="$T/no-rc.d" \
-        sh "$ROOT/files/usr/sbin/splify2-update-lists" > "$T/nightly.out" 2>&1
+        sh "$ROOT/plugins/lists-catalog/bin/update-lists" > "$T/nightly.out" 2>&1
 }
 
 AG="$T/lists/jinndi/domains/adguard.srs"

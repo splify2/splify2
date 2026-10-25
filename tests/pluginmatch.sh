@@ -58,6 +58,9 @@ envs() {
         PLUGIN_ROOT="$PLUG/lib" PLUGIN_STATE="$PLUG/state.json" PLUGIN_RPCD_DIR="$PLUG/rpcd" \
         PLUGIN_ACL_DIR="$PLUG/acl" PLUGIN_UI_DIR="$PLUG/www" PLUGIN_JOBS="$PLUG/jobs" PLUGIN_RELOAD_DELAY=0 \
         PLUGIN_DISPATCHER="$DISPATCHER" \
+        EXT_REG="$PLUG/run/ext.reg" EXT_SAFE_FILE="$PLUG/safe" EXT_TASKS_JSON="$PLUG/tasks.json" \
+        EXT_CRONTAB="$PLUG/crontab" EXT_TASK_LOCK_DIR="$PLUG/run" EXT_EVENTS_INITD="$PLUG/no-events-initd" \
+        EXT_METHODS_TSV="$ROOT/files/usr/lib/splify2/methods.tsv" SPLIFY2_LIBDIR="$ROOT/files/usr/lib/splify2" \
         STEER_PLUGIN_STUB="$ROOT/tests/stub/steer-plugin" STEER="${STEER_FIXTURE:-$T/bin/steer}" \
         RPCD_INITD="$T/bin/initd-rpcd" \
         "$@"

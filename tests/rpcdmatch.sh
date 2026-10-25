@@ -20,10 +20,13 @@ set -u
 
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 SCRIPT="$ROOT/files/usr/libexec/rpcd/splify2"
+# Швы, пути и общие функции объекта живут в env.sh (диспетчер подключает его): проверки «этот шов в коде» смотрят туда.
+ENV_SH="$ROOT/files/usr/lib/splify2/env.sh"
 # Объект разнесён по файлам: диспетчер (SCRIPT), общие помощники и группы методов в
 # usr/lib/splify2/rpcd. Проверки по ТЕКСТУ объекта смотрят во все его файлы разом.
 RPCD_DIR="$ROOT/files/usr/lib/splify2/rpcd"
-RPCD_ALL="$SCRIPT $RPCD_DIR/common.sh $RPCD_DIR/m-*.sh"
+# backup и lists-catalog — плагины (plugins/): их код живёт там, и проверки по тексту смотрят и в него.
+RPCD_ALL="$SCRIPT $ROOT/files/usr/lib/splify2/env.sh $RPCD_DIR/common.sh $RPCD_DIR/m-*.sh $ROOT/plugins/backup/lib/backup.sh $ROOT/plugins/lists-catalog/lib/lists.sh"
 rpcd_src() { cat $RPCD_ALL; }  # shellcheck disable=SC2086
 T="$(mktemp -d /tmp/rpcdmatch.XXXXXX)"
 trap 'rm -rf "$T"' EXIT INT TERM
@@ -40,6 +43,11 @@ check() {  # ОПИСАНИЕ ОЖИДАЕМОЕ ПОЛУЧЕННОЕ
 }
 
 mkdir -p "$T/bin" "$T/lists/domains" "$T/etc" "$T/var"
+# Официальные плагины (backup, lists-catalog), вынесенные из каркаса: методы backup_*, lists* — их псевдонимы.
+# Свой корень $T/off, отдельно от $T/plug (там проверки менеджера плагинов с заглушкой ядра): rpcd_run выбирает
+# корень по имени метода.
+. "$ROOT/tests/stub/plugins-env.sh"
+plugins_provision "$T/off"
 
 # ---- заглушки внешних команд -------------------------------------------------
 # apk: протоколирует каждый вызов первым словом. Поведение `add` задаётся снаружи,
@@ -725,6 +733,11 @@ rpcd() {  # МЕТОД [JSON_ЗАПРОСА]
 }
 
 rpcd_run() {  # МЕТОД [JSON_ЗАПРОСА]  — вызов метода; для перечня методов есть rpcd_list
+    case "$1" in
+        # Методы, вынесенные в плагины, видят официальные плагины; остальным нужен менеджер плагинов с заглушкой ядра.
+        backup_get|backup_put|lists|list_*|lists_*|local_lists|allow_domains|fetch_mode|fetch_mode_set) _rr_pl="$T/off" ;;
+        *) _rr_pl="$T/plug" ;;
+    esac
     if [ "${RPCD_NO_NEWLINE:-0}" = 1 ]; then printf '%s' "${2:-}"; else printf '%s\n' "${2:-}"; fi | env \
         SANDBOX="$T" \
         SPLIFY2_LOCK_DIR="$T/lock" SPLIFY2_LOCK_WAIT="${SPLIFY2_LOCK_WAIT:-120}" \
@@ -786,8 +799,9 @@ rpcd_run() {  # МЕТОД [JSON_ЗАПРОСА]  — вызов метода; �
         ENGINE_ENABLED="${ENGINE_ENABLED:-0}" \
         APK_LIST="${APK_LIST:-}" \
         PLUGIN_SH="$ROOT/files/usr/lib/splify2/plugin.sh" PLUG="$T/plug" \
-        PLUGIN_ROOT="$T/plug/lib" PLUGIN_STATE="$T/plug/state.json" PLUGIN_RPCD_DIR="$T/plug/rpcd" \
+        PLUGIN_ROOT="$_rr_pl/lib" PLUGIN_STATE="$_rr_pl/state.json" PLUGIN_RPCD_DIR="$T/plug/rpcd" \
         PLUGIN_ACL_DIR="$T/plug/acl" PLUGIN_JOBS="$T/plug/jobs" PLUGIN_RELOAD_DELAY=0 \
+        EXT_REG="$_rr_pl/run/ext.reg" PLUGIN_CONF_DIR="$_rr_pl/conf" \
         STEER_PLUGIN_STUB="$ROOT/tests/stub/steer-plugin" \
         SINGBOX_INITD="${SINGBOX_INITD_FIXTURE:-$T/box/none}" \
         sh "$SCRIPT" call "$1" 2>"$T/stderr"
@@ -2078,9 +2092,9 @@ check "размер отсутствующего файла считается �
       "$(sh -c 'echo "$(wc -c 2>/dev/null < /nonexistent/nope || echo 0)"')"
 
 check "путь файла настройки — шов, а не литерал" "1" \
-      "$(grep -c '^UCI_SPLIFY2=' "$SCRIPT")"
+      "$(grep -c '^UCI_SPLIFY2=' "$ENV_SH")"
 check "прямых путей /etc/config/splify2 в коде не осталось" "1" \
-      "$(grep -c '/etc/config/splify2' "$SCRIPT")"
+      "$(grep -c '/etc/config/splify2' "$ENV_SH")"
 # Десять мест: sub_set, sub_put (ключи подписок), ветка настроек, ui_get|ui_set,
 # fetch_mode|fetch_mode_set, lists_source|lists_source_set, zm_fix|zm_fix_set, doh_tunnel_set,
 # и sub_auto (telemetry_set убран вместе со счётчиком установок). Число растёт вместе с методами, которые пишут в uci, — и это ровно
@@ -2719,7 +2733,7 @@ apply_fetch=$(printf '%s\n' "$apply_body" | grep -n 'fetch_missing_lists' | head
 apply_run=$(printf '%s\n' "$apply_body" | grep -n 'apply --spec "$SPEC" 2>&1)"; rc=' | head -1 | cut -d: -f1)
 check "в apply загрузка идёт ДО применения" "yes" \
       "$([ -n "$apply_fetch" ] && [ -n "$apply_run" ] && [ "$apply_fetch" -lt "$apply_run" ] && echo yes || echo no)"
-put_body="$(sed -n '/^    backup_put)/,/^        ;;/p' "$RPCD_DIR/m-backup.sh")"
+put_body="$(sed -n '/^    backup_put)/,/^        ;;/p' "$ROOT/plugins/backup/lib/backup.sh")"
 put_fetch=$(printf '%s\n' "$put_body" | grep -n 'fetch_missing_lists' | head -1 | cut -d: -f1)
 put_dry=$(printf '%s\n' "$put_body" | grep -n 'apply --dry-run --spec "$D/spec"' | head -1 | cut -d: -f1)
 check "в восстановлении загрузка идёт ДО проверки движком" "yes" \
@@ -3234,7 +3248,7 @@ check "свой же архив принимается обратно (круг 
 # иначе карточка движка показывает пустую версию, а «Установить» возвращает пустую
 # ошибку (apk нет, rc 127, вывод пуст).
 check "бэкенд определяет менеджер пакетов" "yes" \
-      "$(grep -q 'elif command -v opkg' "$SCRIPT" && echo yes || echo no)"
+      "$(grep -q 'elif command -v opkg' "$ENV_SH" && echo yes || echo no)"
 check "версия пакета читается обоими способами" "yes" \
       "$(rpcd_src | grep -q 'opkg list-installed' && echo yes || echo no)"
 pkg_src="$(grep -l '^pkg_install()' $RPCD_ALL | head -1)"
@@ -4652,7 +4666,7 @@ check "apply со спекой прокси прошёл" "true" "$(printf '%s' 
 check "устройства hysteria2 и прокси — в зоне туннелей ядра, без NAT" "hy ss9 tr vl;0" \
       "$(zone_devs steer_zone);$(uci_get "firewall.$(zone_id_by_name steer_zone).masq")"
 check "строка зон purge та же, что у объекта rpcd" \
-      "$(sed -n 's/^FW_ZONES="\(.*\)"$/\1/p' "$SCRIPT")" \
+      "$(sed -n 's/^FW_ZONES="\(.*\)"$/\1/p' "$ENV_SH")" \
       "$(sed -n 's/^FW_ZONES=${FW_ZONES:-"\(.*\)"}$/\1/p' "$ROOT/files/usr/sbin/splify2-purge")"
 
 # ---- миграция прежних зон steer_vless и steer_iface в steer_zone ------------------------------

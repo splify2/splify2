@@ -16,9 +16,17 @@ plugin_in() {  # ПОЛЕ
 }
 
 # После действия, меняющего состав плагинов: ссылки и ACL объектов плагинов, перечитка rpcd.
-plugin_after() {
+plugin_after() {  # [ДЕЙСТВИЕ]
     plugin_sync
     plugin_sync_reload
+    plugin_changed_notify "${1:-}"
+}
+
+# Хук plugin_changed (splify2-api): плагины пересчитывают своё. Исход хуков здесь не учитывается.
+plugin_changed_notify() {  # ДЕЙСТВИЕ
+    [ -n "$1" ] || return 0
+    plugin_need_ext && ext_plugin_changed "$1" "${PL_ID:-}"
+    return 0
 }
 
 # Конец задания (в его процессе, ответ уже отдан): ссылки и ACL объектов плагинов и перечитка rpcd сразу —
@@ -26,6 +34,7 @@ plugin_after() {
 plugin_job_after() {
     plugin_sync
     [ "$PLUGIN_SYNC_CHANGED" = 1 ] && "${RPCD_INITD:-/etc/init.d/rpcd}" reload
+    plugin_changed_notify "${PL_ACTION:-}"
     return 0
 }
 
@@ -43,7 +52,7 @@ plugin_simple() {  # ДЕЙСТВИЕ [ФЛАГИ...]
     _ps_act="$1"; shift
     if plugin_manager "$_ps_act" "$PL_ID" "$@"; then
         _ps_res="$(plugin_json_obj "$PLUGIN_OUT")" || _ps_res=""
-        plugin_after
+        plugin_after "$_ps_act"
         if [ -n "$_ps_res" ]; then plugin_ok_raw id "\"$PL_ID\"" result "$_ps_res"
         else plugin_ok_raw id "\"$PL_ID\""; fi
     else
@@ -68,11 +77,15 @@ case "$2" in
             _pl_rerr="$(plugin_manager_error)"
         fi
         plugin_sync_reload
+        # splify2_api — версия точек расширения каркаса, ext_errors — почему блок `splify2` какого-то плагина не
+        # применён (нет права, имя занято, версия API не та): карточка плагина показывает это человеку.
+        _pl_ext="$(ext_errors_json)"
         if [ -n "$_pl_rerr" ]; then
-            plugin_ok_raw host_api "$(plugin_jstr "$PLUGIN_HOST_API")" plugins "$_pl_plugins" repos "$_pl_repos" \
-                repos_error "$(plugin_jstr "$_pl_rerr")"
+            plugin_ok_raw host_api "$(plugin_jstr "$PLUGIN_HOST_API")" splify2_api "$(plugin_jstr "$PLUGIN_SPLIFY2_API")" \
+                ext_errors "$_pl_ext" plugins "$_pl_plugins" repos "$_pl_repos" repos_error "$(plugin_jstr "$_pl_rerr")"
         else
-            plugin_ok_raw host_api "$(plugin_jstr "$PLUGIN_HOST_API")" plugins "$_pl_plugins" repos "$_pl_repos"
+            plugin_ok_raw host_api "$(plugin_jstr "$PLUGIN_HOST_API")" splify2_api "$(plugin_jstr "$PLUGIN_SPLIFY2_API")" \
+                ext_errors "$_pl_ext" plugins "$_pl_plugins" repos "$_pl_repos"
         fi
         ;;
 
@@ -144,6 +157,7 @@ case "$2" in
             plugin_fail bad_request "Недопустимая версия: $PL_VER"; exit 0
         fi
         plugin_job_new || { plugin_fail failed "Не удалось завести задание"; exit 0; }
+        PL_ACTION=install
         if [ -n "$PL_VER" ]; then plugin_job_start "$STEER" plugin install "$PL_ID" "$PL_VER" --json
         else plugin_job_start "$STEER" plugin install "$PL_ID" --json; fi
         plugin_ok_raw job "\"$PJ_ID\"" id "\"$PL_ID\""
@@ -157,6 +171,7 @@ case "$2" in
             plugin_fail bad_request "Недопустимое имя плагина"; exit 0
         fi
         plugin_job_new || { plugin_fail failed "Не удалось завести задание"; exit 0; }
+        PL_ACTION=update
         if [ -n "$PL_ID" ]; then plugin_job_start "$STEER" plugin update "$PL_ID" --json
         else plugin_job_start "$STEER" plugin update --json; fi
         plugin_ok_raw job "\"$PJ_ID\""

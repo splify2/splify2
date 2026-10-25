@@ -29,6 +29,24 @@ PLUGIN_JOBS="${PLUGIN_JOBS:-/tmp/splify2-plugin-jobs}"
 PLUGIN_HOST_API="${PLUGIN_HOST_API:-1.0.0}"
 # Срок rpc-метода плагина по умолчанию — manifest.md, раздел rpc.
 PLUGIN_RPC_TIMEOUT=30
+# Версия splify2-api (plugin-sdk/docs/splify2-api.md): хуки, задачи, события, псевдонимы и переопределения. Её
+# отдаёт plugins_list рядом с host_api; плагин с compat.splify2-api другого major блок `splify2` не получает.
+PLUGIN_SPLIFY2_API="${PLUGIN_SPLIFY2_API:-1.0.0}"
+# Каталог библиотек: рядом с plugin.sh лежат lib.sh, env.sh, ext.sh и methods.tsv. Стенды подставляют PLUGIN_SH,
+# и каталог выводится из него.
+SPLIFY2_LIBDIR="${SPLIFY2_LIBDIR:-${PLUGIN_SH:+${PLUGIN_SH%/*}}}"
+SPLIFY2_LIBDIR="${SPLIFY2_LIBDIR:-/usr/lib/splify2}"
+EXT_SH="${EXT_SH:-$SPLIFY2_LIBDIR/ext.sh}"
+SPLIFY2_LIB="${SPLIFY2_LIB:-$SPLIFY2_LIBDIR/lib.sh}"
+
+# Расширения каркаса подключаются лениво: нужны plugin_sync, хукам и методам с псевдонимами.
+plugin_need_ext() { command -v ext_rebuild >/dev/null 2>&1 || . "$EXT_SH"; }
+
+# Окружение программы плагина: каталог, настройки, версия splify2-api и библиотека для shell-плагинов (lib.sh).
+plugin_export_env() {  # ID
+    export STEER_PLUGIN_ID="$1" STEER_PLUGIN_DIR="$PLUGIN_ROOT/$1" STEER_PLUGIN_CONF="$PLUGIN_CONF_DIR/$1" \
+           SPLIFY2_API=1 SPLIFY2_LIB SPLIFY2_LIBDIR
+}
 
 # id плагина — [a-z0-9][a-z0-9-]* (manifest.md). Он становится именем файла и попадает в
 # командную строку, поэтому всё остальное отвергается до любого использования.
@@ -225,13 +243,37 @@ plugin_quote_list() {  # ИМЕНА
     printf '%s' "$_pq"
 }
 
-# Текст ACL группы плагина: права LuCI работают, как у любого luci-app-*.
+# Текст ACL группы плагина: права LuCI работают, как у любого luci-app-*. Новые имена на объекте splify2
+# (псевдонимы `methods.alias`, которых нет у каркаса) получают права тут же: статический ACL каркаса их не знает.
 plugin_acl_text() {  # ID
     _pat_r="$(plugin_quote_list "$PLUGIN_RPC_READ")"
     _pat_w="$(plugin_quote_list "$PLUGIN_RPC_WRITE")"
+    _pat_ar=""; _pat_aw=""
+    if command -v ext_acl_aliases >/dev/null 2>&1; then
+        while read -r _pat_n _pat_a; do
+            [ -n "$_pat_n" ] || continue
+            case "$_pat_a" in
+                read)  _pat_ar="$_pat_ar $_pat_n" ;;
+                write) _pat_aw="$_pat_aw $_pat_n" ;;
+            esac
+        done <<EOF
+$(ext_acl_aliases "$1")
+EOF
+    fi
+    _pat_ar="$(plugin_quote_list "$_pat_ar")"; _pat_aw="$(plugin_quote_list "$_pat_aw")"
     printf '{\n  "splify2-p-%s": {\n    "description": "Плагин %s: методы панели"' "$1" "$1"
-    [ -n "$_pat_r" ] && printf ',\n    "read": { "ubus": { "splify2.p.%s": [ %s ] } }' "$1" "$_pat_r"
-    [ -n "$_pat_w" ] && printf ',\n    "write": { "ubus": { "splify2.p.%s": [ %s ] } }' "$1" "$_pat_w"
+    if [ -n "$_pat_r$_pat_ar" ]; then
+        printf ',\n    "read": { "ubus": { '
+        [ -n "$_pat_r" ] && printf '"splify2.p.%s": [ %s ]' "$1" "$_pat_r"
+        [ -n "$_pat_ar" ] && printf '%s"splify2": [ %s ]' "${_pat_r:+, }" "$_pat_ar"
+        printf ' } }'
+    fi
+    if [ -n "$_pat_w$_pat_aw" ]; then
+        printf ',\n    "write": { "ubus": { '
+        [ -n "$_pat_w" ] && printf '"splify2.p.%s": [ %s ]' "$1" "$_pat_w"
+        [ -n "$_pat_aw" ] && printf '%s"splify2": [ %s ]' "${_pat_w:+, }" "$_pat_aw"
+        printf ' } }'
+    fi
     printf '\n  }\n}\n'
 }
 
@@ -243,6 +285,12 @@ plugin_sync() {
     PLUGIN_SYNC_CHANGED=0
     _ps_want=" "; _ps_uiwant=" "
     mkdir -p "$PLUGIN_RPCD_DIR" "$PLUGIN_ACL_DIR" 2>/dev/null
+    # Реестр расширений (хуки, задачи, события, псевдонимы) собирается первым: ACL новых имён на объекте splify2
+    # берёт из него. Перечень новых имён изменился — rpcd надо перечитать: `list` объекта печатает их.
+    plugin_need_ext
+    _ps_names0="$(ext_new_aliases)"
+    ext_rebuild
+    [ "$(ext_new_aliases)" = "$_ps_names0" ] || PLUGIN_SYNC_CHANGED=1
     for _ps_d in "$PLUGIN_ROOT"/*/; do
         [ -f "${_ps_d}plugin.json" ] || continue
         _ps_id="${_ps_d%/}"; _ps_id="${_ps_id##*/}"
@@ -291,6 +339,9 @@ plugin_sync() {
         case "$_ps_want" in *" $_ps_id "*) continue ;; esac
         rm -f "$_ps_a" && PLUGIN_SYNC_CHANGED=1
     done
+    # Задачи плагинов — один размеченный блок crontab; служба событий — по надобности.
+    ext_cron_sync
+    ext_events_sync
     return 0
 }
 
@@ -460,8 +511,7 @@ plugin_invoke() {  # ID МЕТОД [ВХОД_JSON]
     # Вход программы — объект JSON; пусто или не объект — пустой объект.
     _pv_body="$(plugin_json_obj "$_pv_in")" || _pv_body='{}'
 
-    export STEER_PLUGIN_ID="$_pv_id" STEER_PLUGIN_DIR="$PLUGIN_ROOT/$_pv_id" \
-           STEER_PLUGIN_CONF="$PLUGIN_CONF_DIR/$_pv_id"
+    plugin_export_env "$_pv_id"
 
     if [ "$_pv_job" = 1 ]; then
         plugin_job_new || { plugin_fail failed "Не удалось завести задание"; return 1; }
