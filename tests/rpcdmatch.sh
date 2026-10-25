@@ -1124,10 +1124,10 @@ check "engine называет минимальную версию движка 
 check "минимум — та константа, что объявлена в m-engine.sh" \
       "$(sed -n 's/^STEER_MIN_VERSION=//p' "$ROOT/files/usr/lib/splify2/rpcd/m-engine.sh")" \
       "$(printf '%s' "$out" | jget min_version)"
-# Интерфейс пишет спеку v2 (ui/src/lib/specv2.ts), а её читает только ядро 2.0: 1.5.x отвечает
-# на неё отказом, и минимум младше 2.0.0 одобрял бы ядро, на котором не применится ничего.
-check "минимум — не младше 2.0.0: спеку v2 читает только ядро 2.0" "2.0.0" \
-      "$(printf '%s\n%s\n' "$(printf '%s' "$out" | jget min_version)" 2.0.0 | sort -V | head -n 1)"
+# Интерфейс читает спеку JSON-видом ядра (`steer spec convert --json`, с 2.1.0): минимум младше
+# 2.1.0 одобрял бы ядро, на котором не прочтётся и не запишется ни одна правка.
+check "минимум — не младше 2.1.0" "2.1.0" \
+      "$(printf '%s\n%s\n' "$(printf '%s' "$out" | jget min_version)" 2.1.0 | sort -V | head -n 1)"
 
 # ---- версия интерфейса — без сети, вместе с ядром ---------------------------------------
 # «Сейчас: luci-app-splify2 …» и подпись рельса брались только из splify2_versions, а он перед
@@ -2927,16 +2927,13 @@ awk 'BEGIN { for (i = 0; i < 1200; i++) printf "host%d.example\n", i }' > "$(cus
 # XSTEER_DIR экспортируется, а не стоит в общем списке швов у rpcd(): список общий для всех
 # разделов стенда, а этот каталог нужен одному — архиву.
 export XSTEER_DIR="$T/etc/steer-xsteer"
-mkdir -p "$XSTEER_DIR" "$T/etc/steer-zapret" "$T/etc/subs"
-# Стратегия обхода лежит на диске (её мог поставить прежний выпуск), но в архив больше не
-# едет: обход DPI из splify2 убран, и файл принадлежит тому, кто его положил.
+mkdir -p "$XSTEER_DIR" "$T/etc/subs"
 printf '%s\n' '[Interface]' \
   'PrivateKey = 6Gtidge6FqhO/0LhrAWpRiyYaKdLZF/gib/HePLC9GU=' \
   'Address = 10.77.0.5/24' 'SNI = www.microsoft.com' '' '[Peer]' \
   'PublicKey = QYkH5bWOsEOCgIMldHPATSG7yvNyJ8st7o/HMelWKxs=' \
   'Endpoint = 198.51.100.9:8443' 'AllowedIPs = 10.77.0.0/24, 192.168.9.0/24' \
   > "$XSTEER_DIR/home.conf"
-printf '%s\n' '#v1' '--filter-tcp=443' '--dpi-desync=fake,split2' > "$T/etc/steer-zapret/yt.opts"
 printf 'vless://k2@h2:443#second\n' > "$T/etc/subs/work.txt"
 # Выбор у групп «вручную» — файл ядра рядом со спекой. Чужая строка в нём в архив не едет:
 # разборщик восстановления отверг бы из-за неё архив целиком.
@@ -2990,8 +2987,6 @@ check "ключи xsteer уезжают в архив дословно" "yes" \
       "$(printf '%s\n' "$doc" | grep -q '^\[xsteer home\]$' &&
          printf '%s\n' "$doc" | grep -q '^\[Interface\]$' &&
          printf '%s\n' "$doc" | grep -q '^PrivateKey = 6Gtidge6' && echo yes || echo no)"
-check "стратегии обхода DPI в архив больше не уезжают" "no" \
-      "$(printf '%s\n' "$doc" | grep -q '^\[zapret ' && echo yes || echo no)"
 # Вторая подписка — это файл И ссылка на панель: без ссылки восстановленную подписку нечем
 # обновить, то есть она приезжает мёртвой.
 check "именованная подписка уезжает и файлом, и ссылкой" "yes" \
@@ -3229,7 +3224,7 @@ check "архив прежнего формата (1) по-прежнему пр
 # Проверяется методом целиком: присланный архив → файлы на диске и поля в uci. Каталоги
 # перед этим сносятся, иначе «восстановлено» было бы не отличить от «лежало и раньше».
 rm -f "$T/var/backup.in"
-rm -rf "$XSTEER_DIR" "$T/etc/steer-zapret" "$T/etc/subs"
+rm -rf "$XSTEER_DIR" "$T/etc/subs"
 : > "$T/uci.store"
 : > "$T/steer.log"
 out="$(printf '%s\n' \
@@ -3244,14 +3239,10 @@ out="$(printf '%s\n' \
   '[Peer]' \
   'PublicKey = QYkH5bWOsEOCgIMldHPATSG7yvNyJ8st7o/HMelWKxs=' \
   'Endpoint = 198.51.100.9:8443' \
-  '[zapret yt]' \
-  '#v1' \
-  '--filter-tcp=443' \
   '[sub work]' \
   'vless://k2@h2:443#second' \
   '[options]' \
   'sub_title=Моя панель' \
-  'zm_fix=0' \
   'list_shrink_factor=4' \
   'geo_url=https://example.net/trace' \
   'sub_work.url=https://panel.example.net/sub/2' \
@@ -3264,14 +3255,12 @@ check "приватный ключ туннеля лёг на место дос�
 # закрытым, и восстановление не имеет права раскрыть его шире, чем создало бы само.
 check "восстановленный ключ закрыт от чужих глаз" "600" \
       "$(stat -c %a "$XSTEER_DIR/home.conf" 2>/dev/null)"
-check "раздел стратегии обхода из старого архива принят и не восстановлен" "no" \
-      "$([ -e "$T/etc/steer-zapret/yt.opts" ] && echo yes || echo no)"
 check "именованная подписка легла своим файлом" "yes" \
       "$(grep -qx 'vless://k2@h2:443#second' "$T/etc/subs/work.txt" && echo yes || echo no)"
 check "ссылка именованной подписки легла в свою секцию uci" "https://panel.example.net/sub/2;url;subscription" \
       "$(uci_get splify2.sub_work.url);$(uci_get splify2.sub_work.kind);$(uci_get splify2.sub_work)"
-check "остальные поля uci восстановлены, а не только три прежних; поле фикса Zapret Manager отброшено" "Моя панель;;4;https://example.net/trace" \
-      "$(uci_get splify2.main.sub_title);$(uci_get splify2.main.zm_fix);$(uci_get splify2.main.list_shrink_factor);$(uci_get splify2.main.geo_url)"
+check "остальные поля uci восстановлены, а не только три прежних" "Моя панель;4;https://example.net/trace" \
+      "$(uci_get splify2.main.sub_title);$(uci_get splify2.main.list_shrink_factor);$(uci_get splify2.main.geo_url)"
 check "в ответе сказано, что именно восстановлено" "1;1" \
       "$(printf '%s' "$out" | jget xsteer);$(printf '%s' "$out" | jget subs)"
 
@@ -3313,10 +3302,9 @@ check "нечисловое значение выключателя отверг
 out="$(printf '%s\n' 'splify2-backup 2' '[sub work]' 'http://example.org/list' | backup_put)"
 check "именованная подписка не из vless:// отвергается" "false" "$(printf '%s' "$out" | jget ok)"
 
-# Раздел стратегии обхода из архива прежнего выпуска сам по себе ничего не восстанавливает:
-# в архиве больше нечего принимать, и отказ говорит об этом словами.
+# Обход DPI (zapret) не поддерживается: раздел стратегии из старого архива — незнакомый раздел.
 out="$(printf '%s\n' 'splify2-backup 2' '[zapret yt]' | backup_put)"
-check "архив только со стратегией обхода не годится" "false" "$(printf '%s' "$out" | jget ok)"
+check "раздел стратегии обхода отвергается как незнакомый" "false" "$(printf '%s' "$out" | jget ok)"
 
 # Восстановление продолжается там, где остановились: следующие проверки этого раздела ждут
 # спеку и подписку на месте.
@@ -4195,7 +4183,7 @@ done
 # панели прячут и сообщения, и логины) и внешний адрес роутера. Отчёт, который нельзя
 # показать людям, не выполняет своей задачи вовсе — поэтому проверки на секреты стоят
 # рядом с проверками на состав, а не «когда-нибудь потом».
-mkdir -p "$T/etc/subs" "$T/zapret" "$T/etc/config"
+mkdir -p "$T/etc/subs" "$T/etc/config"
 
 # Прошивка и архитектура: обе строки из одного файла описания системы. DISTRIB_DESCRIPTION
 # берётся ради версии OpenWrt — до этого метода её не спрашивал никто.
@@ -5076,6 +5064,55 @@ check "spec_heal: повторно — healed=false, apply не зовётся" 
 heal_zones; printf '%s\n' '{"schema":1,"outputs":{"warp":{"kind":"interface","device":"warp"}},"channels":[]}' > "$T/etc/spec.json"
 heal_apply apply >/dev/null
 check "heal: спека v1 не правится (ключ ей неизвестен)" "-" "$(v6of warp)"
+# ---- выходы kind: zapret убраны: ядро отвергает такую спеку, и apply/spec_heal её приводят ----
+zspec() {
+    cat > "$T/etc/spec.json" <<EOF2
+{
+  "version": 2,
+  "outputs": {
+    "dpi": { "kind": "zapret", "strategy": "x.opts", "on_fail": "drop" },
+    "nl": { "kind": "tunnel", "protocol": "vless", "subscription": "s", "on_fail": "zapret" },
+    "dpi2": { "kind": "zapret" }
+  },
+  "dns": { "upstreams": [ { "name": "u", "url": "https://dns.example/dns-query", "out": "dpi" } ] },
+  "rules": [
+    { "name": "yt", "to": ["yt"], "out": "dpi" },
+    { "name": "rest", "to": "all", "out": "nl" },
+    { "name": "z2", "to": ["z2"], "out": "dpi2" }
+  ]
+}
+EOF2
+}
+zspec; rm -f "$T/etc/spec.json.zapret.bak" "$T/etc/spec.applied.json"
+out="$(heal_apply apply)"
+check "zapret: apply ответил и назвал убранные выходы" "yes" "$(printf '%s' "$out" | jget output | grep -q 'убраны выходы dpi dpi2, правил переведено в direct: 3' && echo yes || echo no)"
+zv() { python3 -c 'import json,sys
+d = json.load(open(sys.argv[1]))
+print(";".join([",".join(sorted(d["outputs"])),
+  ",".join(r["out"] for r in d["rules"]), d["dns"]["upstreams"][0]["out"], d["outputs"]["nl"].get("on_fail","-"),
+  str(any(o["kind"] == "zapret" for o in d["outputs"].values()))]))' "$T/etc/spec.json"; }
+check "zapret: выходов zapret нет, direct заведён, правила и DNS — в direct, on_fail: zapret -> direct" \
+      "direct,nl;direct,nl,direct;direct;direct;False" "$(zv)"
+check "zapret: прежняя спека сохранена копией" "yes" "$([ -s "$T/etc/spec.json.zapret.bak" ] && grep -q dpi2 "$T/etc/spec.json.zapret.bak" && echo yes || echo no)"
+sum1="$(cksum < "$T/etc/spec.json")"
+out="$(heal_apply apply)"
+check "zapret: повторный apply спеку не меняет (идемпотентно)" "$sum1" "$(cksum < "$T/etc/spec.json")"
+check "zapret: и о правке не сообщает" "no" "$(printf '%s' "$out" | jget output | grep -q 'zapret' && echo yes || echo no)"
+# direct уже был, zapret последним и единственным в outputs, без запятых вокруг.
+cat > "$T/etc/spec.json" <<'EOF2'
+{"version":2,"outputs":{"direct":{"kind":"direct"},"dpi":{"kind":"zapret"}},"rules":[{"name":"a","to":["a"],"out":"dpi"}]}
+EOF2
+rm -f "$T/etc/spec.applied.json"
+out="$(heal_apply spec_heal)"
+check "zapret: spec_heal чинит спеку, ответ healed и текст" "true;yes" "$(printf '%s' "$out" | jget healed);$(printf '%s' "$out" | jget zapret | grep -q 'убраны выходы dpi' && echo yes || echo no)"
+check "zapret: последний член убран без висячей запятой, direct не задвоен" "direct;direct" \
+      "$(python3 -c 'import json,sys; d=json.load(open(sys.argv[1])); print(",".join(d["outputs"])+";"+d["rules"][0]["out"])' "$T/etc/spec.json")"
+# Спека без zapret — байт в байт.
+heal_spec; sumh="$(cksum < "$T/etc/spec.json")"
+heal_apply spec_heal >/dev/null
+check "zapret: спеку без таких выходов лечение zapret не трогает" "yes" "$(grep -q zapret "$T/etc/spec.json" && echo no || echo yes)"
+heal_zones; rm -f "$T/etc/spec.json.zapret.bak"
+
 # Перечень устройств для выхода: панель получает ту же подсказку, что пишет самолечение, и пишет
 # её новому выходу сама — так спека в памяти страницы и на диске не расходится с лечением при
 # apply, и лечить такому выходу уже нечего. (Расхождение у выходов без подсказки страница после

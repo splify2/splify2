@@ -21,7 +21,7 @@
 #
 # ЧЕГО ЭТОТ СКРИПТ НЕ ДЕЛАЕТ. Он не снимает сами пакеты — это дело apk/opkg, и человек мог
 # позвать чистку до снятия, чтобы посмотреть. И он не трогает ничего, чего мы не заводили:
-# чужая зона фаервола, чужой конфиг https-dns-proxy, устройство, положенное в нашу зону
+# чужая зона фаервола, устройство, положенное в нашу зону
 # руками, интерфейс с протоколом xsteer — всё это остаётся на месте, и о каждом таком случае
 # печатается строка. Молчаливо оставленный мусор ничем не лучше молчаливо удалённой настройки:
 # человек должен уйти отсюда, зная, что осталось и почему.
@@ -37,19 +37,17 @@ SPLIFY2_DIR=${SPLIFY2_DIR:-/etc/splify2}
 FW_OWNED=${FW_OWNED:-$SPLIFY2_DIR/fw-owned}
 STEER_DIR=${STEER_DIR:-/etc/steer}
 UCI_SPLIFY2=${UCI_SPLIFY2:-/etc/config/splify2}
-DOH_CONF=${DOH_CONF:-/etc/config/https-dns-proxy}
 CRONTAB=${CRONTAB:-/etc/crontabs/root}
 # По этому образцу узнаются НАШИ записи в crontab — ровно те, что ставит скрипт установки
-# пакета: обновление списков и автообновление подписок; и строки прежних отправок — отклика
-# для счётчика (splify2-ping) и почасового отчёта (splify2-telemetry, до 26.10): счётчика
-# установок больше нет, строки снимает установка новой версии, но чистку зовут и там, где
+# пакета: обновление списков и автообновление подписок; и строка прежнего отклика для счётчика
+# (splify2-ping): счётчика установок больше нет, строки снимает установка новой версии, но чистку зовут и там, где
 # обновления не было.
 #
 # Образец — регулярное выражение (grep -E ниже), а не подстрока: два имени одним `grep -q` и
 # одним `grep -v` иначе не выбрать, а разводить их в два прохода значит завести второе место,
 # где перечислено, что здесь наше. Забытая строка — не мелочь: она зовёт каждый час команду,
 # которой на роутере уже нет.
-CRON_MARK=${CRON_MARK:-splify2-update-lists|splify2-ping|splify2-update-subs|splify2-telemetry}
+CRON_MARK=${CRON_MARK:-splify2-update-lists|splify2-ping|splify2-update-subs}
 CRON_INITD=${CRON_INITD:-/etc/init.d/cron}
 INITD=${INITD:-/etc/init.d/steer}
 FW_INITD=${FW_INITD:-/etc/init.d/firewall}
@@ -61,18 +59,12 @@ FW_ZONES=${FW_ZONES:-"steer_clients:clients:0 steer_zone:vless,hysteria2,trojan,
 # Зоны прежних версий: steer_vless и steer_iface слиты в steer_zone. Заведённые нами (по расписке)
 # убираются так же, как текущие: после обновления без единого apply они ещё могут стоять.
 FW_LEGACY_ZONES=${FW_LEGACY_ZONES:-"steer_vless steer_iface"}
-# Таблицы nftables, которые ставим МЫ: правило «DoH через туннель», фикс Zapret Manager и
-# изоляция проверки стратегий. Четвёртая, `inet steer`, принадлежит движку и в обычном порядке
-# уходит сама: её сносит остановка службы, которая идёт первым делом. Она перечислена здесь
+# Таблицы nftables: `splify2_recheck` ставим МЫ, а `inet steer`, принадлежит движку и в обычном
+# порядке уходит сама: её сносит остановка службы, которая идёт первым делом. Она перечислена здесь
 # ЗАТЕМ, что чистку зовут и на роутере, с которого пакеты уже сняты, — а вместе с пакетом ушёл
 # и init-скрипт, то есть снять таблицу больше нечем, и она осталась бы метить трафик в никуда
-# до перезагрузки. Существование каждой таблицы проверяется перед удалением, так что лишнего
-# здесь не происходит.
-NFT_TABLES=${NFT_TABLES:-"splify2_doh splify2_zm splify2_ztest splify2_recheck steer"}
-# Таблица маршрутов и приоритет правила для «DoH через туннель» — те же числа, что в
-# common.sh (doh_rules_sync), иначе снималось бы не то, что ставилось.
-DOH_RT=${DOH_RT:-290}
-DOH_RULE_PREF=${DOH_RULE_PREF:-29000}
+# до перезагрузки. Существование каждой таблицы проверяется перед удалением.
+NFT_TABLES=${NFT_TABLES:-"splify2_recheck steer"}
 # Срок вызова rpcd, который ставит /etc/uci-defaults/99-splify2. Снимается ТОЛЬКО это
 # значение: другое поставил администратор, и оно не наше.
 RPCD_TIMEOUT=${RPCD_TIMEOUT:-120}
@@ -80,11 +72,8 @@ RPCD_TIMEOUT=${RPCD_TIMEOUT:-120}
 # незачем. Каталог движка (/var/lib/steer) и готовые конфигурации туннелей (/var/run/xsteer)
 # тоже здесь: пакеты снимают вместе, и половина следов — это не «убрано».
 STATE_PATHS=${STATE_PATHS:-"/var/lib/splify2 /var/lib/steer /var/run/xsteer \
-/var/run/splify2-vless-dirty /var/run/splify2-obfs-dirty /var/run/splify2-zapret-dirty \
-/var/run/splify2-zapret-autoselect.progress /var/run/splify2-zapret-autoselect.pid \
 /tmp/splify2-ping \
-/var/run/splify2-boot-id /var/run/splify2-events /var/run/splify2-crash /var/run/splify2-telemetry-now \
-/var/lock/splify2-update.lock /var/lock/splify2-zapret-autoselect.lock"}
+/var/lock/splify2-update.lock"}
 
 DO=0     # 0 — только показать; 1 — делать
 KEEP=0   # 1 — настройки человека оставить
@@ -99,8 +88,7 @@ splify2-purge — убрать с роутера следы splify2 после �
     splify2-purge --yes --keep-config   удалить правила, зоны и расписание,
                                         но оставить /etc/steer и /etc/config/splify2
 
-Убирается только то, что заводили мы: чужая зона фаервола, чужой конфиг https-dns-proxy и
-устройство, положенное в нашу зону руками, остаются на месте.
+Убирается только то, что заводили мы: чужая зона фаервола и устройство, положенное в нашу зону руками, остаются на месте.
 USAGE
 }
 
@@ -269,7 +257,7 @@ purge_recheck() {
     return 0
 }
 
-# ---- таблицы nftables и маршрутизация DoH ------------------------------------------
+# ---- таблицы nftables --------------------------------------------------------------
 purge_nft() {
     for _t in $NFT_TABLES; do
         # Существование проверяется ДО показа: обещать удалить таблицу, которой нет, значит
@@ -283,30 +271,10 @@ purge_nft() {
     return 0
 }
 
-purge_doh_rules() {
-    if ip rule show 2>/dev/null | grep -q "^$DOH_RULE_PREF:"; then
-        plan "правило маршрутизации pref $DOH_RULE_PREF (DoH через туннель) снимается"
-        if [ "$DO" = 1 ]; then
-            # Копий может накопиться несколько: `ip rule add` дубликаты не проверяет. Предел
-            # витков — оттуда же, откуда и правило (doh_rules_down в common.sh).
-            _n=0
-            while [ "$_n" -lt 32 ] && ip rule del pref "$DOH_RULE_PREF" 2>/dev/null; do
-                _n=$((_n + 1))
-            done
-        fi
-    fi
-    if [ -n "$(ip route show table "$DOH_RT" 2>/dev/null)" ]; then
-        plan "таблица маршрутов $DOH_RT очищается"
-        [ "$DO" = 1 ] && ip route flush table "$DOH_RT" 2>/dev/null
-    fi
-    return 0
-}
-
-# ---- расписание --------------------------------------------------------------------
 purge_cron() {
     [ -f "$CRONTAB" ] || return 0
     grep -qE "$CRON_MARK" "$CRONTAB" 2>/dev/null || return 0
-    plan "наши записи расписания убираются из $CRONTAB (обновление списков и подписок, прежние отправки)"
+    plan "наши записи расписания убираются из $CRONTAB (обновление списков и подписок, прежний отклик счётчика)"
     [ "$DO" = 1 ] || return 0
     # Код возврата grep здесь не проверяется НАРОЧНО: пустой результат законен — это случай,
     # когда наши строки в crontab единственные, и тогда файл должен остаться пустым, а не
@@ -334,53 +302,15 @@ purge_rpcd_timeout() {
     return 0
 }
 
-purge_zapret() {
-    _v="$(uci -q get zapret.config.run_on_boot 2>/dev/null || true)"
-    [ "${_v:-}" = 0 ] || return 0
-    plan "zapret.config.run_on_boot возвращается в 1 — ноль там ставили мы"
-    [ "$DO" = 1 ] || return 0
-    # Ключ принадлежит ЧУЖОМУ пакету, поэтому он не удаляется, а возвращается к значению, с
-    # которым zapret приезжает. Ноль в нём — это наше «обход выключен» с нашей вкладки
-    # (zp_zapret_off в zapret.sh); уйти, оставив его, значило бы забрать у человека автозапуск
-    # обхода — обёртка remittor при run_on_boot = 0 отвечает «service blocked».
-    uci -q set zapret.config.run_on_boot=1
-    uci -q commit zapret
-    return 0
-}
-
-purge_doh_conf() {
-    [ -s "$DOH_CONF" ] || return 0
-    # ПРИЗНАК «ФАЙЛ ПИСАЛИ МЫ» — МЕТКА КОПИИ, а не значение force_dns.
-    #
-    # Прежний признак (`option force_dns '0'`) казался надёжным: у пакета умолчание 1, и
-    # Zapret Manager пишет 1, ноль — наше решение. Но он ломается ровно там, где менеджер
-    # стоит рядом: тот правит ключ в 1 в любой момент, и после его правки purge сказал бы
-    # «писали не мы» и оставил НАШУ настройку на роутере навсегда. Метка копии
-    # (`option splify2_state` в секции splify2_backup) — единственный след, который ставим
-    # только мы, и его никто снаружи не трогает.
-    if ! grep -q "option splify2_state" "$DOH_CONF"; then
-        say "$DOH_CONF писали не мы — оставлен как есть"
-        return 0
-    fi
-    # НАСТРОЙКУ https-dns-proxy ЭТА КОМАНДА БОЛЬШЕ НЕ ВОССТАНАВЛИВАЕТ. Файл переписывала
-    # прежняя версия splify2 (с копией чужой редакции внутри), а в этой версии ни писателя,
-    # ни читателя этого файла нет: шифрованный DNS теперь у движка (`dns.upstreams` в
-    # спеке). Настройка прокси с этого момента принадлежит человеку — как любая чужая, — и
-    # молча переписать её чужим кодом, которого здесь уже нет, значило бы ровно то, чего
-    # эта команда призвана не делать. Говорим об этом и оставляем файл как есть.
-    say "$DOH_CONF записывала прежняя версия splify2 — оставлен как есть; вернуть чужую редакцию можно из секции splify2_backup в том же файле"
-    return 0
-}
-
 # ---- следы прежнего счётчика установок --------------------------------------------
 #
 # Счётчика больше нет, а ключи прежних версий в настройке могли остаться. РАБОТАЕТ И ПРИ
 # --keep-config: без него файл настройки уходит целиком и шаг ничего не меняет, а с ним человек
 # просил сохранить СВОИ настройки; идентификатор, согласие и адрес для стендов — наше
-# состояние, а не его настройка. Ключи прежнего отчёта (до 26.10) — тоже.
+# состояние, а не его настройка.
 purge_telemetry() {
     _tk=""
-    for _k in telemetry telemetry_id ping_url telemetry_url telemetry_key telemetry_at telemetry_error geo_city_url; do
+    for _k in telemetry telemetry_id ping_url; do
         [ -n "$(uci -q get "splify2.main.$_k" 2>/dev/null || true)" ] || continue
         _tk="$_tk $_k"
     done
@@ -474,11 +404,8 @@ purge_engine
 purge_recheck
 purge_firewall
 purge_nft
-purge_doh_rules
 purge_cron
 purge_rpcd_timeout
-purge_zapret
-purge_doh_conf
 purge_telemetry
 purge_paths
 warn_xsteer
