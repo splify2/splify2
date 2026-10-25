@@ -147,9 +147,9 @@ fixture_plugin() { mk_plugin "$PLUG/fixtures/$1" "$1" "$2"; }
 plug_reset
 
 # ---- методы объявлены везде, где их ищут --------------------------------------------------------------
-METHODS="plugins_list plugins_search repos_list plugin_status plugin_job plugin_install plugin_update plugin_remove plugin_enable plugin_disable plugin_autoupdate repo_key repo_add repo_del plugin_call"
+METHODS="plugins_list plugins_search repos_list plugin_status plugin_job plugin_install plugin_update plugin_remove plugin_enable plugin_disable plugin_autoupdate repo_key repo_add repo_del plugin_call plugin_settings_get plugin_settings_set i18n_get"
 out="$(rpcd_list)"
-ACL="$ROOT/luci/root/usr/share/rpcd/acl.d/luci-app-splify2.json"
+ACL="$ROOT/luci/root/usr/share/rpcd/acl.d/splify2.json"
 for m in $METHODS; do
     check "метод $m — в перечне rpcd, в ACL и в контракте" "yes;yes;yes" \
         "$(printf '%s' "$out" | pj "'$m' in d" | sed 's/true/yes/; s/false/no/');$(grep -q "\"$m\"" "$ACL" && echo yes || echo no);$(grep -q "| \`$m\` |" "$ROOT/docs/rpcd-api.md" && echo yes || echo no)"
@@ -157,7 +157,7 @@ done
 check "чтение и запись разведены: plugin_install и repo_add — write, plugins_list и plugin_job — read" "yes" \
     "$(python3 - "$ACL" <<'PY'
 import json, sys
-a = json.load(open(sys.argv[1]))["luci-app-splify2"]
+a = json.load(open(sys.argv[1]))["splify2"]
 r, w = a["read"]["ubus"]["splify2"], a["write"]["ubus"]["splify2"]
 ok = {"plugins_list", "plugin_job", "repos_list", "plugin_status", "plugins_search", "repo_key"} <= set(r) \
      and {"plugin_install", "plugin_update", "plugin_remove", "plugin_enable", "plugin_disable",
@@ -576,6 +576,66 @@ check "prerm убирает объекты плагинов" "yes" \
     "$(grep -q 'splify2.p.\*' "$ROOT/build.sh" && grep -q 'splify2-p-\*.json' "$ROOT/build.sh" && echo yes || echo no)"
 check "все шелл-файлы плагинов проходят разбор dash" "ok" \
     "$(for f in files/usr/lib/splify2/plugin.sh files/usr/lib/splify2/plugin-rpcd files/usr/lib/splify2/rpcd/m-plugin.sh files/usr/sbin/splify2-plugin-sync tests/stub/steer-plugin; do dash -n "$ROOT/$f" 2>&1 || echo "$f"; done | grep -q . && echo bad || echo ok)"
+
+# ---- настройки плагина по его схеме (plugin_settings_get / plugin_settings_set) ---------------------------
+# Манифест объявляет обязательную схему: "splify2": {"settings": {"schema": "<файл>"}}; значения — в
+# conf/<id>/settings.json, файле, который читает сам плагин. Каркас рисует форму по схеме.
+plug_reset
+PLUGIN_CONF_DIR="$PLUG/conf"; export PLUGIN_CONF_DIR
+install_plugin recheck 1.0.0
+python3 - "$PLUG/lib/recheck/plugin.json" <<'PY'
+import json, sys
+p = sys.argv[1]; d = json.load(open(p))
+d["splify2"] = {"settings": {"schema": "luci/settings.schema.json"}}
+json.dump(d, open(p, "w"))
+PY
+mkdir -p "$PLUG/lib/recheck/luci"
+printf '%s\n' '{"type":"object","properties":{"epoch":{"type":"integer","minimum":1},"token":{"type":"string","x-secret":true}}}' > "$PLUG/lib/recheck/luci/settings.schema.json"
+out="$(rpcd plugin_settings_get '{"id":"recheck"}')"
+check "plugin_settings_get: схема из манифеста, значений пока нет" "true;object;{}" \
+    "$(printf '%s' "$out" | pj 'd["ok"]');$(printf '%s' "$out" | pj 'd["schema"]["type"]');$(printf '%s' "$out" | pj 'd["values"]')"
+out="$(rpcd plugin_settings_set '{"id":"recheck","values":{"epoch":3,"token":"s3cret"}}')"
+check "plugin_settings_set: записано" "true" "$(printf '%s' "$out" | pj 'd["ok"]')"
+check "  файл настроек — в conf/<id>/settings.json" '{"epoch": 3, "token": "s3cret"}' \
+    "$(python3 -c 'import json,sys; print(json.dumps(json.load(open(sys.argv[1]))))' "$PLUG/conf/recheck/settings.json")"
+check "plugin_settings_get: значения читаются обратно" "3" "$(rpcd plugin_settings_get '{"id":"recheck"}' | pj 'd["values"]["epoch"]')"
+check "plugin_settings_set: не объект — отказ, файл прежний" "false;bad_request;3" \
+    "$(rpcd plugin_settings_set '{"id":"recheck","values":"x"}' | pj 'd["ok"]');$(rpcd plugin_settings_set '{"id":"recheck","values":[1]}' | pj 'd["code"]');$(python3 -c 'import json,sys; print(json.load(open(sys.argv[1]))["epoch"])' "$PLUG/conf/recheck/settings.json")"
+check "plugin_settings_get: плагина нет — not_installed" "not_installed" "$(rpcd plugin_settings_get '{"id":"nope"}' | pj 'd["code"]')"
+check "plugin_settings_set: плагина нет — not_installed" "not_installed" "$(rpcd plugin_settings_set '{"id":"nope","values":{}}' | pj 'd["code"]')"
+check "plugin_settings_get: недопустимое имя" "bad_request" "$(rpcd plugin_settings_get '{"id":"../x"}' | pj 'd["code"]')"
+install_plugin vless 2.1.1
+check "plugin_settings_get: у плагина нет схемы настроек — no_settings" "no_settings" "$(rpcd plugin_settings_get '{"id":"vless"}' | pj 'd["code"]')"
+python3 - "$PLUG/lib/vless/plugin.json" <<'PY'
+import json, sys
+p = sys.argv[1]; d = json.load(open(p))
+d["splify2"] = {"settings": {"schema": "../../etc/passwd"}}
+json.dump(d, open(p, "w"))
+PY
+check "plugin_settings_get: путь схемы вне каталога плагина — отказ" "no_settings" "$(rpcd plugin_settings_get '{"id":"vless"}' | pj 'd["code"]')"
+unset PLUGIN_CONF_DIR
+
+# ---- словари каркаса от плагинов (i18n_get) -------------------------------------------------------------
+plug_reset
+install_plugin lang-ru 1.0.0
+mkdir -p "$PLUG/lib/lang-ru/i18n/core"
+printf '%s\n' '{"Add":"Добавить","{n} outputs":{"one":"{n} выход","other":"{n} выхода"}}' > "$PLUG/lib/lang-ru/i18n/core/ru.json"
+install_plugin lang-x 1.0.0 disabled
+mkdir -p "$PLUG/lib/lang-x/i18n/core"
+printf '%s\n' '{"Add":"X"}' > "$PLUG/lib/lang-x/i18n/core/ru.json"
+install_plugin lang-bad 1.0.0
+mkdir -p "$PLUG/lib/lang-bad/i18n/core"
+printf 'не json\n' > "$PLUG/lib/lang-bad/i18n/core/ru.json"
+out="$(rpcd i18n_get '{"lang":"ru"}')"
+check "i18n_get: словарь включённого плагина" "true;ru;lang-ru;Добавить" \
+    "$(printf '%s' "$out" | pj 'd["ok"]');$(printf '%s' "$out" | pj 'd["lang"]');$(printf '%s' "$out" | pj 'd["dicts"][0]["plugin"]');$(printf '%s' "$out" | pj 'd["dicts"][0]["dict"]["Add"]')"
+check "  форма множественного числа едет объектом" "{n} выход" "$(printf '%s' "$out" | pj 'd["dicts"][0]["dict"]["{n} outputs"]["one"]')"
+check "  выключенный плагин и негодный файл не попадают, словарь один" "1" "$(printf '%s' "$out" | pj 'len(d["dicts"])')"
+check "i18n_get: языка нет ни у кого — пустой массив, не отказ" "true;[]" \
+    "$(rpcd i18n_get '{"lang":"de"}' | pj 'd["ok"]');$(rpcd i18n_get '{"lang":"de"}' | pj 'd["dicts"]')"
+check "i18n_get: язык с регионом" "true" "$(rpcd i18n_get '{"lang":"pt-BR"}' | pj 'd["ok"]')"
+check "i18n_get: код языка не по форме — отказ" "false;false;false" \
+    "$(rpcd i18n_get '{"lang":"../x"}' | pj 'd["ok"]');$(rpcd i18n_get '{"lang":"r u"}' | pj 'd["ok"]');$(rpcd i18n_get '{}' | pj 'd["ok"]')"
 
 echo
 if [ "$fails" -ne 0 ]; then

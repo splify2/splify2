@@ -159,6 +159,22 @@ case "$2" in
         case "$out" in '{'*) printf '%s\n' "$out" ;; *) fail "ядро не ответило" ;; esac
         ;;
 
+    spec_schema)
+        # The schema of every spec key: `steer spec-schema --json`, printed by the core from the same table
+        # its parser uses (plugin kinds included). The frame draws its forms from it. A core without the
+        # command (before 2.1) gets the schema bundled with the package, marked source:"bundled" - the
+        # forms then follow the package, not the core, and the page says so.
+        out="$("$STEER" spec-schema --json 2>/dev/null)"
+        _ss_src=core
+        if [ -z "$out" ] || [ -z "$(jsonfilter -s "$out" -e '@.type' 2>/dev/null)" ]; then
+            out="$(cat "${SCHEMA_FIXTURE:-/usr/share/splify2/spec-schema.json}" 2>/dev/null)"
+            _ss_src=bundled
+            [ -n "$out" ] && [ -n "$(jsonfilter -s "$out" -e '@.type' 2>/dev/null)" ] ||
+                fail "the core has no spec-schema command and no bundled schema is installed"
+        fi
+        printf '{"ok":true,"source":"%s","schema":%s}\n' "$_ss_src" "$out"
+        ;;
+
     diag)
         # Проверки состояния — движок печатает JSON сам. Отдаём дословно по той же причине,
         # что и status: свой разбор здесь означал бы вторую модель проверок в shell, которая

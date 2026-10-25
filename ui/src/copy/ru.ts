@@ -862,6 +862,7 @@ export const ru = {
         plaginy: "Плагины",
         nastroyki: "Настройки",
         razdely: "Разделы",
+        bazovyy: "Базовый вид",
         soobschit: "Сообщить о проблеме",
         podderzhat: "Поддержать проект",
         chat: "Чат в Telegram",

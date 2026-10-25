@@ -34,7 +34,7 @@ splify2 — тонкая обёртка на shell поверх ядра [steer]
   поле `ok`, а не только факт отказа вызова. Интерфейс однажды именно на этом и обжёгся: ядро не
   отвечало, `status` возвращал объект ошибки, а страница красила роутер зелёным и писала «Работает».
 - **Права.** Методы разделены на группы read и write в
-  `luci/root/usr/share/rpcd/acl.d/luci-app-splify2.json`. Проверка на этапе сборки в `build.sh`
+  `luci/root/usr/share/rpcd/acl.d/splify2.json`. Проверка на этапе сборки в `build.sh`
   роняет сборку, если объявленный метод отсутствует в ACL. Новый метод обязан появиться и в блоке
   `list)` скрипта rpcd, и в файле ACL.
 - **Имя метода написано в четырёх местах**, и каждое ребро между ними сторожится отдельно: блок
@@ -282,7 +282,7 @@ splify2 — тонкая обёртка на shell поверх ядра [steer]
 «Удалить splify2» одной кнопкой: следы на роутере (команда `splify2-purge`: служба ядра, зоны и
 правила фаервола, таблицы nftables, расписание, каталоги состояния и — если не просили оставить —
 `/etc/steer` с `/etc/config/splify2`), затем сами пакеты проекта (модули и расширения ядра, потом
-`luci-app-splify2` и `steer`).
+`splify2` и `steer`).
 
 Если ядро ведёт steer-box-connector (`engine.busy`), ядро и коннектор — не наши: служба steer, таблица
 nftables `inet steer` и пакеты ядра остаются (команда говорит об этом строкой в `notes`), снимаются
@@ -312,7 +312,7 @@ nftables `inet steer` и пакеты ядра остаются (команда 
 - **Выход (успех):** `{ "ok": true, "installed": "<имя файла>", "output": "<слова менеджера пакетов>",
   "reload_needed": true }`. `reload_needed` означает, что страницу надо перезагрузить: бандл сменился;
   rpcd перезапускается через две секунды в фоне, уже после ответа. Файл
-  `luci-app-splify2-<версия>-1_<noarch.apk|all.ipk>` качается по адресам перечня выпусков со сверкой
+  `splify2-<версия>-1_<noarch.apk|all.ipk>` качается по адресам перечня выпусков со сверкой
   `sha256`, затем прежней лестницей — как у `steer_install`. При обходе закрытого
   `githubusercontent.com` или несовпадении суммы первого адреса добавляется `via`.
 - **Выход (отказ):** стандартный объект ошибки; при отказе менеджера пакетов — ещё `removed`, как у
@@ -397,7 +397,7 @@ nftables `inet steer` и пакеты ядра остаются (команда 
 - **Вход:** нет.
 - **Выход:** `{ "present": true, "vless": <bool>, "modules": ["vless", "proxy"], "arch": "...", "version": "...", "min_version": "2.1.0", "enabled": <bool>, "running": <bool>, "ui_version": "26.10.0" }`.
   Без ядра — `{ "present": false, "vless": false, "enabled", "running", "ui_version" }` (и `busy`, если есть).
-  - `ui_version` — установленная версия самого интерфейса (пакет `luci-app-splify2`; пусто, если
+  - `ui_version` — установленная версия самого интерфейса (пакет `splify2`; пусто, если
     пакет поставлен мимо менеджера пакетов). Есть и без ядра (`present: 0`). Отдаётся здесь, а не
     только в `splify2_versions`: тот перед ответом идёт в сеть за перечнем выпусков, а установленная
     версия — местное знание, и карточка «Обновление интерфейса» и подпись версии слева её не ждут.
@@ -1863,9 +1863,63 @@ HTTP: `bad_request` — 400, `not_installed` и `no_method` — 404, `disabled`,
 `failed` — 500; тело — `{ "error": "<code>", "message": "<текст>" }`. Ответ самого плагина с `ok: false` без `code` идёт со
 статусом 200 как есть. Долгий метод — с `?async=1`, как любой вызов шлюза.
 
+## Каркас на LuCI JS
+
+Методы, которые зовёт каркас `view/splify2/core` (классический LuCI JS, интерфейс на английском; открывается
+главной страницей, когда настройка `interface` велит, и всегда по `?basic=1`). Сообщения этих методов — по-английски:
+их показывает английский интерфейс.
+
+### `spec_schema` (read)
+
+Схема всех ключей спеки: `steer spec-schema --json`, то есть тот же источник, что у разбора ядра, плюс виды плагинов.
+Формат — подмножество JSON Schema из `plugin-sdk/schema/kind-keys.schema.json` с расширениями `x-path`, `x-secret`,
+`x-ref` (элемент спеки или `devices`), `x-when` (условие видимости по соседнему ключу), `x-map` (записи с именами
+человека), `x-kinds` (ключи вида записи: `tunnel`, `tunnel:vless`).
+
+- **Вход:** нет.
+- **Выход:** `{ "ok": true, "source": "core"|"bundled", "schema": { … } }`. Ядро без команды `spec-schema` (до 2.1) —
+  схема из пакета (`/usr/share/splify2/spec-schema.json`, фикстура) и `source: "bundled"`: формы тогда следуют
+  пакету, а не ядру, и каркас пишет об этом на экране «Overview».
+
+### `spec_check` (read)
+
+Проверка спеки ядром (`steer check`) без записи. Временный файл лежит рядом со спекой: относительные пути в ней
+считаются от каталога файла спеки.
+
+- **Вход:** `{ "spec": "<JSON спеки текстом>" }`.
+- **Выход:** `{ "ok": true[, "warn": "…"] }` или `{ "ok": false, "error": "слова ядра" }`.
+
+### `prefs_get` (read) и `prefs_set` (write)
+
+Настройки каркаса. `interface` — что открывается главной страницей: `andromeda`, `basic` или id плагина-интерфейса
+(`uci splify2.main.interface`). Пока человек не выбирал, это `andromeda`, если в пакете есть её сборка
+(`www/luci-static/resources/splify2/build-id.txt`), иначе `basic`.
+
+- `prefs_get` — вход: нет; выход: `{ "ok": true, "interface": "andromeda", "interface_set": false, "andromeda": true,
+  "lang": "auto" }` (`lang` — язык LuCI, `auto` — язык браузера).
+- `prefs_set` — вход: `{ "interface": "basic" }` (строчные буквы, цифры, дефис); выход: `{ "ok": true, "interface": "basic" }`.
+
+### `i18n_get` (read)
+
+Словари каркаса для языка: каждый включённый плагин может нести `i18n/core/<язык>.json` (плоский «английский текст
+→ перевод», подстановки `{имя}`, множественное число объектом форм `one`/`few`/`many`/`other` под ключом формы `other`).
+
+- **Вход:** `{ "lang": "ru" }` или `pt-BR`. **Выход:** `{ "ok": true, "lang": "ru", "dicts": [ { "plugin": "lang-ru", "dict": { … } } ] }`;
+  пустой массив — словарей нет, каркас остаётся английским. Каркас пробует `pt-BR`, затем `pt`.
+
+### `plugin_settings_get` (read) и `plugin_settings_set` (write)
+
+Настройки плагина по его обязательной схеме. Манифест: `"splify2": { "settings": { "schema": "<файл в каталоге плагина>" } }`
+(подмножество JSON Schema, как у ключей вида); значения лежат в `conf/<id>/settings.json` — файле, который читает сам плагин.
+
+- `plugin_settings_get` — вход: `{ "id": "vless" }`; выход: `{ "ok": true, "id", "schema": { … }, "values": { … } }`;
+  без схемы — `{ "ok": false, "code": "no_settings" }`; плагина нет — `not_installed`.
+- `plugin_settings_set` — вход: `{ "id", "values": { … } }` (объект до 256 КБ; в сигнатуре rpcd его нет, как у `params`
+  в `plugin_call`); выход: `{ "ok": true, "id" }`. Файл заменяется атомарно; проверка значений — дело формы и плагина.
+
 ## Перечень методов
 
-Все 86 объявленных методов (из блока `list)` скрипта rpcd). Группа ACL в скобках.
+Все 93 объявленных метода (из блока `list)` скрипта rpcd). Группа ACL в скобках.
 
 | Метод | ACL | Вход на stdin |
 |---|---|---|
@@ -1953,6 +2007,13 @@ HTTP: `bad_request` — 400, `not_installed` и `no_method` — 404, `disabled`,
 | `repo_add` | write | `{url, key, key_id?}` |
 | `repo_del` | write | `{name}` |
 | `plugin_call` | write | `{id, method, params?}` |
+| `spec_schema` | read | — |
+| `spec_check` | read | `{spec}` |
+| `prefs_get` | read | — |
+| `prefs_set` | write | `{interface}` |
+| `i18n_get` | read | `{lang}` |
+| `plugin_settings_get` | read | `{id}` |
+| `plugin_settings_set` | write | `{id, values}` |
 | `recheck_info` | read | — |
 | `recheck_set` | write | `{enabled, interface, persist, watch_active, resources, epoch_bump, forget}` — любые из полей |
 

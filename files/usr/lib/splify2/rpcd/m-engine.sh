@@ -329,7 +329,7 @@ pkg_install() {  # ФАЙЛЫ [ИМЯ_ДЛЯ_СНЯТИЯ...]
     # Узости одного слова, однако, мало. Смысл ветки — замена пакета, который менеджер
     # называет мешающим по имени: снятие названного и есть разрешение конфликта. Конфликт МЕЖДУ ЧУЖИМИ пакетами
     # (26.9 требует ip-full, на роутере стоит ip-tiny) выглядит в выводе точно так же —
-    # а снятие по нему сняло бы работающий luci-app-splify2 и оставило человека без
+    # а снятие по нему сняло бы работающий splify2 и оставило человека без
     # интерфейса, потому что повторная попытка упадёт по той же самой причине. Поэтому
     # смотрим не на весь вывод, а на строки, где сказано про конфликт, и снимаем только
     # те имена, которые в них названы. Имя устанавливаемого пакета в выводе есть всегда
@@ -495,11 +495,12 @@ case "$2" in
         # Ядро ведёт steer-box-connector (podkop, forkop) — см. box_busy в common.sh.
         busy=""
         box_busy && busy="$BOX_BY"
-        # Версия САМОГО интерфейса (пакет luci-app-splify2) — здесь, а не только в
+        # Версия САМОГО интерфейса (пакет splify2, прежде luci-app-splify2) — здесь, а не только в
         # splify2_versions: тот перед ответом идёт в сеть за перечнем выпусков, и там, где сети
         # нет, «Сейчас» в карточке интерфейса и подпись рельса ждали её десятки секунд (снято с
         # QEMU-стенда без DNS: 26 с на вызов). Установленный пакет — местное знание.
-        ui_ver="$(pkg_version luci-app-splify2)"
+        ui_ver="$(pkg_version splify2)"
+        [ -n "$ui_ver" ] || ui_ver="$(pkg_version luci-app-splify2)"
         if [ ! -x "$STEER" ]; then
             json_init
             json_add_boolean present 0
@@ -546,7 +547,7 @@ case "$2" in
         # Без plan — запуск.
         #
         # ЗАПУСК ОТСОЕДИНЁННЫЙ, и это главное. Метод исполняется внутри rpcd, а снимаемый пакет
-        # (luci-app-splify2) — это сам этот скрипт и страница; к тому же снятие занимает
+        # (splify2) — это сам этот скрипт и страница; к тому же снятие занимает
         # секунды, а rpcd убивает вызов по сроку. Поэтому задание пишется в файл и запускается
         # в своём сеансе (setsid) с закрытыми дескрипторами, а метод отвечает сразу. Тот же
         # приём, что у перезапуска rpcd в splify2_install: пауза, чтобы ответ успел дойти до
@@ -602,10 +603,10 @@ EOF
             printf 'sleep %s\n' "$PURGE_DELAY"
             printf '"%s" --yes %s\n' "$PURGE_BIN" "$pg_flag"
             # Модули и расширения — раньше основного пакета: в таком порядке менеджер не
-            # откажет из-за зависимостей. luci-app-splify2 и steer — последними.
+            # откажет из-за зависимостей. splify2 и steer — последними.
             pg_first=""; pg_last=""
             for pg_n in $pg_pkgs; do
-                case "$pg_n" in luci-app-splify2|steer) pg_last="$pg_last $pg_n" ;; *) pg_first="$pg_first $pg_n" ;; esac
+                case "$pg_n" in splify2|luci-app-splify2|steer) pg_last="$pg_last $pg_n" ;; *) pg_first="$pg_first $pg_n" ;; esac
             done
             for pg_n in $pg_first $pg_last; do
                 printf '%s\n' "$(pkg_del_cmd "$pg_n")"
@@ -696,7 +697,9 @@ EOF
         # заметная: обновлять умели то, что реже меняется.
         gh_load splify2/splify2
         json_init
-        json_add_string current "$(pkg_version luci-app-splify2)"
+        _sv_cur="$(pkg_version splify2)"
+        [ -n "$_sv_cur" ] || _sv_cur="$(pkg_version luci-app-splify2)"
+        json_add_string current "$_sv_cur"
         gh_add_releases
         json_dump
         ;;
@@ -713,19 +716,25 @@ EOF
         case "$ver" in
             ''|*[!0-9.]*) json_add_boolean ok 0; json_add_string error "в версии допустимы только цифры и точки"; json_dump; exit 0 ;;
         esac
-        name="luci-app-splify2-${ver}-1_$(pkg_noarch)"
-        url="https://github.com/splify2/splify2/releases/download/v${ver}/${name}"
-        tmp="/tmp/${name}"
-        rm -f "$tmp"
-        # Сначала адреса и sha256 из перечня выпусков (rel_asset), затем прежняя лестница
-        # download() по этой же ссылке, а не свой wget: ссылка перенаправляет на
-        # release-assets.githubusercontent.com, и там, где этот хост закрыт, обновление из
-        # интерфейса не работало вовсе (splify2#15).
-        rel_asset splify2 "$ver" "$name"
-        if ! download_rel "$tmp" "$REL_SUM" "$url" $REL_URLS; then
+        # Пакет называется splify2 (до переименования — luci-app-splify2): выпуски до переименования
+        # лежат под прежним именем файла, поэтому при отказе спрашивается и оно.
+        for _si_pkg in splify2 luci-app-splify2; do
+            name="${_si_pkg}-${ver}-1_$(pkg_noarch)"
+            url="https://github.com/splify2/splify2/releases/download/v${ver}/${name}"
+            tmp="/tmp/${name}"
             rm -f "$tmp"
+            # Сначала адреса и sha256 из перечня выпусков (rel_asset), затем прежняя лестница
+            # download() по этой же ссылке, а не свой wget: ссылка перенаправляет на
+            # release-assets.githubusercontent.com, и там, где этот хост закрыт, обновление из
+            # интерфейса не работало вовсе (splify2#15).
+            rel_asset splify2 "$ver" "$name"
+            download_rel "$tmp" "$REL_SUM" "$url" $REL_URLS && break
+            rm -f "$tmp"
+            tmp=""
+        done
+        if [ -z "$tmp" ]; then
             json_add_boolean ok 0
-            json_add_string error "не скачалось: $name (нет такой версии?)${FETCH_NOTE:+ — $FETCH_NOTE}"
+            json_add_string error "не скачалось: splify2-${ver}-1_$(pkg_noarch) (нет такой версии?)${FETCH_NOTE:+ — $FETCH_NOTE}"
             json_dump; exit 0
         fi
         [ -n "$FETCH_NOTE" ] && json_add_string via "$FETCH_NOTE"
@@ -924,6 +933,64 @@ EOF
         else
             fail "$(plugin_manager_error)"
         fi
+        ;;
+
+    prefs_get)
+        # Settings of the frame: which interface opens as the main page (`interface`: andromeda, basic or
+        # the id of an interface plugin), the language of the frame (LuCI language, "auto" - the browser's).
+        # Without a saved choice the interface is Andromeda while its bundle is in the package, else basic.
+        _pg_if="$(uci -q get splify2.main.interface 2>/dev/null)"
+        _pg_has=0; [ -s "${ANDROMEDA_MARK:-/www/luci-static/resources/splify2/build-id.txt}" ] && _pg_has=1
+        _pg_set=1
+        if [ -z "$_pg_if" ]; then
+            _pg_set=0
+            if [ "$_pg_has" = 1 ]; then _pg_if=andromeda; else _pg_if=basic; fi
+        fi
+        _pg_lang="$(uci -q get luci.main.lang 2>/dev/null)"
+        json_init
+        json_add_boolean ok 1
+        json_add_string interface "$_pg_if"
+        json_add_boolean interface_set "$_pg_set"
+        json_add_boolean andromeda "$_pg_has"
+        json_add_string lang "${_pg_lang:-auto}"
+        json_dump
+        ;;
+
+    prefs_set)
+        read -r input
+        json_load "$input" 2>/dev/null || fail "unparsable request"
+        json_get_var _ps_if interface
+        case "$_ps_if" in
+            ''|*[!a-z0-9-]*) fail "interface: a lowercase id is expected (basic, andromeda or an interface plugin)" ;;
+        esac
+        uci_file || fail "cannot create $UCI_SPLIFY2 - disk full?"
+        uci -q set splify2.main.interface="$_ps_if" || fail "cannot save the setting"
+        uci_commit
+        json_init; json_add_boolean ok 1; json_add_string interface "$_ps_if"; json_dump
+        ;;
+
+    i18n_get)
+        # Dictionaries of the frame for a language: every enabled plugin may carry i18n/core/<lang>.json
+        # (flat "English text" -> translation, {name} substitutions, plural forms as an object). They are
+        # returned as an array in plugin order; a later one overrides an earlier one in the browser.
+        read -r input
+        json_load "$input" 2>/dev/null || fail "unparsable request"
+        json_get_var _il lang
+        case "$_il" in
+            [a-z][a-z]|[a-z][a-z][a-z]|[a-z][a-z]-[A-Za-z0-9]*|[a-z][a-z][a-z]-[A-Za-z0-9]*) ;;
+            *) fail "lang: a language code such as en or pt-BR is expected" ;;
+        esac
+        case "$_il" in *[!A-Za-z0-9-]*) fail "lang: a language code such as en or pt-BR is expected" ;; esac
+        _il_out=""
+        for _il_d in "${PLUGIN_ROOT:-/usr/lib/steer/plugins}"/*/i18n/core/"$_il".json; do
+            [ -r "$_il_d" ] || continue
+            _il_id="${_il_d%/i18n/core/*}"; _il_id="${_il_id##*/}"
+            [ "$(plugin_state_of "$_il_id")" = enabled ] || continue
+            _il_t="$(cat "$_il_d")"
+            [ -n "$(jsonfilter -s "$_il_t" -e '@' 2>/dev/null)" ] || continue
+            _il_out="${_il_out:+$_il_out,}{\"plugin\":\"$_il_id\",\"dict\":$_il_t}"
+        done
+        printf '{"ok":true,"lang":"%s","dicts":[%s]}\n' "$_il" "$_il_out"
         ;;
 
     ui_get|ui_set)

@@ -1,0 +1,1050 @@
+{
+ "type": "object",
+ "properties": {
+  "version": {
+   "type": "integer",
+   "const": 2,
+   "title": "Version"
+  },
+  "lan": {
+   "type": "object",
+   "properties": {
+    "devices": {
+     "type": "array",
+     "items": {
+      "type": "string",
+      "x-ref": "devices"
+     },
+     "minItems": 1,
+     "default": [
+      "br-lan"
+     ],
+     "title": "Devices"
+    },
+    "addr": {
+     "type": "array",
+     "items": {
+      "type": "string"
+     },
+     "title": "Client addresses"
+    }
+   },
+   "additionalProperties": false,
+   "title": "LAN"
+  },
+  "clients": {
+   "type": "object",
+   "x-map": {
+    "type": "object",
+    "properties": {
+     "addr": {
+      "type": "array",
+      "items": {
+       "type": "string"
+      },
+      "title": "Addresses"
+     },
+     "mac": {
+      "type": "array",
+      "items": {
+       "type": "string",
+       "pattern": "^([0-9A-Fa-f]{2}:){5}[0-9A-Fa-f]{2}$"
+      },
+      "title": "MAC addresses"
+     },
+     "uid": {
+      "type": "array",
+      "items": {
+       "type": "string"
+      },
+      "title": "App UIDs (phone)"
+     },
+     "self": {
+      "type": "boolean",
+      "title": "This device (phone)"
+     },
+     "app": {
+      "type": "array",
+      "items": {
+       "type": "string"
+      },
+      "title": "Apps (not supported yet)"
+     }
+    },
+    "additionalProperties": false
+   },
+   "x-name-pattern": "^[A-Za-z0-9_.-]{1,31}$",
+   "title": "Clients"
+  },
+  "lists": {
+   "type": "object",
+   "x-map": {
+    "type": "object",
+    "properties": {
+     "srs": {
+      "type": "array",
+      "items": {
+       "type": "string"
+      },
+      "title": "sing-box sets (.srs)",
+      "x-path": "etc"
+     },
+     "prefixes_file": {
+      "type": "array",
+      "items": {
+       "type": "string"
+      },
+      "title": "Address files",
+      "x-path": "etc"
+     },
+     "domains_file": {
+      "type": "array",
+      "items": {
+       "type": "string"
+      },
+      "title": "Domain files",
+      "x-path": "etc"
+     },
+     "proto": {
+      "type": "string",
+      "enum": [
+       "tcp",
+       "udp",
+       "both"
+      ],
+      "title": "Protocol"
+     },
+     "ports": {
+      "type": "array",
+      "items": {
+       "type": "string",
+       "pattern": "^[0-9]+(-[0-9]+)?$"
+      },
+      "maxItems": 16,
+      "title": "Ports"
+     },
+     "all": {
+      "type": "boolean",
+      "title": "All traffic"
+     },
+     "override_port": {
+      "type": "integer",
+      "title": "Override destination port",
+      "minimum": 1,
+      "maximum": 65535
+     }
+    },
+    "additionalProperties": false
+   },
+   "x-name-pattern": "^[A-Za-z0-9_.-]{1,31}$",
+   "title": "Lists"
+  },
+  "outputs": {
+   "type": "object",
+   "x-map": {
+    "type": "object",
+    "properties": {
+     "kind": {
+      "type": "string",
+      "enum": [
+       "direct",
+       "block",
+       "interface",
+       "tunnel",
+       "xsteer",
+       "awg",
+       "tgws",
+       "group",
+       "warp"
+      ],
+      "title": "Kind"
+     },
+     "on_fail": {
+      "type": "string",
+      "enum": [
+       "drop",
+       "direct"
+      ],
+      "default": "drop",
+      "title": "When down",
+      "x-when": {
+       "kind": [
+        "interface",
+        "tunnel",
+        "xsteer",
+        "awg",
+        "tgws",
+        "group",
+        "warp"
+       ]
+      }
+     },
+     "over": {
+      "type": "string",
+      "x-ref": "outputs",
+      "title": "Connect through",
+      "description": "Output that carries the traffic of this tunnel",
+      "x-when": {
+       "kind": [
+        "tunnel",
+        "xsteer",
+        "awg",
+        "warp"
+       ]
+      }
+     },
+     "ipv6": {
+      "type": "string",
+      "enum": [
+       "routed",
+       "nat",
+       "off"
+      ],
+      "title": "IPv6",
+      "x-when": {
+       "kind": [
+        "interface",
+        "awg",
+        "tunnel",
+        "group",
+        "warp"
+       ]
+      }
+     },
+     "prefix": {
+      "type": "string",
+      "title": "IPv6 prefix",
+      "x-when": {
+       "ipv6": [
+        "routed"
+       ]
+      }
+     }
+    },
+    "additionalProperties": false,
+    "required": [
+     "kind"
+    ],
+    "x-kinds": {
+     "direct": {
+      "type": "object",
+      "properties": {},
+      "additionalProperties": false,
+      "title": "Direct",
+      "description": "Do not route: traffic takes the usual path"
+     },
+     "block": {
+      "type": "object",
+      "properties": {},
+      "additionalProperties": false,
+      "title": "Block",
+      "description": "Traffic of the rule is not let through"
+     },
+     "interface": {
+      "type": "object",
+      "properties": {
+       "device": {
+        "type": "string",
+        "x-ref": "devices",
+        "title": "Device"
+       },
+       "obfs": {
+        "type": "object",
+        "properties": {
+         "mode": {
+          "type": "string",
+          "enum": [
+           "wg-over-tcp"
+          ],
+          "default": "wg-over-tcp",
+          "title": "Mode"
+         },
+         "server": {
+          "type": "string",
+          "title": "Server",
+          "description": "address:port"
+         },
+         "listen": {
+          "type": "string",
+          "title": "Listen",
+          "description": "address:port"
+         }
+        },
+        "additionalProperties": false,
+        "title": "WireGuard over fake TCP"
+       }
+      },
+      "additionalProperties": false,
+      "title": "Interface",
+      "required": [
+       "device"
+      ]
+     },
+     "tunnel": {
+      "type": "object",
+      "properties": {
+       "subscription": {
+        "type": "string",
+        "title": "Subscription file",
+        "x-path": "etc"
+       },
+       "nodes": {
+        "type": "array",
+        "items": {
+         "type": "integer",
+         "minimum": 1
+        },
+        "title": "Node numbers",
+        "uniqueItems": true
+       },
+       "device": {
+        "type": "string",
+        "x-ref": "devices",
+        "title": "Device"
+       },
+       "exclude": {
+        "type": "array",
+        "items": {
+         "type": "string",
+         "pattern": "^[A-Z]{2}$"
+        },
+        "title": "Exclude countries"
+       },
+       "exclude_name": {
+        "type": "array",
+        "items": {
+         "type": "string"
+        },
+        "title": "Exclude node names containing"
+       },
+       "only": {
+        "type": "array",
+        "items": {
+         "type": "string",
+         "pattern": "^[A-Z]{2}$"
+        },
+        "title": "Only countries"
+       },
+       "active": {
+        "type": "integer",
+        "title": "Active nodes",
+        "minimum": 1,
+        "maximum": 65536
+       },
+       "by": {
+        "type": "string",
+        "enum": [
+         "connection",
+         "site",
+         "site_client"
+        ],
+        "title": "Split connections by"
+       },
+       "interval": {
+        "type": "integer",
+        "title": "Check interval, s",
+        "minimum": 5,
+        "maximum": 86400
+       },
+       "silence": {
+        "type": "integer",
+        "title": "Silence threshold, s",
+        "minimum": 0,
+        "maximum": 32767
+       },
+       "pick": {
+        "type": "string",
+        "enum": [
+         "order",
+         "latency"
+        ],
+        "title": "Pick nodes by"
+       },
+       "tolerance": {
+        "type": "integer",
+        "title": "Latency tolerance, ms",
+        "x-when": {
+         "pick": [
+          "latency"
+         ]
+        },
+        "minimum": 0,
+        "maximum": 60000
+       },
+       "protocol": {
+        "type": "string",
+        "enum": [
+         "vless",
+         "hysteria2",
+         "trojan",
+         "shadowsocks",
+         "socks",
+         "http",
+         "vmess"
+        ],
+        "title": "Protocol"
+       }
+      },
+      "additionalProperties": false
+     },
+     "tunnel:vless": {
+      "type": "object",
+      "properties": {
+       "transport": {
+        "type": "array",
+        "items": {
+         "type": "string",
+         "enum": [
+          "tcp",
+          "ws",
+          "grpc",
+          "xhttp",
+          "httpupgrade"
+         ]
+        },
+        "title": "Transport filter",
+        "uniqueItems": true
+       },
+       "insecure": {
+        "type": "boolean",
+        "title": "Do not verify node certificates"
+       }
+      },
+      "additionalProperties": false
+     },
+     "tunnel:hysteria2": {
+      "type": "object",
+      "properties": {},
+      "additionalProperties": false
+     },
+     "tunnel:trojan": {
+      "type": "object",
+      "properties": {
+       "transport": {
+        "type": "array",
+        "items": {
+         "type": "string",
+         "enum": [
+          "tcp",
+          "ws",
+          "grpc",
+          "xhttp",
+          "httpupgrade"
+         ]
+        },
+        "uniqueItems": true,
+        "title": "Transport filter"
+       },
+       "insecure": {
+        "type": "boolean",
+        "title": "Do not verify node certificates"
+       }
+      },
+      "additionalProperties": false
+     },
+     "tunnel:vmess": {
+      "type": "object",
+      "properties": {
+       "transport": {
+        "type": "array",
+        "items": {
+         "type": "string",
+         "enum": [
+          "tcp",
+          "ws",
+          "grpc",
+          "xhttp",
+          "httpupgrade"
+         ]
+        },
+        "uniqueItems": true,
+        "title": "Transport filter"
+       },
+       "insecure": {
+        "type": "boolean",
+        "title": "Do not verify node certificates"
+       }
+      },
+      "additionalProperties": false
+     },
+     "tunnel:http": {
+      "type": "object",
+      "properties": {
+       "insecure": {
+        "type": "boolean",
+        "title": "Do not verify node certificates"
+       }
+      },
+      "additionalProperties": false
+     },
+     "tunnel:shadowsocks": {
+      "type": "object",
+      "properties": {},
+      "additionalProperties": false
+     },
+     "tunnel:socks": {
+      "type": "object",
+      "properties": {},
+      "additionalProperties": false
+     },
+     "xsteer": {
+      "type": "object",
+      "properties": {
+       "conf": {
+        "type": "string",
+        "title": "Config file",
+        "x-path": "etc"
+       },
+       "stream": {
+        "type": "boolean",
+        "title": "Stream mode"
+       },
+       "stream_port": {
+        "type": "integer",
+        "title": "Stream port",
+        "minimum": 1,
+        "maximum": 65535
+       },
+       "device": {
+        "type": "string",
+        "x-ref": "devices",
+        "title": "Device"
+       }
+      },
+      "additionalProperties": false,
+      "title": "xsteer"
+     },
+     "awg": {
+      "type": "object",
+      "properties": {
+       "conf": {
+        "type": "string",
+        "title": "Config file",
+        "x-path": "etc"
+       },
+       "device": {
+        "type": "string",
+        "x-ref": "devices",
+        "title": "Device"
+       }
+      },
+      "additionalProperties": false,
+      "title": "AmneziaWG"
+     },
+     "tgws": {
+      "type": "object",
+      "properties": {
+       "domain": {
+        "type": "string",
+        "minLength": 1,
+        "title": "Domain"
+       }
+      },
+      "additionalProperties": false,
+      "required": [
+       "domain"
+      ],
+      "title": "Telegram bridge"
+     },
+     "group": {
+      "type": "object",
+      "properties": {
+       "members": {
+        "type": "array",
+        "items": {
+         "type": "string",
+         "x-ref": "outputs"
+        },
+        "minItems": 1,
+        "title": "Members"
+       },
+       "pick": {
+        "type": "string",
+        "enum": [
+         "order",
+         "latency",
+         "manual",
+         "balance"
+        ],
+        "default": "order",
+        "title": "Pick"
+       },
+       "tolerance": {
+        "type": "integer",
+        "title": "Latency tolerance, ms",
+        "x-when": {
+         "pick": [
+          "latency"
+         ]
+        },
+        "minimum": 0,
+        "maximum": 60000
+       },
+       "interval": {
+        "type": "integer",
+        "title": "Measure interval, s",
+        "x-when": {
+         "pick": [
+          "latency"
+         ]
+        },
+        "minimum": 5,
+        "maximum": 86400
+       },
+       "url": {
+        "type": "string",
+        "pattern": "^https?://",
+        "title": "Probe URL",
+        "x-when": {
+         "pick": [
+          "latency"
+         ]
+        }
+       },
+       "idle_timeout": {
+        "type": "integer",
+        "title": "Idle timeout, s",
+        "x-when": {
+         "pick": [
+          "latency"
+         ]
+        },
+        "minimum": 0,
+        "maximum": 86400
+       },
+       "only": {
+        "type": "array",
+        "items": {
+         "type": "string",
+         "pattern": "^[A-Z]{2}$"
+        },
+        "title": "Only countries",
+        "x-when": {
+         "pick": [
+          "latency",
+          "order"
+         ]
+        }
+       },
+       "exclude": {
+        "type": "array",
+        "items": {
+         "type": "string",
+         "pattern": "^[A-Z]{2}$"
+        },
+        "title": "Exclude countries",
+        "x-when": {
+         "pick": [
+          "latency",
+          "order"
+         ]
+        }
+       },
+       "default": {
+        "type": "string",
+        "x-ref": "outputs",
+        "title": "Default member",
+        "x-when": {
+         "pick": [
+          "manual"
+         ]
+        }
+       },
+       "weights": {
+        "type": "array",
+        "items": {
+         "type": "integer",
+         "minimum": 1,
+         "maximum": 100
+        },
+        "title": "Weights",
+        "x-when": {
+         "pick": [
+          "balance"
+         ]
+        }
+       },
+       "by": {
+        "type": "string",
+        "enum": [
+         "connection",
+         "site",
+         "site_client"
+        ],
+        "title": "Split connections by",
+        "x-when": {
+         "pick": [
+          "balance"
+         ]
+        }
+       }
+      },
+      "additionalProperties": false,
+      "title": "Group",
+      "required": [
+       "members"
+      ]
+     },
+     "warp": {
+      "type": "object",
+      "properties": {
+       "count": {
+        "type": "integer",
+        "title": "Tunnels",
+        "minimum": 1
+       },
+       "transport": {
+        "type": "string",
+        "enum": [
+         "masque",
+         "wireguard"
+        ],
+        "title": "Transport"
+       },
+       "countries": {
+        "type": "array",
+        "items": {
+         "type": "string",
+         "pattern": "^[A-Z]{2}$"
+        },
+        "title": "Countries"
+       },
+       "exclude_countries": {
+        "type": "array",
+        "items": {
+         "type": "string",
+         "pattern": "^[A-Z]{2}$"
+        },
+        "title": "Exclude countries"
+       },
+       "pick": {
+        "type": "string",
+        "enum": [
+         "order",
+         "latency"
+        ],
+        "title": "Pick"
+       },
+       "tolerance": {
+        "type": "integer",
+        "title": "Latency tolerance, ms",
+        "minimum": 0,
+        "maximum": 60000
+       },
+       "interval": {
+        "type": "integer",
+        "title": "Measure interval, s",
+        "minimum": 5,
+        "maximum": 86400
+       },
+       "url": {
+        "type": "string",
+        "pattern": "^https?://",
+        "title": "Probe URL"
+       },
+       "idle_timeout": {
+        "type": "integer",
+        "title": "Idle timeout, s",
+        "minimum": 0,
+        "maximum": 86400
+       }
+      },
+      "additionalProperties": false,
+      "title": "Cloudflare WARP"
+     }
+    }
+   },
+   "x-name-pattern": "^[A-Za-z0-9_.-]{1,31}$",
+   "title": "Outputs"
+  },
+  "dns": {
+   "type": "object",
+   "properties": {
+    "mode": {
+     "type": "string",
+     "enum": [
+      "fakeip",
+      "realip"
+     ],
+     "default": "fakeip",
+     "title": "Mode"
+    },
+    "traceroute_hops": {
+     "type": "boolean",
+     "default": false,
+     "title": "Traceroute sees real hops"
+    },
+    "mesh_clients": {
+     "type": "boolean",
+     "default": false,
+     "title": "Mesh VPN clients"
+    },
+    "cache": {
+     "type": "integer",
+     "default": 0,
+     "title": "Cache entries",
+     "minimum": 0,
+     "maximum": 100000
+    },
+    "cache_ttl": {
+     "type": "object",
+     "properties": {
+      "min": {
+       "type": "integer",
+       "title": "Minimum, s",
+       "minimum": 0,
+       "maximum": 86400
+      },
+      "max": {
+       "type": "integer",
+       "title": "Maximum, s",
+       "minimum": 1,
+       "maximum": 604800
+      },
+      "negative": {
+       "type": "integer",
+       "title": "Negative, s",
+       "minimum": 0,
+       "maximum": 86400
+      }
+     },
+     "additionalProperties": false,
+     "title": "Cache TTL"
+    },
+    "upstreams": {
+     "type": "object",
+     "x-map": {
+      "type": "object",
+      "properties": {
+       "url": {
+        "type": "string",
+        "title": "URL",
+        "description": "https://, tls://, quic://, h3://, udp:// or tcp://"
+       },
+       "out": {
+        "type": "string",
+        "x-ref": "outputs",
+        "title": "Output"
+       },
+       "ips": {
+        "type": "array",
+        "items": {
+         "type": "string"
+        },
+        "title": "Server addresses"
+       },
+       "bootstrap": {
+        "type": "array",
+        "items": {
+         "type": "string"
+        },
+        "title": "Bootstrap addresses"
+       },
+       "fragment": {
+        "type": "boolean",
+        "title": "Fragment the first packet"
+       },
+       "servers": {
+        "type": "array",
+        "items": {
+         "type": "string",
+         "x-ref": "dns.upstreams"
+        },
+        "title": "Servers (a group)"
+       },
+       "mode": {
+        "type": "string",
+        "enum": [
+         "order",
+         "latency",
+         "random",
+         "all"
+        ],
+        "title": "Group mode"
+       }
+      },
+      "additionalProperties": false
+     },
+     "x-name-pattern": "^[A-Za-z0-9_.-]{1,31}$",
+     "title": "Upstreams"
+    },
+    "upstream": {
+     "type": "string",
+     "x-ref": "dns.upstreams",
+     "title": "Default upstream"
+    },
+    "other": {
+     "type": "string",
+     "x-ref": "dns.upstreams",
+     "title": "Upstream for other names"
+    },
+    "bootstrap": {
+     "type": "array",
+     "items": {
+      "type": "string"
+     },
+     "title": "Bootstrap addresses"
+    }
+   },
+   "additionalProperties": false,
+   "title": "DNS"
+  },
+  "rules": {
+   "type": "array",
+   "items": {
+    "type": "object",
+    "properties": {
+     "name": {
+      "type": "string",
+      "maxLength": 31,
+      "title": "Name"
+     },
+     "for": {
+      "type": "array",
+      "items": {
+       "type": "string",
+       "x-ref": "clients"
+      },
+      "title": "Clients",
+      "description": "Empty: default clients (lan)"
+     },
+     "to": {
+      "type": "array",
+      "items": {
+       "type": "string",
+       "x-ref": "lists"
+      },
+      "title": "Destinations",
+      "description": "Lists; all - all traffic"
+     },
+     "out": {
+      "type": "string",
+      "x-ref": "outputs",
+      "title": "Output"
+     },
+     "resolve": {
+      "type": "string",
+      "enum": [
+       "fakeip",
+       "realip"
+      ],
+      "title": "Resolve"
+     },
+     "dns": {
+      "type": [
+       "string",
+       "object"
+      ],
+      "properties": {
+       "url": {
+        "type": "string",
+        "title": "URL",
+        "description": "https://, tls://, quic://, h3://, udp:// or tcp://"
+       },
+       "out": {
+        "type": "string",
+        "x-ref": "outputs",
+        "title": "Output"
+       },
+       "ips": {
+        "type": "array",
+        "items": {
+         "type": "string"
+        },
+        "title": "Server addresses"
+       },
+       "bootstrap": {
+        "type": "array",
+        "items": {
+         "type": "string"
+        },
+        "title": "Bootstrap addresses"
+       },
+       "fragment": {
+        "type": "boolean",
+        "title": "Fragment the first packet"
+       },
+       "servers": {
+        "type": "array",
+        "items": {
+         "type": "string",
+         "x-ref": "dns.upstreams"
+        },
+        "title": "Servers (a group)"
+       },
+       "mode": {
+        "type": "string",
+        "enum": [
+         "order",
+         "latency",
+         "random",
+         "all"
+        ],
+        "title": "Group mode"
+       }
+      },
+      "additionalProperties": false,
+      "title": "DNS upstream",
+      "x-ref": "dns.upstreams"
+     },
+     "enabled": {
+      "type": "boolean",
+      "default": true,
+      "title": "Enabled"
+     },
+     "scope": {
+      "type": "string",
+      "enum": [
+       "global",
+       "device"
+      ],
+      "default": "global",
+      "title": "Scope"
+     },
+     "quic": {
+      "type": "string",
+      "enum": [
+       "allow",
+       "block"
+      ],
+      "default": "allow",
+      "title": "QUIC"
+     },
+     "family": {
+      "type": "string",
+      "enum": [
+       "both",
+       "4",
+       "6"
+      ],
+      "default": "both",
+      "title": "IP family"
+     },
+     "on_family_unavailable": {
+      "type": "string",
+      "enum": [
+       "fallback",
+       "block"
+      ],
+      "default": "fallback",
+      "title": "When IPv6 is unavailable",
+      "x-when": {
+       "family": [
+        "6"
+       ]
+      }
+     }
+    },
+    "additionalProperties": false,
+    "required": [
+     "out"
+    ]
+   },
+   "title": "Rules"
+  }
+ },
+ "additionalProperties": false,
+ "title": "steer spec v2",
+ "$schema": "https://json-schema.org/draft/2020-12/schema",
+ "description": "Bundled fixture of `steer spec-schema --json` (subset of JSON Schema + x-path, x-secret, x-ref, x-when, x-map, x-kinds). Used only while the core has no such command."
+}

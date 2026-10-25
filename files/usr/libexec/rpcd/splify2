@@ -697,6 +697,16 @@ list)
     json_add_object repo_add; json_add_string url; json_add_string key; json_add_string key_id; json_close_object
     json_add_object repo_del; json_add_string name; json_close_object
     json_add_object plugin_call; json_add_string id; json_add_string method; json_close_object
+    # Каркас на классическом LuCI JS (view/splify2/core): схема ключей спеки из ядра, проверка спеки без записи,
+    # настройки каркаса, словари языка от плагинов, настройки плагина по его схеме. values у
+    # plugin_settings_set — объект: в сигнатуре его нет (как params у plugin_call).
+    json_add_object spec_schema; json_close_object
+    json_add_object spec_check; json_add_string spec; json_close_object
+    json_add_object prefs_get; json_close_object
+    json_add_object prefs_set; json_add_string interface; json_close_object
+    json_add_object i18n_get; json_add_string lang; json_close_object
+    json_add_object plugin_settings_get; json_add_string id; json_close_object
+    json_add_object plugin_settings_set; json_add_string id; json_close_object
     json_dump
     ;;
 call)
@@ -704,18 +714,18 @@ call)
     # /usr/lib/splify2/rpcd. Метод, которого нет ни в одной группе, — отказ здесь же, до
     # чтения чего бы то ни было.
     case "$2" in
-        status|diag|dev_stats|net_info|devices|client_nets|leases|engine_state|outbound_geo|outbound_probe|explain|xsteer_state|vless_nodes|vless_probe|hysteria2_nodes|hysteria2_probe|proxy_nodes|proxy_probe|dns_log|dns_probe|conns|helper|support_report) _grp=state ;;
-        spec_set|apply|spec_heal) _grp=spec ;;
+        status|diag|dev_stats|net_info|devices|client_nets|leases|engine_state|outbound_geo|outbound_probe|explain|xsteer_state|vless_nodes|vless_probe|hysteria2_nodes|hysteria2_probe|proxy_nodes|proxy_probe|dns_log|dns_probe|conns|helper|support_report|spec_schema) _grp=state ;;
+        spec_set|spec_check|apply|spec_heal) _grp=spec ;;
         lists|list_fetch|lists_update|list_put|list_remove|list_custom|list_get|list_peek|list_srs_put|local_lists|allow_domains|fetch_mode|fetch_mode_set|\
         lists_source|lists_source_set) _grp=lists ;;
         engine|engine_stop|engine_start|steer_versions|splify2_versions|splify2_install|steer_install|ui_get|ui_set|\
-        steer_modules|steer_module_add|steer_module_del|purge) _grp=engine ;;
+        steer_modules|steer_module_add|steer_module_del|purge|prefs_get|prefs_set|i18n_get) _grp=engine ;;
         sub_set|sub_info|sub_quota|sub_list|sub_del|sub_auto|sub_refresh|sub_rename) _grp=sub ;;
         backup_get|backup_put) _grp=backup ;;
         xsteer_link|xsteer_link_put) _grp=xsteer ;;
         recheck_info|recheck_set) _grp=recheck ;;
         plugins_list|plugins_search|repos_list|plugin_status|plugin_job|plugin_install|plugin_update|plugin_remove|\
-        plugin_enable|plugin_disable|plugin_autoupdate|repo_key|repo_add|repo_del|plugin_call) _grp=plugin ;;
+        plugin_enable|plugin_disable|plugin_autoupdate|repo_key|repo_add|repo_del|plugin_call|plugin_settings_get|plugin_settings_set) _grp=plugin ;;
         *) fail "неизвестный метод" ;;
     esac
     # ЗАМОК НА МЕТОДЫ, КОТОРЫЕ ЧИТАЮТ, МЕНЯЮТ И ЗАМЕНЯЮТ ОБЩИЙ ФАЙЛ. Каждый вызов rpcd — свой

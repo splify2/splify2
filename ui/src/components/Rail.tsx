@@ -1,4 +1,4 @@
-import { Bug, Heart, House, Send } from 'lucide-react'
+import { Bug, Heart, House, LayoutList, Send } from 'lucide-react'
 import EngineToggle from '@/components/EngineToggle'
 import { type Live } from '@/lib/live'
 import { assetUrl } from '@/lib/assets'
@@ -128,6 +128,18 @@ export default function Rail({ live, section, onSection, counts, extra, hide }: 
                 {/* Ссылки наружу — только в широком рельсе; в нижней панели им нет места. */}
                 <div className="mt-auto flex flex-col gap-4">
                     <div className="flex flex-col gap-0.5">
+                        {/* Базовый вид (каркас на LuCI) — всегда, в той же вкладке: безопасный режим на случай, если эта панель не открылась. */}
+                        <a
+                            href={`${window.location.pathname}?basic=1`}
+                            className={[
+                                'flex items-center gap-2.5 rounded-lg px-3 py-2.5 text-sm transition-colors duration-200',
+                                'focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary',
+                                'text-subtle hover:bg-accent hover:text-foreground',
+                            ].join(' ')}
+                        >
+                            <LayoutList className="h-[18px] w-[18px] shrink-0" aria-hidden="true" />
+                            {S.rail.bazovyy}
+                        </a>
                         {LINKS.map(({ href, label, icon: Icon }) => (
                             <a
                                 key={href}

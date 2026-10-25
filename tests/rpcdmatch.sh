@@ -468,6 +468,11 @@ PersistentKeepalive = 25}" ;;
         esac
         exit "${XS_LINK_RC:-0}"
         ;;
+    # Схема ключей спеки: ядро 2.1 печатает её само; STEER_SCHEMA — файл с ответом, без него команды «нет».
+    spec-schema)
+        [ -n "${STEER_SCHEMA:-}" ] && { cat "$STEER_SCHEMA"; exit 0; }
+        exit 2
+        ;;
     # Команды демона (`steer ctl check`): ответ — одна строка JSON, как у настоящего сокета.
     ctl)
         cat > /dev/null
@@ -733,6 +738,7 @@ rpcd_run() {  # МЕТОД [JSON_ЗАПРОСА]  — вызов метода; �
         SYSNET_STATS="${SYSNET_STATS_FIXTURE:-$T/statnet}" \
         CONNTRACK="${CONNTRACK_FIXTURE:-$T/nf_conntrack}" \
         STEER="$T/bin/steer" \
+        SCHEMA_FIXTURE="$ROOT/files/usr/share/splify2/spec-schema.json" ANDROMEDA_MARK="$T/andromeda-build-id" \
         SPEC="$T/etc/spec.json" SPEC_VIEW="$T/spec.view.json" \
         LISTS="$T/lists" \
         SUB="$T/etc/sub.txt" \
@@ -1250,8 +1256,8 @@ out="$(rpcd splify2_install '{"version":"0.7.7"}')"
 # Журнал теперь curl.log, а не wget.log: пакеты качаются общей download() (splify2#15),
 # у которой есть обход закрытого githubusercontent — своим wget этот метод больше не ходит.
 check "качается noarch-пакет интерфейса (R-042)" \
-      "https://github.com/splify2/splify2/releases/download/v0.7.7/luci-app-splify2-0.7.7-1_noarch.apk" \
-      "$(grep 'luci-app-splify2' "$T/curl.log" | head -1)"
+      "https://github.com/splify2/splify2/releases/download/v0.7.7/splify2-0.7.7-1_noarch.apk" \
+      "$(grep "splify2-[0-9]" "$T/curl.log" | head -1)"
 check "установка интерфейса идёт тем же порядком: add первым (R-042)" \
       "add" "$(awk 'NR==1{print $1}' "$T/apk.log")"
 # Перезапуск отложен на две секунды и идёт в фоне, а ответ метода уходит сразу: подоболочка не держит
@@ -1331,8 +1337,8 @@ doc = {"schema": 1, "updated": "2026-10-02T10:17:36Z", "products": {
                          v("steer", "1.5.8-rc1", "splify2/steer", [f"steer-1.5.8-rc1-1_{A}.apk"]),
                          v("steer", "1.5.7", "splify2/steer", [f"steer-extended-1.5.7-1_{A}.apk"], name="1.5.7 Vega")]},
   "splify2": {"title": "splify2", "repo": "splify2/splify2", "stable": "26.9.2", "prerelease": None,
-              "versions": [v("splify2", "26.9.2", "splify2/splify2", ["luci-app-splify2-26.9.2-1_noarch.apk"]),
-                           v("splify2", "26.9.1", "splify2/splify2", ["luci-app-splify2-26.9.1-1_noarch.apk"])]}}}
+              "versions": [v("splify2", "26.9.2", "splify2/splify2", ["splify2-26.9.2-1_noarch.apk"]),
+                           v("splify2", "26.9.1", "splify2/splify2", ["splify2-26.9.1-1_noarch.apk"])]}}}
 json.dump(doc, open(out, "w"), ensure_ascii=False, indent=1)
 PY
 }
@@ -1439,16 +1445,16 @@ mkrel "$T/rel-raw.json" "$(relsum "$T/body-rel")"
 printf 'splify2/releases/releases/download\t%s\n' "$T/body-rel" > "$T/curl.serve"
 out="$(rpcd splify2_install '{"version":"26.9.2"}')"
 check "интерфейс качается с первого адреса version.json" \
-      "https://github.com/splify2/releases/releases/download/splify2-v26.9.2/luci-app-splify2-26.9.2-1_noarch.apk" \
-      "$(grep 'luci-app-splify2' "$T/curl.log" | head -1)"
+      "https://github.com/splify2/releases/releases/download/splify2-v26.9.2/splify2-26.9.2-1_noarch.apk" \
+      "$(grep "splify2-[0-9]" "$T/curl.log" | head -1)"
 
 # Версии нет в version.json (ушла из перечня) — прежний адрес выпуска проекта первым.
 relclean; reset_logs
 mkrel "$T/rel-raw.json" "$(relsum "$T/body-rel")"
 out="$(rpcd splify2_install '{"version":"26.8"}')"
 check "версии нет в version.json — прямой адрес выпуска, как раньше" \
-      "https://github.com/splify2/splify2/releases/download/v26.8/luci-app-splify2-26.8-1_noarch.apk" \
-      "$(grep 'luci-app-splify2' "$T/curl.log" | head -1)"
+      "https://github.com/splify2/splify2/releases/download/v26.8/splify2-26.8-1_noarch.apk" \
+      "$(grep "splify2-[0-9]" "$T/curl.log" | head -1)"
 relclean; reset_logs
 
 # ---- ядро: steer-core одним пакетом, плагины — менеджером ---------------------------------
@@ -1580,7 +1586,7 @@ rm -rf "$T/box"; plug_reset; relclean; reset_logs
 rm -f "$T/etc/spec.json"; [ -f "$spec_keep" ] && mv "$spec_keep" "$T/etc/spec.json"
 for m in steer_modules steer_module_add steer_module_del; do
     check "метод $m в перечне и в ACL" "yes;yes" \
-          "$(rpcd_list | grep -q "\"$m\"" && echo yes || echo no);$(grep -q "\"$m\"" "$ROOT/luci/root/usr/share/rpcd/acl.d/luci-app-splify2.json" && echo yes || echo no)"
+          "$(rpcd_list | grep -q "\"$m\"" && echo yes || echo no);$(grep -q "\"$m\"" "$ROOT/luci/root/usr/share/rpcd/acl.d/splify2.json" && echo yes || echo no)"
 done
 
 # ---- R-037: свои списки доменов и адресов -------------------------------------
@@ -1766,10 +1772,10 @@ check "запись о происхождении удалена вместе с
       "$([ -f "$T/lists/custom/fromfile.lst.src" ] && echo есть || echo нет)"
 
 # Метод, которого нет в ACL, вызвать из LuCI нельзя — метод есть, а кнопка не работает.
-acl="$ROOT/luci/root/usr/share/rpcd/acl.d/luci-app-splify2.json"
+acl="$ROOT/luci/root/usr/share/rpcd/acl.d/splify2.json"
 check "правка списков разрешена в ACL на чтение" "yes" \
       "$(python3 -c 'import json,sys
-r = json.load(open(sys.argv[1]))["luci-app-splify2"]["read"]["ubus"]["splify2"]
+r = json.load(open(sys.argv[1]))["splify2"]["read"]["ubus"]["splify2"]
 print("yes" if "list_custom" in r and "list_get" in r else "no")' "$acl")"
 
 # Метод, которого нет в списке методов, ubus не покажет вовсе.
@@ -1784,10 +1790,10 @@ d = json.load(sys.stdin)
 print("yes" if "engine_stop" in d and "engine_start" in d else "no")')"
 
 # Метод, которого нет в ACL, вызвать из LuCI нельзя — метод есть, а кнопка не работает.
-acl="$ROOT/luci/root/usr/share/rpcd/acl.d/luci-app-splify2.json"
+acl="$ROOT/luci/root/usr/share/rpcd/acl.d/splify2.json"
 check "оба метода разрешены в ACL на запись (R-017)" \
       "yes" "$(python3 -c 'import json,sys
-w = json.load(open(sys.argv[1]))["luci-app-splify2"]["write"]["ubus"]["splify2"]
+w = json.load(open(sys.argv[1]))["splify2"]["write"]["ubus"]["splify2"]
 print("yes" if "engine_stop" in w and "engine_start" in w else "no")' "$acl")"
 
 # ---- путь из манифеста издателя не выходит за каталог списков -----------------
@@ -2080,10 +2086,11 @@ check "прямых путей /etc/config/splify2 в коде не остало
 # и sub_auto (telemetry_set убран вместе со счётчиком установок). Число растёт вместе с методами, которые пишут в uci, — и это ровно
 # тот случай, когда барьер должен ломаться: новый метод обязан заводить файл той же функцией.
 # Десятым стал sub_rename (R-115): пишет название подписки, и файл заводит той же функцией.
+# Следом — prefs_set каркаса на LuCI JS (выбор главной страницы).
 #
 # Ответ `ok 1` обязан значить «записано», а не «дошли до конца функции»: на роутере с заполненным
 # флешем ползунок переезжал, страница показывала успех, а в конфигурации оставалось прежнее.
-check "файл заводится одной функцией на все места" "8" \
+check "файл заводится одной функцией на все места" "9" \
       "$(rpcd_src | grep -c '^ *uci_file ||')"
 check "перенаправлением файл больше не заводится" "0" \
       "$(rpcd_src | grep -c ': > "\?/etc/config')"
@@ -2674,7 +2681,7 @@ check "и сказано, почему" "yes" \
 check "sub_quota объявлен в перечне методов" "yes" \
       "$(rpcd_list | grep -q '"sub_quota"' && echo yes || echo no)"
 check "sub_quota разрешён в ACL" "yes" \
-      "$(grep -q '"sub_quota"' "$ROOT/luci/root/usr/share/rpcd/acl.d/luci-app-splify2.json" && echo yes || echo no)"
+      "$(grep -q '"sub_quota"' "$ROOT/luci/root/usr/share/rpcd/acl.d/splify2.json" && echo yes || echo no)"
 
 # И обратное свойство: за СПИСКАМИ идентификатор устройства не уходит. Издателю списков
 # незачем знать, какой у человека роутер, — это другой сервер и другая надобность.
@@ -4032,7 +4039,7 @@ for m in allow_domains; do
     check "метод $m объявлен в списке ubus" "yes" \
           "$(rpcd_list | grep -q "\"$m\"" && echo yes || echo no)"
     check "метод $m назван в ACL" "yes" \
-          "$(grep -q "\"$m\"" "$ROOT/luci/root/usr/share/rpcd/acl.d/luci-app-splify2.json" \
+          "$(grep -q "\"$m\"" "$ROOT/luci/root/usr/share/rpcd/acl.d/splify2.json" \
              && echo yes || echo no)"
 done
 
@@ -4050,7 +4057,7 @@ for m in xsteer_state xsteer_link xsteer_link_put; do
     check "метод $m объявлен в списке ubus" "yes" \
           "$(rpcd_list | grep -q "\"$m\"" && echo yes || echo no)"
     check "метод $m назван в ACL" "yes" \
-          "$(grep -q "\"$m\"" "$ROOT/luci/root/usr/share/rpcd/acl.d/luci-app-splify2.json" \
+          "$(grep -q "\"$m\"" "$ROOT/luci/root/usr/share/rpcd/acl.d/splify2.json" \
              && echo yes || echo no)"
 done
 
@@ -4196,15 +4203,15 @@ check "отчёт сам говорит, что секретов в нём не�
 check "метод support_report объявлен в списке ubus" "yes" \
       "$(rpcd_list | grep -q '"support_report"' && echo yes || echo no)"
 check "метод support_report назван в ACL" "yes" \
-      "$(grep -q '"support_report"' "$ROOT/luci/root/usr/share/rpcd/acl.d/luci-app-splify2.json" \
+      "$(grep -q '"support_report"' "$ROOT/luci/root/usr/share/rpcd/acl.d/splify2.json" \
          && echo yes || echo no)"
 # Отчёт только читает состояние, поэтому он в группе read: попав в write, он потребовал бы
 # от вызывающего прав, которых у страницы обзора нет.
 check "и назван он именно в разделе read" "yes" \
       "$(python3 -c 'import json,sys
-d = json.load(open(sys.argv[1]))["luci-app-splify2"]
+d = json.load(open(sys.argv[1]))["splify2"]
 print("yes" if "support_report" in d["read"]["ubus"]["splify2"] else "no")' \
-        "$ROOT/luci/root/usr/share/rpcd/acl.d/luci-app-splify2.json")"
+        "$ROOT/luci/root/usr/share/rpcd/acl.d/splify2.json")"
 
 # ---- отчёт на сломанном роутере ------------------------------------------------------
 # Отчёт собирают ИМЕННО ТОГДА, когда что-то не работает, поэтому он обязан собираться и без
@@ -5153,8 +5160,8 @@ unset PURGE_BIN PURGE_DELAY PURGE_LOG
 check "purge объявлен в list и разрешён в ACL на запись" "yes" \
       "$(rpcd_list | python3 -c 'import json,sys
 d = json.load(sys.stdin)
-w = json.load(open(sys.argv[1]))["luci-app-splify2"]["write"]["ubus"]["splify2"]
-print("yes" if "purge" in d and "purge" in w else "no")' "$ROOT/luci/root/usr/share/rpcd/acl.d/luci-app-splify2.json")"
+w = json.load(open(sys.argv[1]))["splify2"]["write"]["ubus"]["splify2"]
+print("yes" if "purge" in d and "purge" in w else "no")' "$ROOT/luci/root/usr/share/rpcd/acl.d/splify2.json")"
 
 
 # ---- замок на правку спеки, подписок и архива (I-546) --------------------------------------
@@ -5180,6 +5187,56 @@ if command -v flock >/dev/null 2>&1; then
           "$(printf '%s' "$out" | grep -q 'ещё идёт' && echo yes || echo no)"
     wait "$_lp"
 fi
+
+# ---- каркас на LuCI JS: spec_schema, spec_check, prefs_get / prefs_set ----------------------
+# Каркас рисует формы по схеме ключей, которую печатает ядро (`steer spec-schema --json`). Ядро до 2.1
+# команды не знает — тогда схема берётся из пакета и называется bundled, чтобы экран мог об этом сказать.
+out="$(rpcd spec_schema)"
+check "spec_schema: ядро без команды — схема из пакета, source bundled" "true;bundled;object" \
+      "$(printf '%s' "$out" | jget ok);$(printf '%s' "$out" | jget source);$(printf '%s' "$out" | python3 -c 'import json,sys; print(json.load(sys.stdin)["schema"]["type"])')"
+printf '{"type":"object","properties":{"version":{"const":2}},"x-marker":"core"}\n' > "$T/core-schema.json"
+out="$(STEER_SCHEMA="$T/core-schema.json" rpcd spec_schema)"
+check "spec_schema: ответ ядра идёт как есть, source core" "true;core;core" \
+      "$(printf '%s' "$out" | jget ok);$(printf '%s' "$out" | jget source);$(printf '%s' "$out" | python3 -c 'import json,sys; print(json.load(sys.stdin)["schema"]["x-marker"])')"
+check "spec_schema: вызвана команда ядра с --json" "yes" "$(grep -q '^spec-schema --json$' "$T/steer.log" && echo yes || echo no)"
+out="$(STEER_SCHEMA="$T/core-schema.json" SCHEMA_FIXTURE=/nonexistent rpcd spec_schema)"
+check "spec_schema: ответ ядра важнее пакета даже без файла пакета" "true;core" "$(printf '%s' "$out" | jget ok);$(printf '%s' "$out" | jget source)"
+echo 'не схема' > "$T/core-schema.json"
+check "spec_schema: ядро ответило не схемой — запасная из пакета" "bundled" \
+      "$(STEER_SCHEMA="$T/core-schema.json" rpcd spec_schema | jget source)"
+
+# spec_check — проверка без записи: тот же судья, что у spec_set, файла на диске не остаётся и спека не меняется.
+rm -f "$T/etc/spec.json"; : > "$T/steer.log"
+n_etc="$(ls "$T"/etc/spec.json* 2>/dev/null | wc -l | tr -d ' ')"
+out="$(rpcd spec_check '{"spec":"{\"version\":2}"}')"
+check "spec_check: годная спека — ok" "true" "$(printf '%s' "$out" | jget ok)"
+check "spec_check: проверка шла ядром (apply --dry-run) по файлу рядом со спекой" "yes" \
+      "$(grep -q "^apply --dry-run --spec $T/etc/spec.json.chk\." "$T/steer.log" && echo yes || echo no)"
+check "spec_check: ничего не записано — ни спеки, ни временного файла" "$n_etc" "$(ls "$T"/etc/spec.json* 2>/dev/null | wc -l | tr -d ' ')"
+check "spec_check: самой спеки на диске по-прежнему нет" "no" "$([ -e "$T/etc/spec.json" ] && echo yes || echo no)"
+out="$(STEER_RC=1 STEER_ERR='unknown key frobnicate' rpcd spec_check '{"spec":"{\"version\":2}"}')"
+check "spec_check: ядро отвергло — ok false и его слова" "false;unknown key frobnicate" \
+      "$(printf '%s' "$out" | jget ok);$(printf '%s' "$out" | jget error)"
+check "spec_check: пустой вход — отказ" "false" "$(rpcd spec_check '{}' | jget ok)"
+check "spec_check: после отказа временного файла нет" "$n_etc" "$(ls "$T"/etc/spec.json* 2>/dev/null | wc -l | tr -d ' ')"
+
+# prefs: что открывать главной страницей. Без выбора — Andromeda, если её сборка в пакете, иначе каркас.
+rm -f "$T/andromeda-build-id" "$T/etc/config/splify2"
+out="$(rpcd prefs_get)"
+check "prefs_get: Andromeda в пакете нет — basic по умолчанию" "basic;false;false" \
+      "$(printf '%s' "$out" | jget interface);$(printf '%s' "$out" | jget interface_set);$(printf '%s' "$out" | jget andromeda)"
+echo 26.10.4 > "$T/andromeda-build-id"
+out="$(rpcd prefs_get)"
+check "prefs_get: сборка Andromeda в пакете — andromeda по умолчанию, выбор не сделан" "andromeda;false;true" \
+      "$(printf '%s' "$out" | jget interface);$(printf '%s' "$out" | jget interface_set);$(printf '%s' "$out" | jget andromeda)"
+check "prefs_set: basic записан" "true;basic" "$(rpcd prefs_set '{"interface":"basic"}' | jget ok);$(rpcd prefs_get | jget interface)"
+check "prefs_get: выбор помечен сделанным" "true" "$(rpcd prefs_get | jget interface_set)"
+check "prefs_set: id плагина-интерфейса принимается" "true" "$(rpcd prefs_set '{"interface":"my-ui"}' | jget ok)"
+check "prefs_set: заглавные и пробелы — отказ" "false;false" \
+      "$(rpcd prefs_set '{"interface":"Basic View"}' | jget ok);$(rpcd prefs_set '{}' | jget ok)"
+check "prefs_set: отказ не затронул выбранное" "my-ui" "$(rpcd prefs_get | jget interface)"
+printf 'luci.main.lang=ru\n' >> "$T/uci.store"
+check "prefs_get: язык LuCI" "ru" "$(rpcd prefs_get | jget lang)"
 
 printf '\n%s\n' "$([ "$fails" -eq 0 ] && echo 'все проверки прошли' || echo "ЕСТЬ ПРОВАЛЫ: $fails")"
 [ "$fails" -eq 0 ]

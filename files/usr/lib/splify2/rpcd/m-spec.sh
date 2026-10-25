@@ -900,6 +900,31 @@ case "$2" in
         json_dump
         ;;
 
+    spec_check)
+        # Check a spec WITHOUT saving it: the same judge as spec_set (`steer check`), the answer is
+        # {ok:true[, warn]} or {ok:false, error}. Used by the raw spec editor of the splify2 frame.
+        # The temporary file lies next to the real spec, not in /tmp: relative paths in a spec (lists,
+        # subscriptions) are resolved from the directory of the spec file.
+        read -r input
+        json_load "$input" 2>/dev/null || fail "unparsable request"
+        json_get_var spec spec
+        [ -n "$spec" ] || fail "empty spec"
+        mkdir -p "$(dirname "$SPEC")"
+        chk="$SPEC.chk.$$"
+        printf '%s' "$spec" > "$chk" || { rm -f "$chk"; fail "cannot write the temporary file - disk full?"; }
+        err="$(engine_check "$chk")"; rc=$?
+        rm -f "$chk"
+        json_init
+        if [ "$rc" = 0 ]; then
+            json_add_boolean ok 1
+            [ -n "$err" ] && json_add_string warn "$err"
+        else
+            json_add_boolean ok 0
+            json_add_string error "${err:-the core rejected the spec}"
+        fi
+        json_dump
+        ;;
+
     apply)
         # Ядро ведёт steer-box-connector (podkop, forkop): `steer apply` без службы steer исполняет
         # само ядро и поставило бы таблицу inet steer поверх таблицы коннектора (box_busy).

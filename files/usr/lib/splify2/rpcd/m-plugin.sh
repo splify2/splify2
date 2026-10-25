@@ -263,5 +263,39 @@ case "$2" in
         plugin_invoke "$_pc_id" "$_pc_m" "$_pc_p"
         ;;
 
+    plugin_settings_get)
+        # Settings of a plugin for the settings form of the splify2 frame. The plugin declares a REQUIRED
+        # schema in its manifest: "splify2": {"settings": {"schema": "<file in the plugin dir>"}} (the subset of
+        # JSON Schema of kind-keys.schema.json); the values live in conf/<id>/settings.json - the file the
+        # plugin itself reads. Answer: {ok, id, schema, values}.
+        plugin_need_id || exit 0
+        [ -n "$(plugin_state_of "$PL_ID")" ] || { plugin_fail not_installed "Plugin $PL_ID is not installed"; exit 0; }
+        _pg_man="$PLUGIN_ROOT/$PL_ID/plugin.json"
+        _pg_rel="$(jsonfilter -s "$(cat "$_pg_man" 2>/dev/null)" -e '@.splify2.settings.schema' 2>/dev/null)"
+        case "$_pg_rel" in
+            ''|/*|*..*|*[!A-Za-z0-9._/-]*) plugin_fail no_settings "Plugin $PL_ID has no settings"; exit 0 ;;
+        esac
+        _pg_sch="$(plugin_json_obj "$(cat "$PLUGIN_ROOT/$PL_ID/$_pg_rel" 2>/dev/null)")" ||
+            { plugin_fail failed "The settings schema of $PL_ID is unreadable"; exit 0; }
+        _pg_val="$(plugin_json_obj "$(cat "$PLUGIN_CONF_DIR/$PL_ID/settings.json" 2>/dev/null)")" || _pg_val="{}"
+        plugin_ok_raw id "\"$PL_ID\"" schema "$_pg_sch" values "$_pg_val"
+        ;;
+
+    plugin_settings_set)
+        # Write the settings of a plugin: {id, values}. The file is replaced atomically; checking the values
+        # against the schema is the form's work and the plugin's own (it reads the file), here only the shape.
+        read -r input
+        PL_ID="$(plugin_in id)"
+        plugin_id_ok "$PL_ID" || { plugin_fail bad_request "Invalid plugin name"; exit 0; }
+        [ -n "$(plugin_state_of "$PL_ID")" ] || { plugin_fail not_installed "Plugin $PL_ID is not installed"; exit 0; }
+        _pv="$(plugin_json_obj "$(plugin_in values)")" || { plugin_fail bad_request "values must be an object"; exit 0; }
+        [ "$(printf '%s' "$_pv" | wc -c)" -le 262144 ] || { plugin_fail bad_request "The settings are larger than 256 KB"; exit 0; }
+        mkdir -p "$PLUGIN_CONF_DIR/$PL_ID" 2>/dev/null
+        _pv_f="$PLUGIN_CONF_DIR/$PL_ID/settings.json"
+        printf '%s\n' "$_pv" > "$_pv_f.new.$$" 2>/dev/null && mv "$_pv_f.new.$$" "$_pv_f" ||
+            { rm -f "$_pv_f.new.$$"; plugin_fail failed "Cannot write the settings - disk full?"; exit 0; }
+        plugin_ok_raw id "\"$PL_ID\""
+        ;;
+
     *) fail "неизвестный метод" ;;
 esac
