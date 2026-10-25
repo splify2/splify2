@@ -1,0 +1,22 @@
+#!/bin/sh
+# Привести объекты ubus плагинов (splify2.p.<id>) в согласие с тем, что стоит и включено у менеджера
+# плагинов ядра: ссылки в /usr/libexec/rpcd и ACL в /usr/share/rpcd/acl.d (plugin_sync в
+# /usr/lib/splify2/plugin.sh). Нужна там, где ссылок ещё или уже нет: после установки пакета splify2
+# (postinst) и после обновления прошивки — плагины на месте, а ссылки с ними не переехали.
+#
+#   splify2-plugin-sync              — привести и, если что-то изменилось, перечитать rpcd
+#   splify2-plugin-sync --no-reload  — только привести (postinst перечитывает rpcd сам, один раз)
+#
+# Печатает «изменено» или «без изменений».
+
+. "${JSHN_SH:-/usr/share/libubox/jshn.sh}"
+. "${PLUGIN_SH:-/usr/lib/splify2/plugin.sh}"
+
+plugin_sync
+if [ "$PLUGIN_SYNC_CHANGED" = 1 ]; then
+    echo "изменено"
+    [ "${1:-}" = --no-reload ] || "${RPCD_INITD:-/etc/init.d/rpcd}" reload >/dev/null 2>&1
+else
+    echo "без изменений"
+fi
+exit 0

@@ -143,108 +143,7 @@ EOF
 # печатает совпадения по всем. Пока заглушка запоминала только последнее, проверка
 # недоверенной спеки смотрела бы на одно поле из пяти — то есть была бы зелёной по
 # недосмотру заглушки, а не по существу.
-cat > "$T/bin/jsonfilter" <<'EOF'
-#!/bin/sh
-file=""; str=""; exprs=""
-while [ $# -gt 0 ]; do
-    case "$1" in
-        -i) file="$2"; shift 2 ;;
-        -s) str="$2"; shift 2 ;;
-        -e) exprs="$exprs$2
-"; shift 2 ;;
-        *) shift ;;
-    esac
-done
-# Без -i и -s настоящий jsonfilter читает ПОТОК — так его и зовут в скрипте
-# (`steer status | jsonfilter -e ...`). Поток вычитывается здесь, потому что дальше
-# стандартный ввод занят программой python.
-if [ -z "$file" ] && [ -z "$str" ]; then str="$(cat)"; fi
-# Выражения уезжают переменной окружения, а не потоком: программу python читает как раз
-# со стандартного ввода (`python3 -` плюс heredoc), и труба до неё не доходит.
-EXPRS="$exprs" python3 - "$file" "$str" <<'PY'
-import json, os, re, sys
-path, raw = sys.argv[1], sys.argv[2]
-try:
-    d = json.loads(raw) if raw else json.load(open(path, encoding='utf-8'))
-except Exception:
-    sys.exit(1)
-
-def render(v):
-    if isinstance(v, bool):          return 'true' if v else 'false'
-    if isinstance(v, (dict, list)):  return json.dumps(v, ensure_ascii=False)
-    return str(v)
-
-def walk(cur, parts):
-    if not parts:
-        if cur is not None:
-            yield cur
-        return
-    p, rest = parts[0], parts[1:]
-    if p == '*':
-        items = cur if isinstance(cur, list) else list(cur.values()) if isinstance(cur, dict) else []
-        for it in items:
-            yield from walk(it, rest)
-    elif isinstance(cur, list) and p.isdigit():
-        i = int(p)
-        if 0 <= i < len(cur):
-            yield from walk(cur[i], rest)
-    elif isinstance(cur, dict) and p in cur:
-        yield from walk(cur[p], rest)
-
-for expr in os.environ.get('EXPRS', '').splitlines():
-    if not expr:
-        continue
-    m = re.match(r"@\.(categories|domain_lists)\[@\.id='([^']*)'\]\.([a-z_]+)$", expr)
-    if m:
-        for e in d.get(m.group(1), []):
-            if e.get('id') == m.group(2) and m.group(3) in e:
-                print(e[m.group(3)])
-        continue
-    # Фильтр по полю записи любого списка: `@.interface[@.l3_device='pptp-vpn'].interface` — так
-    # из ответа netifd достаётся имя интерфейса по имени его устройства.
-    m = re.match(r"@\.([a-z_]+)\[@\.([a-z_0-9]+)='([^']*)'\]\.([a-z_0-9]+)$", expr)
-    if m and isinstance(d.get(m.group(1)), list):
-        for e in d[m.group(1)]:
-            if isinstance(e, dict) and str(e.get(m.group(2))) == m.group(3) and m.group(4) in e:
-                print(render(e[m.group(4)]))
-        continue
-    # Поле записи, найденной ПО ПУТИ СПИСКА: так доскачивание спрашивает ссылку набора —
-    # ему известен путь из спеки, а не идентификатор.
-    m = re.match(r"@\.(categories|domain_lists)\[@\.file='([^']*)'\]\.([a-z_]+)$", expr)
-    if m:
-        for e in d.get(m.group(1), []):
-            if e.get('file') == m.group(2) and m.group(3) in e:
-                print(e[m.group(3)])
-        continue
-    # Общий обход: точки — шаги пути, [*] — «все элементы массива или все значения
-    # объекта». Ровно тот набор выражений, который встречается в скрипте.
-    # Числовой индекс массива (`@[0].tag_name`) — им читается список релизов GitHub.
-    # Приводится к обычному шагу пути: скобки становятся точками, а walk() ниже понимает
-    # цифровой шаг как индекс в списке.
-    # Грамматика настоящего jsonfilter: голый шаг пути — LABEL [a-zA-Z_][a-zA-Z0-9_]*; имя с
-    # дефисом или точкой годится только в скобках `['имя']`. Заглушка этому раньше не
-    # следовала и делила путь по точкам как угодно — из-за чего стенд не видел, что имя
-    # выхода `de-1` ломает каждый запрос по нему (I-284).
-    norm = expr.replace('@.', '', 1).replace('[*]', '.*')
-    norm = re.sub(r"\[(['\"])([^'\"]*)\1\]", lambda m: '.\x00' + m.group(2), norm)
-    norm = norm.replace('[', '.').replace(']', '')
-    parts = [x for x in norm.split('.') if x and x != '@']
-    bad = False
-    clean = []
-    for x in parts:
-        if x.startswith('\x00'):
-            clean.append(x[1:])
-        elif x == '*' or x.isdigit() or re.match(r'^[A-Za-z_][A-Za-z0-9_]*$', x):
-            clean.append(x)
-        else:
-            bad = True
-    if bad:
-        sys.stderr.write('Syntax error\n')
-        sys.exit(1)
-    for v in walk(d, clean):
-        print(render(v))
-PY
-EOF
+cp "$ROOT/tests/stub/jsonfilter" "$T/bin/jsonfilter"
 
 printf '#!/bin/sh\nexit 0\n' > "$T/bin/logger"
 # uci: маленькое, но НАСТОЯЩЕЕ хранилище — «ключ=значение» в файле песочницы.
@@ -499,6 +398,9 @@ if [ "${1:-}" = spec ] && [ "${2:-}" = convert ]; then
     exit 0
 fi
 echo "$*" >> "$SANDBOX/steer.log"
+# Менеджер плагинов: `steer plugin …` — отдельная заглушка (tests/stub/steer-plugin), общая со стендом
+# pluginmatch; состояние плагинов — в $PLUG.
+if [ "${1:-}" = plugin ]; then shift; exec sh "$STEER_PLUGIN_STUB" "$@"; fi
 [ -n "${STEER_ERR:-}" ] && echo "$STEER_ERR" >&2
 # Проверка узла: движок пишет предупреждения в stderr, а JSON — в stdout. Стенду нужно уметь
 # воспроизводить обе половины сразу: именно их смешение и ломало ответ.
@@ -877,7 +779,10 @@ rpcd_run() {  # МЕТОД [JSON_ЗАПРОСА]  — вызов метода; �
         UPDATE_LISTS="${UPDATE_LISTS:-$T/bin/update-lists}" \
         ENGINE_ENABLED="${ENGINE_ENABLED:-0}" \
         APK_LIST="${APK_LIST:-}" \
-        MODULE_DIR="${MODULE_DIR_FIXTURE:-$T/mods}" \
+        PLUGIN_SH="$ROOT/files/usr/lib/splify2/plugin.sh" PLUG="$T/plug" \
+        PLUGIN_ROOT="$T/plug/lib" PLUGIN_STATE="$T/plug/state.json" PLUGIN_RPCD_DIR="$T/plug/rpcd" \
+        PLUGIN_ACL_DIR="$T/plug/acl" PLUGIN_JOBS="$T/plug/jobs" PLUGIN_RELOAD_DELAY=0 \
+        STEER_PLUGIN_STUB="$ROOT/tests/stub/steer-plugin" \
         SINGBOX_INITD="${SINGBOX_INITD_FIXTURE:-$T/box/none}" \
         sh "$SCRIPT" call "$1" 2>"$T/stderr"
 }
@@ -956,6 +861,33 @@ custom_domains_path()  { printf '%s/lists/custom/domains/%s.lst' "$T" "$1"; }
 custom_prefixes_path() { printf '%s/lists/custom/%s.lst' "$T" "$1"; }
 
 initd_actions() { grep -Ev '^(enabled|running)$' "$T/initd.log" | awk '{printf "%s ", $1}' | sed 's/ $//'; }
+
+# Плагины (ядро 2.1): состояние — файлы менеджера в $T/plug (tests/stub/steer-plugin). plug_reset чистит
+# всё; plug_put кладёт установленный плагин (манифест и запись в state.json); plug_fixture — что «лежит в
+# каталоге» и ставится install/ensure; plug_calls — журнал вызовов менеджера.
+plug_reset() {
+    rm -rf "$T/plug"
+    mkdir -p "$T/plug/lib" "$T/plug/rpcd" "$T/plug/acl" "$T/plug/jobs" "$T/plug/fixtures"
+    echo '{"schema":1,"plugins":{}}' > "$T/plug/state.json"
+}
+plug_manifest() {  # КАТАЛОГ ID ВЕРСИЯ
+    mkdir -p "$1"
+    printf '{"schema":1,"id":"%s","version":"%s","name":"%s"}\n' "$2" "$3" "$2" > "$1/plugin.json"
+}
+plug_put() {  # ID ВЕРСИЯ [СОСТОЯНИЕ]
+    plug_manifest "$T/plug/lib/$1" "$1" "$2"
+    python3 - "$T/plug/state.json" "$1" "$2" "${3:-enabled}" <<'PY'
+import json, sys
+p, i, v, st = sys.argv[1:5]
+d = json.load(open(p)); d["plugins"][i] = {"version": v, "state": st, "repo": "splify2"}
+json.dump(d, open(p, "w"))
+PY
+}
+plug_fixture() {  # ID ВЕРСИЯ
+    plug_manifest "$T/plug/fixtures/$1" "$1" "$2"
+}
+plug_calls() { cat "$T/plug/manager.log" 2>/dev/null | tr '\n' '|' | sed 's/|$//'; }
+plug_reset
 
 # ---- сам скрипт вообще запускается --------------------------------------------
 # Первая проверка стенда — про стенд: пока она красная, все остальные бессмысленны.
@@ -1142,27 +1074,27 @@ mv "$T/bin/steer.away" "$T/bin/steer"
 check "ядра нет — версия интерфейса всё равно названа" "false;0.7.6" \
       "$(printf '%s' "$out" | jget present);$(printf '%s' "$out" | jget ui_version)"
 
-# ---- модули ядра 2.0: перечень с proxy, VLESS — по модулю ------------------------------
-# Модули — бинарники steer-<модуль> рядом с steerd (MODULE_DIR на стенде). steer-proxy (trojan,
-# shadowsocks, socks, http, vmess) — такой же модуль, как остальные: без него в перечне выход
-# прокси выглядел бы так, будто модуля нет, хотя он стоит.
-mkdir -p "$T/mods"
-for m in vless proxy; do printf '#!/bin/sh\n' > "$T/mods/steer-$m"; chmod +x "$T/mods/steer-$m"; done
-CORE_LIST="steer-core-2.0.0-r1 aarch64_cortex-a53 {steer-core}
-steer-vless-2.0.0-r1 aarch64_cortex-a53 {steer-vless}
-steer-proxy-2.0.0-r1 aarch64_cortex-a53 {steer-proxy}"
+# ---- протоколы ядра 2.1 — плагины: перечень с proxy, VLESS — по плагину vless --------------
+# Протокол доступен, когда включён плагин (state.json менеджера). Плагин proxy (trojan, shadowsocks,
+# socks, http, vmess) — такой же, как остальные: без него в перечне выход прокси выглядел бы так, будто
+# протокола нет, хотя он стоит. Пакетов steer-<модуль> в 2.1 нет, база пакетов о них не спрашивается.
+plug_reset
+plug_put vless 2.1.0; plug_put proxy 2.1.0
+CORE_LIST="steer-core-2.1.0-r1 aarch64_cortex-a53 {steer-core}"
 out="$(APK_LIST="$CORE_LIST" rpcd engine)"
-check "engine называет модуль proxy среди стоящих" '["vless", "proxy"]' "$(printf '%s' "$out" | jget modules)"
-check "VLESS — по модулю steer-vless" "true" "$(printf '%s' "$out" | jget vless)"
-# Без модуля steer-vless ядро 2.0 VLESS не умеет, что бы ни печатал его отказ: признак — файл
-# модуля, а не подстрока «steer-extended» в тексте `steer vless ''` (заглушка там молчит, и
-# прежний разбор принимал молчание за «умеет»).
-rm -f "$T/mods/steer-vless"
+check "engine называет плагин proxy среди стоящих" '["vless", "proxy"]' "$(printf '%s' "$out" | jget modules)"
+check "VLESS — по плагину vless" "true" "$(printf '%s' "$out" | jget vless)"
+# Выключенный плагин протокола не даёт: ядро его не регистрирует, и выходы вида ушли бы в on_fail.
+plug_put vless 2.1.0 disabled
 : > "$T/steer.log"
 out="$(APK_LIST="$CORE_LIST" rpcd engine)"
-check "ядро 2.0 без steer-vless VLESS не умеет" "false" "$(printf '%s' "$out" | jget vless)"
+check "выключенный плагин vless — VLESS недоступен" "false;[\"proxy\"]" \
+      "$(printf '%s' "$out" | jget vless);$(printf '%s' "$out" | jget modules)"
 check "и отказ ядра для этого не спрашивали" "0" "$(grep -c '^vless' "$T/steer.log" 2>/dev/null || true)"
-rm -rf "$T/mods"
+rm -rf "$T/plug/lib/vless"
+out="$(APK_LIST="$CORE_LIST" rpcd engine)"
+check "плагин, положенный в state без файлов, — и тот выключен" "false" "$(printf '%s' "$out" | jget vless)"
+plug_reset
 
 # ---- steer-box-connector: ядро занято podkop/forkop -----------------------------------
 # Коннектор ставит свою службу /etc/init.d/sing-box и держит steerd сам. splify2 видит его по
@@ -1519,10 +1451,9 @@ check "версии нет в version.json — прямой адрес выпу�
       "$(grep 'luci-app-splify2' "$T/curl.log" | head -1)"
 relclean; reset_logs
 
-# ---- ядро: steer-core и модули одной транзакцией ------------------------------------------
-# Ядро — steer-core, протоколы — модули steer-<модуль>, каждый зависит от steer-core точной
-# версии. Значит, обновление ставит ядро и ВСЕ стоящие модули одной версией и одной `apk add`,
-# добавляя то, что нужно спеке.
+# ---- ядро: steer-core одним пакетом, плагины — менеджером ---------------------------------
+# Ядро — пакет steer-core, протоколы — плагины (ядро 2.1): модулей-пакетов steer-<модуль> нет. После
+# установки метод доводит менеджером (`steer plugin ensure`) просимые плагины и нужные спеке.
 apk_adds() { grep '^add' "$T/apk.log" | sed 's|/tmp/steer-\([a-z0-9]*\)-[0-9.]*-1_aarch64_cortex-a53.apk|\1|g; s/^add add //; s/^--allow-untrusted --force-overwrite //'; }
 spec_keep="$T/etc/spec.json.keep2"; cp "$T/etc/spec.json" "$spec_keep" 2>/dev/null || rm -f "$spec_keep"
 rm -f "$T/etc/spec.json"
@@ -1530,45 +1461,39 @@ relclean; reset_logs
 mkrel2 "$T/rel-raw.json" "$(relsum "$T/body-rel")"
 printf 'splify2/releases/releases/download\t%s\n' "$T/body-rel" > "$T/curl.serve"
 
-reset_logs
+reset_logs; plug_reset
+plug_fixture hysteria2 2.1.1; plug_fixture proxy 2.1.1; plug_fixture obfs 2.1.1
 printf '{"version":2,"outputs":{"direct":{"kind":"direct"},"t":{"kind":"tunnel","protocol":"trojan","subscription":"s"},"o":{"kind":"interface","device":"wg0","obfs":{"server":"a:1","listen":"b:2"}}}}\n' > "$T/etc/spec.json"
 out="$(APK_LIST="steer-core-2.1.0-r1 aarch64_cortex-a53 {steer-core}" rpcd steer_install '{"version":"2.1.1","modules":"hysteria2"}')"
-check "ядро и модули: просимый модуль и нужные спеке (proxy, obfs)" "core hysteria2 proxy obfs;0" \
+check "ядро одним пакетом — модулей-пакетов нет" "core;0" \
       "$(apk_adds | tr '\n' ' ' | sed 's/ $//');$(grep -c '^del' "$T/apk.log")"
-check "  ответ: ok, ядро, состав модулей, служба перезапущена (спека есть)" 'true;steer-core 2.1.1;["hysteria2", "proxy", "obfs"];true' \
+check "  плагины доведены менеджером: просимый и нужные спеке (proxy, obfs)" "ensure hysteria2 proxy obfs" "$(plug_calls)"
+check "  ответ: ok, ядро, состав плагинов, служба перезапущена (спека есть)" 'true;steer-core 2.1.1;["hysteria2", "proxy", "obfs"];true' \
       "$(printf '%s' "$out" | jget ok);$(printf '%s' "$out" | jget installed);$(printf '%s' "$out" | jget modules);$(printf '%s' "$out" | jget restarted)"
+check "  плагины встали и включены" "enabled enabled enabled" \
+      "$(for m in hysteria2 proxy obfs; do PATH="$T/bin:$PATH" jsonfilter -i "$T/plug/state.json" -e "@.plugins['$m'].state"; done | tr '\n' ' ' | sed 's/ $//')"
 check "  версия ниже минимума отвергается" "yes" \
       "$(rpcd steer_install '{"version":"2.0.1"}' | grep -q 'не старше 2.1.0' && echo yes || echo no)"
 
-reset_logs
-mkdir -p "$T/mods"; for m in vless proxy; do printf '#!/bin/sh\n' > "$T/mods/steer-$m"; chmod +x "$T/mods/steer-$m"; done
+# Отказ менеджера плагинов ядро не отменяет: оно уже встало, о плагинах говорит ensure_error.
+reset_logs; plug_reset
+printf 'нужно 1,8 МБ, свободно 0,9 МБ\n' > "$T/plug/fail.ensure"
+out="$(APK_LIST="steer-core-2.1.0-r1 aarch64_cortex-a53 {steer-core}" rpcd steer_install '{"version":"2.1.1","modules":"vless"}')"
+check "менеджер отказал — ядро встало, отказ назван (ensure_error)" "true;нужно 1,8 МБ, свободно 0,9 МБ" \
+      "$(printf '%s' "$out" | jget ok);$(printf '%s' "$out" | jget ensure_error)"
+
+# Без просимых и без нужных спеке плагинов менеджер не зовётся вовсе: сам steer-core ставит их при установке.
+reset_logs; plug_reset
 rm -f "$T/etc/spec.json"
 out="$(APK_LIST="$CORE_LIST" rpcd steer_install '{"version":"2.1.1"}')"
-check "2.1.0 → 2.1.1: ядро и все стоящие модули одной версией, без снятий" "core vless proxy;" \
-      "$(apk_adds);$(grep -c '^del' "$T/apk.log" | sed 's/^0$//')"
-check "  без спеки служба не перезапускается" "false" "$(printf '%s' "$out" | jget restarted)"
+check "2.1.0 → 2.1.1 без спеки: одно ядро, менеджер не зовут" "core;;false" \
+      "$(apk_adds);$(plug_calls);$(printf '%s' "$out" | jget restarted)"
 
-# I-560: пакет модуля в базе есть, а файла рядом с ядром нет (SP-0006: steer-tgws 2.0.4 держал
-# обновление до 2.0.5). Модуль обязан попасть в транзакцию, иначе apk отказывает всей установке.
-reset_logs
-out="$(APK_LIST="$CORE_LIST
-steer-tgws-2.0.0-r1 aarch64_cortex-a53 {steer-tgws}" rpcd steer_install '{"version":"2.1.1"}')"
-check "модуль по пакету без файла обновляется вместе с ядром (I-560)" "core vless proxy tgws" "$(apk_adds)"
-
-reset_logs
-printf 'steer-proxy-2.1.1\n' > "$T/curl.fail"
-out="$(APK_LIST="$CORE_LIST" rpcd steer_install '{"version":"2.1.1"}')"
-check "модуль не скачался — не ставится ничего" "false;0" \
-      "$(printf '%s' "$out" | jget ok);$(grep -c '^add' "$T/apk.log")"
-check "  отказ называет файл" "yes" \
-      "$(printf '%s' "$out" | jget error | grep -q 'steer-proxy-2.1.1-1_aarch64_cortex-a53.apk' && echo yes || echo no)"
-check "  скачанное до отказа убрано из /tmp" "0" "$(ls /tmp/steer-core-2.1.1-1_aarch64_cortex-a53.apk 2>/dev/null | grep -c .)"
-rm -f "$T/curl.fail"
 out="$(rpcd steer_install '{"version":"2.1.1","modules":"vless wireguard"}')"
-check "неизвестный модуль отвергается до скачивания" "неизвестный модуль: wireguard" "$(printf '%s' "$out" | jget error)"
+check "неизвестный плагин отвергается до скачивания" "неизвестный модуль: wireguard" "$(printf '%s' "$out" | jget error)"
 
 # opkg: одна установка ядра и модулей, ничего не снимается.
-rm -rf "$T/mods"; rm -f "$T/opkg.log"; : > "$T/opkg.lists"
+rm -f "$T/opkg.log"; : > "$T/opkg.lists"
 cp "$T/bin/opkg" "$T/bin/opkg.orig"
 cat > "$T/bin/opkg" <<'EOF2'
 #!/bin/sh
@@ -1587,14 +1512,19 @@ check "opkg: один install, ничего не снимается" \
 check "  установка удалась, в ней steer-core 2.1.1 (ipk)" "true;1" \
       "$(printf '%s' "$out" | jget ok);$(grep '^install' "$T/opkg.log" | head -1 | tr ' ' '\n' | grep -c '/tmp/steer-core-2.1.1-1_aarch64_cortex-a53.ipk')"
 mv "$T/bin/opkg.orig" "$T/bin/opkg"; rm -f "$T/opkg.lists" "$T/opkg.log"
-rm -rf "$T/mods"; relclean; reset_logs
+plug_reset; relclean; reset_logs
 [ -f "$spec_keep" ] && mv "$spec_keep" "$T/etc/spec.json"
 
-# ---- модули ядра 2.0: перечень, установка и снятие одного --------------------------------
-# Карточка модулей в «О ПО»: что стоит и какой версии, что нужно спеке. Модуль ставится той же
-# версией, что steer-core; снять нужный спеке нельзя — отказ называет выходы.
+# ---- прежняя карточка модулей над менеджером плагинов: перечень, установка и снятие одного -------
+# Карточка в «О ПО» осталась ради прежнего интерфейса: что стоит и в каком состоянии, что нужно спеке.
+# Ставит и снимает менеджер ядра; снять нужный спеке плагин нельзя — отказ называет выходы.
 spec_keep="$T/etc/spec.json.keep3"; cp "$T/etc/spec.json" "$spec_keep" 2>/dev/null || rm -f "$spec_keep"
-mkdir -p "$T/mods"; for m in vless proxy; do printf '#!/bin/sh\n' > "$T/mods/steer-$m"; chmod +x "$T/mods/steer-$m"; done
+plug_reset; plug_put vless 2.1.1; plug_put proxy 2.1.1 failed
+python3 - "$T/plug/state.json" <<'PY'
+import json, sys
+p = sys.argv[1]; d = json.load(open(p)); d["plugins"]["proxy"]["why"] = "помощник не поднялся"
+json.dump(d, open(p, "w"), ensure_ascii=False)
+PY
 printf '{"version":2,"outputs":{"nl":{"kind":"tunnel","protocol":"vless","subscription":"s"},"t":{"kind":"tunnel","protocol":"trojan","subscription":"s"},"t2":{"kind":"tunnel","protocol":"vmess","subscription":"s"}}}\n' > "$T/etc/spec.json"
 out="$(APK_LIST="$CORE_LIST" rpcd steer_modules)"
 mod_field() {  # МОДУЛЬ ПОЛЕ < JSON
@@ -1604,59 +1534,49 @@ for m in d.get("modules", []):
     if m.get("name")==sys.argv[1]:
         v=m.get(sys.argv[2]); print("" if v is None else json.dumps(v, ensure_ascii=False) if isinstance(v,bool) else v)' "$1" "$2"
 }
-check "steer_modules: версия ядра" "2.0.0" "$(printf '%s' "$out" | jget core)"
+check "steer_modules: версия ядра" "2.1.0" "$(printf '%s' "$out" | jget core)"
 check "steer_modules: шесть модулей по порядку" "vless hysteria2 proxy xsteer obfs tgws" \
       "$(printf '%s' "$out" | python3 -c 'import json,sys; print(" ".join(m["name"] for m in json.load(sys.stdin)["modules"]))')"
-check "  proxy стоит, версия пакета, нужен выходам t и t2" "true;2.0.0;true;t, t2" \
-      "$(printf '%s' "$out" | mod_field proxy installed);$(printf '%s' "$out" | mod_field proxy version);$(printf '%s' "$out" | mod_field proxy needed);$(printf '%s' "$out" | mod_field proxy outputs)"
+check "  vless включён, версия плагина, нужен выходу nl" "true;2.1.1;enabled;true;nl" \
+      "$(printf '%s' "$out" | mod_field vless installed);$(printf '%s' "$out" | mod_field vless version);$(printf '%s' "$out" | mod_field vless state);$(printf '%s' "$out" | mod_field vless needed);$(printf '%s' "$out" | mod_field vless outputs)"
+check "  proxy стоит, но не работает: состояние и причина названы, нужен выходам t и t2" "true;failed;помощник не поднялся;t, t2" \
+      "$(printf '%s' "$out" | mod_field proxy installed);$(printf '%s' "$out" | mod_field proxy state);$(printf '%s' "$out" | mod_field proxy why);$(printf '%s' "$out" | mod_field proxy outputs)"
 check "  hysteria2 не стоит и не нужен" "false;false" \
       "$(printf '%s' "$out" | mod_field hysteria2 installed);$(printf '%s' "$out" | mod_field hysteria2 needed)"
 
-relclean; reset_logs
-mkrel2 "$T/rel-raw.json" "$(relsum "$T/body-rel")"
-printf 'splify2/releases/releases/download\t%s\n' "$T/body-rel" > "$T/curl.serve"
+reset_logs; plug_reset; plug_fixture hysteria2 2.1.1
 out="$(APK_LIST="$CORE_LIST" rpcd steer_module_add '{"module":"hysteria2"}')"
-check "модуль ставится версией стоящего ядра, один файл" "hysteria2" "$(apk_adds)"
-check "  ответ: ok и что встало" "true;steer-hysteria2 2.0.0" \
+check "плагин ставит менеджер ядра, пакетный менеджер не зовут" "install hysteria2;0" \
+      "$(plug_calls);$(grep -c '^add' "$T/apk.log")"
+check "  ответ: ok и что встало" "true;hysteria2 2.1.1" \
       "$(printf '%s' "$out" | jget ok);$(printf '%s' "$out" | jget installed)"
 out="$(APK_LIST="steer-extended-1.5.9-r1 x {steer-extended}" rpcd steer_module_add '{"module":"hysteria2"}')"
-check "без steer-core модуль ставить некуда" "нет ядра steer-core" "$(printf '%s' "$out" | jget error)"
-
-reset_logs
-out="$(APK_LIST="$CORE_LIST" rpcd steer_module_del '{"module":"proxy"}')"
-check "снять модуль, нужный спеке, нельзя — названы выходы" "false;модуль нужен выходам: t, t2" \
+check "без steer-core плагин ставить некуда" "нет ядра steer-core" "$(printf '%s' "$out" | jget error)"
+plug_reset; plug_fixture hysteria2 2.1.1
+printf 'нужно 1,8 МБ, свободно 0,9 МБ\n' > "$T/plug/fail.install"
+out="$(APK_LIST="$CORE_LIST" rpcd steer_module_add '{"module":"hysteria2"}')"
+check "отказ менеджера доходит его словами" "false;нужно 1,8 МБ, свободно 0,9 МБ" \
       "$(printf '%s' "$out" | jget ok);$(printf '%s' "$out" | jget error)"
-check "  и пакет не трогали" "0" "$(grep -c '^del' "$T/apk.log")"
-out="$(APK_LIST="$CORE_LIST
-steer-xsteer-2.0.0-r1 x {steer-xsteer}" rpcd steer_module_del '{"module":"hysteria2"}')"
-check "ненужный спеке модуль снимается" "del steer-hysteria2" "$(grep '^del' "$T/apk.log")"
-reset_logs
-out="$(APK_LIST="$CORE_LIST
-steer-extended-2.0.0-r1 x {steer-extended}" rpcd steer_module_del '{"module":"hysteria2"}')"
-check "мета-пакет steer-extended снимается вместе с модулем" "del steer-extended|del steer-hysteria2" \
-      "$(grep '^del' "$T/apk.log" | tr '\n' '|' | sed 's/|$//')"
-# Мета-пакет мог быть единственным в /etc/apk/world (apk add steer-extended из репозитория): `apk del`
-# мета-пакета снёс бы и остальные его зависимости, не названные в world. Ядро и остающиеся модули
-# закрепляются ДО снятия мета-пакета.
-reset_logs
-out="$(APK_LIST="$CORE_LIST
-steer-hysteria2-2.0.0-r1 x {steer-hysteria2}
-steer-xsteer-2.0.0-r1 x {steer-xsteer}
-steer-extended-2.0.0-r1 x {steer-extended}" rpcd steer_module_del '{"module":"hysteria2"}')"
-check "снятие модуля при мета-пакете: ядро и остальные модули закреплены в world до снятия" \
-      "add add steer-core|add add steer-vless|add add steer-proxy|add add steer-xsteer|del steer-extended|del steer-hysteria2" \
-      "$(grep '^add\|^del' "$T/apk.log" | tr '\n' '|' | sed 's/|$//')"
-reset_logs
-out="$(APK_LIST="$CORE_LIST
-steer-hysteria2-2.0.0-r1 x {steer-hysteria2}" rpcd steer_module_del '{"module":"hysteria2"}')"
-check "без мета-пакета ничего не закрепляется" "del steer-hysteria2" "$(grep '^add\|^del' "$T/apk.log" | tr '\n' '|' | sed 's/|$//')"
+
+reset_logs; plug_reset; plug_put vless 2.1.1; plug_put proxy 2.1.1; plug_put hysteria2 2.1.1
+out="$(APK_LIST="$CORE_LIST" rpcd steer_module_del '{"module":"proxy"}')"
+check "снять плагин, нужный спеке, нельзя — названы выходы" "false;модуль нужен выходам: t, t2" \
+      "$(printf '%s' "$out" | jget ok);$(printf '%s' "$out" | jget error)"
+check "  и менеджер не звали" "" "$(plug_calls)"
+out="$(APK_LIST="$CORE_LIST" rpcd steer_module_del '{"module":"hysteria2"}')"
+check "ненужный спеке плагин снимает менеджер" "true;remove hysteria2;" \
+      "$(printf '%s' "$out" | jget ok);$(plug_calls);$(ls "$T/plug/lib/hysteria2" 2>/dev/null)"
+printf 'выходы x — вида tunnel:hysteria2\n' > "$T/plug/fail.remove"
+out="$(APK_LIST="$CORE_LIST" rpcd steer_module_del '{"module":"xsteer"}')"
+check "отказ менеджера при снятии доходит его словами" "false;выходы x — вида tunnel:hysteria2" \
+      "$(printf '%s' "$out" | jget ok);$(printf '%s' "$out" | jget error)"
 out="$(rpcd steer_module_add '{"module":"../x"}')"
 check "незнакомый модуль отвергается" "false" "$(printf '%s' "$out" | jget ok)"
 mkdir -p "$T/box"; printf '# steer-box-connector\n' > "$T/box/sing-box"
-reset_logs
+reset_logs; plug_reset; plug_fixture hysteria2 2.1.1
 out="$(SINGBOX_INITD_FIXTURE="$T/box/sing-box" APK_LIST="$CORE_LIST" rpcd steer_module_add '{"module":"hysteria2"}')"
-check "коннектор: модули не трогаются" "false;0" "$(printf '%s' "$out" | jget ok);$(grep -c . "$T/apk.log")"
-rm -rf "$T/box" "$T/mods"; relclean; reset_logs
+check "коннектор: плагины не трогаются" "false;0;" "$(printf '%s' "$out" | jget ok);$(grep -c . "$T/apk.log");$(plug_calls)"
+rm -rf "$T/box"; plug_reset; relclean; reset_logs
 rm -f "$T/etc/spec.json"; [ -f "$spec_keep" ] && mv "$spec_keep" "$T/etc/spec.json"
 for m in steer_modules steer_module_add steer_module_del; do
     check "метод $m в перечне и в ACL" "yes;yes" \

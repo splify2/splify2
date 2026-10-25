@@ -20,6 +20,9 @@ STEER_MIN_VERSION=2.1.0
 # Этой группе нужно скачивание (fetch.sh): подключается здесь, а не каждым вызовом объекта.
 need_fetch
 
+# Протоколы ядра — плагины, их ведёт менеджер ядра (`steer plugin …`); состояние и вызовы — в plugin.sh.
+. "${PLUGIN_SH:-/usr/lib/splify2/plugin.sh}"
+
 
 # Архитектура ПАКЕТОВ, а не процессора.
 #
@@ -383,19 +386,18 @@ engine_running() {
     printf '%s' "$r"
 }
 
-# МОДУЛИ ЯДРА 2.0: имя модуля — пакет steer-<имя> и бинарник steer-<имя> рядом с steerd. Порядок —
-# порядок показа в карточке модулей.
+# ПРОТОКОЛЫ ЯДРА 2.1 — плагины из официального репозитория (plugin-sdk/docs/migration-2.1.md): id плагина
+# совпадает с прежним именем модуля. Порядок — порядок показа в карточке модулей (steer_modules, она
+# остаётся для прежнего интерфейса; вкладка «Плагины» берёт всё из plugins_list).
 STEER_MODULES="vless hysteria2 proxy xsteer obfs tgws"
 
-# Какие модули стоят: файл рядом с ядром ИЛИ пакет в базе менеджера (PKGS, если его уже прочли).
-# Только по файлу — мало: пакет модуля, чей файл пропал или ещё не лёг, держит зависимость на
-# прежнее ядро, а в транзакцию обновления не попадает — apk отказывает всей установке (I-560).
+# Какие протоколы доступны: включённые плагины из STEER_MODULES. Спрашивается state.json менеджера, а
+# не база пакетов: пакетов `steer-<модуль>` в 2.1 нет, и плагин, положенный в обход менеджера, ядро
+# всё равно не регистрирует.
 mods_present() {
     _mp=""
     for _m in $STEER_MODULES; do
-        if [ -x "${MODULE_DIR:-${STEER%/*}}/steer-$_m" ] || { [ -n "${PKGS:-}" ] && pkg_in "steer-$_m" >/dev/null; }; then
-            _mp="$_mp $_m"
-        fi
+        [ "$(plugin_state_of "$_m")" = enabled ] && _mp="$_mp $_m"
     done
     printf '%s' "${_mp# }"
 }
@@ -509,11 +511,10 @@ case "$2" in
             json_dump
             exit 0
         fi
-        # МОДУЛИ ЯДРА 2.0 — отдельные бинарники рядом с steerd (STEER_MODULES), каждый из своего
-        # пакета steer-<модуль>. Наличие спрашивается у файла, а не у базы пакетов: так отвечает
-        # и ядро, которое видит модуль, и ручная установка мимо менеджера.
+        # ПРОТОКОЛЫ ЯДРА 2.1 — плагины (STEER_MODULES): доступен включённый плагин. Состояние берётся
+        # из state.json менеджера плагинов — так его видит и само ядро.
         mods="$(mods_present)"
-        # VLESS — по модулю steer-vless.
+        # VLESS — по плагину vless.
         vless=0
         case " $mods " in *" vless "*) vless=1 ;; esac
         json_init
@@ -764,8 +765,10 @@ EOF
         ;;
 
     steer_install)
-        # Скачать и поставить ядро выбранной версии: пакет steer-core и модули steer-<модуль>
-        # ОДНОЙ транзакцией.
+        # Скачать и поставить ядро выбранной версии: пакет steer-core. Протоколы — не его пакеты, а
+        # плагины: после установки их доводит менеджер ядра (`steer plugin ensure`) — те, что просили
+        # (`modules`), и те, что нужны спеке. Сам steer-core при установке ставит нужное по спеке и из
+        # семени (`steer plugin migrate`), поэтому ensure здесь — подстраховка и путь для просимых.
         read -r input
         ver="$(jsonfilter -s "$input" -e '@.version' 2>/dev/null)"
         want="$(jsonfilter -s "$input" -e '@.modules' 2>/dev/null)"
@@ -778,20 +781,12 @@ EOF
             fail "интерфейс работает с ядром не старше $STEER_MIN_VERSION"
         [ -n "$arch" ] || fail "не определилась архитектура"
 
-        # Модуль зависит от steer-core ТОЧНОЙ версии (формат событий ядра и модуля между
-        # выпусками не обещан), поэтому обновить ядро, оставив хоть один стоящий модуль прежним,
-        # менеджер не даст. Состав транзакции:
-        #   - модули, которые попросили (`modules` — имена через пробел или запятую);
-        #   - модули, которые уже стоят: без них транзакция не пройдёт, а снимать их без спроса
-        #     нельзя;
-        #   - модули, которые нужны спеке (spec_mods): ядро без них её не примет.
-        # kmod-tun (зависимость модулей с TUN) менеджер берёт из фидов сам.
-        PKGS="$(pkg_list)"
+        # Какие плагины довести: просимые и нужные спеке. Имя неизвестного — отказ до скачивания.
         spec_mods
         for m in $(printf '%s' "$want" | tr ',' ' '); do
             case " $STEER_MODULES " in *" $m "*) ;; *) fail "неизвестный модуль: $m" ;; esac
         done
-        have=" $want $(mods_present) $SPEC_MODS "
+        have=" $want $SPEC_MODS "
         have="$(printf '%s' "$have" | tr ',' ' ')"
         mods=""
         for m in $STEER_MODULES; do
@@ -800,7 +795,7 @@ EOF
         mods="${mods# }"
 
         FETCH_VIA=""; files=""
-        for p in steer-core $(for m in $mods; do printf 'steer-%s ' "$m"; done); do
+        for p in steer-core; do
             name="$p-${ver}-1_${arch}.$(pkg_ext)"
             if ! steer_fetch "$ver" "$name"; then
                 rm -f $files
@@ -822,6 +817,15 @@ EOF
         out="$PKG_OUT"
         # shellcheck disable=SC2086
         rm -f $files
+        # Плагины — до службы: перезапуск ядра со спекой, которой плагина ещё нет, поставил бы её
+        # выходы в on_fail. Отказ менеджера ядро не отменяет (оно уже встало): о нём говорит ensure_error.
+        ensure_err=""
+        if [ "$rc" = 0 ] && [ -n "$mods" ]; then
+            # shellcheck disable=SC2086
+            plugin_manager ensure $mods || ensure_err="$(plugin_manager_error)"
+            plugin_sync
+            plugin_sync_reload
+        fi
         json_init
         if [ "$rc" != 0 ]; then
             json_add_boolean ok 0
@@ -841,105 +845,85 @@ EOF
         for m in $mods; do json_add_string "" "$m"; done
         json_close_array
         json_add_boolean restarted "$restarted"
+        [ -n "$ensure_err" ] && json_add_string ensure_error "$ensure_err"
         [ -n "$FETCH_VIA" ] && json_add_string via "$FETCH_VIA"
         [ -n "$out" ] && json_add_string output "$out"
         json_dump
         ;;
 
     steer_modules)
-        # Модули ядра для карточки «Интерфейс»: какие стоят (файл модуля рядом с ядром) и какой версии
-        # пакет, какие нужны спеке (такой снять нельзя — ядро её не примет) и каким выходам.
-        # Плюс версия steer-core: модуль ставится той же версией, что ядро, и без steer-core
-        # (ядра нет) ставить модули нечему.
+        # ПРЕЖНЯЯ карточка модулей («Интерфейс»), теперь над менеджером плагинов: протоколы ядра 2.1 —
+        # плагины, и шесть прежних имён показываются состоянием плагина. Форма ответа прежняя; новое —
+        # state и why (состояние плагина и причина). Вкладка «Плагины» берёт всё из plugins_list; этот
+        # метод — для старой карточки, пока интерфейс её не снял.
         PKGS="$(pkg_list)"
         spec_mods
-        have=" $(mods_present) "
         busy=""; box_busy && busy="$BOX_BY"
+        _sm_rows=""
+        for m in $STEER_MODULES; do
+            _sm_inst=0; plugin_installed "$m" && _sm_inst=1
+            _sm_rows="$_sm_rows$m|$_sm_inst|$(plugin_version_of "$m")|$(plugin_state_of "$m")|$(plugin_why_of "$m")
+"
+        done
         json_init
         json_add_string core "$(pkg_in steer-core)"
         [ -n "$busy" ] && json_add_string busy "$busy"
         json_add_array modules
-        for m in $STEER_MODULES; do
+        while IFS='|' read -r m _sm_inst _sm_ver _sm_st _sm_why; do
+            [ -n "$m" ] || continue
             json_add_object ""
             json_add_string name "$m"
-            case "$have" in *" $m "*) json_add_boolean installed 1 ;; *) json_add_boolean installed 0 ;; esac
-            v="$(pkg_in "steer-$m")"; [ -n "$v" ] && json_add_string version "$v"
+            json_add_boolean installed "$_sm_inst"
+            [ -n "$_sm_ver" ] && [ "$_sm_inst" = 1 ] && json_add_string version "$_sm_ver"
+            [ -n "$_sm_st" ] && json_add_string state "$_sm_st"
+            [ -n "$_sm_why" ] && json_add_string why "$_sm_why"
             case " $SPEC_MODS " in
                 *" $m "*) json_add_boolean needed 1; json_add_string outputs "$(spec_mod_outs "$m")" ;;
                 *) json_add_boolean needed 0 ;;
             esac
             json_close_object
-        done
+        done <<EOF
+$_sm_rows
+EOF
         json_close_array
         json_dump
         ;;
 
     steer_module_add|steer_module_del)
-        # Поставить или снять один модуль ядра 2.0.
+        # ПРЕЖНИЕ методы карточки модулей: поставить или снять плагин-протокол менеджером ядра.
+        # Синхронно, как раньше; настоящий путь установки — plugin_install (задание с ходом).
         #
-        # Ставится модуль ТОЙ ЖЕ версии, что стоящий steer-core: модуль зависит от него точной
-        # версией, и другой менеджер не примет. Ядро само его не увидит до перезапуска — его
-        # перезапускает скрипт пакета модуля, если служба включена.
-        #
-        # Снять модуль, который нужен спеке, нельзя: ядро отвергло бы её целиком при следующем
-        # применении, а выход его вида перестал бы работать уже сейчас. Тогда отказ называет
-        # выходы — их сначала убирают или переделывают. Мета-пакет steer-extended (2.0) держит
-        # свои модули зависимостью — он снимается вместе с модулем, сам он ничего не несёт.
+        # Снять плагин, который нужен спеке, нельзя: ядро отвергло бы её при следующем применении, а
+        # выход его вида перестал бы работать уже сейчас. Отказ называет выходы. Менеджер проверяет это и
+        # сам (remove без --force), здесь отказ раньше и теми же словами, что у карточки.
         read -r input
         m="$(jsonfilter -s "$input" -e '@.module' 2>/dev/null)"
         case " $STEER_MODULES " in *" $m "*) ;; *) fail "неизвестный модуль: $m" ;; esac
         [ -n "$m" ] || fail "неизвестный модуль: $m"
         box_busy && fail "ядро занято: $BOX_BY"
-        PKGS="$(pkg_list)"
         if [ "$2" = steer_module_del ]; then
             spec_mods
             case " $SPEC_MODS " in
                 *" $m "*) fail "модуль нужен выходам: $(spec_mod_outs "$m")" ;;
             esac
-            if pkg_in "steer-extended" >/dev/null; then
-                # Снятие мета-пакета у apk уносит и его зависимости, которых нет в /etc/apk/world: если
-                # человек ставил только steer-extended, ушли бы ядро и остальные модули. Они
-                # закрепляются заранее (у opkg такой записи нет — pkg_unpin ничего не делает).
-                pkg_unpin steer-core
-                for _k in $STEER_MODULES; do
-                    [ "$_k" != "$m" ] && pkg_in "steer-$_k" >/dev/null && pkg_unpin "steer-$_k"
-                done
-                pkg_del steer-extended
-            fi
-            pkg_del "steer-$m"
-            PKGS="$(pkg_list)"
-            json_init
-            if pkg_in "steer-$m" >/dev/null; then
-                json_add_boolean ok 0
-                json_add_string error "модуль steer-$m не снялся"
+            if plugin_manager remove "$m"; then
+                plugin_sync; plugin_sync_reload
+                json_init; json_add_boolean ok 1; json_dump
             else
-                json_add_boolean ok 1
+                fail "$(plugin_manager_error)"
             fi
-            json_dump
             exit 0
         fi
-        cver="$(pkg_in steer-core)"
-        [ -n "$cver" ] || fail "нет ядра steer-core"
-        arch="$(pkg_arch)"
-        [ -n "$arch" ] || fail "не определилась архитектура"
-        name="steer-$m-${cver}-1_${arch}.$(pkg_ext)"
-        FETCH_VIA=""
-        steer_fetch "$cver" "$name" || fail "не скачалось: $name (нет такой версии для $arch?)${FETCH_NOTE:+ — $FETCH_NOTE}"
-        pkg_install "/tmp/$name"
-        rc=$?
-        out="$PKG_OUT"
-        rm -f "/tmp/$name"
-        json_init
-        if [ "$rc" != 0 ]; then
-            json_add_boolean ok 0
-            json_add_string error "$out"
-            json_dump; exit 0
+        [ -n "$(pkg_version steer-core)" ] || fail "нет ядра steer-core"
+        if plugin_manager install "$m"; then
+            plugin_sync; plugin_sync_reload
+            json_init
+            json_add_boolean ok 1
+            json_add_string installed "$m $(plugin_version_of "$m")"
+            json_dump
+        else
+            fail "$(plugin_manager_error)"
         fi
-        json_add_boolean ok 1
-        json_add_string installed "steer-$m $cver"
-        [ -n "$FETCH_VIA" ] && json_add_string via "$FETCH_VIA"
-        [ -n "$out" ] && json_add_string output "$out"
-        json_dump
         ;;
 
     ui_get|ui_set)

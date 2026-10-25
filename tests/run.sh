@@ -34,6 +34,9 @@ run enginematch sh "$ROOT/tests/enginematch.sh"
 # скачивание, сохранение спеки настоящим движком, доскачивание, ночное обновление, удаление.
 run srsmatch sh "$ROOT/tests/srsmatch.sh"
 run pkgmatch   sh "$ROOT/tests/pkgmatch.sh"
+# Плагины: методы вкладки «Плагины» над менеджером ядра (заглушка), диспетчер методов плагинов, ACL из
+# манифеста, ссылки объектов splify2.p.<id>, шлюз /v1/plugin/*.
+run pluginmatch sh "$ROOT/tests/pluginmatch.sh"
 # ReCheck: таблица nftables для IPv4 и IPv6, служба и rpcd без движка.
 run recheckmatch sh "$ROOT/tests/recheckmatch.sh"
 # Спека в spec.yaml (spec.sh): JSON-вид, запись переводом ядра, перевод при обновлении ядра.

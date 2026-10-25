@@ -1,0 +1,100 @@
+#!/bin/sh
+file=""; str=""; exprs=""
+while [ $# -gt 0 ]; do
+    case "$1" in
+        -i) file="$2"; shift 2 ;;
+        -s) str="$2"; shift 2 ;;
+        -e) exprs="$exprs$2
+"; shift 2 ;;
+        *) shift ;;
+    esac
+done
+# Без -i и -s настоящий jsonfilter читает ПОТОК — так его и зовут в скрипте
+# (`steer status | jsonfilter -e ...`). Поток вычитывается здесь, потому что дальше
+# стандартный ввод занят программой python.
+if [ -z "$file" ] && [ -z "$str" ]; then str="$(cat)"; fi
+# Выражения уезжают переменной окружения, а не потоком: программу python читает как раз
+# со стандартного ввода (`python3 -` плюс heredoc), и труба до неё не доходит.
+EXPRS="$exprs" python3 - "$file" "$str" <<'PY'
+import json, os, re, sys
+path, raw = sys.argv[1], sys.argv[2]
+try:
+    d = json.loads(raw) if raw else json.load(open(path, encoding='utf-8'))
+except Exception:
+    sys.exit(1)
+
+def render(v):
+    if isinstance(v, bool):          return 'true' if v else 'false'
+    if isinstance(v, (dict, list)):  return json.dumps(v, ensure_ascii=False)
+    return str(v)
+
+def walk(cur, parts):
+    if not parts:
+        if cur is not None:
+            yield cur
+        return
+    p, rest = parts[0], parts[1:]
+    if p == '*':
+        items = cur if isinstance(cur, list) else list(cur.values()) if isinstance(cur, dict) else []
+        for it in items:
+            yield from walk(it, rest)
+    elif isinstance(cur, list) and p.isdigit():
+        i = int(p)
+        if 0 <= i < len(cur):
+            yield from walk(cur[i], rest)
+    elif isinstance(cur, dict) and p in cur:
+        yield from walk(cur[p], rest)
+
+for expr in os.environ.get('EXPRS', '').splitlines():
+    if not expr:
+        continue
+    m = re.match(r"@\.(categories|domain_lists)\[@\.id='([^']*)'\]\.([a-z_]+)$", expr)
+    if m:
+        for e in d.get(m.group(1), []):
+            if e.get('id') == m.group(2) and m.group(3) in e:
+                print(e[m.group(3)])
+        continue
+    # Фильтр по полю записи любого списка: `@.interface[@.l3_device='pptp-vpn'].interface` — так
+    # из ответа netifd достаётся имя интерфейса по имени его устройства.
+    m = re.match(r"@\.([a-z_]+)\[@\.([a-z_0-9]+)='([^']*)'\]\.([a-z_0-9]+)$", expr)
+    if m and isinstance(d.get(m.group(1)), list):
+        for e in d[m.group(1)]:
+            if isinstance(e, dict) and str(e.get(m.group(2))) == m.group(3) and m.group(4) in e:
+                print(render(e[m.group(4)]))
+        continue
+    # Поле записи, найденной ПО ПУТИ СПИСКА: так доскачивание спрашивает ссылку набора —
+    # ему известен путь из спеки, а не идентификатор.
+    m = re.match(r"@\.(categories|domain_lists)\[@\.file='([^']*)'\]\.([a-z_]+)$", expr)
+    if m:
+        for e in d.get(m.group(1), []):
+            if e.get('file') == m.group(2) and m.group(3) in e:
+                print(e[m.group(3)])
+        continue
+    # Общий обход: точки — шаги пути, [*] — «все элементы массива или все значения
+    # объекта». Ровно тот набор выражений, который встречается в скрипте.
+    # Числовой индекс массива (`@[0].tag_name`) — им читается список релизов GitHub.
+    # Приводится к обычному шагу пути: скобки становятся точками, а walk() ниже понимает
+    # цифровой шаг как индекс в списке.
+    # Грамматика настоящего jsonfilter: голый шаг пути — LABEL [a-zA-Z_][a-zA-Z0-9_]*; имя с
+    # дефисом или точкой годится только в скобках `['имя']`. Заглушка этому раньше не
+    # следовала и делила путь по точкам как угодно — из-за чего стенд не видел, что имя
+    # выхода `de-1` ломает каждый запрос по нему (I-284).
+    norm = expr.replace('@.', '', 1).replace('[*]', '.*')
+    norm = re.sub(r"\[(['\"])([^'\"]*)\1\]", lambda m: '.\x00' + m.group(2), norm)
+    norm = norm.replace('[', '.').replace(']', '')
+    parts = [x for x in norm.split('.') if x and x != '@']
+    bad = False
+    clean = []
+    for x in parts:
+        if x.startswith('\x00'):
+            clean.append(x[1:])
+        elif x == '*' or x.isdigit() or re.match(r'^[A-Za-z_][A-Za-z0-9_]*$', x):
+            clean.append(x)
+        else:
+            bad = True
+    if bad:
+        sys.stderr.write('Syntax error\n')
+        sys.exit(1)
+    for v in walk(d, clean):
+        print(render(v))
+PY

@@ -339,6 +339,22 @@ function job_drop(dir) {
 	fs.rmdir(dir);
 }
 
+// Ответ метода клиенту. Объект splify2 отдаёт отказ УСПЕШНЫМ вызовом ({ok: false, error}) — так
+// принято у всех его методов, и шлюз это не меняет. Исключение — вызов метода плагина (plugin_call):
+// у него отказ несёт слово code (not_installed, disabled, no_method…), и клиенту приложения проще
+// получить его статусом HTTP, чем разбирать тело. Ответ самого плагина с ok: false, но без code
+// (его собственная логика) идёт как есть.
+const PLUGIN_STATUS = {
+	bad_request: 400, not_installed: 404, no_method: 404, disabled: 409, unavailable: 409,
+	busy: 409, timeout: 504, failed: 500,
+};
+
+function result_reply(res, method) {
+	if (method == 'plugin_call' && res?.ok === false && PLUGIN_STATUS[res.code])
+		fail(PLUGIN_STATUS[res.code], res.code, res.error ?? '');
+	reply(200, res);
+}
+
 // Ждать ответа задания до WAIT секунд. Опрос файла с растущим шагом: короткий вызов (состояние,
 // спека) отвечает за десятки миллисекунд, и первые проверки идут часто.
 function job_wait(id, dir) {
@@ -346,12 +362,13 @@ function job_wait(id, dir) {
 	while (true) {
 		let out = read_json(`${dir}/out`);
 		if (out) {
+			let req = read_json(`${dir}/in`);
 			job_drop(dir);
 			if (out.error) {
 				let f = ubus_fail(out.error);
 				fail(f[0], f[1], f[2]);
 			}
-			reply(200, out.result ?? {});
+			result_reply(out.result ?? {}, req?.method);
 		}
 		if (time() >= until) break;
 		sleep(step);
@@ -371,7 +388,7 @@ function call(dev, method, args, async) {
 			let f = ubus_fail(err);
 			fail(f[0], f[1], f[2]);
 		}
-		reply(200, res ?? {});
+		result_reply(res ?? {}, method);
 	}
 	mkdirs(JOBS);
 	sweep_jobs();
@@ -461,6 +478,20 @@ function events() {
 	if (pid > 0) system(`kill ${pid} 2>/dev/null`);
 	p.close();
 	reply(200, ok ? { events: got } : { events: [], unsupported: true });
+}
+
+// ── Плагины ─────────────────────────────────────────────────────────────────
+
+// Метод самого плагина: тот же диспетчер, что у объекта ubus splify2.p.<id> в LuCI (plugin_invoke в
+// /usr/lib/splify2/plugin.sh), но через метод plugin_call объекта splify2 — у шлюза нет сессии ubus
+// для объекта плагина, а его вызовы идут от root. Тело запроса — параметры метода (объект JSON), ответ —
+// ответ плагина. Отказ приходит статусом HTTP (см. PLUGIN_STATUS): плагин не установлен — 404, выключен
+// — 409, метода нет — 404, срок вышел — 504. Метод с `job: true` отвечает {job}, итог — вызовом
+// POST /v1/call/plugin_job {id}. Долгий метод — с ?async=1, как любой другой вызов.
+function plugin_route(id, name, async) {
+	let me = authorize();
+	let body = method == 'POST' ? read_body() : {};
+	call(me, 'plugin_call', { id, method: name, params: body }, async);
 }
 
 // ── WarpBox ─────────────────────────────────────────────────────────────────
@@ -679,6 +710,10 @@ else if (path == '/v1/events') {
 else if ((m = match(path, /^\/v1\/jobs\/([^\/]+)$/))) {
 	only('GET');
 	job_poll(authorize(), m[1]);
+}
+else if ((m = match(path, /^\/v1\/plugin\/([a-z0-9][a-z0-9-]*)\/([a-z][a-z0-9_]*)$/))) {
+	if (method != 'GET' && method != 'POST') fail(405, 'bad_verb', 'Нужен GET или POST');
+	plugin_route(m[1], m[2], match(getenv('QUERY_STRING') ?? '', /(^|&)async=1(&|$)/) != null);
 }
 else if (path == '/v1/warp') {
 	only('GET');

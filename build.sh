@@ -176,6 +176,10 @@ cp files/usr/sbin/splify2-update-subs "$PKG/usr/sbin/splify2-update-subs"
 # удаление плюс установка, поэтому чистка в postrm сносила бы настройки человека при каждом
 # обновлении. Поэтому — отдельная команда, которую зовут осознанно (см. шапку скрипта).
 cp files/usr/sbin/splify2-purge "$PKG/usr/sbin/splify2-purge"
+# Плагины: ссылки и ACL объектов splify2.p.<id> приводит в согласие с менеджером ядра эта команда
+# (postinst и первое открытие вкладки «Плагины»); сам обработчик — один общий файл без расширения,
+# на него указывают ссылки rpcd (plugin-rpcd), поэтому он лежит рядом с библиотеками, а не в libexec.
+cp files/usr/sbin/splify2-plugin-sync "$PKG/usr/sbin/splify2-plugin-sync"
 # ReCheck — обход DPI на прямом трафике: служба запускает движок из отдельного пакета recheck,
 # если тот стоит и обход включён (/etc/splify2/recheck.conf); иначе ничего не делает.
 cp files/etc/init.d/splify2-recheck "$PKG/etc/init.d/splify2-recheck"
@@ -226,6 +230,8 @@ chmod 0755 "$PKG/usr/libexec/rpcd/splify2" "$PKG/usr/sbin/splify2-update-lists" 
            "$PKG/usr/sbin/splify2-purge"
 chmod 0644 "$PKG/usr/share/splify2/allow-domains.sh"
 chmod 0644 "$PKG"/usr/lib/splify2/*.sh "$PKG"/usr/lib/splify2/rpcd/*.sh
+cp files/usr/lib/splify2/plugin-rpcd "$PKG/usr/lib/splify2/plugin-rpcd"
+chmod 0755 "$PKG/usr/lib/splify2/plugin-rpcd" "$PKG/usr/sbin/splify2-plugin-sync"
 
 # API для приложений вне LuCI (SPLIFY2_API.md в хабе): шлюз CGI на ucode с токенами устройств. Версия
 # пакета вписывается на сборке — её отдаёт /v1/info, и клиенту не нужен отдельный вызов.
@@ -340,6 +346,9 @@ fi
 # Кеш LuCI обязателен к сбросу: иначе меню и view остаются прежними до перезагрузки.
 rm -f /tmp/luci-indexcache.* 2>/dev/null
 rm -rf /tmp/luci-modulecache/ 2>/dev/null
+# Плагины: ссылки и ACL их объектов ubus (после обновления прошивки плагины на месте, ссылок нет).
+# До перечитки rpcd ниже — одной на всё.
+[ -x /usr/sbin/splify2-plugin-sync ] && /usr/sbin/splify2-plugin-sync --no-reload >/dev/null 2>&1
 /etc/init.d/rpcd reload 2>/dev/null
 # Перечитка (SIGHUP) снимает объекты обработчиков и регистрирует их заново вызовом `list`; если
 # в этот момент обработчик не ответил, объекта splify2 нет до следующего перезапуска rpcd, и
@@ -397,6 +406,10 @@ if [ -x /etc/init.d/splify2-recheck ]; then
     /etc/init.d/splify2-recheck disable >/dev/null 2>&1
 fi
 nft delete table inet splify2_recheck >/dev/null 2>&1
+# Объекты плагинов указывали на обработчик этого пакета: без него rpcd на каждой перечитке спотыкался
+# бы о ссылки. Обновление (opkg — удаление и установка) вернёт их через post-install.
+for _l in /usr/libexec/rpcd/splify2.p.*; do [ -L "$_l" ] && rm -f "$_l"; done
+rm -f /usr/share/rpcd/acl.d/splify2-p-*.json
 exit 0
 EOF
 chmod +x build/scripts/pre-remove
@@ -453,6 +466,10 @@ for _g in $(sed -n 's/.*) _grp=\([a-z]*\) ;;$/\1/p' files/usr/libexec/rpcd/splif
     test -s "$PKG/usr/lib/splify2/rpcd/m-$_g.sh" || {
         echo "в пакете нет usr/lib/splify2/rpcd/m-$_g.sh — методы группы $_g не ответят"; exit 1; }
 done
+# Общий обработчик объектов плагинов: на него указывают ссылки rpcd, исполняемый, без расширения (его
+# не видит барьер выше по `.sh`).
+test -x "$PKG/usr/lib/splify2/plugin-rpcd" || {
+    echo "в пакете нет исполняемого usr/lib/splify2/plugin-rpcd — методы плагинов не ответят"; exit 1; }
 test -s "$PKG/usr/lib/splify2/rpcd/common.sh" || {
     echo "в пакете нет usr/lib/splify2/rpcd/common.sh — ни один метод объекта не ответит"; exit 1; }
 # Без этой команды следы пакета убрать нечем: зона фаервола, правила прежних версий, ключ

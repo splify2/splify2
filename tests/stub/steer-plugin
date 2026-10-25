@@ -1,0 +1,98 @@
+#!/bin/sh
+# Заглушка менеджера плагинов ядра: `steer plugin <действие> … --json` (plugin-sdk/docs/steer-api.md, 4.2).
+#
+# Зовётся заглушками `steer` стендов (pluginmatch, rpcdmatch): `sh tests/stub/steer-plugin <действие> …`.
+# Всё состояние — в каталоге $PLUG (песочница стенда):
+#   lib/<id>/        установленные плагины (как /usr/lib/steer/plugins)
+#   state.json       как /etc/steer/plugins/state.json
+#   fixtures/<id>/   что «лежит в каталоге»: install копирует это в lib/
+#   list.json, search.json, repos.json, status.json — ответы list / search / repo list / status
+#   fail.<действие>      — текст отказа: действие печатает его в stderr и возвращает 1
+#   failjson.<действие>  — отказ в JSON-ответе: {"ok":false,"error":<текст>} в stdout, код 1
+#   needed.<id>          — вид плагина есть в спеке: remove без --force отказывает, называя выходы
+#   slow                 — install ждёт две секунды (чтобы увидеть задание «идёт»)
+#   manager.log          — журнал вызовов: аргументы по строке; repo-add.key — тело ключа
+# Нужен python3 (как всему стенду).
+
+: "${PLUG:?PLUG не задан}"
+act="${1:-}"
+[ $# -gt 0 ] && shift
+# Последний аргумент --json отбрасывается: так менеджер и принимает флаг.
+args=""
+for a in "$@"; do [ "$a" = --json ] || args="$args $a"; done
+echo "$act$args" >> "$PLUG/manager.log"
+
+if [ -f "$PLUG/fail.$act" ]; then cat "$PLUG/fail.$act" >&2; exit 1; fi
+if [ -f "$PLUG/failjson.$act" ]; then
+    python3 -c 'import json,sys; print(json.dumps({"ok": False, "error": sys.stdin.read().strip()}, ensure_ascii=False))' < "$PLUG/failjson.$act"
+    exit 1
+fi
+
+state="$PLUG/state.json"
+[ -f "$state" ] || echo '{"schema":1,"plugins":{}}' > "$state"
+
+# set_state ID КЛЮЧ ЗНАЧЕНИЕ_JSON | del ID
+mut() {  # python-программа над state.json
+    python3 - "$state" "$@" <<'PY'
+import json, sys
+p, op, pid = sys.argv[1:4]
+d = json.load(open(p))
+d.setdefault("plugins", {})
+if op == "set":
+    d["plugins"].setdefault(pid, {})[sys.argv[4]] = json.loads(sys.argv[5])
+elif op == "del":
+    d["plugins"].pop(pid, None)
+json.dump(d, open(p, "w"), ensure_ascii=False)
+PY
+}
+
+do_install() {  # ID
+    id="$1"
+    [ -d "$PLUG/fixtures/$id" ] || { echo "в каталоге нет плагина $id" >&2; return 1; }
+    echo "скачивание $id" >&2
+    [ -f "$PLUG/slow" ] && sleep 2
+    echo "проверка подписи $id" >&2
+    rm -rf "$PLUG/lib/$id"; mkdir -p "$PLUG/lib"
+    cp -R "$PLUG/fixtures/$id" "$PLUG/lib/$id"
+    ver="$(python3 -c 'import json,sys; print(json.load(open(sys.argv[1]))["version"])' "$PLUG/lib/$id/plugin.json")"
+    mut set "$id" version "\"$ver\""
+    mut set "$id" state '"enabled"'
+    mut set "$id" repo '"splify2"'
+    printf '{"ok":true,"id":"%s","version":"%s"}\n' "$id" "$ver"
+}
+
+case "$act" in
+    list)   if [ -f "$PLUG/list.json" ]; then cat "$PLUG/list.json"; else echo '{"plugins":[]}'; fi ;;
+    search) if [ -f "$PLUG/search.json" ]; then cat "$PLUG/search.json"; else echo '{"plugins":[]}'; fi ;;
+    status) if [ -f "$PLUG/status.json" ]; then cat "$PLUG/status.json"; else echo '{"plugins":[]}'; fi ;;
+    repo)
+        sub="${1:-}"; [ $# -gt 0 ] && shift
+        case "$sub" in
+            list) if [ -f "$PLUG/repos.json" ]; then cat "$PLUG/repos.json"; else echo '{"repos":[]}'; fi ;;
+            add)  cat > "$PLUG/repo-add.key"; echo '{"ok":true}' ;;
+            del)  echo '{"ok":true}' ;;
+        esac ;;
+    install) do_install "$1" || exit 1 ;;
+    ensure)
+        for id in "$@"; do
+            [ "$id" = --json ] && continue
+            [ -d "$PLUG/lib/$id" ] || do_install "$id" >/dev/null || exit 1
+        done
+        echo '{"ok":true}' ;;
+    remove)
+        id="$1"; force=0
+        for a in "$@"; do [ "$a" = --force ] && force=1; done
+        if [ -f "$PLUG/needed.$id" ] && [ "$force" = 0 ]; then
+            echo "плагин $id нужен выходам: $(cat "$PLUG/needed.$id")" >&2; exit 1
+        fi
+        rm -rf "$PLUG/lib/$id"; mut del "$id"
+        echo '{"ok":true}' ;;
+    enable)  mut set "$1" state '"enabled"';  echo '{"ok":true}' ;;
+    disable) mut set "$1" state '"disabled"'; echo '{"ok":true}' ;;
+    update)  echo '{"updated":[]}' ;;
+    autoupdate)
+        v=false; [ "$2" = on ] && v=true
+        mut set "$1" auto_update "$v"; echo '{"ok":true}' ;;
+    *) echo "неизвестное действие: $act" >&2; exit 2 ;;
+esac
+exit 0
