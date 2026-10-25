@@ -520,6 +520,7 @@ list)
     json_add_object spec_set; json_add_string spec; json_add_string rev; json_close_object
     json_add_object apply; json_close_object
     json_add_object spec_heal; json_close_object
+    json_add_object group_select; json_add_string group; json_add_string member; json_close_object
     json_add_object explain; json_add_string address; json_close_object
     json_add_object lists; json_close_object
     # kind объявлен обязательно, хотя реализация его читала и раньше: rpcd отсекает
@@ -659,7 +660,6 @@ list)
     json_add_object dns_log; json_close_object
     json_add_object conns; json_close_object
     json_add_object helper; json_add_string output; json_close_object
-    json_add_object group_select; json_add_string group; json_add_string member; json_close_object
     json_add_object purge; json_add_boolean plan; json_add_boolean keep_config; json_close_object
     json_add_object engine_stop; json_close_object
     json_add_object engine_start; json_close_object
@@ -667,7 +667,7 @@ list)
     json_add_object splify2_install; json_add_string version; json_close_object
     json_add_object steer_versions; json_close_object
     json_add_object steer_install
-        json_add_string version; json_add_boolean extended; json_add_string modules
+        json_add_string version; json_add_string modules
     json_close_object
     # Модули ядра 2.0: перечень с состоянием и установка или снятие одного модуля.
     json_add_object steer_modules; json_close_object

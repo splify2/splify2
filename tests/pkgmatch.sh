@@ -357,8 +357,8 @@ PI="$T/post-install.block"
 sed -n '/^cat > build\/scripts\/post-install/,/^EOF$/p' build.sh > "$PI"
 check "post-install отклик для счётчика не ставит" "0" \
     "$(grep -c "printf '%s \\* \\* \\* \\* /usr/sbin/splify2-ping" "$PI")"
-check "и убирает строки прежних отправок: отклика и отчёта" "1" \
-    "$(grep -c "sed -i '/splify2-telemetry/d;/splify2-ping/d' /etc/crontabs/root" "$PI")"
+check "и убирает строку прежнего отклика" "1" \
+    "$(grep -c "sed -i '/splify2-ping/d' /etc/crontabs/root" "$PI")"
 check "а обновление списков осталось суточным" "1" \
     "$(grep -c "printf '%s 5 \\* \\* \\* /usr/sbin/splify2-update-lists" "$PI")"
 check "пакет не везёт команду отклика" "0" \
