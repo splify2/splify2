@@ -254,12 +254,13 @@ export default function CatalogTab({ onUseInRule }: Props) {
     return (
         <div className="space-y-3">
             <div className="flex flex-wrap items-center gap-2">
-                <div className="flex min-w-0 flex-1 items-center gap-2 rounded-md border border-border bg-card px-2">
+                <div className="flex min-w-[14rem] flex-1 items-center gap-2 rounded-md border border-border bg-card px-2">
                     <Search className="h-4 w-4 shrink-0 text-muted-foreground" aria-hidden="true" />
                     <input
                         value={q}
                         onChange={(e) => setQ(e.currentTarget.value)}
                         placeholder={S.catalogTab.poiskPoKatalogu}
+                        aria-label={S.catalogTab.poiskPoKatalogu}
                         className="min-w-0 flex-1 bg-transparent py-2 text-sm outline-none"
                     />
                 </div>

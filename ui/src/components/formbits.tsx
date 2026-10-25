@@ -1,4 +1,6 @@
-import type { ReactNode } from 'react'
+import { forwardRef, useRef, type ReactNode } from 'react'
+import { Button } from '@/components/ui/button'
+import { S } from '@/copy'
 
 // Мелкие элементы форм, общие для редакторов выхода, группы и раздела DNS. Вынесены, чтобы
 // один и тот же выбор «одно из нескольких» выглядел в них одинаково: круглая отметка для
@@ -86,3 +88,39 @@ export function NumField({ label, value, onChange, placeholder, min, max }: {
         </Field>
     )
 }
+
+/** Выбор файла со своей кнопкой. Родной `<input type=file>` пишет «Choose File / No file chosen»
+ *  на языке браузера, а не интерфейса; поле остаётся скрытым (по нему находят тесты и экранные
+ *  читалки), нажимается кнопка. Имя выбранного файла не показывается: файл уходит сразу. */
+export const FileButton = forwardRef<HTMLInputElement, {
+    accept: string
+    label: string
+    disabled?: boolean
+    onFile: (f: File) => void
+}>(function FileButton({ accept, label, disabled, onFile }, ref) {
+    const inner = useRef<HTMLInputElement | null>(null)
+    return (
+        <>
+            <Button type="button" variant="outline" disabled={disabled} onClick={() => inner.current?.click()}>
+                {S.listDialogs.vybratFayl}
+            </Button>
+            <input
+                ref={(el) => {
+                    inner.current = el
+                    if (typeof ref === 'function') ref(el)
+                    else if (ref) ref.current = el
+                }}
+                type="file"
+                accept={accept}
+                aria-label={label}
+                disabled={disabled}
+                tabIndex={-1}
+                className="hidden"
+                onChange={(e) => {
+                    const f = e.currentTarget.files?.[0]
+                    if (f) onFile(f)
+                }}
+            />
+        </>
+    )
+})

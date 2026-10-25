@@ -106,7 +106,7 @@ describe('подписки: список, добавление, удаление
         const set = vi.spyOn(rpc, 'subSet').mockResolvedValue({ ok: true } as never)
         const { default: VlessScreen } = await import('@/components/VlessScreen')
         render(<VlessScreen />)
-        const nameField = await screen.findByLabelText('имя подписки')
+        const nameField = await screen.findByLabelText(/Название \(необязательно\)/)
         const urlField = screen.getByLabelText('ссылка подписки')
         ;(nameField as HTMLInputElement).value = 'blue'
         nameField.dispatchEvent(new Event('input', { bubbles: true }))

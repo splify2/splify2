@@ -362,8 +362,6 @@ export default function VlessScreen() {
                         <input
                             value={name}
                             onChange={(e) => setName(e.currentTarget.value)}
-                            placeholder={S.vlessScreen.imyaNeobyazatelno}
-                            aria-label={S.vlessScreen.imyaPodpiski}
                             className="h-10 w-full min-w-0 rounded-lg border border-border bg-background px-3 text-sm"
                         />
                     </label>
