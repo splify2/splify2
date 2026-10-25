@@ -27,6 +27,10 @@ const BATCH_MS = 8
 // Токен доступа обновляется заранее, за минуту до конца срока, — чтобы вызов не упирался в 401.
 const EARLY_MS = 60_000
 const TIMEOUT_MS = 70_000
+// Подключение — разговор с человеком у экрана: адрес, в котором ошиблись, не должен держать форму
+// минуту с лишним. Роутер в сети отвечает на эти два запроса за доли секунды.
+const CONNECT_INFO_MS = 12_000
+const CONNECT_LOGIN_MS = 30_000
 
 class ApiError extends Error {
     constructor(status, code, message) {
@@ -49,6 +53,29 @@ function unseal(v) {
     } catch {
         return null
     }
+}
+
+/** Почему запрос не дошёл — словами для человека. Код остаётся `network`: по нему сторож судит, что
+ *  роутер пропал со связи. */
+function networkError(e) {
+    const c = e?.cause
+    // Несколько адресов (IPv4 и IPv6) дают AggregateError: причина — в первом из вложенных.
+    const code = String(c?.code ?? c?.errors?.[0]?.code ?? '')
+    const text = String(c?.message ?? e?.message ?? '')
+    if (/CERT|TLS|SSL|SELF_SIGNED/i.test(code + ' ' + text))
+        return new ApiError(0, 'network', 'Сертификат роутера не принят — подключитесь по адресу http://…')
+    if (/redirect/i.test(text))
+        return new ApiError(0, 'network', 'Роутер перенаправляет на другой адрес — укажите его полностью, например https://192.168.1.1')
+    if (code === 'ENOTFOUND' || code === 'EAI_AGAIN') return new ApiError(0, 'network', 'Адрес роутера не найден')
+    if (code === 'ECONNREFUSED') return new ApiError(0, 'network', 'Роутер не принимает подключения по этому адресу и порту')
+    if (code === 'ENETUNREACH' || code === 'EHOSTUNREACH') return new ApiError(0, 'network', 'Нет пути к роутеру — проверьте сеть и адрес')
+    return new ApiError(0, 'network', 'Роутер не отвечает')
+}
+
+/** «Слишком много неверных паролей»: сколько ждать — из ответа роутера. */
+function retryText(secs) {
+    if (!Number.isFinite(secs) || secs <= 0) return ''
+    return secs < 90 ? ` Подождите ${Math.ceil(secs)} с.` : ` Подождите ${Math.ceil(secs / 60)} мин.`
 }
 
 /** Адрес роутера из того, что набрал человек: «192.168.1.1», «router.lan:8080», «https://…». */
@@ -119,7 +146,7 @@ class Router extends EventEmitter {
         }
     }
 
-    async http(base, method, url, body, token) {
+    async http(base, method, url, body, token, timeoutMs = TIMEOUT_MS) {
         const headers = { Accept: 'application/json' }
         if (body !== undefined) headers['Content-Type'] = 'application/json'
         if (token) headers.Authorization = 'Bearer ' + token
@@ -128,12 +155,12 @@ class Router extends EventEmitter {
             res = await fetch(base + PREFIX + url, {
                 method, headers,
                 body: body === undefined ? undefined : JSON.stringify(body),
-                signal: AbortSignal.timeout(TIMEOUT_MS),
+                signal: AbortSignal.timeout(timeoutMs),
                 redirect: 'error',
             })
         } catch (e) {
             if (e?.name === 'TimeoutError') throw new ApiError(0, 'timeout', 'Роутер не ответил вовремя')
-            throw new ApiError(0, 'network', 'Роутер не отвечает')
+            throw networkError(e)
         }
         let data = null
         try { data = await res.json() } catch { /* не JSON */ }
@@ -150,15 +177,18 @@ class Router extends EventEmitter {
     /** Подключить это устройство: пароль уходит роутеру один раз и нигде не хранится. */
     async connect(address, password, username = 'root') {
         const base = normalizeBase(address)
-        const info = await this.http(base, 'GET', '/v1/info')
+        const info = await this.http(base, 'GET', '/v1/info', undefined, undefined, CONNECT_INFO_MS)
         if (info.status === 404 || info.data?.product !== 'splify2')
             throw new ApiError(info.status, 'no_api', 'На роутере нет splify2 нужной версии — обновите splify2')
         const r = await this.http(base, 'POST', '/v1/auth/login', {
             username, password,
             device_name: os.hostname().slice(0, 64) || 'Компьютер',
             platform: process.platform,
-        })
-        if (r.status !== 200) throw new ApiError(r.status, r.data?.error ?? 'http', r.data?.message ?? `Ошибка ${r.status}`)
+        }, undefined, CONNECT_LOGIN_MS)
+        if (r.status !== 200) {
+            const wait = r.status === 429 ? retryText(Number(r.data?.retry_after)) : ''
+            throw new ApiError(r.status, r.data?.error ?? 'http', (r.data?.message ?? `Ошибка ${r.status}`) + wait)
+        }
         this.base = base
         this.hostname = info.data.hostname || ''
         this.take(r.data)
@@ -338,4 +368,4 @@ class Router extends EventEmitter {
     }
 }
 
-module.exports = { Router, ApiError, normalizeBase }
+module.exports = { Router, ApiError, normalizeBase, networkError, retryText }

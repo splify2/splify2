@@ -23,6 +23,8 @@ const { EventEmitter } = require('node:events')
 const CHECK_EVERY_MS = 30 * 60 * 1000
 const MIN_GAP_MS = 5 * 60 * 1000
 const FIRST_CHECK_MS = 6000
+// Загрузка при запуске держит заставку; оборвавшаяся без ошибки сеть не должна держать её вечно.
+const DOWNLOAD_MAX_MS = 120_000
 
 function feed() {
     try { return require(path.join(__dirname, '..', '..', 'package.json')).updateFeed || '' } catch { return '' }
@@ -77,10 +79,10 @@ class Updater extends EventEmitter {
         return new Promise((resolve) => {
             let t = setTimeout(() => done('timeout'), FIRST_CHECK_MS)
             const on = (s) => {
-                if (s === 'downloading') { clearTimeout(t); t = null }
+                if (s === 'downloading') { clearTimeout(t); t = setTimeout(() => done('timeout'), DOWNLOAD_MAX_MS) }
                 if (s === 'none' || s === 'error' || s === 'ready') done(s)
             }
-            const done = (s) => { if (t) clearTimeout(t); this.off('state', on); resolve(s) }
+            const done = (s) => { if (t) clearTimeout(t); t = null; this.off('state', on); resolve(s) }
             this.on('state', on)
             this.check()
         })

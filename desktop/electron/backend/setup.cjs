@@ -15,8 +15,12 @@ const INSTALL = process.env.SPLIFY_DESKTOP_INSTALL_CMD ||
     'wget -O /tmp/splify2-install.sh https://gitlab.com/xyzmean/splify2/-/raw/main/install.sh && sh /tmp/splify2-install.sh'
 
 function hostOf(address) {
-    const s = /^https?:\/\//i.test(address) ? new URL(address).hostname : String(address).replace(/:\d+$/, '')
-    return s.replace(/^\[|\]$/g, '')
+    const a = String(address).trim()
+    if (/^https?:\/\//i.test(a)) return new URL(a).hostname.replace(/^\[|\]$/g, '')
+    // «host:порт» — порт отбрасывается; у IPv6 без скобок двоеточий много, и «:1» в конце — часть адреса.
+    const bracket = /^\[([^\]]+)\]/.exec(a)
+    if (bracket) return bracket[1]
+    return a.split(':').length === 2 ? a.replace(/:\d+$/, '') : a
 }
 
 /** Команда на роутере; вывод — строками в onLine. Пустой пароль — как у свежей OpenWrt. */
@@ -82,4 +86,4 @@ function install(address, password, onLine) {
     return run(address, password, INSTALL, onLine)
 }
 
-module.exports = { inspect, install }
+module.exports = { inspect, install, hostOf }

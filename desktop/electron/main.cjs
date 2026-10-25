@@ -5,9 +5,10 @@ const path = require('node:path')
 const fs = require('node:fs')
 const { pathToFileURL } = require('node:url')
 const {
-    app, BrowserWindow, Menu, Notification, Tray, ipcMain, nativeImage, nativeTheme, net, protocol, screen, shell,
+    app, BrowserWindow, Menu, Notification, Tray, ipcMain, nativeImage, nativeTheme, net, protocol, screen, session, shell,
 } = require('electron')
 const { Routers } = require('./routers.cjs')
+const { windowSize: sizeFor } = require('./backend/windowsize.cjs')
 const { Settings, BASE_ZOOM } = require('./backend/settings.cjs')
 const { Monitor } = require('./backend/monitor.cjs')
 const { discover, probe } = require('./backend/discover.cjs')
@@ -48,6 +49,8 @@ let settings
 /** @type {Monitor} */
 /** Сторож по роутеру (id → Monitor); в трее и в окне — сторож активного. */
 const monitors = new Map()
+/** Адрес каждого роутера (id → base): после отключения сам роутер его уже не помнит. */
+const bases = new Map()
 const activeMonitor = () => monitors.get(router?.activeId)
 /** @type {Updater} */
 let updater
@@ -88,7 +91,18 @@ function sendWinState() {
 
 function applyLook(s) {
     nativeTheme.themeSource = s.theme
-    if (win && !win.isDestroyed()) win.webContents.setZoomFactor((s.zoom / 100) * BASE_ZOOM)
+    if (!win || win.isDestroyed()) return
+    win.webContents.setZoomFactor((s.zoom / 100) * BASE_ZOOM)
+    // Окно фиксированное, а крупный масштаб сужает страницу в её пикселях: при 125 и 150 % её
+    // ширина падает ниже 1024, и панель уходит на нижнюю полосу разделов вместо рельса. Окно
+    // растёт вместе с масштабом ровно настолько, чтобы раскладка осталась прежней.
+    const [w, h] = windowSize(s.zoom)
+    const [cw, ch] = win.getSize()
+    if (w === cw && h === ch) return
+    win.setResizable(true)
+    win.setSize(w, h)
+    win.setResizable(false)
+    if (w > cw) win.center()
 }
 
 /** Заставка при запуске — как у Discord: маленькое окно с логотипом, пока поднимается главное. */
@@ -126,15 +140,19 @@ function closeSplash() {
     setTimeout(() => { if (!s.isDestroyed()) s.destroy() }, 220)
 }
 
+/** Размер окна под масштаб (backend/windowsize.cjs) и рабочую область экрана. */
+function windowSize(zoom) {
+    const wa = screen.getPrimaryDisplay().workAreaSize
+    return sizeFor(zoom / 100 * BASE_ZOOM, wa.width, wa.height)
+}
+
 function createWindow(showNow) {
     const started = Date.now()
     // Размер окна ФИКСИРОВАННЫЙ (владелец: «у окна всё ещё можно менять размер, кнопку
     // полноэкрана надо убрать»): без растягивания, развёртывания и полного экрана — раскладка
     // всегда одна, широкая, с рельсом слева. Не больше 85 % рабочей области: в логических
     // пикселях 1280×820 на FHD с масштабом Windows 150 % — это 1920×1230 точек, больше экрана.
-    const wa = screen.getPrimaryDisplay().workAreaSize
-    const width = Math.min(1120, Math.round(wa.width * 0.85))
-    const height = Math.min(740, Math.round(wa.height * 0.85))
+    const [width, height] = windowSize(settings.get().zoom)
     win = new BrowserWindow({
         width,
         height,
@@ -164,6 +182,7 @@ function createWindow(showNow) {
     win.webContents.on('did-finish-load', () => {
         applyLook(settings.get())
         if (pendingNav) { send('nav', pendingNav); pendingNav = null }
+        for (const i of pendingRules.splice(0)) send('tray:rule', i)
     })
     win.once('ready-to-show', () => {
         if (!showNow) return
@@ -182,6 +201,8 @@ function createWindow(showNow) {
             win.hide()
         }
     })
+    // Выход из системы: окно, спрятанное в трей, не должно задерживать выключение Windows.
+    win.on('session-end', () => { quitting = true })
     win.on('closed', () => {
         win = null
         if (!settings.get().closeToTray && !quitting) app.quit()
@@ -305,10 +326,19 @@ function trayRules() {
                 label: `${c.name}  →  ${where}`,
                 type: 'checkbox',
                 checked: c.enabled !== false,
-                click: () => send('tray:rule', i),
+                click: () => toggleRule(i),
             }
         }),
     ]
+}
+
+/** Правило из трея знает окно (оно держит спеку). Окна ещё нет (запуск вместе с системой — в
+ *  трей) — оно создаётся скрытым, и переключение уходит ему, когда страница загрузится. */
+const pendingRules = []
+function toggleRule(i) {
+    if (win && !win.isDestroyed()) { send('tray:rule', i); return }
+    pendingRules.push(i)
+    createWindow(false)
 }
 
 /** Остановить всё / запустить — то же, что кнопка в рельсе: служба ядра на роутере. */
@@ -355,10 +385,16 @@ function notify(ev) {
         icon: path.join(RES, 'icon.png'),
     })
     note.on('click', () => {
-        // Уведомление с другого роутера — сначала перейти на него.
-        if (ev.router && ev.router !== router.activeId) router.use(ev.router)
+        // Уведомление с другого роутера — сначала перейти на него. Окно, уже открытое на прежнем,
+        // перезагружается на новом (как при выборе в меню трея) и открывает раздел после загрузки;
+        // без этого оно показывало бы прежний роутер, а вызовы шли бы уже к новому.
+        const switching = ev.router && ev.router !== router.activeId && router.list.has(ev.router)
+        if (switching) router.use(ev.router)
         showWindow()
-        navigate(ev.section)
+        if (switching && win && !win.webContents.isLoading()) {
+            pendingNav = ev.section || null
+            send('router:switched', router.state.base)
+        } else navigate(ev.section)
     })
     note.show()
 }
@@ -465,6 +501,9 @@ app.whenReady().then(() => {
     memory = new Memory(path.join(app.getPath('userData'), 'memory'))
     memory.use(router.state.base)
     const watch = (id, r) => {
+        // Адрес запоминается сейчас: к «removed» роутер уже забыл себя (state.base == null), а
+        // memory.forget(null) стёр бы память не его, а того роутера, что сейчас открыт.
+        bases.set(id, r.state.base)
         const m = new Monitor(r, settings)
         monitors.set(id, m)
         m.on('state', (st) => { if (id === router.activeId) { updateTray(); send('monitor:state', st) } })
@@ -480,7 +519,13 @@ app.whenReady().then(() => {
     }
     for (const [id, r] of router.list) watch(id, r)
     router.on('added', watch)
-    router.on('removed', (id, r) => { monitors.get(id)?.stop(); monitors.delete(id); memory.forget(r.state.base) })
+    router.on('removed', (id) => {
+        monitors.get(id)?.stop()
+        monitors.delete(id)
+        const base = bases.get(id)
+        bases.delete(id)
+        if (base) memory.forget(base)
+    })
 
     nativeTheme.themeSource = settings.get().theme
     applyLoginItem(settings.get())
@@ -497,6 +542,11 @@ app.whenReady().then(() => {
     })
     router.on('list', () => send('api:routers', router.routers()))
     router.on('lost', (msg) => send('api:lost', msg))
+
+    // Окну не нужны ни камера, ни геолокация, ни прочие разрешения: страница — наша, и просить их
+    // ей не у кого. Отказ — всем запросам.
+    session.defaultSession.setPermissionRequestHandler((_wc, _perm, cb) => cb(false))
+    session.defaultSession.setPermissionCheckHandler(() => false)
 
     protocol.handle('app', (req) => {
         const u = new URL(req.url)
