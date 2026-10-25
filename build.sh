@@ -189,6 +189,12 @@ mkdir -p "$PKG/usr/share/splify2"
 # Схема ключей спеки, которой пользуется каркас на LuCI JS, пока ядро не умеет `steer spec-schema`
 # (метод spec_schema: ответ ядра — главный, этот файл — запасной, с пометкой source: bundled).
 cp files/usr/share/splify2/spec-schema.json "$PKG/usr/share/splify2/spec-schema.json"
+# Версии осей совместимости панели для менеджера плагинов ядра (compat.host-api, compat.splify2-api): он сверяет
+# с ними манифест плагина. Источник — те же числа, что отдаёт plugins_list (plugin.sh).
+mkdir -p "$PKG/usr/share/splify2/compat"
+sed -n 's/^PLUGIN_HOST_API="${PLUGIN_HOST_API:-\(.*\)}"$/\1/p' files/usr/lib/splify2/plugin.sh > "$PKG/usr/share/splify2/compat/host-api"
+sed -n 's/^PLUGIN_SPLIFY2_API="${PLUGIN_SPLIFY2_API:-\(.*\)}"$/\1/p' files/usr/lib/splify2/plugin.sh > "$PKG/usr/share/splify2/compat/splify2-api"
+for _a in host-api splify2-api; do test -s "$PKG/usr/share/splify2/compat/$_a" || { echo "нет версии оси $_a в plugin.sh"; exit 1; }; done
 # Общие куски обеих половин: скачивание (fetch.sh) и быстрый путь опроса (fast.sh). Каждый
 # подключается строкой `. /usr/lib/splify2/…`, и забыть любой — значит выкатить пакет, где
 # соответствующая половина не запускается вовсе. Копируется КАТАЛОГ ЦЕЛИКОМ, а не файлы по
