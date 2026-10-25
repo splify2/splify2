@@ -11,8 +11,8 @@ const { EventEmitter } = require('node:events')
 const { Router, normalizeBase } = require('./router.cjs')
 
 class Routers extends EventEmitter {
-    /** `dir` — каталог файлов роутеров; `legacy` — прежний единственный файл подключения. */
-    constructor(dir, legacy) {
+    /** `dir` — каталог файлов роутеров. */
+    constructor(dir) {
         super()
         this.dir = dir
         this.indexFile = path.join(dir, 'index.json')
@@ -21,12 +21,6 @@ class Routers extends EventEmitter {
         fs.mkdirSync(dir, { recursive: true })
         let index = null
         try { index = JSON.parse(fs.readFileSync(this.indexFile, 'utf8')) } catch { /* первый запуск */ }
-        if (!index && legacy && fs.existsSync(legacy)) {
-            // Прежняя версия хранила один роутер в connection.json — он становится первым.
-            const id = this.newId()
-            try { fs.renameSync(legacy, this.fileOf(id)) } catch { /* не вышло — начнём с чистого */ }
-            index = { active: id, order: [id] }
-        }
         for (const id of index?.order ?? []) {
             const r = new Router(this.fileOf(id))
             if (!r.state.connected) { try { fs.unlinkSync(this.fileOf(id)) } catch { /* нет файла */ } continue }

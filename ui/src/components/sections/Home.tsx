@@ -827,8 +827,7 @@ function RulesBoard({
     onSection: (s: SectionId) => void
 }) {
     const sets = live.status?.channels || []
-    /* Набор по имени правила: сначала тот, что назвал правило участником, иначе одноимённый —
-     * движок старее перечня участников поля `channels` не печатает. */
+    /* Набор по имени правила: сначала тот, что назвал правило участником, иначе одноимённый. */
     const setOf = (name: string): ChannelStatus | undefined =>
         sets.find((s) => (s.channels || []).includes(name)) || sets.find((s) => s.name === name)
 

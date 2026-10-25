@@ -497,7 +497,7 @@ app.on('window-all-closed', () => {})
 app.whenReady().then(() => {
     settings = new Settings(path.join(app.getPath('userData'), 'settings.json'))
     // Роутеры (routers.cjs): `router` — фасад активного, у каждого роутера свой сторож.
-    router = new Routers(path.join(app.getPath('userData'), 'routers'), path.join(app.getPath('userData'), 'connection.json'))
+    router = new Routers(path.join(app.getPath('userData'), 'routers'))
     memory = new Memory(path.join(app.getPath('userData'), 'memory'))
     memory.use(router.state.base)
     const watch = (id, r) => {

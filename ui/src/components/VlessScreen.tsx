@@ -100,32 +100,11 @@ export default function VlessScreen() {
             setHwid(r.hwid || '')
             subsRemember(r.subs)
         } catch {
-            /* Бэкенд постарше перечня не знает: тогда подписка одна, и спросить о ней можно
-             * только прежним способом. */
-            try {
-                const one = await rpc.subInfo()
-                const only = [
-                    {
-                        name: 'main',
-                        url: one.url,
-                        kind: one.kind,
-                        path: one.path,
-                        present: one.present,
-                        bytes: one.bytes,
-                        mtime: one.mtime,
-                    },
-                ]
-                setSubs(only)
-                setHwid(one.hwid || '')
-                subsRemember(only)
-            } catch {
-                setSubs([])
-                /* Роутер не ответил ни на перечень, ни на прежний вопрос об одной подписке.
-                 * Запомненное снимается: рисовать по нему карточки, которых роутер не
-                 * подтверждает, значит обещать кнопки «обновить» и «удалить» для того, чего
-                 * может уже не быть. */
-                subsRemember([])
-            }
+            /* Роутер не ответил. Запомненное снимается: рисовать по нему карточки, которых роутер
+             * не подтверждает, значит обещать кнопки «обновить» и «удалить» для того, чего
+             * может уже не быть. */
+            setSubs([])
+            subsRemember([])
         }
     }, [])
 

@@ -86,7 +86,7 @@ test('роутеры: к «removed» роутер уже забыл адрес �
     seed('a', 'http://a:1')
     seed('b', 'http://b:1')
     fs.writeFileSync(path.join(dir, 'index.json'), JSON.stringify({ active: 'a', order: ['a', 'b'] }))
-    const rs = new Routers(dir, null)
+    const rs = new Routers(dir)
     const seen = []
     rs.on('removed', (id, r) => seen.push([id, r.state.base]))
     rs.list.get('b').forget()
