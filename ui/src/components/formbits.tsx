@@ -25,6 +25,16 @@ export function Chip({ on, onClick, children }: { on: boolean; onClick: () => vo
 export const inputCls =
     'h-[38px] min-w-0 rounded-lg border border-border bg-background px-3 text-sm focus:outline-none focus-visible:ring-2 focus-visible:ring-primary'
 
+/** Подписанное поле. */
+export function Field({ label, children }: { label: string; children: ReactNode }) {
+    return (
+        <label className="block space-y-1">
+            <span className="sp-label uppercase tracking-wide text-muted-foreground">{label}</span>
+            {children}
+        </label>
+    )
+}
+
 /** Выбор файла со своей кнопкой. Родной `<input type=file>` пишет «Choose File / No file chosen»
  *  на языке браузера, а не интерфейса; поле остаётся скрытым (по нему находят тесты и экранные
  *  читалки), нажимается кнопка. Имя выбранного файла не показывается: файл уходит сразу. */

@@ -37,7 +37,7 @@ export async function setupDone(): Promise<boolean> {
         return true
     }
 }
-async function markSetupDone() {
+export async function markSetupDone() {
     let st: Record<string, unknown> = {}
     try { st = JSON.parse((await rpc.uiGet()).state || '{}') } catch { /* пусто */ }
     await rpc.uiSet(JSON.stringify({ ...st, setup: 1 })).catch(() => undefined)
