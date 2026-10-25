@@ -844,7 +844,18 @@ spec_err_split() {  # ТЕКСТ [keep]
     SPEC_ERR_LINE=""; SPEC_ERR_COL=""; SPEC_ERR_MSG="$1"
     _se_a="$(printf '%s' "$1" | sed -n '1s/^\(steer: \)\{0,1\}[^ :]*:\([0-9][0-9]*\):\([0-9][0-9]*\): .*/\2 \3/p')"
     [ -n "$_se_a" ] || return 0
-    if [ "${2:-}" = keep ]; then SPEC_ERR_LINE="${_se_a% *}"; SPEC_ERR_COL="${_se_a#* }"; fi
+    if [ "${2:-}" = keep ]; then
+        SPEC_ERR_LINE="${_se_a% *}"; SPEC_ERR_COL="${_se_a#* }"
+        # libyaml замечает незакрытую кавычку, скобку или ключ без двоеточия только на следующей записи или в конце
+        # текста: адрес ошибки уезжает вниз на пустые строки и комментарии (ядро сообщает 10, ошибка на строке 8).
+        # Ядро называет и строку, где конструкция началась («начало в строке 8») — человеку нужна она. Ошибки
+        # разбора блоков («did not find expected key») остаются с адресом ядра: там начало — вся таблица выше.
+        case "$1" in
+            *"while scanning"*|*"while parsing a flow"*)
+                _se_b="$(printf '%s' "$1" | sed -n '1s/.*начало в строке \([0-9][0-9]*\).*/\1/p')"
+                if [ -n "$_se_b" ] && [ "$_se_b" -lt "$SPEC_ERR_LINE" ]; then SPEC_ERR_LINE="$_se_b"; SPEC_ERR_COL=1; fi ;;
+        esac
+    fi
     SPEC_ERR_MSG="$(printf '%s' "$1" | sed '1s/^\(steer: \)\{0,1\}[^ :]*:[0-9][0-9]*:[0-9][0-9]*: //')"
 }
 

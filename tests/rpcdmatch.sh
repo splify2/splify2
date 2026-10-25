@@ -417,6 +417,8 @@ if [ "${1:-}" = spec ] && [ "${2:-}" = convert ]; then
     case "$_body" in
         '{'*|'') ;;
         *) case "$_json:$_body" in
+               1:*QUOTE*) echo "steer: stdin:10:1: ошибка YAML: found unexpected end of stream (while scanning a quoted scalar, начало в строке 8)" >&2; exit 2 ;;
+               1:*BLOCK*) echo "steer: stdin:10:3: ошибка YAML: did not find expected key (while parsing a block mapping, начало в строке 3)" >&2; exit 2 ;;
                1:*BAD*) echo "steer: stdin:5:3: ошибка YAML: did not find expected key" >&2; exit 2 ;;
                1:*) printf '{"version":2,"from":"yaml"}\n'; exit 0 ;;
            esac ;;
@@ -5285,6 +5287,13 @@ check "spec_check: по файлу YAML ядру ушёл JSON-перевод" "
 out="$(rpcd spec_check '{"spec":"version: 2\noutputs: [BAD\n"}')"
 check "spec_check: ошибка разбора — слова ядра без адреса, строка и колонка отдельно" "false;ошибка YAML: did not find expected key;5;3" \
       "$(printf '%s' "$out" | jget ok);$(printf '%s' "$out" | jget error);$(printf '%s' "$out" | jget line);$(printf '%s' "$out" | jget col)"
+# Адрес libyaml для незакрытой кавычки — конец текста (10), а ошибка на строке 8: человеку называется строка 8.
+out="$(rpcd spec_check '{"spec":"version: 2\nk: \"QUOTE\n\n"}')"
+check "spec_check: незакрытая кавычка — строка, где она началась (8), а не где ядро заметило (10)" "false;8;1" \
+      "$(printf '%s' "$out" | jget ok);$(printf '%s' "$out" | jget line);$(printf '%s' "$out" | jget col)"
+out="$(rpcd spec_check '{"spec":"version: 2\nBLOCK\n"}')"
+check "spec_check: ошибка блока — адрес ядра как есть (10:3)" "false;10;3" \
+      "$(printf '%s' "$out" | jget ok);$(printf '%s' "$out" | jget line);$(printf '%s' "$out" | jget col)"
 check "spec_check: после отказа разбора временных файлов нет" "" "$(ls "$T"/etc | grep -E 'spec\.(json|yaml)\.(chk|new)\.')"
 out="$(STEER_RC=1 STEER_ERR='steer: /x/spec.json.chk.1:3:1: unknown key frobnicate' rpcd spec_check '{"spec":"version: 2\n"}')"
 check "spec_check: отказ проверки — без адреса временного файла, строки нет (она в чужом JSON)" "false;unknown key frobnicate;" \
