@@ -62,7 +62,6 @@
         "splify2": [
           "spec_set",
           "apply",
-          "group_select",
           "spec_heal",
           "list_fetch",
           "lists_update",

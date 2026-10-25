@@ -520,7 +520,6 @@ list)
     json_add_object spec_set; json_add_string spec; json_add_string rev; json_close_object
     json_add_object apply; json_close_object
     json_add_object spec_heal; json_close_object
-    json_add_object group_select; json_add_string group; json_add_string member; json_close_object
     json_add_object explain; json_add_string address; json_close_object
     json_add_object lists; json_close_object
     # kind объявлен обязательно, хотя реализация его читала и раньше: rpcd отсекает
@@ -689,7 +688,7 @@ call)
     # чтения чего бы то ни было.
     case "$2" in
         status|diag|dev_stats|net_info|devices|client_nets|leases|engine_state|outbound_geo|outbound_probe|explain|xsteer_state|vless_nodes|vless_probe|hysteria2_nodes|hysteria2_probe|proxy_nodes|proxy_probe|dns_log|dns_probe|conns|helper|support_report) _grp=state ;;
-        spec_set|apply|group_select|spec_heal) _grp=spec ;;
+        spec_set|apply|spec_heal) _grp=spec ;;
         lists|list_fetch|lists_update|list_put|list_remove|list_custom|list_get|list_peek|list_srs_put|local_lists|allow_domains|fetch_mode|fetch_mode_set|\
         lists_source|lists_source_set) _grp=lists ;;
         engine|engine_stop|engine_start|steer_versions|splify2_versions|splify2_install|steer_install|ui_get|ui_set|\
@@ -707,7 +706,7 @@ call)
     # и архив — у них общие файлы и общий учёт зон; установка пакетов — своя (долгая, и спеку
     # ей держать незачем).
     case "$2" in
-        spec_set|apply|spec_heal|group_select|sub_set|sub_auto|sub_del|sub_refresh|sub_rename|backup_get|backup_put) call_lock state ;;
+        spec_set|apply|spec_heal|sub_set|sub_auto|sub_del|sub_refresh|sub_rename|backup_get|backup_put) call_lock state ;;
         steer_install|splify2_install|steer_module_add|steer_module_del) call_lock install ;;
     esac
     # Где спека и как её читать (spec.yaml ядра 2.1 или spec.json): читать — `spec_json`, писать —

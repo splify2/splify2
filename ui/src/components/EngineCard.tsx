@@ -78,10 +78,9 @@ export default function EngineCard({ engine, releases, onInstalled }: Props) {
         if (!ver) { notify(S.engineCard.vyberiteVersiyu, 'warning'); return }
         setBusy(true)
         try {
-            /* У ядра 2.0 стоящие модули бэкенд берёт сам; выбор — только при первой установке.
-             * `extended` — для выпусков 1.x: VLESS там был вшит в steer-extended. */
+            /* Стоящие модули бэкенд берёт сам; выбор — только при первой установке. */
             const want = core2 ? [] : STEER_MODULES.filter((m) => mods.includes(m))
-            const r = await rpc.steerInstall(ver, want.includes('vless'), want.join(' '))
+            const r = await rpc.steerInstall(ver, want.join(' '))
             if (!r.ok) throw new Error(r.error || S.engineCard.neUstanovilos)
             // Пакет встал — это ещё не «работает». apk остановил сервис, а поднять его
             // обратно должен был restart, и rpcd отдельно сообщает, получилось ли. Пока
