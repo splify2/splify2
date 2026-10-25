@@ -69,6 +69,8 @@ run protohandler sh "$ROOT/tests/protohandler.sh"
 # Каркас на классическом LuCI JS (view/splify2/core): автоформа «схема ключей ядра -> поля» с покрытием каждого
 # ключа фикстуры, словарь T(), список строк strings.json, методы rpcd каркаса. Настоящие модули, LuCI-заглушки.
 run automatch sh "$ROOT/tests/automatch.sh"
+# Языковые плагины lang-ru и lang-en: словари каркаса и Andromeda, i18n_get, сборка с lint --official.
+run langmatch sh "$ROOT/tests/langmatch.sh"
 
 # Интерфейс. Пропускается вслух, а не молча: молчаливый пропуск читается как «прошло», и
 # ровно так стенд однажды и превратился в фикцию.
