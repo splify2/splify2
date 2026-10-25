@@ -27,6 +27,11 @@ const NAMES: Record<string, string> = {
 /** Коды, для которых у нас есть и название, и флаг. Нужен СИНХРОННО — решить, рисовать ли
  *  флаг, — тогда как сам спрайт приезжает отдельным куском по требованию. */
 
+/** Коды стран, у которых есть название, — из чего выбирают, когда страны узлов взять неоткуда. */
+export function countryCodes(): string[] {
+    return Object.keys(NAMES).sort((a, b) => NAMES[a].localeCompare(NAMES[b]))
+}
+
 export function country(cc?: string): string {
     const c = (cc || '').trim().toUpperCase()
     if (!/^[A-Z]{2}$/.test(c)) return ''

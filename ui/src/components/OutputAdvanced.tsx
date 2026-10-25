@@ -41,6 +41,8 @@ export interface Adv {
      *  выхода, одиночному и частям пула. */
     exclude: string[]
     exclude_name: string[]
+    /** Туннели по подписке: узлы каких стран брать только (`only`). */
+    only: string[]
     /** Пул узлов туннеля (spec-v2.md, «Пул узлов туннеля»): сколько узлов работают сразу и как
      *  делятся соединения — правятся в редакторе состава (там видно, сколько узлов взято), пишутся
      *  здесь каждому туннелю выхода, кроме hysteria2. Пусто или 1 — один узел. */
@@ -62,7 +64,7 @@ export function advFrom(spec: Spec, name?: string): Adv {
     /* Исключение редактор пишет всем туннелям выхода одинаково; записанное руками по-разному —
      * объединением, чтобы ни одно не потерялось молча. */
     const tuns = o && isTunnelKind(o.kind) ? [o] : Object.values(spec.outputs).filter((p) => p.part_of === name)
-    const union = (k: 'exclude' | 'exclude_name') => [...new Set(tuns.flatMap((t) => t[k] || []))]
+    const union = (k: 'exclude' | 'exclude_name' | 'only') => [...new Set(tuns.flatMap((t) => t[k] || []))]
     return {
         over: tun?.over || o?.over || '',
         transport: tun?.transport || [],
@@ -77,6 +79,7 @@ export function advFrom(spec: Spec, name?: string): Adv {
         idle_timeout: o?.idle_timeout,
         exclude: union('exclude'),
         exclude_name: union('exclude_name'),
+        only: union('only'),
         /* Число узлов сразу редактор пишет каждой части, урезая до числа её узлов, — обратно
          * берётся наибольшее; раздача и слежка — первые записанные. */
         active: Math.max(0, ...tuns.map((t) => (t.kind !== 'hysteria2' && t.active) || 0)) || undefined,
@@ -123,6 +126,8 @@ export function advApply(o: Output, adv: Adv, role: 'top' | 'tunnel'): Output {
         else delete out.exclude
         if (adv.exclude_name.length) out.exclude_name = adv.exclude_name
         else delete out.exclude_name
+        if (adv.only.length) out.only = adv.only
+        else delete out.only
         /* Пул узлов: у hysteria2 узел один (одно соединение QUIC на все потоки) — только слежка. */
         const many = o.kind === 'hysteria2' ? 1 : Math.min(adv.active ?? 1, nodesCap(o))
         if (many > 1) {

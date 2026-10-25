@@ -10,14 +10,14 @@ import { subsRemember, subsRemembered } from '@/lib/subs'
 import Flag from '@/components/Flag'
 import { country } from '@/lib/geo'
 import { ccFromName, plainName } from '@/lib/nodename'
-import { activeNodesSupported, excludeSupported, poolsSupported } from '@/lib/engine'
+import { activeNodesSupported, excludeSupported, nodeOnlySupported, poolsSupported } from '@/lib/engine'
 import { latencyTone, probeKey, probeMs, useNodeProbe } from '@/lib/probe'
 import {
     devList, insecureApplies, isPart, isProxyKind, isTunnelKind, ON_FAIL_TEXT, poolIpv6, PROXY_KINDS, TUNNEL_LABEL, type BalanceBy, type OnFail, type Output, type ProxyKind,
     type Spec, type VlessNode,
 } from '@/lib/model'
 import OutputAdvanced, { advFrom, advApply, type Adv } from '@/components/OutputAdvanced'
-import { PoolNowLine } from '@/components/OutputCards'
+import { GeoLine, PoolNowLine } from '@/components/OutputCards'
 import ConfBadges from '@/components/ConfBadges'
 import { commonBadges, devProto, nodeBadges, PROTO_NAME, type ConfBadge } from '@/lib/badges'
 import { type Live } from '@/lib/live'
@@ -217,6 +217,9 @@ export default function PoolEditor({
      *  без умения: иначе его нельзя было бы снять. */
     const [exclWritten] = useState(() => adv.exclude.length > 0 || adv.exclude_name.length > 0)
     const exclOn = excludeSupported(live?.status) || exclWritten
+    /** Брать только узлы стран (`only`): умение `node_only`; записанное видно и без него. */
+    const [onlyWritten] = useState(() => adv.only.length > 0)
+    const onlyOn = nodeOnlySupported(live?.status) || onlyWritten
     /** Пул узлов туннеля (ключи `active`, `by`, `interval`, `silence`): выбор есть, когда ядро
      *  называет умение `active_nodes`, — ядро без него спеку с этими ключами отвергает целиком.
      *  Уже записанное видно и без умения, чтобы его можно было снять. */
@@ -410,8 +413,11 @@ export default function PoolEditor({
      *  не номер: так же ядро поступит и с новыми узлами этой страны после обновления подписки. */
     const exclWords = adv.exclude_name.map((w) => w.toLowerCase())
     const excluded = (nd: VlessNode | undefined): boolean => {
-        if (!nd || !exclOn) return false
+        if (!nd) return false
         const cc = ccOf(nd)
+        /* `only`: узел без известной страны ядро не берёт, пока список стран не пуст. */
+        if (onlyOn && adv.only.length && !(cc && adv.only.includes(cc))) return true
+        if (!exclOn) return false
         if (cc && adv.exclude.includes(cc)) return true
         const n = (nd.name || '').toLowerCase()
         return exclWords.some((w) => n.includes(w))
@@ -479,7 +485,7 @@ export default function PoolEditor({
     /** Страны узлов всех подписок — то, из чего выбирают «не брать»; отмеченные, которых в
      *  подписках сейчас нет, тоже остаются в перечне: их можно снять. По названию страны. */
     const countries = (() => {
-        const set = new Set<string>(adv.exclude)
+        const set = new Set<string>([...adv.exclude, ...adv.only])
         for (const s of subs) {
             for (const nd of [...(nodesBySub[s.path] || []), ...(hyBySub[s.path] || []), ...(pxBySub[s.path] || []).map((x) => x.nd)]) {
                 const cc = ccOf(nd)
@@ -489,7 +495,18 @@ export default function PoolEditor({
         return [...set].sort((a, b) => (country(a) || a).localeCompare(country(b) || b))
     })()
     const toggleCountry = (cc: string) =>
-        setAdv({ ...adv, exclude: adv.exclude.includes(cc) ? adv.exclude.filter((x) => x !== cc) : [...adv.exclude, cc] })
+        setAdv({
+            ...adv,
+            exclude: adv.exclude.includes(cc) ? adv.exclude.filter((x) => x !== cc) : [...adv.exclude, cc],
+            only: adv.only.filter((x) => x !== cc),
+        })
+    /** «Брать только»: страна в обоих ключах — отказ ядра, поэтому отметка снимает её из «Не брать». */
+    const toggleOnly = (cc: string) =>
+        setAdv({
+            ...adv,
+            only: adv.only.includes(cc) ? adv.only.filter((x) => x !== cc) : [...adv.only, cc],
+            exclude: adv.exclude.filter((x) => x !== cc),
+        })
     const setExclWords = (text: string) => {
         setExclText(text)
         const words: string[] = []
@@ -857,6 +874,25 @@ export default function PoolEditor({
                             )}
                         </label>
                     </Block>
+                    {onlyOn && subs.some((s) => s.present) && countries.length > 0 && (
+                        /* Брать только узлы выбранных стран; пусто — любые. */
+                        <Block>
+                            <CardHead
+                                title={S.poolEditor.tolkoStrany}
+                                meta={adv.only.length ? S.poolEditor.neBratCount(adv.only.length) : undefined}
+                            />
+                            <div className="flex flex-wrap gap-2" role="group" aria-label={S.poolEditor.tolkoStrany}>
+                                {countries.map((cc) => (
+                                    <Chip key={cc} on={adv.only.includes(cc)} onClick={() => toggleOnly(cc)}>
+                                        <span className="flex items-center gap-1.5">
+                                            <Flag cc={cc} />
+                                            {country(cc) || cc}
+                                        </span>
+                                    </Chip>
+                                ))}
+                            </div>
+                        </Block>
+                    )}
                     {exclOn && subs.some((s) => s.present) && (
                         /* Какие узлы не брать: страны (флажки по странам узлов подписок) и куски
                            имени. Пишется всем туннелям выхода по подписке; ядро отбирает по
@@ -1418,6 +1454,7 @@ export default function PoolEditor({
                                 </div>
                             )}
                             <PoolNowLine sts={ownStatus} none className="border-t border-border pt-2" />
+                            <GeoLine sts={ownStatus} />
                         </Block>
                     )}
 

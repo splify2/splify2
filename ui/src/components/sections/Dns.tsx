@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from 'react'
 import { ArrowDown, ArrowUp, ChevronDown, Plus, RefreshCw, Settings2, Trash2, X } from 'lucide-react'
 import { Button } from '@/components/ui/button'
-import { Block, CardHead, FieldRow, KV, Segmented } from '@/components/ui/layout'
+import { Block, CardHead, FieldRow, KV, Segmented, ToggleRow } from '@/components/ui/layout'
 import { inputCls } from '@/components/formbits'
 import { notify } from '@/lib/notify'
 import { pending } from '@/lib/pending'
@@ -577,6 +577,18 @@ export default function Dns({ live, board = false }: { live?: Live; board?: bool
                                 ? S.dns.tochneePoDomenamZnachenie
                                 : S.dns.trassirovkaViditNastoyaschieUzly}
                         </p>
+                    </div>
+                    <div className="py-3">
+                        <ToggleRow
+                            label={S.dns.klientyMeshVpn}
+                            on={!!dns.mesh_clients}
+                            onToggle={() => {
+                                const next: DnsSpec = { ...dns }
+                                if (dns.mesh_clients) delete next.mesh_clients
+                                else next.mesh_clients = true
+                                setDns(next)
+                            }}
+                        />
                     </div>
         </>
     )

@@ -8,7 +8,7 @@ import { country } from '@/lib/geo'
 import { ccFromName, plainName } from '@/lib/nodename'
 import Flag from '@/components/Flag'
 import { daysText, readQuota, resetText } from '@/lib/quota'
-import { outDown, outTone, outDownLine, outExcluded, poolNow } from '@/lib/outstate'
+import { outDown, outTone, outDownLine, outExcluded, poolNow, geoNow } from '@/lib/outstate'
 import ConfBadges, { useOutNodes } from '@/components/ConfBadges'
 import { outNodes, outputBadges, poolBadges } from '@/lib/badges'
 
@@ -388,6 +388,20 @@ export function PoolNowLine({ sts, className = 'mt-0.5', none }: {
                 </p>
             )}
         </div>
+    )
+}
+
+/** Страна выхода туннеля: какую видят сайты (`geo_cc`) и, если она разошлась с флагом в имени узла
+ *  (`geo_mismatch`), — обе. Нет данных ядра — строки нет. */
+export function GeoLine({ sts, className = 'mt-0.5' }: { sts: (OutputStatus | undefined)[]; className?: string }) {
+    const g = geoNow(sts)
+    if (!g) return null
+    const geo = country(g.geo) || g.geo
+    const node = g.node ? country(g.node) || g.node : ''
+    return g.mismatch && node ? (
+        <p className={`text-xs text-warning-fg ${className}`}>{S.outState.stranaVyhodaRashoditsya(geo, node)}</p>
+    ) : (
+        <p className={`text-xs text-muted-foreground ${className}`}>{S.outState.stranaVyhoda(geo)}</p>
     )
 }
 

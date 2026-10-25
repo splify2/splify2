@@ -159,3 +159,18 @@ describe('раздел DNS', () => {
         expect(await screen.findByText('нет ответа за 4000 мс')).toBeInTheDocument()
     })
 })
+
+describe('клиенты mesh-VPN', () => {
+    it('переключатель пишет dns.mesh_clients и снимает ключ при выключении', async () => {
+        render(view())
+        const sw = await screen.findByRole('switch', { name: S.dns.klientyMeshVpn })
+        expect(sw).toHaveAttribute('aria-checked', 'false')
+        fireEvent.click(sw)
+        expect((edit.mock.calls.at(-1)![0] as Spec).dns?.mesh_clients).toBe(true)
+        current = { ...current, dns: { ...current.dns, mesh_clients: true } }
+        render(view())
+        const on = (await screen.findAllByRole('switch', { name: S.dns.klientyMeshVpn })).at(-1)!
+        fireEvent.click(on)
+        expect((edit.mock.calls.at(-1)![0] as Spec).dns?.mesh_clients).toBeUndefined()
+    })
+})

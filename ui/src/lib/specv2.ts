@@ -98,8 +98,8 @@ const TOP_KEYS = ['version', 'lan', 'clients', 'lists', 'outputs', 'dns', 'rules
 const LAN_KEYS = ['devices', 'addr'] as const
 const CLIENT_KEYS = ['addr', 'mac'] as const
 const LIST_KEYS = ['srs', 'prefixes_file', 'domains_file', 'proto', 'ports', 'all'] as const
-const RULE_KEYS = ['name', 'for', 'to', 'out', 'resolve', 'dns', 'enabled', 'scope'] as const
-const DNS_KEYS = ['mode', 'cache', 'cache_ttl', 'upstream', 'upstreams', 'other', 'bootstrap', 'traceroute_hops'] as const
+const RULE_KEYS = ['name', 'for', 'to', 'out', 'resolve', 'dns', 'enabled', 'scope', 'family', 'on_family_unavailable'] as const
+const DNS_KEYS = ['mode', 'cache', 'cache_ttl', 'upstream', 'upstreams', 'other', 'bootstrap', 'traceroute_hops', 'mesh_clients'] as const
 const UPSTREAM_KEYS = ['url', 'out', 'ips', 'bootstrap', 'fragment'] as const
 const GROUP_KEYS = ['servers', 'mode'] as const
 const OBFS_KEYS = ['mode', 'server', 'listen'] as const
@@ -194,6 +194,8 @@ function decodeOutput(name: string, o: J): Output {
         if (ex.length) out.exclude = ex
         const exn = arr(take('exclude_name'))
         if (exn.length) out.exclude_name = exn
+        const only = arr(take('only'))
+        if (only.length) out.only = only
         /* Пул узлов (spec-v2.md, «Пул узлов туннеля»): слежка — у всех протоколов, сколько узлов
          * сразу и раздача — у всех, кроме hysteria2: у него эти ключи ядро отвергает, и такие
          * (чужие) уезжают в extra и обратно как есть. Целое — в поле модели, иное — тоже как есть. */
@@ -257,6 +259,11 @@ function decodeOutput(name: string, o: J): Output {
         if (Array.isArray(take('weights'))) out.weights = (o.weights as unknown[]).map(Number)
         const by = str(take('by'))
         if (by) out.by = by as Output['by']
+        /* Страны членов: только при `pick: latency` и `order` (иначе ядро спеку отвергает). */
+        const gex = arr(take('exclude'))
+        if (gex.length) out.exclude = gex
+        const gonly = arr(take('only'))
+        if (gonly.length) out.only = gonly
     }
     const extra: Record<string, unknown> = {}
     for (const [k, v] of Object.entries(o)) if (!used.has(k)) extra[k] = v
@@ -303,6 +310,7 @@ function decodeDns(d: J): DnsSpec | undefined {
     const out: DnsSpec = {}
     const mode = str(d.mode)
     if (mode === 'fakeip' || mode === 'realip') out.mode = mode
+    if (typeof d.mesh_clients === 'boolean') out.mesh_clients = d.mesh_clients
     const cache = num(d.cache)
     if (cache !== undefined) out.cache = cache
     /* cache_ttl — как есть: модель его не правит, а незнакомый ключ в нём тоже чей-то. */
@@ -384,8 +392,19 @@ function decodeV2(d: J): Spec {
         kinds.set(ch, ks)
         const rx = rest(r, RULE_KEYS)
         if (rx) ch.extra = rx
+        for (const k of ['family', 'on_family_unavailable'] as const) {
+            const v = r[k]
+            const ok = k === 'family' ? ['4', '6'].includes(String(v)) || v === 'both' : v === 'fallback' || v === 'block'
+            if (v !== undefined && !ok) (ch.extra ??= {})[k] = v
+        }
         const resolve = str(r.resolve)
         if (resolve === 'fakeip' || resolve === 'realip') ch.match.mode = resolve
+        /* Семейство IP правила: `4`/`6` (число или строка; `both` — умолчание, ключа нет). Иное
+         * значение — чужое: ключ остаётся в extra и пишется обратно как есть. */
+        const fam = String(r.family ?? '')
+        if (fam === '4' || fam === '6') ch.family = fam
+        const ofu = str(r.on_family_unavailable)
+        if (ofu === 'fallback' || ofu === 'block') ch.on_family_unavailable = ofu
         const dns = decodeUpstream(r.dns)
         if (dns) ch.dns = dns
         const toNames = arr(r.to)
@@ -608,8 +627,20 @@ function putExclude(out: J, o: Output) {
     }
     const cc = uniq(o.exclude, (s) => s.trim().toUpperCase(), (s) => s)
     const nm = uniq(o.exclude_name, (s) => s.trim(), (s) => s.toLowerCase())
+    const on = uniq(o.only, (s) => s.trim().toUpperCase(), (s) => s)
     if (cc.length) out.exclude = cc
     if (nm.length) out.exclude_name = nm
+    if (on.length) out.only = on
+}
+
+/** `only` и `exclude` группы: коды стран без пустых и повторов, заглавными. Страна в обоих ключах —
+ *  отказ ядра, поэтому `exclude` её не повторяет. */
+function putCountries(out: J, o: Output) {
+    const norm = (l?: string[]) => [...new Set((l || []).map((s) => s.trim().toUpperCase()).filter(Boolean))]
+    const only = norm(o.only)
+    const ex = norm(o.exclude).filter((c) => !only.includes(c))
+    if (ex.length) out.exclude = ex
+    if (only.length) out.only = only
 }
 
 /** Пул узлов туннеля к записи: только отличное от умолчания, как печатает `steer spec convert`.
@@ -711,6 +742,7 @@ function encodeOutput(o: Output): J {
                 put('url', o.url)
                 put('idle_timeout', o.idle_timeout)
             }
+            if (o.pick === 'latency' || o.pick === 'order') putCountries(out, o)
             put('weights', o.pick === 'balance' ? o.weights : undefined)
             put('by', o.pick === 'balance' && o.by !== 'connection' ? o.by : undefined)
             put('ipv6', o.ipv6 === 'off' ? 'off' : undefined)
@@ -764,6 +796,7 @@ function encodeDns(spec: Spec): J | undefined {
     const out: J = {}
     if (d.mode) out.mode = d.mode
     if (spec.traceroute_hops) out.traceroute_hops = true
+    if (typeof d.mesh_clients === 'boolean') out.mesh_clients = d.mesh_clients
     if (d.cache !== undefined && d.cache > 0) out.cache = d.cache
     if (d.cache_ttl && Object.keys(d.cache_ttl).length) out.cache_ttl = d.cache_ttl
     if (d.bootstrap?.length) out.bootstrap = d.bootstrap
@@ -871,6 +904,10 @@ export function encodeSpec(spec: Spec): J {
             Object.assign(r, over)
             r.out = ch.out
             if (ch.match.mode) r.resolve = ch.match.mode
+            if (ch.family) {
+                r.family = ch.family
+                if (ch.family === '6' && ch.on_family_unavailable === 'block') r.on_family_unavailable = 'block'
+            }
             if (ch.dns) r.dns = typeof ch.dns === 'string' ? ch.dns : encodeUpstream(ch.dns)
             if (ch.enabled === false) r.enabled = false
             if (ch.scope === 'device') r.scope = 'device'

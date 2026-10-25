@@ -708,6 +708,47 @@ export default function RuleEditor({
                                     {S.ruleEditor.fakeIpKazhdomuDomenu}</p>
                             </div>
                         )}
+                        {!isBlock && (
+                            <div className="space-y-1.5 border-t border-border pt-3 text-xs">
+                                <div className="text-subtle">{S.ruleEditor.semeystvoIp}</div>
+                                <Segmented<'both' | '4' | '6'>
+                                    label={S.ruleEditor.semeystvoIp}
+                                    value={ch.family ?? 'both'}
+                                    onChange={(f) => {
+                                        const next: Channel = { ...ch }
+                                        if (f === 'both') delete next.family
+                                        else next.family = f
+                                        /* Что делать без IPv6 — только при «Только IPv6». */
+                                        if (f !== '6') delete next.on_family_unavailable
+                                        onChange(next)
+                                    }}
+                                    items={[
+                                        { value: 'both', label: S.ruleEditor.oba },
+                                        { value: '4', label: S.ruleEditor.tolkoIpv4 },
+                                        { value: '6', label: S.ruleEditor.tolkoIpv6 },
+                                    ]}
+                                />
+                                {ch.family === '6' && (
+                                    <>
+                                        <div className="pt-1.5 text-subtle">{S.ruleEditor.esliNetIpv6UVyhoda}</div>
+                                        <Segmented<'fallback' | 'block'>
+                                            label={S.ruleEditor.esliNetIpv6UVyhoda}
+                                            value={ch.on_family_unavailable ?? 'fallback'}
+                                            onChange={(m) => {
+                                                const next: Channel = { ...ch }
+                                                if (m === 'block') next.on_family_unavailable = 'block'
+                                                else delete next.on_family_unavailable
+                                                onChange(next)
+                                            }}
+                                            items={[
+                                                { value: 'fallback', label: S.ruleEditor.idtiPoIpv4 },
+                                                { value: 'block', label: S.ruleEditor.nePropuskat },
+                                            ]}
+                                        />
+                                    </>
+                                )}
+                            </div>
+                        )}
                         {hasDomains && fakeip && !isBlock && (
                             <div className="text-xs">
                                 <FieldRow label={S.ruleEditor.portNaznacheniya}>

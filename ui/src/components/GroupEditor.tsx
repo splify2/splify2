@@ -3,7 +3,9 @@ import { ArrowDown, ArrowUp, Check, Trash2 } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Block, CardHead, DangerButton, FieldRow, ScreenHeader, ToggleRow } from '@/components/ui/layout'
 import { Chip, Field, NumField, Radio, inputCls } from '@/components/formbits'
-import { balanceBySupported } from '@/lib/engine'
+import CountryFilter from '@/components/CountryFilter'
+import { balanceBySupported, groupOnlySupported } from '@/lib/engine'
+import { countryCodes } from '@/lib/geo'
 import { notify } from '@/lib/notify'
 import { outputBusy, renameRefs } from '@/lib/outrefs'
 import { rpc } from '@/lib/rpc'
@@ -78,9 +80,13 @@ export default function GroupEditor({ spec, name, live, onSave, onCancel }: {
     const [noV6, setNoV6] = useState(existing?.ipv6 === 'off')
     const [weights, setWeights] = useState<number[]>(existing?.weights || [])
     const [by, setBy] = useState<BalanceBy>(existing?.by || 'connection')
+    /** Страны членов: `only` и `exclude` группы (только «первый живой» и «самый быстрый»). */
+    const [only, setOnly] = useState<string[]>(existing?.only || [])
+    const [exclude, setExclude] = useState<string[]>(existing?.exclude || [])
     const [onFail, setOnFail] = useState<OnFail>(existing?.on_fail === 'direct' ? 'direct' : 'drop')
     const st = name ? live?.status?.outputs?.[name] : undefined
     /* Режим раздачи — когда ядро его умеет; уже записанный в спеку показывается и без умения. */
+    const canCountry = groupOnlySupported(live?.status) || only.length > 0 || exclude.length > 0
     const canBy = balanceBySupported(live?.status) || (!!existing?.by && existing.by !== 'connection')
 
     /* Кого можно взять: выходы с устройством и другие группы. `direct` устройства не имеет,
@@ -127,6 +133,10 @@ export default function GroupEditor({ spec, name, live, onSave, onCancel }: {
             if (interval !== undefined) g.interval = interval
             if (url.trim()) g.url = url.trim()
             if (idle !== undefined) g.idle_timeout = idle
+        }
+        if (pick === 'latency' || pick === 'order') {
+            if (only.length) g.only = only
+            if (exclude.length) g.exclude = exclude
         }
         if (noV6) g.ipv6 = 'off'
         if (pick === 'balance') g.weights = members.map((_, k) => weights[k] ?? 1)
@@ -232,6 +242,14 @@ export default function GroupEditor({ spec, name, live, onSave, onCancel }: {
                                     </Field>
                                 </div>
                             </div>
+                        )}
+                {(pick === 'latency' || pick === 'order') && canCountry && (
+                            <CountryFilter
+                                options={countryCodes()}
+                                only={only}
+                                exclude={exclude}
+                                onChange={(o, e) => { setOnly(o); setExclude(e) }}
+                            />
                         )}
                 {pick === 'balance' && canBy && (
                             <div className="border-t border-border pt-1">

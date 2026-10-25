@@ -184,6 +184,10 @@ export interface Output {
     /** Туннель по подписке: куски имени узла, с которыми его не брать (спека v2 `exclude_name`),
      *  без учёта регистра. */
     exclude_name?: string[]
+    /** Туннель по подписке: страны, узлы которых ТОЛЬКО и берутся (спека v2 `only`, умение
+     *  `node_only`). Группа: страны живых узлов членов (`only`/`exclude` при `pick: latency` и
+     *  `order`, умение `group_only`) — `exclude` группы тот же список, что у туннеля. */
+    only?: string[]
     /** Ключи выхода, которых модель не знает: записываются обратно как есть, чтобы правка
      *  правил не стирала то, что человек дописал руками или что появится в новых движках. */
     extra?: Record<string, unknown>
@@ -392,6 +396,10 @@ export interface OutputStatus extends Output {
         flows?: number
         error?: string
         pid?: number
+        node_cc?: string
+        geo_cc?: string
+        geo_failed?: boolean
+        geo_mismatch?: boolean
     }
     /** Отказ сторожа: устройство есть, но не отвечает. */
     failed?: boolean
@@ -422,6 +430,13 @@ export interface TunnelPoolState {
     slots?: number
     by?: BalanceBy
     active?: { index: number; name: string }[]
+    /** Страна по флагу в имени активного узла (обещание подписки). */
+    node_cc?: string
+    /** Страна, которую видят сайты через выход (проверка выхода ядром). */
+    geo_cc?: string
+    geo_failed?: boolean
+    /** `node_cc` и `geo_cc` разошлись. */
+    geo_mismatch?: boolean
 }
 
 /** Путь моста tgws, который помощник отставил: дата-центр Telegram, медиа ли это, домен и
@@ -447,6 +462,12 @@ export type DomainMode = 'fakeip' | 'realip'
 
 export interface Channel {
     name: string
+    /** Семейство IP правила (спека v2 `family`): `4` — только IPv4, `6` — только IPv6. Нет — оба,
+     *  где выход их несёт. */
+    family?: '4' | '6'
+    /** При `family: 6`, если выход IPv6 не несёт: `fallback` (умолчание ядра) — правило идёт по
+     *  IPv4, `block` — трафик правила не проходит. Ключа без `family: 6` нет. */
+    on_family_unavailable?: 'fallback' | 'block'
     /** Выключенное правило лежит в спеке, но в правила ядра не превращается — движок его
      *  пропускает. Поля нет — значит включено: спека, написанная до него, обязана значить то же.
      *
@@ -578,6 +599,9 @@ export function isUpstreamGroup(u: unknown): u is UpstreamGroup {
 export interface DnsSpec {
     /** Режим доменных правил без своего `resolve`; по умолчанию `fakeip`. */
     mode?: DomainMode
+    /** Клиенты mesh-VPN (tailscale, zerotier) получают поддельные адреса ядра steer, как LAN
+     *  (`dns.mesh_clients`). Нет или `false` — выключено. */
+    mesh_clients?: boolean
     /** Записей в кэше ответов; 0 или нет — кэша нет. */
     cache?: number
     cache_ttl?: { min?: number; max?: number; negative?: number }

@@ -1,4 +1,5 @@
 import { insecureApplies, ipv6Of, type Output, type OutputStatus, type TunnelPoolState } from '@/lib/model'
+import { country } from '@/lib/geo'
 import { plainName } from '@/lib/nodename'
 
 import { S } from '@/copy'
@@ -88,6 +89,24 @@ export function poolNow(sts: (OutputStatus | null | undefined)[]): PoolNow | nul
     return { names, have: names.length, want, slots }
 }
 
+/** Страна выхода туннеля: фактическая (`geo_cc` — какую видят сайты) и заявленная именем узла
+ *  (`node_cc`), у vless, прокси и hysteria2. Сводится по нескольким туннелям (части пула): первая
+ *  найденная; расхождение у любого — расхождение. null — ядро страны не назвало (старое ядро,
+ *  клиент не запущен, активных узлов несколько, проверка не вышла). */
+export interface GeoNow {
+    geo: string
+    node?: string
+    mismatch: boolean
+}
+
+export function geoNow(sts: (OutputStatus | null | undefined)[]): GeoNow | null {
+    const ps = sts.map((st) => st?.vless || st?.proxy || st?.hysteria2).filter((p) => !!p)
+    const bad = ps.find((p) => p!.geo_mismatch && p!.geo_cc)
+    const any = bad || ps.find((p) => p!.geo_cc)
+    if (!any) return null
+    return { geo: any.geo_cc!, node: any.node_cc, mismatch: !!bad }
+}
+
 /** Что ещё ядро 2.0 говорит о выходе сверх «работает ли» — словами для строки выхода в
  *  «Выходах». `alarm` — среди слов есть беда (строка цветом предупреждения).
  *
@@ -114,6 +133,15 @@ export function outExtras(
             words.push(pool.have ? `${S.outState.rabotayutIz(pool.have, pool.want)}: ${pool.names.join(', ')}` : S.outState.zhivyhNet)
             alarm = true
         } else words.push(S.outState.rabotayutUzly(pool.names.join(', ')))
+    }
+    /* Страна выхода: фактическую показываем всегда, когда ядро её знает; расхождение с именем узла —
+     * беда: продавец обещал одну страну, а сайты видят другую. */
+    const geo = geoNow([st, ...(opts.parts || [])])
+    if (geo) {
+        if (geo.mismatch && geo.node) {
+            words.push(S.outState.stranaVyhodaRashoditsya(country(geo.geo) || geo.geo, country(geo.node) || geo.node))
+            alarm = true
+        } else words.push(S.outState.stranaVyhoda(country(geo.geo) || geo.geo))
     }
     if (!st) return { words, alarm }
     if (o.kind === 'tgws' && Array.isArray(st.paths_down) && st.paths_down.length) {

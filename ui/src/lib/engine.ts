@@ -171,6 +171,18 @@ export function excludeSupported(status: Status | null | undefined): boolean {
     return Array.isArray(status?.features) && status.features.includes('exclude')
 }
 
+/** Умеет ли установленное ядро брать узлы туннеля только указанных стран (ключ `only` у
+ *  `kind: tunnel`, умение `node_only`). */
+export function nodeOnlySupported(status: Status | null | undefined): boolean {
+    return Array.isArray(status?.features) && status.features.includes('node_only')
+}
+
+/** Умеет ли установленное ядро отбор членов группы по стране живого узла (`only` и `exclude` у
+ *  `kind: group`, умение `group_only`). */
+export function groupOnlySupported(status: Status | null | undefined): boolean {
+    return Array.isArray(status?.features) && status.features.includes('group_only')
+}
+
 /** Умеет ли установленное ядро пул узлов туннеля — несколько узлов подписки сразу и слежку за
  *  ними (ключи `active`, `by`, `interval`, `silence` у `kind: tunnel` спеки v2, умение
  *  `active_nodes`). Ядро без умения спеку с этими ключами отвергает целиком. */
