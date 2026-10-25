@@ -309,6 +309,7 @@ run_purge() {  # КЛЮЧИ СКРИПТА
     CRON_INITD="$T/bin/initd-cron" \
     INITD="$T/bin/initd-steer" \
     FW_INITD="$T/bin/initd-firewall" \
+    BOX_INITD="${BOX_INITD:-$T/no-sing-box}" \
     STATE_PATHS="$T/var/lib/splify2 $T/var/lib/steer $T/var/run/xsteer $T/var/run/splify2-vless-dirty \
 $T/var/run/splify2-ping" \
         sh "$SCRIPT" "$@" > "$T/out" 2>&1
@@ -527,6 +528,18 @@ run_purge --yes
 mv "$T/bin/initd-steer.off" "$T/bin/initd-steer"
 check "таблица движка снята и без его init-скрипта" "fw4" "$(cat "$T/nft.tables")"
 check "движок не звали — его нет" "0" "$(grep -c '^steer ' "$T/initd.log")"
+
+# ---- ядро ведёт steer-box-connector ---------------------------------------------------
+# Служба sing-box коннектора держит свой steerd и свою таблицу inet steer: ни служба steer, ни её
+# таблица не наши — остаются, и об этом сказано. Остальное (зоны, расписание, настройки) убирается.
+setup
+printf '#!/bin/sh\n# steer-box-connector\n' > "$T/sing-box.init"
+BOX_INITD="$T/sing-box.init" run_purge --yes
+check "при коннекторе таблицу inet steer не удаляем" "0" "$(grep -c 'delete table inet steer$' "$T/nft.log")"
+check "при коннекторе таблица осталась" "yes" "$(grep -qxF steer "$T/nft.tables" && echo yes || echo no)"
+check "при коннекторе службу steer не останавливаем" "0" "$(grep -c '^steer ' "$T/initd.log")"
+check "и сказано, что ядро ведёт коннектор" "yes" "$(outhas 'ведёт steer-box-connector')"
+check "наши зоны при этом убраны" "no" "$(zones | grep -q steer_ && echo yes || echo no)"
 
 # ---- нечего убирать ----------------------------------------------------------------
 # Роутер, где следов нет: скрипт обязан сказать это и выйти успехом, а не ругаться.

@@ -362,7 +362,7 @@ case "${1:-}" in
         else printf '%s=%s\n' "$k" "$v" >> "$S.t"; fi
         mv "$S.t" "$S"
         ;;
-    commit) : ;;
+    commit) [ -z "${UCI_COMMIT_FAIL:-}" ] || exit 1 ;;
 esac
 exit 0
 EOF
@@ -1329,6 +1329,11 @@ check "качается noarch-пакет интерфейса (R-042)" \
       "$(grep 'luci-app-splify2' "$T/curl.log" | head -1)"
 check "установка интерфейса идёт тем же порядком: add первым (R-042)" \
       "add" "$(awk 'NR==1{print $1}' "$T/apk.log")"
+# Перезапуск отложен на две секунды и идёт в фоне, а ответ метода уходит сразу: подоболочка не держит
+# вывод вызова (прежде держала — rpcd не видел конца ответа, пока она спала). Ждём его здесь.
+_w=0; while [ "$_w" -lt 6 ] && ! grep -q restart "$T/rpcd-initd.log" 2>/dev/null; do sleep 1; _w=$((_w + 1)); done
+check "ответ установки пришёл раньше перезапуска rpcd (вывод вызова не удерживался)" "yes" \
+      "$([ "$_w" -ge 1 ] && echo yes || echo no)"
 check "после установки rpcd перезапускается, иначе новый ACL не подхватится (R-042)" \
       "yes" "$(grep -q restart "$T/rpcd-initd.log" 2>/dev/null && echo yes || echo no)"
 check "установка интерфейса отчитывается положительно (R-042)" \
@@ -2349,6 +2354,33 @@ out="$(rpcd sub_set '{"url":"vless://k@h:443#n","name":"hand1"}')"
 out="$(rpcd sub_auto '{"name":"hand1","minutes":60}')"
 check "ссылкам vless:// интервал не назначить" "false" "$(printf '%s' "$out" | jget ok)"
 
+# Первая подписка (main): интервал живёт в СВОЁМ ключе splify2.main.sub_auto. Прежде sub_uci_key для
+# main отдавал на любое поле, кроме url и kind, ключ sub_title: интервал затирал название, а
+# название «60» читалось обратно интервалом.
+out="$(rpcd sub_set '{"url":"https://panel.invalid/sub/mainauto","title":"Моя подписка"}')"
+out="$(rpcd sub_auto '{"minutes":60}')"
+check "main: интервал принят" "true;60" "$(printf '%s' "$out" | jget ok);$(printf '%s' "$out" | jget auto)"
+check "main: интервал лёг в sub_auto" "60" "$(uci_get splify2.main.sub_auto)"
+check "main: название не тронуто" "Моя подписка" "$(uci_get splify2.main.sub_title)"
+check "main: перечень называет интервал и название" "60;Моя подписка" "$(rpcd sub_list | python3 -c 'import json,sys
+d=next(d for d in json.load(sys.stdin)["subs"] if d["name"]=="main")
+print("%s;%s" % (d.get("auto"), d.get("title")))')"
+out="$(rpcd sub_auto '{"minutes":0}')"
+check "main: ноль снимает интервал" "true;;Моя подписка" "$(printf '%s' "$out" | jget ok);$(uci_get splify2.main.sub_auto);$(uci_get splify2.main.sub_title)"
+rpcd sub_auto '{"minutes":90}' >/dev/null
+out="$(rpcd sub_del '{"name":"main"}')"
+check "main: удаление подписки снимает и интервал" ";;" "$(uci_get splify2.main.sub_auto);$(uci_get splify2.main.sub_url);$(uci_get splify2.main.sub_title)"
+
+# Источник сменился на ссылки: остаток трафика и интервал прежней панели уходят вместе с нею.
+out="$(rpcd sub_set '{"url":"https://panel.invalid/sub/swap","name":"swap1"}')"
+rpcd sub_auto '{"name":"swap1","minutes":60}' >/dev/null
+printf 'total=100\nat=1\n' > "$T/etc/subs/swap1.userinfo"
+out="$(rpcd sub_set '{"url":"vless://k@h:443#n","name":"swap1"}')"
+check "ссылки вместо панели: остатка трафика больше нет" "no;no" \
+      "$([ -e "$T/etc/subs/swap1.userinfo" ] && echo yes || echo no);$(printf '%s' "$out" | grep -q '"quota"' && echo yes || echo no)"
+check "и интервала обновления тоже" "" "$(uci_get splify2.sub_swap1.auto)"
+rpcd sub_del '{"name":"swap1"}' >/dev/null
+
 # Обновление по сохранённой ссылке. Узлы прежние — туннель не трогаем.
 # Первое обновление узлы МЕНЯЕТ (в файле лежал образец от sub_set) — журнал вызовов движка
 # чистим после него: проверяем второе, где узлы те же самые.
@@ -2405,6 +2437,37 @@ d=next(d for d in json.load(sys.stdin)["subs"] if d["name"]=="main"); print("%s;
 out="$(UCI_SET_FAIL=splify2.main.sub_url rpcd sub_set '{"url":"https://second.invalid/sub","name":"main"}')"
 check "sub_set: отказ записи ссылки не стирает прежнюю" "https://panel.invalid/sub/main" \
       "$(uci_get splify2.main.sub_url)"
+
+# dns_probe: адрес сервера не флаг ядра (ведущий «-»), а IPv6 в скобках — законный адрес. Разбор
+# массива идёт через json_is_a, которого в заглушке jshn нет, поэтому проверка — по тексту шва.
+check "dns_probe: адрес с «-» впереди отвергается, IPv6 в скобках допустим" "1" \
+      "$(grep -cF "''|-*|*[!]A-Za-z0-9:/._=,%@?+[-]*) fail" "$ROOT/files/usr/lib/splify2/rpcd/m-state.sh")"
+
+# list_put: отказ на любом шаге не оставляет временных файлов в /tmp (прежде — по одному на попытку).
+_pb="$(ls /tmp | grep -c '^splify2-put\.')"
+rpcd list_put '{"name":"tmpleak","kind":"prefixes","url":"ftp://x/y"}' >/dev/null
+rpcd list_put '{"name":"tmpleak","kind":"prefixes","text":""}' >/dev/null
+rpcd list_put '{"name":"tmpleak","kind":"prefixes","text":"не подсеть"}' >/dev/null
+check "list_put: после трёх отказов в /tmp ничего не осталось" "$_pb" "$(ls /tmp | grep -c '^splify2-put\.')"
+
+# explain: значение с дефиса ядро разобрало бы как флаг — отказ здесь, до вызова ядра.
+out="$(rpcd explain '{"address":"--spec"}')"
+check "explain: «--флаг» вместо адреса отвергнут" "false;это не адрес и не имя" "$(printf '%s' "$out" | jget ok);$(printf '%s' "$out" | jget error)"
+
+# Отказ `uci commit` (нет места на флеше) — отказ метода, а не «ok»: иначе сохранённое исчезло бы
+# после перезагрузки при зелёном ответе страницы.
+out="$(UCI_COMMIT_FAIL=1 rpcd sub_auto '{"name":"auto1","minutes":90}')"
+check "sub_auto: отказ commit назван отказом" "false" "$(printf '%s' "$out" | jget ok)"
+out="$(UCI_COMMIT_FAIL=1 rpcd ui_set '{"state":"{\"a\":1}"}')"
+check "ui_set: отказ commit назван отказом" "false" "$(printf '%s' "$out" | jget ok)"
+out="$(UCI_COMMIT_FAIL=1 rpcd fetch_mode_set '{"mode":"always"}')"
+check "fetch_mode_set: отказ commit назван отказом" "false" "$(printf '%s' "$out" | jget ok)"
+out="$(UCI_COMMIT_FAIL=1 rpcd sub_rename '{"name":"auto1","title":"Имя"}')"
+check "sub_rename: отказ commit назван отказом" "false" "$(printf '%s' "$out" | jget ok)"
+rpcd fetch_mode_set '{"mode":"off"}' >/dev/null
+rpcd ui_set '{"state":"{\"setup\":1}"}' >/dev/null
+rpcd sub_rename '{"name":"auto1","title":""}' >/dev/null
+rpcd sub_auto '{"name":"auto1","minutes":0}' >/dev/null
 
 # Память мастера ограничена (I-329): без предела в настройку роутера клали сколько угодно. Отказ
 # называет число; обычная запись проходит.
@@ -3055,6 +3118,19 @@ check "и называется подпиской в виде JSON" "yes" \
 
 out="$(printf '%s\n' 'splify2-backup 1' '[options]' 'sub_url=https://x/$(reboot)' | backup_put)"
 check "ссылка подписки с подстановкой отвергается" "false" "$(printf '%s' "$out" | jget ok)"
+
+# Ссылка с `&` в запросе — обычная ссылка панели, и sub_set её принимает; архив с ней обязан
+# возвращаться на роутер, а не отвергаться как «недопустимые символы».
+out="$(printf '%s\n' 'splify2-backup 1' '[options]' 'sub_url=https://panel.invalid/sub?token=abc&format=json' \
+        'sub_auto=60' 'sub_work.url=https://w.invalid/s?a=1&b=2' 'sub_work.auto=120' | backup_put)"
+check "ссылка с & и интервалы автообновления принимаются из архива" "true;https://panel.invalid/sub?token=abc&format=json;60;120" \
+      "$(printf '%s' "$out" | jget ok);$(uci_get splify2.main.sub_url);$(uci_get splify2.main.sub_auto);$(uci_get splify2.sub_work.auto)"
+out="$(printf '%s\n' 'splify2-backup 1' '[options]' 'sub_auto=5' | backup_put)"
+check "интервал вне 30..4320 минут отвергается" "false" "$(printf '%s' "$out" | jget ok)"
+out="$(printf '%s\n' 'splify2-backup 1' '[options]' 'sub_work.auto=часто' | backup_put)"
+check "интервал не числом отвергается" "false" "$(printf '%s' "$out" | jget ok)"
+check "и экспорт несёт интервалы обратно" "yes;yes" \
+      "$(backup_doc | grep -q '^sub_auto=60$' && echo yes || echo no);$(backup_doc | grep -q '^sub_work.auto=120$' && echo yes || echo no)"
 
 out="$(printf '%s\n' 'splify2-backup 1' '[options]' 'root_password=x' | backup_put)"
 check "неизвестное поле настроек отвергается" "yes" \
@@ -5130,6 +5206,10 @@ check "purge plan: пункт без приставки" "таблица nftable
 check "purge plan: примечание про чужое осталось, служебные строки нет" "1" \
       "$(printf '%s' "$out" | python3 -c 'import json,sys; print(len(json.load(sys.stdin)["notes"]))')"
 check "purge plan: пакеты к снятию названы" "steer-extended luci-app-splify2" \
+      "$(printf '%s' "$out" | python3 -c 'import json,sys; print(" ".join(json.load(sys.stdin)["packages"]))')"
+mkdir -p "$T/box"; printf '# steer-box-connector\n' > "$T/box/sing-box"
+out="$(SINGBOX_INITD_FIXTURE="$T/box/sing-box" rpcd purge '{"plan":true}')"
+check "purge plan: при коннекторе пакеты ядра и сам коннектор не снимаются" "luci-app-splify2" \
       "$(printf '%s' "$out" | python3 -c 'import json,sys; print(" ".join(json.load(sys.stdin)["packages"]))')"
 check "purge plan: ничего не выполнено (без --yes, пакеты на месте)" "" \
       "$(cat "$T/purge.log" | grep -- '--yes'; cat "$T/apk.log")"

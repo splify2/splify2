@@ -466,6 +466,12 @@ uci_file() {
     uci -q get splify2.main >/dev/null 2>&1 || uci -q set splify2.main=splify2
 }
 
+# Записать настройку на флеш. Отказ `uci commit` (кончилось место, испорченный файл) — отказ метода, а не
+# «ok»: иначе страница показывала бы сохранённое то, что после перезагрузки исчезнет.
+uci_commit() {
+    uci -q commit splify2 || fail "настройка не записалась — кончилось место на флеше?"
+}
+
 # Устройства выходов перечисленных видов. Имена спрашиваются у движка флагом --devices, а не
 # берутся как имена выходов: устройство выводится из имени выхода, НО может быть задано в спеке
 # явно, и тогда «имя выхода» — это молча неверный список ровно там, где по нему настраивают
@@ -951,7 +957,7 @@ backup_build() {
     # умолчаниям, то есть роутер вёл себя иначе, чем тот, с которого снят архив, и понять
     # это было нельзя ниоткуда. Перечень сверяется с кодом так:
     # grep -rhoE 'splify2\.(main|sub_[a-z_]*)\.[a-z_]+' files/ | sort -u
-    for k in sub_url sub_kind sub_title wizard manifest_url fetch_via_tunnel \
+    for k in sub_url sub_kind sub_title sub_auto wizard manifest_url fetch_via_tunnel \
              list_shrink_factor geo_url; do
         v="$(uci -q get "splify2.main.$k")"
         [ -n "$v" ] && printf '%s=%s\n' "$k" "$v"
@@ -964,7 +970,7 @@ backup_build() {
     for s in $(sub_names); do
         [ "$s" = main ] && continue
         case "$s" in ''|*[!A-Za-z0-9_]*) continue ;; esac
-        for k in url kind title; do
+        for k in url kind title auto; do
             v="$(uci -q get "splify2.sub_$s.$k")"
             [ -n "$v" ] && printf 'sub_%s.%s=%s\n' "$s" "$k" "$v"
         done

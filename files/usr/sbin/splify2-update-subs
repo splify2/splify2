@@ -56,6 +56,14 @@ printf '%s' "$list" | jsonfilter -e '@.subs[*]' 2>/dev/null | while read -r row;
         log "подписка $n: не обновилась ($(printf '%s' "$out" | head -1))"
         continue
     }
+    # Отказ метода (`fail` в rpcd) приходит как ответ `ok: false` с кодом 0: ubus об этом молчит.
+    # Без этой проверки подписка, которую не удалось скачать, попадала в журнал как «обновлена:
+    # узлы прежние» — то есть неудача записывалась успехом.
+    ok="$(printf '%s' "$out" | jsonfilter -e '@.ok' 2>/dev/null)"
+    if [ "$ok" != true ] && [ "$ok" != 1 ]; then
+        log "подписка $n: не обновилась ($(printf '%s' "$out" | jsonfilter -e '@.error' 2>/dev/null | head -1))"
+        continue
+    fi
     changed="$(printf '%s' "$out" | jsonfilter -e '@.changed' 2>/dev/null)"
     usable="$(printf '%s' "$out" | jsonfilter -e '@.usable' 2>/dev/null)"
     if [ "$changed" = "true" ] || [ "$changed" = "1" ]; then

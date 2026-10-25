@@ -777,6 +777,9 @@ case "$2" in
         json_load "$input" 2>/dev/null || fail "неразбираемый запрос"
         json_get_var address address
         [ -n "$address" ] || fail "не указан адрес"
+        # Аргумент уходит ядру позиционным: с дефиса его разобрали бы как флаг. Ни адрес, ни имя с дефиса
+        # не начинаются.
+        case "$address" in -*) fail "это не адрес и не имя" ;; esac
         json_init
         json_add_string text "$("$STEER" explain "$address" --spec "$SPEC" 2>&1)"
         json_dump
@@ -982,7 +985,7 @@ case "$2" in
             _i=1
             while json_is_a "$_i" string; do
                 json_get_var _u "$_i"
-                case "$_u" in ''|*[!A-Za-z0-9:/._=,%@?+-]*) fail "недопустимый адрес сервера" ;; esac
+                case "$_u" in ''|-*|*[!]A-Za-z0-9:/._=,%@?+[-]*) fail "недопустимый адрес сервера" ;; esac
                 set -- "$@" "$_u"
                 _i=$((_i + 1))
             done

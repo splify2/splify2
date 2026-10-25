@@ -486,6 +486,9 @@ AD_EOF
         esac
         raw="$(mktemp /tmp/splify2-put.XXXXXX)" || fail "не удалось завести временный файл — кончилось место?"
         rm -f "$raw.clean" "$raw.stat"
+        # Отказ на любом шаге ниже (`fail` завершает процесс) не оставляет временных файлов в /tmp: их
+        # было до пяти на каждую неудачную попытку, а /tmp — оперативная память роутера.
+        trap 'rm -f "$raw" "$raw.clean" "$raw.stat"' EXIT
         if [ -n "$url" ]; then
             case "$url" in
                 http://*|https://*) ;;
@@ -970,6 +973,7 @@ AD_EOF
             exit 0
         fi
         # shellcheck disable=SC2086
+        _ll_t="$(mktemp "$_ll_c.XXXXXX" 2>/dev/null)" || _ll_t=""
         { grep -c . /dev/null $_ll_files 2>/dev/null
           ls -l --full-time $_ll_files 2>/dev/null
         } | awk -v pfx="$LISTS/" '
@@ -991,10 +995,12 @@ AD_EOF
                     printf "%s\"%s\":{\"count\":%d,\"mtime\":%d}", (n++ ? "," : ""), r, (r ~ /\.srs$/ ? 0 : c[p]), (p in m ? m[p] : 0)
                 }
                 printf "}}\n"
-            }' | tee "$_ll_c.tmp"
+            }' | { if [ -n "$_ll_t" ]; then tee "$_ll_t"; else cat; fi; }
         # Память — только целиком записанная: обрубок при нехватке места в /tmp хуже её отсутствия.
-        [ -s "$_ll_c.tmp" ] && mv "$_ll_c.tmp" "$_ll_c" && printf '%s' "$_ll_n" > "$_ll_c.n"
-        rm -f "$_ll_c.tmp"
+        # Временный файл — свой у каждого вызова (mktemp): два вызова подряд (страница опрашивает оба
+        # раздела разом) писали в один и тот же и могли переименовать в кэш смесь двух ответов.
+        [ -n "$_ll_t" ] && [ -s "$_ll_t" ] && mv "$_ll_t" "$_ll_c" && printf '%s' "$_ll_n" > "$_ll_c.n"
+        [ -z "$_ll_t" ] || rm -f "$_ll_t"
         ;;
 
     lists_source|lists_source_set)
@@ -1031,7 +1037,7 @@ AD_EOF
                     uci -q set "splify2.main.manifest_url=$url" ;;
                 *) fail "ссылка каталога начинается с https:// (или http://)" ;;
             esac
-            uci -q commit splify2
+            uci_commit
             # Кеш перечня — от прежнего каталога, и оставить его значило бы показать
             # человеку старые списки под именем нового источника.
             rm -f "$MANIFEST" 2>/dev/null
@@ -1066,7 +1072,7 @@ AD_EOF
                 *) fail "режим бывает always или off" ;;
             esac
             uci -q set splify2.main.fetch_via_tunnel="$mode"
-            uci -q commit splify2
+            uci_commit
             json_init; json_add_boolean ok 1; json_add_string mode "$mode"; json_dump
         else
             json_init

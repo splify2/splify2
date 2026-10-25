@@ -178,8 +178,10 @@ gh_load() {  # ВЛАДЕЛЕЦ/РЕПОЗИТОРИЙ
 }
 
 gh_load_api() {  # ВЛАДЕЛЕЦ/РЕПОЗИТОРИЙ
-    _f="${GH_CACHE:-/tmp/splify2-releases.json}"
-    rm -f "$_f"
+    # Файл — свой у каждого вызова (mktemp: имя с номером процесса в /tmp предсказуемо): страница
+    # «Интерфейс» спрашивает версии ядра и самого себя разом, и на общем имени второй вызов стирал и
+    # перезаписывал файл первого — тот разбирал версии чужого репозитория.
+    _f="$(mktemp "${GH_CACHE:-/tmp/splify2-releases.json}.api.XXXXXX" 2>/dev/null)" || return 1
     wget -qO "$_f" --timeout=20 \
         "https://api.github.com/repos/$1/releases?per_page=10" 2>/dev/null || {
             rm -f "$_f"; return 1; }
@@ -233,8 +235,7 @@ gh_load_api() {  # ВЛАДЕЛЕЦ/РЕПОЗИТОРИЙ
 # отсюда нельзя. Это честно сказано полем `note` — молчание здесь читалось бы как «релиз
 # всего один».
 gh_load_version() {  # ВЛАДЕЛЕЦ/РЕПОЗИТОРИЙ
-    _vf="${GH_CACHE:-/tmp/splify2-releases.json}.version"
-    rm -f "$_vf"
+    _vf="$(mktemp "${GH_CACHE:-/tmp/splify2-releases.json}.version.XXXXXX" 2>/dev/null)" || return 1
     # Ветка dist, а не main: в dist VERSION пишет только релизный workflow, рядом с пакетами
     # и тем же числом, что в теге, — то есть он равен последнему выпуску по построению.
     # VERSION в main двигают руками между выпусками (у steer он ушёл на три версии вперёд
@@ -570,7 +571,11 @@ case "$2" in
         pg_flag=""; [ "$pg_keep" = true ] && pg_flag="--keep-config"
         PKGS="$(pkg_list)"
         pg_pkgs=""
-        for pg_n in $(printf '%s\n' "$PKGS" | cut -d' ' -f1 | grep -E "$PKG_OURS"); do
+        # Ядро ведёт steer-box-connector: он и пакеты ядра — не наши, а снятие steer-core унесло бы и
+        # сам коннектор как зависимый. Снимаются только пакеты самого splify2.
+        pg_re="$PKG_OURS"
+        box_busy && pg_re='^(splify2.*|luci-app-splify2|luci-i18n-splify2-.*)$'
+        for pg_n in $(printf '%s\n' "$PKGS" | cut -d' ' -f1 | grep -E "$pg_re"); do
             pg_pkgs="$pg_pkgs $pg_n"
         done
         pg_pkgs="${pg_pkgs# }"
@@ -753,7 +758,10 @@ EOF
         #
         # В фоне и с задержкой, потому что этот процесс — сам rpcd: перезапусти его
         # сейчас, и ответ, который мы вот-вот напечатаем, до браузера не доедет.
-        ( sleep 2; "$RPCD_INITD" restart >/dev/null 2>&1 ) &
+        # Подоболочка отвязана от потоков вызова целиком (`</dev/null >/dev/null 2>&1`), а не только
+        # команда внутри неё: пока подоболочка спит с открытым стандартным выводом, конец ответа
+        # для rpcd не наступает, и перезапуск мог унести ответ раньше, чем он дойдёт до браузера.
+        ( sleep 2; "$RPCD_INITD" restart ) </dev/null >/dev/null 2>&1 &
         json_add_boolean ok 1
         json_add_string installed "$name"
         # Вывод менеджера пакетов отдаётся и на УСПЕХЕ, а не только в отказе. Причина не в
@@ -1108,7 +1116,7 @@ EOF
             [ "$_sz" -le "$UI_STATE_MAX" ] ||
                 fail "память интерфейса больше $((UI_STATE_MAX / 1024)) КБ: $_sz байт"
             uci -q set splify2.main.wizard="$state" || fail "не удалось записать память интерфейса"
-            uci -q commit splify2
+            uci_commit
             json_init; json_add_boolean ok 1; json_dump
         else
             json_init

@@ -160,14 +160,22 @@ fast_net() {
     # Время работы движка. procd отдаёт pid, а начало жизни процесса лежит в /proc: 22-е
     # поле stat — тики с загрузки системы. Спрашиваем именно так, а не «когда применили»:
     # применение туннель не перезапускает, и человек спрашивает про процесс.
+    #
+    # ПРОЦЕСС — ДЕМОН ЯДРА (`steerd daemon`), а не помощник. С 2.0 `steer vless` — клиент одного
+    # выхода: он перезапускается при любой правке этого выхода и вовсе отсутствует, если выходов
+    # VLESS нет, — «время работы» на обзоре тогда обнулялось на работающем ядре или не показывалось.
+    # Разбор stat и uptime — встроенным `read`, без awk и cut: счётчик опрашивают каждые пять секунд.
     _up=0
-    _pid="$(pgrep -f "$STEER vless" 2>/dev/null | head -1)"
-    [ -z "$_pid" ] && _pid="$(pgrep -f 'steer vless' 2>/dev/null | head -1)"
-    if [ -n "$_pid" ] && [ -r "/proc/$_pid/stat" ]; then
-        _start="$(awk '{print $22}' "/proc/$_pid/stat" 2>/dev/null)"
-        _btime="$(awk '{print $1}' /proc/uptime 2>/dev/null | cut -d. -f1)"
+    _pid="$(pgrep -f 'steerd daemon' 2>/dev/null | head -1)"
+    if [ -n "$_pid" ] && read -r _stat 2>/dev/null < "/proc/$_pid/stat"; then
+        # После `)` — поле 3 (состояние); 22-е поле — 20-е слово остатка. Имя процесса в скобках может
+        # содержать пробелы, поэтому режем по ПОСЛЕДНЕЙ скобке.
+        set -- ${_stat##*) }
+        _start="${20:-}"
+        read -r _btime _ 2>/dev/null < /proc/uptime || _btime=""
+        _btime="${_btime%%.*}"
         _hz=100                      # CONFIG_HZ на всех целях OpenWrt, где мы собираемся
-        [ -n "$_start" ] && [ -n "$_btime" ] && _up=$((_btime - _start / _hz))
+        case "$_start$_btime" in ''|*[!0-9]*) ;; *) _up=$((_btime - _start / _hz)) ;; esac
         [ "$_up" -lt 0 ] && _up=0
     fi
 

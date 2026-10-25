@@ -611,6 +611,7 @@ case "\$1" in -q) shift ;; esac
 case "\$1" in
     get)    v="\$(sed -n "s|^\$2=||p" "\$db" 2>/dev/null | tail -n1)"; [ -n "\$v" ] || exit 1; printf '%s\n' "\$v" ;;
     delete) sed -i "\\|^\$2=|d" "\$db" 2>/dev/null ;;
+    set)    k="\${2%%=*}"; sed -i "\\|^\$k=|d" "\$db" 2>/dev/null; printf '%s\n' "\$2" >> "\$db" ;;
     commit) : ;;
     *) exit 1 ;;
 esac
@@ -631,10 +632,38 @@ for f in var/lib/splify2/net var/run/splify2-boot-id tmp/splify2-telemetry.4242 
     check "прежний файл /$f убран" "no" "$([ -e "$TUD/root/$f" ] && echo yes || echo no)"
 done
 check "замер внешнего адреса выхода не тронут" "yes" "$([ -e "$TUD/root/var/lib/splify2/geo-wg0" ] && echo yes || echo no)"
+# Интервал автообновления первой подписки, записанный прежними версиями в sub_title (sub_uci_key
+# отдавал этот ключ на любое поле, кроме url и kind), переезжает в sub_auto; настоящее название — нет.
+sed -n '/^# Интервал автообновления первой подписки/,/^esac$/p' files/etc/uci-defaults/99-splify2 > "$TUD/mig.sh"
+check "блок переноса интервала найден в uci-defaults" "yes" "$([ -s "$TUD/mig.sh" ] && echo yes || echo no)"
+: > "$TUD/uci.db"; echo "splify2.main.sub_title=60" >> "$TUD/uci.db"
+PATH="$TUD/bin:$PATH" sh "$TUD/mig.sh"
+check "интервал из sub_title перенесён в sub_auto" "splify2.main.sub_auto=60" "$(cat "$TUD/uci.db")"
+: > "$TUD/uci.db"; echo "splify2.main.sub_title=Моя подписка" >> "$TUD/uci.db"
+PATH="$TUD/bin:$PATH" sh "$TUD/mig.sh"
+check "настоящее название не тронуто" "splify2.main.sub_title=Моя подписка" "$(cat "$TUD/uci.db")"
+: > "$TUD/uci.db"; printf 'splify2.main.sub_title=7\n' >> "$TUD/uci.db"
+PATH="$TUD/bin:$PATH" sh "$TUD/mig.sh"
+check "число вне 30..4320 — это название, а не интервал" "splify2.main.sub_title=7" "$(cat "$TUD/uci.db")"
+: > "$TUD/uci.db"; printf 'splify2.main.sub_title=60\nsplify2.main.sub_auto=120\n' >> "$TUD/uci.db"
+PATH="$TUD/bin:$PATH" sh "$TUD/mig.sh"
+check "уже стоящий sub_auto не перезаписывается" "splify2.main.sub_title=60;splify2.main.sub_auto=120" "$(tr '\n' ';' < "$TUD/uci.db" | sed 's/;$//')"
 rm -rf "$TUD"
 # Метод учёта убран из объекта rpcd и из прав интерфейса; ни одного упоминания в рабочих текстах.
 check "rpcd не знает telemetry_state и telemetry_set" "0" \
     "$(grep -c 'telemetry_state\|telemetry_set' files/usr/libexec/rpcd/splify2 luci/root/usr/share/rpcd/acl.d/luci-app-splify2.json | awk -F: '{s+=$2} END {print s+0}')"
+# Файлы, в которые пишут параллельные вызовы одного и того же метода (страница спрашивает версии ядра
+# и интерфейса, обзор списков — разом), создаются mktemp, а не по общему имени: общее имя — смесь двух
+# ответов, имя с номером процесса в /tmp предсказуемо.
+check "кэш local_lists и ответы GitHub пишутся в свои файлы (mktemp)" "0;1;1;1" \
+    "$(grep -c '_ll_c\.tmp' files/usr/lib/splify2/rpcd/m-lists.sh);$(grep -c 'mktemp \"${GH_CACHE:-/tmp/splify2-releases.json}.api.XXXXXX' files/usr/lib/splify2/rpcd/m-engine.sh);$(grep -c 'mktemp \"${GH_CACHE:-/tmp/splify2-releases.json}.version.XXXXXX' files/usr/lib/splify2/rpcd/m-engine.sh);$(grep -c 'mktemp \"$_ll_c.XXXXXX' files/usr/lib/splify2/rpcd/m-lists.sh)"
+# Методы, отдающие секреты (архив с приватными ключами туннелей, ссылка xs:// с ключом), — только в
+# группе write: учётная запись «только чтение» их получить не должна.
+check "backup_get и xsteer_link — в write и не в read" "yes" \
+    "$(python3 -c 'import json,sys
+a = json.load(open(sys.argv[1]))["luci-app-splify2"]
+r = a["read"]["ubus"]["splify2"]; w = a["write"]["ubus"]["splify2"]
+print("yes" if all(m in w and m not in r for m in ("backup_get", "xsteer_link")) else "no")' luci/root/usr/share/rpcd/acl.d/luci-app-splify2.json)"
 check "группы telemetry в rpcd нет" "no" "$([ -e files/usr/lib/splify2/rpcd/m-telemetry.sh ] && echo yes || echo no)"
 check "README и руководство о счётчике не говорят" "0" \
     "$(cat README.md docs/guide.md | grep -ci 'Счётчик на сайте\|TELEMETRY.md')"

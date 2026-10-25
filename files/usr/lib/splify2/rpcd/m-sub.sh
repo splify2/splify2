@@ -12,11 +12,12 @@ need_fetch
 
 # Где в uci лежит ссылка подписки. У первой — там же, где лежала всегда: перенос ключа
 # означал бы, что после обновления пакета роутер забыл свою подписку.
-sub_uci_key() {  # NAME FIELD(url|kind|title)
+sub_uci_key() {  # NAME FIELD(url|kind|title|auto)
     if [ "$1" = main ]; then
         case "$2" in
             url)  printf 'splify2.main.sub_url' ;;
             kind) printf 'splify2.main.sub_kind' ;;
+            auto) printf 'splify2.main.sub_auto' ;;
             *)    printf 'splify2.main.sub_title' ;;
         esac
     else
@@ -176,12 +177,30 @@ sub_outputs_using() {  # PATH -> имена выходов по одному н�
 sub_nodes_used() {  # PATH -> ЧИСЛО
     _un=0
     spec_have || { printf '0'; return; }
-    for _uo in $(spec_output_names); do
-        [ "$(spec_out_sub "$_uo")" = "$1" ] || continue
-        _uc="$(jsonfilter -i "$(spec_json)" -e "@.outputs['$_uo'].nodes[*]" 2>/dev/null | grep -c .)"
-        case "${_uc:-}" in ''|*[!0-9]*) _uc=0 ;; esac
-        _un=$((_un + _uc))
-    done
+    # Одним проходом по спеке (jshn в подоболочке), а не по два запуска jsonfilter и три подоболочки на
+    # каждый выход каждой подписки: на роутере с десятком выходов и парой подписок это сотни запусков
+    # на один ответ sub_list, а его зовёт и расписание, и страница.
+    _un="$(
+        json_load "$(cat "$(spec_json)" 2>/dev/null)" 2>/dev/null || { echo 0; exit 0; }
+        json_select outputs 2>/dev/null || { echo 0; exit 0; }
+        json_get_keys _un_k
+        _un_t=0
+        for _un_o in $_un_k; do
+            json_select "$_un_o" 2>/dev/null || continue
+            # Обнуляется перед чтением: json_get_var на отсутствующем ключе оставляет прежнее значение.
+            _un_p=''
+            json_get_var _un_p subscription
+            [ -n "$_un_p" ] || json_get_var _un_p sub_file
+            if [ "$_un_p" = "$1" ] && json_select nodes 2>/dev/null; then
+                json_get_keys _un_nk
+                for _un_x in $_un_nk; do _un_t=$((_un_t + 1)); done
+                json_select ..
+            fi
+            json_select ..
+        done
+        echo "$_un_t"
+    )"
+    case "${_un:-}" in ''|*[!0-9]*) _un=0 ;; esac
     printf '%s' "$_un"
 }
 
@@ -353,6 +372,13 @@ case "$2" in
         else sub_put "$SUB_NAME" url ""
         fi
         sub_put "$SUB_NAME" kind "$kind"
+        # Источник стал ссылками: остаток трафика прежней панели и её интервал обновления
+        # больше ни к чему — ссылки не панель. Без этого обзор показывал бы остаток панели,
+        # которой у подписки уже нет, а интервал висел бы на подписке, которую нечем обновить.
+        if [ "$kind" != url ]; then
+            sub_put "$SUB_NAME" auto "" || true
+            rm -f "$SUB_INFO" "$(sub_auto_stamp)"
+        fi
         # Название: что дал человек, иначе то, что назвала панель. Своё имя переписывать
         # ответом панели нельзя — человек его для того и вписал.
         if [ -z "$sub_title" ]; then
@@ -360,7 +386,7 @@ case "$2" in
             sub_title="$SUB_BRAND_TITLE"
         fi
         [ -n "$sub_title" ] && sub_put "$SUB_NAME" title "$sub_title"
-        uci -q commit splify2
+        uci_commit
         json_init
         json_add_boolean ok 1
         json_add_string kind "$kind"
@@ -545,7 +571,7 @@ case "$2" in
         else
             sub_put "$SUB_NAME" auto "$minutes" || fail "не удалось записать интервал"
         fi
-        uci -q commit splify2
+        uci_commit
         # Отметка о последней попытке снимается: человек только что задал интервал, и первое
         # обновление должно случиться от ЭТОГО момента, а не от давно просроченного прежнего.
         # Иначе включение интервала в 72 часа обновляло бы подписку немедленно.
@@ -577,7 +603,7 @@ case "$2" in
         date -u +%s > "$(sub_auto_stamp)" 2>/dev/null
         sub_fetch "$url" || fail "подписка не скачалась${SUB_ANSWER:+: $(sub_answer error)}"
         _u="$(sub_answer url)"
-        [ -n "$_u" ] && [ "$_u" != "$url" ] && { sub_put "$SUB_NAME" url "$_u"; uci -q commit splify2; }
+        [ -n "$_u" ] && [ "$_u" != "$url" ] && { sub_put "$SUB_NAME" url "$_u"; uci_commit; }
         after="$(md5sum < "$SUB" 2>/dev/null | cut -d' ' -f1)"
         json_init
         json_add_boolean ok 1
@@ -623,7 +649,7 @@ case "$2" in
         case "$sub_title" in *[[:cntrl:]]*) fail "в названии управляющие знаки" ;; esac
         uci_file || fail "не удалось создать $UCI_SPLIFY2 — кончилось место?"
         sub_put "$SUB_NAME" title "$sub_title" || fail "не удалось записать название"
-        uci -q commit splify2
+        uci_commit
         sub_brand "$(sub_get "$SUB_NAME" url)" "$sub_title" own
         json_init
         json_add_boolean ok 1
@@ -651,10 +677,11 @@ case "$2" in
             uci -q delete splify2.main.sub_url 2>/dev/null
             uci -q delete splify2.main.sub_kind 2>/dev/null
             uci -q delete splify2.main.sub_title 2>/dev/null
+            uci -q delete splify2.main.sub_auto 2>/dev/null
         else
             uci -q delete "splify2.sub_$SUB_NAME" 2>/dev/null
         fi
-        uci -q commit splify2
+        uci_commit
         json_init
         json_add_boolean ok 1
         json_add_string name "$SUB_NAME"
