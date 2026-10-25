@@ -10,7 +10,8 @@ describe('FileButton', () => {
         const input = container.querySelector('input[type=file]') as HTMLInputElement
         expect(input.className).toContain('hidden')
         const f = new File(['a'], 'a.txt')
-        fireEvent.change(screen.getByLabelText('Файл со списком'), { target: { files: [f] } })
+        Object.defineProperty(input, 'files', { value: [f] })
+        fireEvent(input, new Event('change', { bubbles: true }))
         expect(onFile).toHaveBeenCalledWith(f)
     })
 })
