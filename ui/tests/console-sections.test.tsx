@@ -49,11 +49,11 @@ describe('рельс разделов вместо вкладок (Andromeda 26.
         vi.spyOn(rpc, 'subInfo').mockResolvedValue({ kind: 'none', path: '', present: false } as never)
     })
 
-    it('в рельсе семь разделов, и это они', async () => {
+    it('в рельсе восемь разделов, и это они', async () => {
         render(<Console />)
         await screen.findByRole('heading', { name: 'Маршрутизация работает' })
         // Диагностика — свой раздел (как в макете Andromeda), а не подпункт настроек.
-        for (const name of ['Главная', 'Правила', 'VPN', 'DNS', 'Запросы', 'Диагностика', 'Настройки'])
+        for (const name of ['Главная', 'Правила', 'VPN', 'DNS', 'Запросы', 'Диагностика', 'Плагины', 'Настройки'])
             expect(nav(new RegExp(name))).toBeInTheDocument()
         // Прежние пункты стали подпунктами и в рельсе их нет.
         for (const gone of ['Каталог', 'Система'])

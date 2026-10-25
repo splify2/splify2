@@ -8,7 +8,7 @@ import CustomLists from '@/components/CustomLists'
 import EngineCard from '@/components/EngineCard'
 import FetchCard from '@/components/FetchCard'
 import ListsSourceCard from '@/components/ListsSourceCard'
-import ModulesCard from '@/components/ModulesCard'
+import AppearanceCard from '@/components/AppearanceCard'
 import SelfUpdateCard from '@/components/SelfUpdateCard'
 import PurgeCard from '@/components/PurgeCard'
 import XsteerPanel from '@/components/XsteerPanel'
@@ -92,7 +92,7 @@ export default function Settings({
                                 releases={live.releases}
                                 onInstalled={live.refresh}
                             />
-                            <ModulesCard onChanged={live.refresh} />
+                            <AppearanceCard />
                             <SelfUpdateCard info={live.selfUpdate} installed={live.build?.ui_version} onInstalled={live.refresh} />
                             <PurgeCard />
                         </div>

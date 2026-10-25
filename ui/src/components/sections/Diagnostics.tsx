@@ -5,6 +5,7 @@ import { Block, CardHead } from '@/components/ui/layout'
 import { blankInstall } from '@/lib/blank'
 import { type Live } from '@/lib/live'
 import { parseLog } from '@/lib/log'
+import { usePluginDiag } from '@/plugins/diag'
 
 import { S } from '@/copy'
 /** Диагностика: то, за чем приходят, когда «применилось, но не работает».
@@ -48,13 +49,14 @@ export default function Diagnostics({ live, board = false }: { live: Live; board
         return log.filter((line) => line.toLowerCase().includes(q))
     }, [log, logFilter])
 
-    const bad = (live.diag?.checks || []).filter((c) => c.verdict === 'fail' || c.verdict === 'warn')
+    const checks = [...(live.diag?.checks || []), ...usePluginDiag()]
+    const bad = checks.filter((c) => c.verdict === 'fail' || c.verdict === 'warn')
 
     /* Советы отдельно и НЕ в счётчиках: они верны всегда, а не описывают эту установку. Смешав
      * их с находками, мы держали бы «есть о чём знать» постоянно — и человек перестал бы читать
      * находки вовсе. */
-    const notes = (live.diag?.checks || []).filter((c) => c.verdict === 'note')
-    const good = (live.diag?.checks || []).filter((c) => c.verdict === 'ok')
+    const notes = checks.filter((c) => c.verdict === 'note')
+    const good = checks.filter((c) => c.verdict === 'ok')
 
     /* Пустая установка: находки есть, но поломки нет — не красим и говорим, что делать. */
     const blank = blankInstall(live) && bad.length > 0

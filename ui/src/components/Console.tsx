@@ -4,7 +4,12 @@ import { Check } from 'lucide-react'
 import { useLive, type Live } from '@/lib/live'
 import { pending, usePending } from '@/lib/pending'
 import { isPart, type ServiceEntry } from '@/lib/model'
-import { SECTION_TITLE, type SectionId } from '@/lib/sections'
+import { sectionTitle, useSections, type SectionId } from '@/lib/sections'
+import { HostLiveProvider, toHostLive } from '@/plugins/hostlive'
+import { ConfirmHost } from '@/plugins/confirmHost'
+import { PluginGuard, SlotView } from '@/plugins/boundary'
+import { refreshPlugins, disableBroken } from '@/plugins/store'
+import { usePlugins } from '@/plugins/runtime'
 import Rail from '@/components/Rail'
 import FirstRun from '@/components/FirstRun'
 import SetupWizard, { setupDone } from '@/components/board/SetupWizard'
@@ -39,6 +44,7 @@ const Settings = lazy(() => import('@/components/sections/Settings'))
 type SettingsScreen = Exclude<import('@/components/sections/Settings').Screen, 'root'>
 const Requests = lazy(() => import('@/components/sections/Requests'))
 const Diagnostics = lazy(() => import('@/components/sections/Diagnostics'))
+const Plugins = lazy(() => import('@/components/sections/Plugins'))
 
 /** Разделы, что читают и правят спеку: при отказе загрузки их место занимает «Повторить». */
 const SPEC_SECTIONS: SectionId[] = ['rules', 'vpn', 'dns', 'settings']
@@ -105,11 +111,18 @@ export default function Console({ extra, railHost, board = false, settingsHost, 
         else setSection(s)
     }
     const ext = extra?.find((e) => e.id === section)
+    /* Разделы плагинов (railSection) — записи реестра с `render`; встроенные рисует оболочка ниже. */
+    const registered = useSections().map((r) => r.value)
+    const plug = registered.find((r) => r.id === section && r.render)
+    const { entries: pluginEntries } = usePlugins()
 
     /* Спека нужна рельсу для счётчика правил, а он виден на всех разделах — значит загрузить её
      * обязана оболочка, а не раздел правил. Вызов идемпотентен: кто пришёл раньше, тот и
      * загрузил (lib/pending.ts). */
     useEffect(() => { pending.load().catch(() => {}) }, [])
+
+    /* Плагины: список от бэкенда и загрузка их интерфейса — после монтирования, мимо первого экрана. */
+    useEffect(() => { void refreshPlugins() }, [])
 
     /* Кнопки «Применить» нет ни в LuCI, ни в приложении: сохранённое применяется само (lib/autoapply.ts),
      * пачки правок держат применение через pending.hold/batch. */
@@ -162,9 +175,21 @@ export default function Console({ extra, railHost, board = false, settingsHost, 
               }
             : undefined,
         diag: warnings > 0 ? { text: String(warnings), alarm: true } : undefined,
+    } as Partial<Record<SectionId, { text: string; alarm?: boolean }>>
+    /* Числа у пунктов плагинов — их `badge(live)` под предохранителем: падение чужой функции не роняет рельс. */
+    for (const r of registered) {
+        if (!r.badge || counts[r.id]) continue
+        try {
+            const b = r.badge(toHostLive(live) as unknown as typeof live)
+            if (b) counts[r.id] = b
+        } catch (err) {
+            console.error(`[plugin ${r.plugin}] badge`, err)
+        }
     }
 
     return (
+        <HostLiveProvider live={live}>
+        <ConfirmHost />
         <div className={`sp-root an-backdrop text-foreground${board ? ' sp-board-on' : ''}`}>
             {/* Ряд тянется на всю подложку (у неё своя нижняя граница высоты), иначе рельс
                 кончается там, где кончился его список, и под ним видна ступенька другого
@@ -209,7 +234,7 @@ export default function Console({ extra, railHost, board = false, settingsHost, 
                     <div key={`${section}:${again}`} className="sp-section">
                     {/* Правило в приложении для ПК открывается с главной, и шапка редактора — его заголовок. */}
                     {section !== 'home' && !(board && section === 'rules') && (
-                        <h1 className="sp-title mb-3">{SECTION_TITLE[section as SectionId] ?? ext?.label}</h1>
+                        <h1 className="sp-title mb-3">{sectionTitle(section) ?? ext?.label}</h1>
                     )}
 
                     {/* Спека не загрузилась — разделы, что её правят, не рисуются вовсе: пустой экран
@@ -268,7 +293,16 @@ export default function Console({ extra, railHost, board = false, settingsHost, 
                                 }}
                             />
                         )}
+                        {section === 'plugins' && <Plugins live={live} deferred={!!railHost} />}
                         {ext?.render(live)}
+                        {plug && (
+                            <PluginGuard
+                                name={pluginEntries.find((e) => e.id === plug.plugin)?.name ?? plug.plugin ?? plug.label}
+                                onDisable={plug.plugin ? () => void disableBroken({ id: plug.plugin!, name: plug.label }) : undefined}
+                            >
+                                <SlotView render={() => plug.render?.(toHostLive(live) as unknown as typeof live)} />
+                            </PluginGuard>
+                        )}
                     </Suspense>
                     </div>
                     {settingsHost && createPortal(
@@ -316,5 +350,6 @@ export default function Console({ extra, railHost, board = false, settingsHost, 
             </div>
 
         </div>
+        </HostLiveProvider>
     )
 }

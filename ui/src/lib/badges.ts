@@ -1,4 +1,6 @@
 import { S } from '@/copy'
+import { registry } from '@/plugins/registry'
+import type { OutputStatus as HostOutputStatus, OutputV2, Slots } from '@/plugins/api'
 import { devList, insecureApplies, isPart, isProxyKind, type Output, type OutputStatus, type Spec } from '@/lib/model'
 
 /** Бейджи конфигурации узла и выхода: протокол, транспорт, защита и особенности.
@@ -280,7 +282,7 @@ export function outputProto(
     devKind?: string | null,
 ): ProtoId | null {
     const k = o?.kind || st?.kind
-    if (k === 'vless' || k === 'hysteria2' || k === 'xsteer') return k
+    if (k === 'vless' || k === 'hysteria2' || k === 'xsteer') return k as ProtoId
     if (k === 'awg') return 'awg'
     if (isProxyKind(k)) return k
     if (k === 'tunnel') return protoOf(o?.protocol) || protoOf(st?.proxy?.protocol)
@@ -308,7 +310,7 @@ export function outputBadges({
     if (!p) {
         const res: ConfBadge[] = []
         if (kind === 'interface' && out?.obfs) res.push(tag('feature', 'faketcp', S.badges.poddelnyyTcp))
-        return res
+        return sortBadges([...res, ...pluginBadges(out, st)])
     }
     let res: ConfBadge[]
     /* Предупреждение о сертификате при известных узлах — по узлам: ядро не проверяет сертификат
@@ -343,7 +345,27 @@ export function outputBadges({
     }
     if (kind === 'interface' && out?.obfs) res.push(tag('feature', 'faketcp', S.badges.poddelnyyTcp))
     if (warnOf) res.push(insecureBadge())
-    return sortBadges(res)
+    return sortBadges([...res, ...pluginBadges(out, st)])
+}
+
+type BadgeSlot = Parameters<Slots['badge']>[0]
+
+/** Бейджи плагинов (слот `badge`): каждый плагин смотрит на выход и отвечает значком или ничем. Падение
+ *  чужой `match` бейджа не показывает и панель не роняет. */
+function pluginBadges(out?: Output | null, st?: OutputStatus | null): ConfBadge[] {
+    const regs = registry.list<BadgeSlot>('badge')
+    if (!regs.length || !out) return []
+    const doc = { ...(out.extra ?? {}), kind: out.kind, ...(out.protocol ? { protocol: out.protocol } : {}) } as unknown as OutputV2
+    const res: ConfBadge[] = []
+    for (const r of regs) {
+        try {
+            const b = r.value.match(doc, st as unknown as HostOutputStatus | undefined)
+            if (b?.text) res.push({ id: `plugin:${r.owner}:${r.id}`, text: b.text, group: r.value.group, warn: b.warn, title: b.title })
+        } catch (err) {
+            console.error(`[plugin ${r.owner}] badge ${r.id}`, err)
+        }
+    }
+    return res
 }
 
 /** Бейджи пула: протоколы его строк (части-подписки и свои туннели) без повторов и общая

@@ -20,6 +20,7 @@ import {
 } from './model'
 
 import type { HelperState } from './helper'
+import type { PluginJob, PluginsListReply } from '@/plugins/api'
 import type { ConnsReply } from './observe'
 import { S } from '@/copy'
 export { toCatalog }
@@ -98,6 +99,9 @@ export interface SubQuota {
     since: number
     since_used: string
 }
+
+/** Ответ методов плагинов, меняющих состояние. `job` — установка идёт заданием. */
+export interface PluginAct { ok: boolean; error?: string; job?: string }
 
 declare global {
     interface Window {
@@ -633,6 +637,27 @@ export const rpc = {
 
     /** Снять модуль. Нужный спеке не снимается — отказ называет выходы. */
     steerModuleDel: declare<{ ok: boolean; error?: string }>('steer_module_del', ['module']),
+
+    // ── Плагины (docs/rpcd-api.md, «Плагины»). Бэкенд — тонкая обёртка над `steer plugin … --json`.
+    /** Стоящие плагины, подключённые репозитории, версия host API бэкенда. */
+    pluginsList: declare<PluginsListReply>('plugins_list'),
+    /** Поиск по каталогам подключённых репозиториев; без слова — весь каталог. */
+    pluginsSearch: declare<{ plugins: unknown[] }>('plugins_search', ['query']),
+    /** Установка и обновление — задания: ответ `{ok, job}`, ход — `pluginJob`. */
+    pluginInstall: declare<PluginAct>('plugin_install', ['id', 'version']),
+    pluginUpdate: declare<PluginAct>('plugin_update', ['id']),
+    pluginRemove: declare<PluginAct>('plugin_remove', ['id', 'force', 'purge']),
+    pluginEnable: declare<PluginAct>('plugin_enable', ['id']),
+    pluginDisable: declare<PluginAct>('plugin_disable', ['id']),
+    pluginAutoupdate: declare<PluginAct>('plugin_autoupdate', ['id', 'enabled']),
+    pluginJob: declare<PluginJob & { ok?: boolean }>('plugin_job', ['id']),
+    reposList: declare<{ repos: unknown[] }>('repos_list'),
+    /** Номер ключа репозитория — его человек видит до того, как примет ключ. */
+    repoKey: declare<{ ok?: boolean; key_id?: string; error?: string }>('repo_key', ['key']),
+    repoAdd: declare<PluginAct>('repo_add', ['url', 'key', 'key_id']),
+    repoDel: declare<PluginAct>('repo_del', ['name']),
+    /** Метод плагина через объект `splify2` — для оболочек без сессии ubus (приложение для ПК). */
+    pluginCall: declare<unknown>('plugin_call', ['id', 'method', 'params']),
 
     /** Подписка: где лежит, откуда взята, когда обновлялась.
      *

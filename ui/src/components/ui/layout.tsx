@@ -277,3 +277,13 @@ export function Meter({ value, muted }: { value: number; muted?: boolean }) {
         </div>
     )
 }
+
+/** Строка состояния: точка (зелёная — работает, красная — нет, серая — не знаем) и слова. */
+export function StateLine({ ok, children }: { ok: boolean | null; children: ReactNode }) {
+    return (
+        <div className="flex min-w-0 items-center gap-2 text-[13px]">
+            <span className={`h-2 w-2 shrink-0 rounded-full ${ok === null ? 'bg-muted-foreground' : ok ? 'bg-success' : 'bg-destructive'}`} aria-hidden="true" />
+            <span className="min-w-0 break-words">{children}</span>
+        </div>
+    )
+}
