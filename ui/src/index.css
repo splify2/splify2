@@ -364,14 +364,6 @@
     font-weight: 600;
     line-height: 1.25;
   }
-  /* Подпись группы полей («Что», «Кому», «Куда») — тот же случай: она стоит на h3, значит
-   *  размер и вес утилитами не задать. Регистр и разрядку утилиты по-прежнему задают сами:
-   *  сброс отбирает только эти два свойства. */
-  .splify-react-root .sp-label {
-    font-size: 12px;
-    font-weight: 600;
-    line-height: 1.3;
-  }
   /* РАЗМЕР ШРИФТА У КОНТРОЛОВ: тема бьёт по ним с !important, и утилита не действует.
    *
    *  Замерено на живом роутере: `button, .btn, .cbi-button { font-size: 14px !important }` —
@@ -394,10 +386,10 @@
   .splify-react-root :where(button, input, select, textarea)[class~="text-[11px]"] { font-size: 11px !important }
   .splify-react-root :where(button, input, select, textarea)[class~="text-[12px]"] { font-size: 12px !important }
   .splify-react-root :where(button, input, select, textarea)[class~="text-[13px]"] { font-size: 13px !important }
-  .splify-react-root :where(button, input, select, textarea)[class~="text-xs"]     { font-size: 0.75rem !important }
-  .splify-react-root :where(button, input, select, textarea)[class~="text-sm"]     { font-size: 0.875rem !important }
-  .splify-react-root :where(button, input, select, textarea)[class~="text-base"]   { font-size: 1rem !important }
-  .splify-react-root :where(button, input, select, textarea)[class~="text-lg"]     { font-size: 1.125rem !important }
+  .splify-react-root :where(button, input, select, textarea)[class~="text-xs"] { font-size: 0.75rem !important }
+  .splify-react-root :where(button, input, select, textarea)[class~="text-sm"] { font-size: 0.875rem !important }
+  .splify-react-root :where(button, input, select, textarea)[class~="text-base"] { font-size: 1rem !important }
+  .splify-react-root :where(button, input, select, textarea)[class~="text-lg"] { font-size: 1.125rem !important }
 
   /* ПОЛЯ НА ТЕЛЕФОНЕ — 16px. Safari на iPhone увеличивает страницу, когда фокус попадает в поле
    *  мельче 16px, и обратно не уменьшает: после ввода ссылки подписки человек оставался с
@@ -486,11 +478,6 @@
    * полоса заняла бы нижние пиксели, а продолжение видно по обрезанному пункту. */
   .splify-react-root .sp-bottom-bar { scrollbar-width: none; }
   .splify-react-root .sp-bottom-bar::-webkit-scrollbar { display: none; }
-  /* Середина подложки для плавающих элементов (пилюля «Применить»): у fixed проценты
-   * считаются от окна, поэтому середина выводится из тех же измеренных полей. */
-  .splify-react-root .sp-float-center {
-    left: calc(var(--sp-inset-l, 0px) + (100% - var(--sp-inset-l, 0px) - var(--sp-inset-r, 0px)) / 2);
-  }
   .splify-react-root ol,
   .splify-react-root ul {
     list-style: none;

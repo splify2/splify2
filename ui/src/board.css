@@ -34,7 +34,6 @@
 .sp-board-on .sp-board-rule-control,
 .sp-board-on .sp-board-labels { position: relative; z-index: 1; }
 .sp-board-on .sp-board-rule-off > :not(:first-child) { color: var(--sp-muted-foreground); }
-.sp-board-on .sp-board-rule-off .sp-board-route-name { opacity: .6; }
 .sp-board-on .sp-board-rule-foot {
   display: flex;
   justify-content: space-between;
