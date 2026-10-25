@@ -7,8 +7,6 @@ import ListPills from '@/components/board/ListPills'
 import { rpc } from '@/lib/rpc'
 import { notify } from '@/lib/notify'
 import { pending, usePending } from '@/lib/pending'
-import { type Live } from '@/lib/live'
-import { dnsOtherSupported, poolLatencySupported } from '@/lib/engine'
 import { customServices, toAllowDomainsServices, toCatalog, wantedFirst, type Channel, type Output, type ServiceEntry, type Spec } from '@/lib/model'
 import { pathFor, srsProbe } from '@/lib/rulefiles'
 import { applyTarget, EMPTY_TARGET, type Target } from '@/lib/ruleout'
@@ -43,8 +41,7 @@ export async function markSetupDone() {
     await rpc.uiSet(JSON.stringify({ ...st, setup: 1 })).catch(() => undefined)
 }
 
-export default function SetupWizard({ live, onDone, railHost }: {
-    live: Live
+export default function SetupWizard({ onDone, railHost }: {
     onDone: () => void
     /** Колонка рельса (приложение для ПК): пока идёт настройка, в ней — шаги мастера. */
     railHost?: Element | null
@@ -150,12 +147,12 @@ export default function SetupWizard({ live, onDone, railHost }: {
                 mode: doms.size || srs.size ? 'fakeip' : undefined,
             }
             sp = { ...sp, channels: [...sp.channels, ch] }
-            sp = applyTarget(sp, sp.channels.length - 1, t, { tunnelLatency: poolLatencySupported(live.status) })
+            sp = applyTarget(sp, sp.channels.length - 1, t)
             /* DNS: выбранный сервер — для всех запросов (как карточка на вкладке DNS). */
             const p = PRESETS.find((x) => x.name === dns)
             if (p) {
                 const d = { ...(sp.dns || {}), upstreams: { ...(sp.dns?.upstreams || {}), [p.name]: { ...p.up } }, upstream: p.name }
-                if (dnsOtherSupported(live.status)) d.other = p.name
+                d.other = p.name
                 sp = { ...sp, dns: d }
             }
             pending.edit(sp)

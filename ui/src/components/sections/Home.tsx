@@ -16,7 +16,6 @@ import { human, type DiagCheck, type Live } from '@/lib/live'
 import { pending, usePending } from '@/lib/pending'
 import { useServices } from '@/lib/catalog'
 import { ruleFiles, selectedIds } from '@/lib/rulefiles'
-import { specV2Unsupported } from '@/lib/engine'
 import { ON_FAIL_TEXT, type Channel, type OnFail, type ChannelStatus, type Output, type OutputStatus, devList, isPart, isTunnelKind } from '@/lib/model'
 import { devKindsOf } from '@/lib/badges'
 import { country } from '@/lib/geo'
@@ -515,13 +514,6 @@ export default function Home({
     if (board) {
         return (
             <div className="sp-board space-y-4">
-                {specV2Unsupported(live.status) && (
-                    <Block className="border-destructive">
-                        <CardHead title={S.home.yadroNeChitaetNovuyu} />
-                        <p className="text-sm">
-                            {S.home.etotInterfeysZapisyvaetNastroyki}</p>
-                    </Block>
-                )}
                 {/* Два блока на стекле, как карточки панели: верх — вердикт с находкой диагностики и
                     подключения под ним (вердикт не отдельно), низ — правила. */}
                 <section className="sp-board-group an-glass space-y-3 rounded-2xl border p-3">
@@ -562,14 +554,6 @@ export default function Home({
 
     return (
         <div className="space-y-4">
-            {specV2Unsupported(live.status) && (
-                <Block className="border-destructive">
-                    <CardHead title={S.home.yadroNeChitaetNovuyu} />
-                    <p className="text-sm">
-                        {S.home.etotInterfeysZapisyvaetNastroyki}</p>
-                </Block>
-            )}
-
             {verdictBlock}
 
             {/* Пустая установка: ссылка подписки → что пустить → готово (D-P3.1). Сама прячется, когда есть правила. */}

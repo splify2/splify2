@@ -50,15 +50,6 @@ describe('страны в «Куда» правила', () => {
         expect(o.only).toBeUndefined()
     })
 
-    it('без умения ядра выбора стран нет; записанные страны видны и без него', async () => {
-        const { unmount } = render(<RuleTarget spec={spec()} index={0} live={live({ status: status([]) })} onSpec={() => {}} />)
-        await screen.findByText(/Мой провайдер/)
-        expect(screen.queryByRole('group', { name: 'Только эти страны' })).toBeNull()
-        unmount()
-        render(<RuleTarget spec={spec({ only: ['NL'] })} index={0} live={live({ status: status([]) })} onSpec={() => {}} />)
-        expect(await screen.findByRole('group', { name: 'Только эти страны' })).toBeInTheDocument()
-    })
-
     it('страна выхода и расхождение с именем узла видны в блоке', async () => {
         render(<RuleTarget spec={spec()} index={0} live={live({ status: status(['node_only'], { node: 'x', up: true, node_cc: 'NL', geo_cc: 'US', geo_mismatch: true }) })} onSpec={() => {}} />)
         await waitFor(() => expect(screen.getByText(/выход: .*, а в имени узла/)).toBeInTheDocument())

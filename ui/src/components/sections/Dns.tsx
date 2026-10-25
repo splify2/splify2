@@ -10,7 +10,6 @@ import { useSpecCopy } from '@/lib/speccopy'
 import { rpc, type DnsLog } from '@/lib/rpc'
 import { isPart, type DomainMode, type DnsSpec, type Spec, type Upstream, type UpstreamGroup } from '@/lib/model'
 import { type Live } from '@/lib/live'
-import { dnsFragmentSupported, dnsGroupsSupported, dnsH3Supported, dnsOtherSupported } from '@/lib/engine'
 import { withUrl } from '@/lib/dnsurl'
 import DnsUpstreamExtras from '@/components/DnsUpstreamExtras'
 import ConfBadges from '@/components/ConfBadges'
@@ -159,13 +158,12 @@ function groupUsed(spec: Spec, dns: DnsSpec, name: string, skip: 'upstream' | 'o
 /** Выбор сервера для одного назначения (`dns.upstream` или `dns.other`): DNS роутера, один сервер
  *  из добавленных или несколько — группа с порядком и режимом «сразу все / по очереди». Группу
  *  назначение заводит само (имя rules/other) и убирает, когда она больше никому не нужна. */
-function DnsTarget({ spec, dns, which, label, names, canGroup, log, onDns }: {
+function DnsTarget({ spec, dns, which, label, names, log, onDns }: {
     spec: Spec
     dns: DnsSpec
     which: 'upstream' | 'other'
     label: string
     names: string[]
-    canGroup: boolean
     log: DnsLog | null
     onDns: (next: DnsSpec) => void
 }) {
@@ -197,8 +195,8 @@ function DnsTarget({ spec, dns, which, label, names, canGroup, log, onDns }: {
     const items: { value: TargetKind; label: string }[] = [
         { value: 'router', label: S.dns.dnsRoutera },
         { value: 'single', label: S.dns.odinServer },
+        { value: 'group', label: S.dns.neskolkoServerov },
     ]
-    if (canGroup || kind === 'group') items.push({ value: 'group', label: S.dns.neskolkoServerov })
     const rest = group ? names.filter((n) => !group.servers.includes(n)) : []
     const move = (i: number, j: number) => {
         if (!group || j < 0 || j >= group.servers.length) return
@@ -319,12 +317,6 @@ export default function Dns({ live, board = false }: { live?: Live; board?: bool
     const ups = dns.upstreams || {}
     const names = Object.keys(ups)
     const groups = dns.groups || {}
-    /* Группы и сервер для остальных — по умению ядра; записанное в спеке видно и снимается и без него. */
-    const canGroup = dnsGroupsSupported(live?.status)
-    const coreVersion = live?.build?.version
-    const fragmentOk = dnsFragmentSupported(live?.status, coreVersion)
-    const h3Ok = dnsH3Supported(live?.status, coreVersion)
-    const showOther = dnsOtherSupported(live?.status) || !!dns.other
     const outs = Object.entries(spec.outputs)
         .filter(([, o]) => !isPart(o) && o.kind !== 'direct' && o.kind !== 'tgws' && o.kind !== 'group')
         .map(([n]) => n)
@@ -486,7 +478,7 @@ export default function Dns({ live, board = false }: { live?: Live; board?: bool
                                             className={`${inputCls} w-full font-mono`}
                                         />
                                     </FieldRow>
-                                    <DnsUpstreamExtras up={u} onChange={(next) => setUp(n, next)} fragmentOk={fragmentOk} h3Ok={h3Ok} />
+                                    <DnsUpstreamExtras up={u} onChange={(next) => setUp(n, next)} />
                                     <FieldRow label={S.dns.cherezVyhod}>
                                         <select
                                             value={u.out || ''}
@@ -531,19 +523,15 @@ export default function Dns({ live, board = false }: { live?: Live; board?: bool
     const upTarget = (
         <>
                     <DnsTarget spec={spec} dns={dns} which="upstream" label={S.dns.dlyaImenPodPravilami}
-                        names={names} canGroup={canGroup} log={log} onDns={setDns} />
+                        names={names} log={log} onDns={setDns} />
         </>
     )
     const otherTarget = (
         <>
-                    {showOther && (
-                        <>
-                            <DnsTarget spec={spec} dns={dns} which="other" label={S.dns.dlyaOstalnyhSaytov}
-                                names={names} canGroup={canGroup} log={log} onDns={setDns} />
-                            {log?.other && log.other.pause > 0 && (
-                                <p className="py-1 text-xs text-destructive">{S.dns.ostalnyeCherezRouter(log.other.pause)}</p>
-                            )}
-                        </>
+                    <DnsTarget spec={spec} dns={dns} which="other" label={S.dns.dlyaOstalnyhSaytov}
+                        names={names} log={log} onDns={setDns} />
+                    {log?.other && log.other.pause > 0 && (
+                        <p className="py-1 text-xs text-destructive">{S.dns.ostalnyeCherezRouter(log.other.pause)}</p>
                     )}
         </>
     )
@@ -650,7 +638,7 @@ export default function Dns({ live, board = false }: { live?: Live; board?: bool
         /* Отметки — по серверу доменов правил, а если он не задан — по серверу остальных имён:
          * старая форма вкладки записывала назначения порознь, и «DNS провайдера» горел при
          * заданном `dns.other`. Следующий щелчок пишет оба назначения одинаково (assign). */
-        const picked = listOf2('upstream').length ? listOf2('upstream') : showOther ? listOf2('other') : []
+        const picked = listOf2('upstream').length ? listOf2('upstream') : listOf2('other')
         const grp = dns[which] ? dns.groups?.[dns[which]!] : undefined
         const byUrl = new Map(Object.entries(ups).map(([n, u]) => [u.url, n]))
         const cards: { key: string; title: string; up: Upstream; name?: string; preset?: string }[] = [
@@ -668,7 +656,7 @@ export default function Dns({ live, board = false }: { live?: Live; board?: bool
          *  не нужны, уходят. */
         function assign(_w: 'upstream', list: string[], base: DnsSpec): DnsSpec {
             const next: DnsSpec = { ...base, groups: { ...(base.groups || {}) } }
-            const targets: ('upstream' | 'other')[] = showOther ? ['upstream', 'other'] : ['upstream']
+            const targets: ('upstream' | 'other')[] = ['upstream', 'other']
             const olds = targets.map((w) => base[w]).filter((g): g is string => !!g && !!base.groups?.[g])
             let value: string | undefined
             if (list.length === 1) value = list[0]

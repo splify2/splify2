@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { missingModule, specV2Unsupported } from '@/lib/engine'
+import { missingModule } from '@/lib/engine'
 import type { Status } from '@/lib/model'
 
 // Модули движка 2.0 — отдельные пакеты. Экран называет недостающий пакет, но только когда
@@ -34,22 +34,5 @@ describe('какого модуля не хватает выходу', () => {
     })
     it('списка модулей нет — не утверждаем', () => {
         expect(missingModule({ kind: 'hysteria2' }, undefined)).toBeNull()
-    })
-})
-
-describe('читает ли движок спеку v2', () => {
-    const st = (features?: string[]) => ({ features }) as unknown as Status
-    /* Перечни умений дословно: 1.5.9 — src/steer.c тега v1.5.9, 2.0 — src/daemon/status.c. */
-    const v159 = ['lan_devices', 'nodes', 'pool', 'active_device', 'status_cache', 'xslink', 'xsteer_state', 'spec_schema2', 'awg', 'via']
-    const v200 = [...v159, 'failed', 'groups']
-    it('ядро 1.5.9: spec_schema2 есть (это вторая схема спеки v1), groups нет — не читает', () => {
-        expect(specV2Unsupported(st(v159))).toBe(true)
-    })
-    it('ядро 2.0 — читает', () => {
-        expect(specV2Unsupported(st(v200))).toBe(false)
-    })
-    it('перечня нет — утверждать нечего', () => {
-        expect(specV2Unsupported(st(undefined))).toBe(false)
-        expect(specV2Unsupported(null)).toBe(false)
     })
 })

@@ -123,22 +123,6 @@ describe('раздел DNS: несколько серверов и сервер 
         await waitFor(() => expect(screen.getByText(S.dns.ostalnyeCherezRouter(40))).toBeInTheDocument())
     })
 
-    it('ядро без умений: нет «Несколько» и нет «Для остальных сайтов»', async () => {
-        render(<Dns live={live(['groups'])} />)
-        await screen.findByLabelText('имя сервера q9')
-        expect(within(rulesBox()).queryByText(S.dns.neskolkoServerov)).toBeNull()
-        expect(screen.queryByRole('group', { name: S.dns.dlyaOstalnyhSaytov })).toBeNull()
-    })
-
-    it('ядро без умений: записанное в спеке видно и снимается', async () => {
-        current.dns = { ...current.dns, upstream: 'rules', other: 'cf', groups: { rules: { servers: ['q9'] } } }
-        render(<Dns live={live(['groups'])} />)
-        await screen.findByLabelText('имя сервера q9')
-        expect(within(rulesBox()).getByText(S.dns.neskolkoServerov)).toBeInTheDocument()
-        fireEvent.click(within(otherBox()).getByText(S.dns.dnsRoutera))
-        expect(last().dns?.other).toBeUndefined()
-    })
-
     it('сервер в группе не удаляется; переименование ведёт за собой группу и остальные сайты', async () => {
         current.dns = { ...current.dns, upstream: 'rules', other: 'cf', groups: { rules: { servers: ['q9', 'cf'] } } }
         render(<Dns live={ALL} />)

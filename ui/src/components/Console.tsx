@@ -223,7 +223,7 @@ export default function Console({ extra, railHost, board = false, settingsHost, 
                     )}
                     <Suspense fallback={FALLBACK}>
                         {section === 'home' && setupShow && !loadFailed && (
-                            <SetupWizard live={live} railHost={railHost} onDone={() => setSetupShow(false)} />
+                            <SetupWizard railHost={railHost} onDone={() => setSetupShow(false)} />
                         )}
                         {section === 'home' && !setupShow && (
                             <Home

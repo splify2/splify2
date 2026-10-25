@@ -8,7 +8,6 @@ import { rpc, type XsteerOut, type XsteerTunnel } from '@/lib/rpc'
 import type { OutputStatus } from '@/lib/model'
 import { helperTrouble, type HelperState } from '@/lib/helper'
 import { human, type Live } from '@/lib/live'
-import { xsLinkSupported } from '@/lib/engine'
 
 import { S } from '@/copy'
 /** XSTEER: устройства звезды, их живое состояние и ссылка xs:// в обе стороны.
@@ -232,8 +231,6 @@ export default function XsteerPanel({ live }: { live: Live }) {
     const [dead, setDead] = useState(false)
     const [note, setNote] = useState<Record<string, { text: string; bad: boolean }>>({})
 
-    const links = xsLinkSupported(live.status)
-
     /* Отказ вызова и «туннелей нет» РАЗДЕЛЕНЫ, и это не мелочь: rpcd постарее интерфейса метода
      * не знает вовсе, и показать в этом случае «интерфейсов xsteer нет» значило бы соврать про
      * настройку роутера — человек пошёл бы создавать второй туннель рядом с существующим.
@@ -407,75 +404,69 @@ export default function XsteerPanel({ live }: { live: Live }) {
                               * открытым каналом. Показать её на обзорном экране значило бы
                               * оставить её открытой на чужом мониторе у всякого, кто просто
                               * смотрел состояние туннеля. Поэтому нажатие. */}
-                            {links && (
-                                <div className="space-y-2 border-t border-border pt-3">
-                                    {link[iface] ? (
-                                        <div className="space-y-1">
-                                            <p className="text-subtle">
-                                                {S.xsteerPanel.zdesPrivatnyyKlyuchEtogo}</p>
-                                            <div className="flex items-start gap-2">
-                                                <code className="min-w-0 flex-1 break-all rounded-sm bg-muted px-2 py-1 text-[11px]">
-                                                    {link[iface]}
-                                                </code>
-                                                <Button
-                                                    size="sm"
-                                                    variant="outline"
-                                                    onClick={() => copy(iface, link[iface])}
-                                                >
-                                                    {copied === iface ? (
-                                                        <Check className="h-3.5 w-3.5" aria-hidden="true" />
-                                                    ) : (
-                                                        <Copy className="h-3.5 w-3.5" aria-hidden="true" />
-                                                    )}
-                                                    <span className="ml-1.5">
-                                                        {copied === iface ? S.xsteerPanel.skopirovano : S.xsteerPanel.kopirovat}
-                                                    </span>
-                                                </Button>
-                                            </div>
-                                        </div>
-                                    ) : (
-                                        <Button
-                                            size="sm"
-                                            variant="outline"
-                                            disabled={busy === iface}
-                                            onClick={() => showLink(iface)}
-                                        >
-                                            <Link2 className="h-3.5 w-3.5" aria-hidden="true" />
-                                            <span className="ml-1.5">{S.xsteerPanel.pokazatSsylkuXs}</span>
-                                        </Button>
-                                    )}
-
-                                    <details>
-                                        <summary className="cursor-pointer text-subtle">
-                                            {S.xsteerPanel.vstavitDruguyuSsylku}</summary>
-                                        <div className="mt-2 space-y-2">
-                                            <p className="text-subtle">
-                                                {S.xsteerPanel.zamenitNastroykuEtogoInterfeysa}</p>
-                                            <textarea
-                                                className="w-full rounded-sm border bg-background px-2 py-1 font-mono text-[11px]"
-                                                rows={3}
-                                                placeholder={S.xsteerPanel.xsKlyuch2030}
-                                                value={paste[iface] || ''}
-                                                onChange={(e) =>
-                                                    setPaste((p) => ({ ...p, [iface]: e.target.value }))
-                                                }
-                                            />
+                            <div className="space-y-2 border-t border-border pt-3">
+                                {link[iface] ? (
+                                    <div className="space-y-1">
+                                        <p className="text-subtle">
+                                            {S.xsteerPanel.zdesPrivatnyyKlyuchEtogo}</p>
+                                        <div className="flex items-start gap-2">
+                                            <code className="min-w-0 flex-1 break-all rounded-sm bg-muted px-2 py-1 text-[11px]">
+                                                {link[iface]}
+                                            </code>
                                             <Button
                                                 size="sm"
-                                                disabled={busy === iface || !(paste[iface] || '').trim()}
-                                                onClick={() => applyLink(iface)}
+                                                variant="outline"
+                                                onClick={() => copy(iface, link[iface])}
                                             >
-                                                <RefreshCw className="h-3.5 w-3.5" aria-hidden="true" />
-                                                <span className="ml-1.5">{S.xsteerPanel.prinyatIPodnyatZanovo}</span>
+                                                {copied === iface ? (
+                                                    <Check className="h-3.5 w-3.5" aria-hidden="true" />
+                                                ) : (
+                                                    <Copy className="h-3.5 w-3.5" aria-hidden="true" />
+                                                )}
+                                                <span className="ml-1.5">
+                                                    {copied === iface ? S.xsteerPanel.skopirovano : S.xsteerPanel.kopirovat}
+                                                </span>
                                             </Button>
                                         </div>
-                                    </details>
-                                </div>
-                            )}
-                            {!links && (
-                                <p className="border-t border-border pt-3 text-subtle">
-                                    {S.xsteerPanel.ssylki}<code>xs://</code> {S.xsteerPanel.nuzhnoRabotayuscheeYadro}</p>
-                            )}
+                                    </div>
+                                ) : (
+                                    <Button
+                                        size="sm"
+                                        variant="outline"
+                                        disabled={busy === iface}
+                                        onClick={() => showLink(iface)}
+                                    >
+                                        <Link2 className="h-3.5 w-3.5" aria-hidden="true" />
+                                        <span className="ml-1.5">{S.xsteerPanel.pokazatSsylkuXs}</span>
+                                    </Button>
+                                )}
+
+                                <details>
+                                    <summary className="cursor-pointer text-subtle">
+                                        {S.xsteerPanel.vstavitDruguyuSsylku}</summary>
+                                    <div className="mt-2 space-y-2">
+                                        <p className="text-subtle">
+                                            {S.xsteerPanel.zamenitNastroykuEtogoInterfeysa}</p>
+                                        <textarea
+                                            className="w-full rounded-sm border bg-background px-2 py-1 font-mono text-[11px]"
+                                            rows={3}
+                                            placeholder={S.xsteerPanel.xsKlyuch2030}
+                                            value={paste[iface] || ''}
+                                            onChange={(e) =>
+                                                setPaste((p) => ({ ...p, [iface]: e.target.value }))
+                                            }
+                                        />
+                                        <Button
+                                            size="sm"
+                                            disabled={busy === iface || !(paste[iface] || '').trim()}
+                                            onClick={() => applyLink(iface)}
+                                        >
+                                            <RefreshCw className="h-3.5 w-3.5" aria-hidden="true" />
+                                            <span className="ml-1.5">{S.xsteerPanel.prinyatIPodnyatZanovo}</span>
+                                        </Button>
+                                    </div>
+                                </details>
+                            </div>
                             {n && (
                                 <p className={n.bad ? 'text-destructive' : 'text-success'}>{n.text}</p>
                             )}

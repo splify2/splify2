@@ -330,7 +330,6 @@ export const ru = {
         nuzhnaSborkaSTls: "ядро собрано без шифрования — такой сервер работать не будет",
         dnsPoTcp: "DNS по TCP",
         delitPervyyPaket: "Обход блокировки: делить первый пакет",
-        h3NuzhnoNovoeYadro: "Для адреса h3:// нужно обновить ядро steer.",
         zagruzka: "Загрузка…",
         serverVybranVPravilah: (p0: unknown, p1: unknown) => `Сервер «${p0}» выбран в правилах: ${p1}`,
         serveryDns: "Серверы DNS",
@@ -544,8 +543,6 @@ export const ru = {
         dCh: (p0: unknown, p1: unknown) => `${p0} д ${p1} ч`,
         chMin: (p0: unknown, p1: unknown) => `${p0} ч ${p1} мин`,
         min: (p0: unknown) => `${p0} мин`,
-        yadroNeChitaetNovuyu: "Ядро устарело",
-        etotInterfeysZapisyvaetNastroyki: "Изменения не применятся. Обновите ядро: Настройки → Интерфейс.",
         ustroystvVSeti: "устройств в сети: ",
         vremyaRaboty: " · время работы ",
         diagnostika: "диагностика ",
@@ -1038,7 +1035,6 @@ export const ru = {
         kuda: "Туннели",
         tunnel2: "Туннель",
         blok: "Блок",
-        blokNuzhnoYadro: "Блок появится с обновлением ядра steer",
         napryamuyu: "Напрямую",
         nichegoNeVybrano: "Отметьте, через что пустить",
         obschiySPravilom: (p0: string) => `Общий с правилом «${p0}»`,
@@ -1250,8 +1246,6 @@ export const ru = {
         zamenitNastroykuEtogoInterfeysa: "Заменит настройку этого интерфейса целиком — ключ, адрес и хаб — и поднимет его заново. Зона фаервола и имя устройства останутся.",
         xsKlyuch2030: "xs://<ключ>@203.0.113.7:443?pk=<ключ хаба>&ip=10.77.0.2/24",
         prinyatIPodnyatZanovo: "Принять и поднять заново",
-        ssylki: "Ссылки ",
-        nuzhnoRabotayuscheeYadro: " — нужно работающее ядро steer 2.0 или новее.",
     },
     /** «Куда пойдёт запрос»: ответ ядра человеческими словами (lib/engineerr.ts, explainSummary). */
     explain: {

@@ -28,19 +28,6 @@ describe('набор правила → спека', () => {
         expect(s.outputs[out]).toMatchObject({ kind: 'vless', sub_file: SUB, nodes: [3, 1] })
     })
 
-    it('самый быстрый — пул latency из частей по узлу', () => {
-        const s = applyTarget(spec({}, [rule('Игры', 'direct')]), 0, subs('latency', [
-            { sub: SUB, proto: 'vless', idx: 0 }, { sub: SUB, proto: 'vless', idx: 2 },
-        ]))
-        const out = s.channels[0].out
-        expect(out).toBe('igry')
-        const top = s.outputs[out]
-        expect(top).toMatchObject({ kind: 'interface', pick: 'latency' })
-        expect(top.devices).toHaveLength(2)
-        for (const d of top.devices!) expect(s.outputs[d]).toMatchObject({ kind: 'vless', part_of: out })
-        expect(top.devices!.map((d) => s.outputs[d].nodes)).toEqual([[0], [2]])
-    })
-
     it('раздача внутри одной подписки — active, у hysteria2 — группа balance из частей', () => {
         const v = applyTarget(spec({}, [rule('a', 'direct')]), 0, subs('balance', [
             { sub: SUB, proto: 'vless', idx: 0 }, { sub: SUB, proto: 'vless', idx: 1 },
@@ -100,11 +87,11 @@ describe('общий выход и разведение', () => {
 
     it('свой выход правится на месте, под тем же именем; части с тем же содержимым сохраняют имя', () => {
         let s = applyTarget(spec({}, [rule('a', 'direct')]), 0, subs('latency', [
-            { sub: SUB, proto: 'vless', idx: 0 }, { sub: SUB, proto: 'vless', idx: 1 },
+            { sub: SUB, proto: 'vless', idx: 0 }, { sub: SUB2, proto: 'vless', idx: 1 },
         ]))
         const part0 = s.outputs.a.devices![0]
         s = applyTarget(s, 0, subs('latency', [
-            { sub: SUB, proto: 'vless', idx: 0 }, { sub: SUB, proto: 'vless', idx: 7 },
+            { sub: SUB, proto: 'vless', idx: 0 }, { sub: SUB2, proto: 'vless', idx: 7 },
         ]))
         expect(s.channels[0].out).toBe('a')
         expect(s.outputs.a.devices![0]).toBe(part0)
@@ -203,30 +190,29 @@ describe('блок', () => {
     })
 })
 
-describe('самый быстрый — ядро с pool_latency', () => {
-    const caps = { tunnelLatency: true }
+describe('самый быстрый', () => {
     it('одна подписка — один туннель pick: latency, без частей', () => {
         const s = applyTarget(spec({}, [rule('a', 'direct')]), 0, subs('latency', [
             { sub: SUB, proto: 'vless', idx: 0 }, { sub: SUB, proto: 'vless', idx: 2 },
-        ]), caps)
+        ]))
         expect(s.outputs.a).toMatchObject({ kind: 'vless', nodes: [0, 2], pick: 'latency' })
         expect(Object.values(s.outputs).filter((o) => o.part_of)).toHaveLength(0)
     })
     it('«Авто» — все узлы подписки, самый быстрый', () => {
-        const s = applyTarget(spec({}, [rule('a', 'direct')]), 0, subs('latency', [{ sub: SUB, proto: 'vless' }]), caps)
+        const s = applyTarget(spec({}, [rule('a', 'direct')]), 0, subs('latency', [{ sub: SUB, proto: 'vless' }]))
         expect(s.outputs.a).toMatchObject({ kind: 'vless', pick: 'latency' })
         expect(s.outputs.a.nodes).toBeUndefined()
     })
     it('две подписки — пул latency из туннелей latency; через спеку ядра и обратно', () => {
         const t = subs('latency', [{ sub: SUB, proto: 'vless', idx: 1 }, { sub: SUB, proto: 'vless', idx: 3 }, { sub: SUB2, proto: 'vless' }])
-        const s = applyTarget(spec({}, [rule('a', 'direct')]), 0, t, caps)
+        const s = applyTarget(spec({}, [rule('a', 'direct')]), 0, t)
         expect(s.outputs.a).toMatchObject({ kind: 'interface', pick: 'latency' })
         expect(s.outputs.a.devices!.map((d) => s.outputs[d].pick)).toEqual(['latency', 'latency'])
         const doc = encodeSpec(s) as { outputs: Record<string, Record<string, unknown>> }
         expect(Object.values(doc.outputs).filter((o) => o.pick === 'latency' && o.kind === 'tunnel')).toHaveLength(2)
         const back = decodeSpec(doc)
         expect(targetOf(back, back.channels[0].out)).toEqual(t)
-        expect(applyTarget(back, 0, t, caps)).toBe(back)
+        expect(applyTarget(back, 0, t)).toBe(back)
     })
 })
 
@@ -278,7 +264,8 @@ describe('страны узлов в наборе правила', () => {
     })
 
     it('в пуле «самый быстрый» страны получает каждая часть', () => {
-        const s = applyTarget(spec({}, [rule('a', 'direct')]), 0, withCc('latency', [], ['US']))
+        const two = { ...withCc('latency', [], ['US']), subs: { ...withCc('latency', [], ['US']).subs, picks: [picks[0], { ...picks[1], sub: SUB2 }] } }
+        const s = applyTarget(spec({}, [rule('a', 'direct')]), 0, two)
         const parts = Object.values(s.outputs).filter((o) => o.part_of === 'a')
         expect(parts).toHaveLength(2)
         for (const p of parts) expect(p.exclude).toEqual(['US'])

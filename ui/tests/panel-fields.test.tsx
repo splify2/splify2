@@ -6,7 +6,6 @@ import { GeoLine } from '@/components/OutputCards'
 import { pending } from '@/lib/pending'
 import { rpc } from '@/lib/rpc'
 import { decodeSpec, encodeSpec } from '@/lib/specv2'
-import { groupOnlySupported, nodeOnlySupported } from '@/lib/engine'
 import type { Channel, Output, OutputStatus, Spec, Status } from '@/lib/model'
 
 // Новые поля ядра: семейство IP правила, страны туннеля и группы, страна выхода, клиенты
@@ -65,12 +64,6 @@ describe('спека: страны туннеля и группы', () => {
         const back = decodeSpec(encodeSpec(g('latency'))).outputs.g
         expect(back.only).toEqual(['NL', 'DE'])
         expect(back.exclude).toEqual(['RU'])
-    })
-    it('умения node_only и group_only спрашиваются у состояния', () => {
-        expect(nodeOnlySupported({ features: ['node_only'] } as unknown as Status)).toBe(true)
-        expect(nodeOnlySupported({ features: ['exclude'] } as unknown as Status)).toBe(false)
-        expect(groupOnlySupported({ features: ['group_only'] } as unknown as Status)).toBe(true)
-        expect(groupOnlySupported(null)).toBe(false)
     })
 })
 

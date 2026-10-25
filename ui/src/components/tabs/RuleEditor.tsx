@@ -63,8 +63,6 @@ interface Props {
     isNew?: boolean
     onSave?: (ch: Channel) => void
     /** Умеет ли ядро steer `fragment` у DoT/DoH и адрес `h3://` — без умения выключатель скрыт. */
-    dnsFragmentOk?: boolean
-    dnsH3Ok?: boolean
     index: number
     services: ServiceEntry[]
     local: Record<string, { count: number; mtime: number }>
@@ -101,7 +99,7 @@ function serviceName(service: string, current: string, taken: string[]): string 
 }
 
 export default function RuleEditor({
-    dnsFragmentOk = false, dnsH3Ok = false, ch, target, defer = false, isNew = false, onSave, onListsChanged, index, services, local, outputs, clash, rulesTotal, coveredBy, onChange, onClose, onDelete,
+    ch, target, defer = false, isNew = false, onSave, onListsChanged, index, services, local, outputs, clash, rulesTotal, coveredBy, onChange, onClose, onDelete,
 }: Props) {
     const [q, setQ] = useState('')
     /** Наборы каталога, о которых сейчас спрашиваем роутер (pick → srsOf). */
@@ -814,7 +812,7 @@ export default function RuleEditor({
                                         className="w-full rounded-lg border border-border bg-background px-2 py-1.5 font-mono text-sm"
                                     />
                                 </FieldRow>
-                                <DnsUpstreamExtras up={ownDns} onChange={setOwnDns} fragmentOk={dnsFragmentOk} h3Ok={dnsH3Ok} />
+                                <DnsUpstreamExtras up={ownDns} onChange={setOwnDns} />
                                 <FieldRow label={S.ruleEditor.dnsCherezVyhod}>
                                     <select
                                         value={ownDns.out || ''}

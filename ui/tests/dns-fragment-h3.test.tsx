@@ -12,7 +12,6 @@ vi.mock('@/lib/rpc', () => ({ rpc: { dnsLog: vi.fn(async () => ({ running: true,
 vi.mock('@/lib/notify', () => ({ notify: vi.fn() }))
 
 import Dns from '@/components/sections/Dns'
-import { dnsFragmentSupported, dnsH3Supported } from '@/lib/engine'
 import { decodeSpec, encodeSpec } from '@/lib/specv2'
 import { S } from '@/copy'
 import type { Live } from '@/lib/live'
@@ -23,7 +22,6 @@ import type { Live } from '@/lib/live'
 const OUTS = { direct: { name: 'direct', kind: 'direct' } } as never
 const spec = (dns: Spec['dns']): Spec => ({ outputs: OUTS, channels: [], dns })
 const NEW = { status: { schema: 1, outputs: {}, channels: [], features: ['dns_fragment', 'dns_h3'] }, build: { version: '2.0.5' } } as unknown as Live
-const OLD = { status: { schema: 1, outputs: {}, channels: [], features: ['dns_groups'] }, build: { version: '2.0.4' } } as unknown as Live
 
 const dnsOf = (s: Spec) => (encodeSpec(s).dns as { upstreams: Record<string, Record<string, unknown>> }).upstreams
 
@@ -57,17 +55,6 @@ describe('fragment и h3 в спеке', () => {
     })
 })
 
-describe('умение ядра', () => {
-    it('перечень называет умение — умеет; иначе по версии 2.0.5', () => {
-        expect(dnsFragmentSupported({ features: ['dns_fragment'] } as never)).toBe(true)
-        expect(dnsH3Supported({ features: ['dns_h3'] } as never)).toBe(true)
-        expect(dnsFragmentSupported({ features: ['dns_groups'] } as never, '2.0.4')).toBe(false)
-        expect(dnsFragmentSupported({ features: ['dns_groups'] } as never, '2.0.5')).toBe(true)
-        expect(dnsH3Supported(null, '2.1')).toBe(true)
-        expect(dnsH3Supported(null)).toBe(false)
-    })
-})
-
 describe('раздел DNS: выключатель', () => {
     beforeEach(() => { edit.mockClear() })
     const sw = () => screen.queryByRole('switch', { name: S.dns.delitPervyyPaket })
@@ -91,27 +78,4 @@ describe('раздел DNS: выключатель', () => {
         expect('fragment' in next.dns!.upstreams!.a).toBe(false)
     })
 
-    it('на ядре без умения выключателя нет, а записанный ключ виден и снимается', async () => {
-        current = spec({ upstreams: { a: { url: 'https://dns.google/dns-query' } } })
-        const r = render(<Dns live={OLD} />)
-        await screen.findByLabelText('имя сервера a')
-        expect(sw()).toBeNull()
-        r.unmount()
-        current = spec({ upstreams: { a: { url: 'https://dns.google/dns-query', fragment: true } } })
-        render(<Dns live={OLD} />)
-        await screen.findByLabelText('имя сервера a')
-        await userEvent.click(sw()!)
-        expect((edit.mock.calls.at(-1)![0] as Spec).dns?.upstreams?.a).toEqual({ url: 'https://dns.google/dns-query' })
-    })
-
-    it('h3:// на ядре без умения — сообщение, на ядре с умением — нет', async () => {
-        current = spec({ upstreams: { a: { url: 'h3://dns.adguard-dns.com' } } })
-        const r = render(<Dns live={OLD} />)
-        await screen.findByLabelText('имя сервера a')
-        expect(screen.getByText(S.dns.h3NuzhnoNovoeYadro)).toBeInTheDocument()
-        r.unmount()
-        render(<Dns live={NEW} />)
-        await screen.findByLabelText('имя сервера a')
-        expect(screen.queryByText(S.dns.h3NuzhnoNovoeYadro)).toBeNull()
-    })
 })

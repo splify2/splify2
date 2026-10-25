@@ -152,15 +152,6 @@ describe('панель xsteer', () => {
         expect(await screen.findByText('неизвестный параметр snii')).toBeInTheDocument()
     })
 
-    it('движок без умения xslink: кнопок нет, а нужная версия названа', async () => {
-        mount({ home: { device: 'xs-home', age: 1, state: STATE } }, ['lan_devices'])
-        // Умение xslink есть у каждого ядра, которое splify2 поддерживает (минимум — 2.0.0,
-        // src/daemon/status.c); без него — ядро не ответило или старее минимума. Прежний текст
-        // называл 1.5.0, то есть версию, которой splify2 уже не принимает.
-        expect(await screen.findByText(/ядро steer 2\.0 или новее/)).toBeInTheDocument()
-        expect(screen.queryByText('Показать ссылку xs://')).toBeNull()
-    })
-
     it('интерфейсов нет — сказано, что туннель создаётся в настройках сети', async () => {
         mount({})
         expect(await screen.findByText('Интерфейсов xsteer нет')).toBeInTheDocument()

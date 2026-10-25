@@ -223,12 +223,6 @@ function tunnel(name: string, r: { sub: string; proto: Proto; nodes: number[] },
     return o
 }
 
-/** Что умеет ядро — от этого зависит, как набор ложится в спеку. */
-export interface Caps {
-    /** `pick: latency` у туннеля (умение pool_latency): «Самый быстрый» — один туннель на подписку. */
-    tunnelLatency?: boolean
-}
-
 /** Страны набора — каждому туннелю: «только эти» и «кроме этих» без повторов, заглавными. */
 function withCountries(b: Built | null, t: Target['subs']): Built | null {
     if (!b || t.mode === 'manual') return b
@@ -244,7 +238,7 @@ function withCountries(b: Built | null, t: Target['subs']): Built | null {
     return b
 }
 
-function buildSubs(mode: Mode, picks: SubPick[], caps: Caps = {}): Built | null {
+function buildSubs(mode: Mode, picks: SubPick[]): Built | null {
     if (!picks.length) return null
     if (mode === 'manual') {
         const p = picks[0]
@@ -260,7 +254,7 @@ function buildSubs(mode: Mode, picks: SubPick[], caps: Caps = {}): Built | null 
         top.device = top.devices[0]
         return { top, owned }
     }
-    if (mode === 'latency' && caps.tunnelLatency) {
+    if (mode === 'latency') {
         /* Ядро меряет узлы подписки само, в одном туннеле (`pick: latency`); у hysteria2 так нельзя —
          * у него часть на узел. Несколько подписок или протоколов — пул latency из таких туннелей. */
         const parts = runs.flatMap((r) =>
@@ -270,16 +264,6 @@ function buildSubs(mode: Mode, picks: SubPick[], caps: Caps = {}): Built | null 
         if (parts.length === 1) return { top: tunnel(tmp(), parts[0], lat(parts[0])), owned: [] }
         const top: Output = { name: tmp(), kind: 'interface', devices: [], pick: 'latency', on_fail: 'drop' }
         const owned = parts.map((r) => tunnel(tmp(), r, { ...lat(r), part_of: top.name }))
-        top.devices = owned.map((p) => p.name)
-        top.device = top.devices[0]
-        return { top, owned }
-    }
-    if (mode === 'latency') {
-        /* Ядро без pool_latency сравнивает задержку только между частями: по части на узел. */
-        const each = picks.map((p) => ({ sub: p.sub, proto: p.proto, nodes: p.idx === undefined ? [] : [p.idx] }))
-        if (each.length === 1) return { top: tunnel(tmp(), each[0]), owned: [] }
-        const top: Output = { name: tmp(), kind: 'interface', devices: [], pick: 'latency', on_fail: 'drop' }
-        const owned = each.map((r) => tunnel(tmp(), r, { part_of: top.name }))
         top.devices = owned.map((p) => p.name)
         top.device = top.devices[0]
         return { top, owned }
@@ -323,9 +307,9 @@ function buildOwn(mode: Mode, picks: string[]): Built | { ref: string } | null {
 }
 
 /** Набор правила целиком. `ref` — правило ведёт прямо в готовый выход. */
-function buildTarget(t: Target, caps: Caps = {}): Built | { ref: string } | null {
+function buildTarget(t: Target): Built | { ref: string } | null {
     const secs: (Built | { ref: string })[] = []
-    const s = withCountries(buildSubs(t.subs.mode, t.subs.picks, caps), t.subs)
+    const s = withCountries(buildSubs(t.subs.mode, t.subs.picks), t.subs)
     if (s) secs.push(s)
     for (const w of t.warp) secs.push({ ref: w })
     const o = buildOwn(t.own.mode, t.own.picks)
@@ -461,7 +445,7 @@ export function sharedWith(spec: Spec, index: number): string[] {
 
 /** Поставить правилу `index` выбор `t`. Пустой выбор (ни пилюли, не «напрямую») спеку не меняет —
  *  правилу нужен выход. */
-export function applyTarget(spec: Spec, index: number, t: Target, caps: Caps = {}): Spec {
+export function applyTarget(spec: Spec, index: number, t: Target): Spec {
     const ch = spec.channels[index]
     if (!ch) return spec
     const prev = ch.out
@@ -483,7 +467,7 @@ export function applyTarget(spec: Spec, index: number, t: Target, caps: Caps = {
         /* Напрямую — домены настоящими адресами (rulefiles.directDomains). */
         return { ...s2, channels: s2.channels.map((c, k) => (k === index ? directDomains(c) : c)) }
     }
-    const built = buildTarget(t, caps)
+    const built = buildTarget(t)
     if (!built) return spec
     if ('ref' in built) return setOut(spec, built.ref)
 
@@ -529,13 +513,12 @@ export function addSubOutput(
     spec: Spec,
     sub: { path: string; base: string },
     protos: Proto[],
-    caps: Caps = {},
 ): { spec: Spec; name: string; created: boolean } | null {
     const t: Target = {
         ...EMPTY_TARGET,
         subs: { mode: 'order', picks: (protos.length ? protos : ['vless' as Proto]).map((proto) => ({ sub: sub.path, proto })) },
     }
-    const built = buildTarget(t, caps)
+    const built = buildTarget(t)
     if (!built || 'ref' in built) return null
     const draft: Record<string, Output> = { ...spec.outputs, [built.top.name]: built.top }
     for (const p of built.owned) draft[p.name] = p

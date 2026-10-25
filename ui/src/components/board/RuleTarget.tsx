@@ -7,8 +7,6 @@ import { BADGE_ROW, NodePill, PILL, useSubProbe } from '@/components/board/NodeP
 import ConfBadges from '@/components/ConfBadges'
 import { devProto, protoBadge, type ConfBadge } from '@/lib/badges'
 import { rpc } from '@/lib/rpc'
-import { notify } from '@/lib/notify'
-import { blockSupported, nodeOnlySupported, poolLatencySupported } from '@/lib/engine'
 import CountryFilter from '@/components/CountryFilter'
 import { GeoLine } from '@/components/OutputCards'
 import { subsRemember, subsRemembered } from '@/lib/subs'
@@ -68,7 +66,7 @@ export default function RuleTarget({ spec, index, live, onSpec }: {
 
     function put(next: Target) {
         setT(next)
-        const s = applyTarget(spec, index, next, { tunnelLatency: poolLatencySupported(live.status) })
+        const s = applyTarget(spec, index, next)
         if (s !== spec) onSpec(s)
     }
 
@@ -90,10 +88,10 @@ export default function RuleTarget({ spec, index, live, onSpec }: {
             .map(([n, o]) => ({ key: `out:${n}`, name: n, badges: [protoBadge(o.kind === 'awg' ? 'awg' : 'xsteer')], up: live.status?.outputs?.[n]?.up })),
     ]
 
-    /* Страны: умение ядра `node_only`; записанное в спеке видно и без него. Один узел («вручную») страну не выбирает. */
+    /* Страны: один узел («вручную») страну не выбирает. */
     const subsOnly = t.subs.only || []
     const subsExclude = t.subs.exclude || []
-    const canCountry = t.subs.mode !== 'manual' && (nodeOnlySupported(live.status) || subsOnly.length > 0 || subsExclude.length > 0)
+    const canCountry = t.subs.mode !== 'manual'
     const ccOptions = [...new Set(Object.values(ccBySub).flat())].sort()
     /* Какую страну выхода видят сайты: состояние выхода правила и его частей. */
     const geoSts = ch.out && outs[ch.out] ? outputTree(outs, ch.out).map((n) => live.status?.outputs?.[n]) : []
@@ -158,7 +156,6 @@ export default function RuleTarget({ spec, index, live, onSpec }: {
                         value={t.block ? 'block' : t.direct ? 'direct' : 'tunnel'}
                         onChange={(v) => {
                             if (v === 'block') {
-                                if (!blockSupported(live.status)) { notify(S.ruleTarget.blokNuzhnoYadro, 'warning'); return }
                                 put({ ...t, direct: false, block: true })
                             } else if (v === 'direct') put({ ...t, direct: true, block: false })
                             else setT({ ...t, direct: false, block: false })

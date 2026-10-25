@@ -1,5 +1,5 @@
 import type { Build } from '@/lib/live'
-import { isProxyKind, type Status } from '@/lib/model'
+import { isProxyKind } from '@/lib/model'
 
 import { S } from '@/copy'
 /** Что можно предложить сделать с движком — в одном месте на весь интерфейс.
@@ -120,113 +120,6 @@ export function engineTooOld(build: Build | null): string | null {
     return cmpVersion(build.version, build.min_version) < 0 ? build.min_version : null
 }
 
-/** Умеет ли установленный движок список локаций и смешанный пул (контракт steer T-015).
- *
- *  Спрашивается у СОСТОЯНИЯ, а не у версии, и это не стилистика: номер версии движку
- *  проставляет релизный workflow, а не коммит, поэтому сборка из main через два коммита
- *  после релиза называет то же число, что и релиз.
- *
- *  Два ответа, потому что движков в поле два поколения; подробности — у веток ниже. */
-export function poolsSupported(status: Status | null): boolean {
-    if (!status) return false
-    /* Прямой ответ движка, начиная со steer 1.3.0: перечень умений печатается верхним уровнем
-     * и виден там, где выхода подписки нет вовсе, — а смешанный пул нужнее всего именно там
-     * (xsteer плюс wireguard), и именно там движок постарше молча уводит канал в blackhole. */
-    if (Array.isArray(status.features)) return status.features.includes('pool')
-    /* Движок до 1.3.0: перечня нет, и спросить можно только косвенно — поле `nodes` у выхода
-     * kind=vless печатается всегда, в том числе пустым, а движок постарше не печатает его
-     * вовсе. Ни одного такого выхода нет — ответить нечем, и тогда ответ «не умеет»: цена
-     * ошибки несимметрична. Сказав «умеет» зря, мы дадим человеку собрать пул, который молча
-     * повезёт трафик не туда; сказав «не умеет» зря, мы всего лишь не покажем выбор. */
-    const outs = Object.values(status.outputs || {})
-    return outs.some((o) => o.kind === 'vless' && Array.isArray(o.nodes))
-}
-
-/** Умеет ли установленный движок ссылки xs://.
- *
- *  Спрашивается У СОСТОЯНИЯ, а не у версии, по той же причине, что и `poolsSupported`: номер
- *  версии движку проставляет релизный workflow, а не коммит, и сборка из main через два коммита
- *  после релиза называет то же число, что релиз.
- *
- *  Ответ «не умеет» на отсутствующем перечне — не осторожность, а честность: до steer 1.3.0
- *  перечня умений нет вовсе, и спросить про ссылки нечем. Цена ошибки здесь несимметрична.
- *  Сказав «умеет» зря, мы дадим человеку вставить ссылку и получить отказ от rpcd, в котором он
- *  будет искать опечатку в ссылке; сказав «не умеет» зря — всего лишь не покажем кнопку и
- *  назовём версию, с которой она появляется. */
-export function xsLinkSupported(status: Status | null): boolean {
-    return Array.isArray(status?.features) && status.features.includes('xslink')
-}
-
-/** Умеет ли установленное ядро исключать узлы туннеля по стране и куску имени (ключи `exclude` и
- *  `exclude_name` спеки v2, умение `exclude`). Спрашивается у состояния, как `balanceBySupported`:
- *  ядро без умения спеку с этими ключами отвергает целиком. */
-export function excludeSupported(status: Status | null | undefined): boolean {
-    return Array.isArray(status?.features) && status.features.includes('exclude')
-}
-
-/** Умеет ли установленное ядро брать узлы туннеля только указанных стран (ключ `only` у
- *  `kind: tunnel`, умение `node_only`). */
-export function nodeOnlySupported(status: Status | null | undefined): boolean {
-    return Array.isArray(status?.features) && status.features.includes('node_only')
-}
-
-/** Умеет ли установленное ядро отбор членов группы по стране живого узла (`only` и `exclude` у
- *  `kind: group`, умение `group_only`). */
-export function groupOnlySupported(status: Status | null | undefined): boolean {
-    return Array.isArray(status?.features) && status.features.includes('group_only')
-}
-
-/** Умеет ли установленное ядро пул узлов туннеля — несколько узлов подписки сразу и слежку за
- *  ними (ключи `active`, `by`, `interval`, `silence` у `kind: tunnel` спеки v2, умение
- *  `active_nodes`). Ядро без умения спеку с этими ключами отвергает целиком. */
-export function activeNodesSupported(status: Status | null | undefined): boolean {
-    return Array.isArray(status?.features) && status.features.includes('active_nodes')
-}
-
-/** Умеет ли установленное ядро самые быстрые узлы подписки в одном туннеле (`pick: latency` у
- *  `kind: tunnel`, умение `pool_latency`): «Самый быстрый» без устройства на каждый узел. */
-export function poolLatencySupported(status: Status | null | undefined): boolean {
-    return Array.isArray(status?.features) && status.features.includes('pool_latency')
-}
-
-/** Умеет ли установленное ядро выход «Блок» (`kind: block`, умение `block`): ядро без умения спеку
- *  с таким выходом отвергает целиком. */
-export function blockSupported(status: Status | null | undefined): boolean {
-    return Array.isArray(status?.features) && status.features.includes('block')
-}
-
-/** Умеет ли установленное ядро группы серверов DNS (`{ servers, mode }` в `dns.upstreams`, умение
- *  `dns_groups`). Ядро без умения спеку с группой отвергает целиком. */
-export function dnsGroupsSupported(status: Status | null | undefined): boolean {
-    return Array.isArray(status?.features) && status.features.includes('dns_groups')
-}
-
-/** Умеет ли установленное ядро сервер для имён вне правил (`dns.other`, умение `dns_other`). */
-export function dnsOtherSupported(status: Status | null | undefined): boolean {
-    return Array.isArray(status?.features) && status.features.includes('dns_other')
-}
-
-/** С какой версии ядро знает `fragment` у серверов DoT/DoH и адрес `h3://` (steer после 2.0.4).
- *  Сначала спрашивается умение `dns_fragment`/`dns_h3` в `status.features` (ядро печатает их
- *  вместе с самой поддержкой); версия — запасной признак для ядер без перечня этих имён. */
-const DNS_FRAGMENT_SINCE = '2.0.5'
-
-function dnsFeature(status: Status | null | undefined, name: string, version?: string): boolean {
-    if (Array.isArray(status?.features) && status.features.includes(name)) return true
-    return !!version && cmpVersion(version, DNS_FRAGMENT_SINCE) >= 0
-}
-
-/** Умеет ли установленное ядро `fragment: true` у сервера DoT/DoH (умение `dns_fragment`).
- *  Ядро без умения спеку с этим ключом отвергает целиком. `version` — версия ядра из `engine`. */
-export function dnsFragmentSupported(status: Status | null | undefined, version?: string): boolean {
-    return dnsFeature(status, 'dns_fragment', version)
-}
-
-/** Умеет ли установленное ядро адрес `h3://` (DoH по HTTP/3, умение `dns_h3`). */
-export function dnsH3Supported(status: Status | null | undefined, version?: string): boolean {
-    return dnsFeature(status, 'dns_h3', version)
-}
-
 /** Модули ядра 2.0 (пакеты steer-<модуль>) в порядке показа — тот же, что у бэкенда
  *  (m-engine.sh, STEER_MODULES). */
 export const STEER_MODULES = ['vless', 'hysteria2', 'proxy', 'xsteer', 'obfs', 'tgws']
@@ -262,15 +155,4 @@ export function missingModule(
     if (!o || !Array.isArray(modules)) return null
     const need = moduleFor(o)
     return need && !modules.includes(need) ? need : null
-}
-
-/** Не читает ли ядро спеку v2 (`version: 2`), которую пишет интерфейс: да, если оно сообщает
- *  перечень умений и в нём нет `groups`. Группы выходов появились в ядре 2.0 вместе со спекой
- *  v2, и в перечне 1.x этого имени нет ни у одного выпуска. `spec_schema2` признаком НЕ
- *  служит: его печатает и 1.5.x — там это вторая схема спеки v1 (`schema: 2`), а спеку v2 такое
- *  ядро отвергает целиком. Перечня нет вовсе — ядро до 1.3.0 или ответ ещё не пришёл:
- *  утверждать нечего, false (о версии тогда говорит engineTooOld). */
-export function specV2Unsupported(status: Status | null): boolean {
-    const f = status?.features
-    return Array.isArray(f) && !f.includes('groups')
 }
