@@ -14,9 +14,13 @@ import { S } from '@/copy'
  * *
  *  `tunnel` — туннель спеки v2 с протоколом, которого у модели нет своим видом (`protocol`):
  *  прокси-протоколы steer-proxy и всё, что появится позже. Тоже читается и пишется как есть. */
-export type OutputKind =
+export type KnownOutputKind =
     | 'interface' | 'direct' | 'vless' | 'hysteria2' | 'xsteer' | 'awg' | 'tgws' | 'group' | 'tunnel'
     | ProxyKind
+
+/** Вид выхода — строка: ядра и модулей панели (`KnownOutputKind`) и любой, что принесёт плагин
+ *  (слот `outputKind`, host-api.md). Неизвестный вид читается и пишется как есть. */
+export type OutputKind = KnownOutputKind | (string & {})
 
 /** Протоколы прокси модуля steer-proxy (steer/docs/proxy.md). В спеке v2 каждый — `kind: tunnel`
  *  с этим `protocol`, в `steer status` — `kind` с тем же именем; модель держит их своими видами

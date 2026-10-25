@@ -18,6 +18,7 @@ export function live(patch: Partial<Live> = {}): Live {
         diag: null,
         devs: null,
         speed: { ch: {}, dev: {} },
+        rawSpeed: { ch: {}, dev: {} },
         history: new History(),
         conns: null,
         dnsLog: null,

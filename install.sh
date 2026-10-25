@@ -391,7 +391,7 @@ elif [ -t 0 ]; then
   xsteer     XSTEER
   obfs       WireGuard поверх TCP
   tgws       мост Telegram
-  Остальные можно поставить и снять потом: Настройки → Интерфейс → Модули ядра.
+  Остальные можно поставить и снять потом: вкладка «Плагины».
 TXT
     printf '  Через пробел [%s]: ' "$STEER_DEFAULT_MODULES"
     read -r ans || ans=""

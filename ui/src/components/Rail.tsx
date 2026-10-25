@@ -1,8 +1,8 @@
-import { Bug, Heart, House, ListTree, Lock, Route, Send, Settings, ShieldCheck, Stethoscope } from 'lucide-react'
+import { Bug, Heart, House, Send } from 'lucide-react'
 import EngineToggle from '@/components/EngineToggle'
 import { type Live } from '@/lib/live'
 import { assetUrl } from '@/lib/assets'
-import { type SectionId } from '@/lib/sections'
+import { useSections, type SectionIcon, type SectionId } from '@/lib/sections'
 import type { ExtraSection } from '@/components/Console'
 
 import { S } from '@/copy'
@@ -25,16 +25,6 @@ import { S } from '@/copy'
  *  открывая её. Написаны они как счётчики: подпись и число, без склонений после числительного.
  *  В нижней панели их нет: там на пункт приходится 60 пикселей, и число в них читается как
  *  часть подписи. */
-
-const ITEMS: { id: SectionId | string; label: string; icon: typeof House }[] = [
-    { id: 'home', label: S.rail.glavnaya, icon: House },
-    { id: 'rules', label: S.rail.pravila, icon: Route },
-    { id: 'vpn', label: 'VPN', icon: ShieldCheck },
-    { id: 'dns', label: 'DNS', icon: Lock },
-    { id: 'requests', label: S.rail.zaprosy, icon: ListTree },
-    { id: 'diag', label: S.rail.diagnostika, icon: Stethoscope },
-    { id: 'settings', label: S.rail.nastroyki, icon: Settings },
-]
 
 /** Адреса ссылок в подвале рельса. Источник: бот обращений @splifybugbot (баг-репорты и
  *  запросы фич) и сбор поддержки — названы владельцем; чат проекта — README.md (бейдж
@@ -70,8 +60,9 @@ function releaseSuffix(): string {
 }
 
 export default function Rail({ live, section, onSection, counts, extra, hide }: RailProps) {
-    const own = hide?.length ? ITEMS.filter((it) => !hide.includes(it.id as SectionId)) : ITEMS
-    const items = extra?.length ? [...own, ...extra.map(({ id, label, icon }) => ({ id, label, icon }))] : own
+    const sections = useSections().map((r) => r.value)
+    const own = hide?.length ? sections.filter((it) => !hide.includes(it.id)) : sections
+    const items: { id: string; label: string; icon: SectionIcon }[] = extra?.length ? [...own, ...extra.map(({ id, label, icon }) => ({ id, label, icon }))] : own
     return (
         <>
             {/* ── широкий экран: колонка слева ─────────────────────────────────────── */}

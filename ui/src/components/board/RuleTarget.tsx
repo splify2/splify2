@@ -17,6 +17,10 @@ import { type Live } from '@/lib/live'
 import { useSubNodes, type SubNode } from '@/lib/subnodes'
 import { applyTarget, EMPTY_TARGET, outputTree, sharedWith, subPickKey, targetOf, type Mode, type SubPick, type Target } from '@/lib/ruleout'
 import { S } from '@/copy'
+import { PluginGuard, SlotView } from '@/plugins/boundary'
+import { registry, useRegistry } from '@/plugins/registry'
+import { decodeSpec, encodeSpec } from '@/lib/specv2'
+import type { OutputKindSlot, OutputStatus as HostOutputStatus, OutputV2 } from '@/plugins/api'
 
 /** «Куда» правила в приложении для компьютера: блок во всю ширину под остальными, в нём друг под
  *  другом подписки, WARP и свои туннели (владелец: «отдельно подписки, отдельно WARP, отдельно WG
@@ -210,6 +214,8 @@ export default function RuleTarget({ spec, index, live, onSpec }: {
                         </Part>
                     )}
 
+                    <PluginTargets spec={spec} index={index} live={live} onSpec={onSpec} />
+
                     {own.length > 0 && (
                         <Part title={S.ruleTarget.svoiTunneli} mode={t.own.mode} onMode={(m) => setMode('own', m)}>
                             <Grid>
@@ -233,6 +239,72 @@ export default function RuleTarget({ spec, index, live, onSpec }: {
                 </>
             )}
         </section>
+    )
+}
+
+/** Подходит ли выход под вид плагина: `warp` или `tunnel:vless` (имя вида и протокол). */
+function ofKind(o: { kind?: string; protocol?: string }, kind: string): boolean {
+    const [k, p] = kind.split(':')
+    return o.kind === k && (!p || o.protocol === p)
+}
+
+/** Разделы «Куда» от плагинов (слот `outputKind`, поле `ruleTarget`): выходы своего вида пилюлями, как
+ *  свои туннели; выбор пилюли — выход правила. Пилюлю можно нарисовать самому (`ruleTarget.pill`).
+ *  WARP, вшитый в панель, плагинным видом пока не заменён (следующий этап) и здесь не дублируется. */
+export function PluginTargets({ spec, index, live, onSpec }: { spec: Spec; index: number; live: Live; onSpec: (next: Spec) => void }) {
+    useRegistry()
+    const kinds = registry.list<OutputKindSlot>('outputKind').filter((r) => r.value.ruleTarget && r.value.kind !== 'warp')
+    const doc = useMemo(() => (kinds.length ? (encodeSpec(spec) as { outputs?: Record<string, OutputV2> }).outputs ?? {} : {}), [spec, kinds.length])
+    if (!kinds.length) return null
+    const choose = (name: string) =>
+        onSpec({ ...spec, channels: spec.channels.map((c, i) => (i === index ? { ...c, out: name } : c)) })
+    const groups = new Map<string, { title: string; items: { owner: string; reg: OutputKindSlot; name: string }[] }>()
+    for (const r of kinds) {
+        const g = r.value.ruleTarget!.group
+        const entry = groups.get(g) ?? { title: g, items: [] }
+        for (const [name, o] of Object.entries(spec.outputs))
+            if (ofKind(o as { kind?: string; protocol?: string }, r.value.kind)) entry.items.push({ owner: r.owner, reg: r.value, name })
+        groups.set(g, entry)
+    }
+    return (
+        <>
+            {[...groups.values()].filter((g) => g.items.length).map((g) => (
+                <Part key={g.title} title={g.title}>
+                    <Grid>
+                        {g.items.map(({ owner, reg, name }) => {
+                            const st = live.status?.outputs?.[name] as unknown as HostOutputStatus | undefined
+                            const custom = reg.ruleTarget?.pill
+                            return (
+                                <PluginGuard key={name} quiet name={owner}>
+                                    <SlotView
+                                        render={() => (custom ? custom(name, doc[name], st) : null) ?? (
+                                            <Pill
+                                                title={name}
+                                                badges={[{ id: `kind:${reg.kind}`, text: reg.label, group: 'proto' }]}
+                                                chosen={spec.channels[index].out === name}
+                                                on={live.status?.outputs?.[name]?.up}
+                                                onClick={() => choose(name)}
+                                            />
+                                        )}
+                                    />
+                                </PluginGuard>
+                            )
+                        })}
+                    </Grid>
+                    {g.items.filter(({ name }) => spec.channels[index].out === name).map(({ owner, reg, name }) => (
+                        <PluginGuard key={`edit:${name}`} name={owner}>
+                            <SlotView
+                                render={() => reg.editor(doc[name], (o) => {
+                                    const next = JSON.parse(JSON.stringify(encodeSpec(spec))) as { outputs: Record<string, OutputV2> }
+                                    next.outputs[name] = o
+                                    onSpec(decodeSpec(next))
+                                }, name)}
+                            />
+                        </PluginGuard>
+                    ))}
+                </Part>
+            ))}
+        </>
     )
 }
 

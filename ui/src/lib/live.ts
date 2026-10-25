@@ -116,6 +116,11 @@ export interface Live {
         ch: Record<string, { up: string | null; down: string | null }>
         dev: Record<string, { rx: string | null; tx: string | null }>
     }
+    /** Та же скорость числами, байт/с — для плагинов (host.core.useLive). Нет замера — нуль. */
+    rawSpeed: {
+        ch: Record<string, { up: number; down: number }>
+        dev: Record<string, { rx: number; tx: number }>
+    }
     /** История скорости (lib/history.ts): спарклайны у выходов и правил, суточный график. Объект
      *  один на всё время жизни экрана; обновляется тем же замером, что и `speed`. */
     history: History
@@ -153,6 +158,11 @@ export function human(n: number) {
 function bps(bytes: number, ms: number): number | null {
     if (!(ms > 0) || !(bytes > 0)) return null
     return (bytes * 8 * 1000) / ms
+}
+
+/** Байт в секунду; нет прироста — нуль. */
+function byteRate(bytes: number, ms: number): number {
+    return ms > 0 && bytes > 0 ? (bytes * 1000) / ms : 0
 }
 
 function rate(bytes: number, ms: number) {
@@ -227,6 +237,7 @@ export function useLive(): Live {
     useEffect(() => { statusNow.current = status }, [status])
     const [devs, setDevs] = useState<Record<string, { rx: string; tx: string }> | null>(null)
     const [speed, setSpeed] = useState<Live['speed']>({ ch: {}, dev: {} })
+    const [rawSpeed, setRawSpeed] = useState<Live['rawSpeed']>({ ch: {}, dev: {} })
     const [build, setBuild] = useState<Build | null>(null)
     /* Один объект истории на жизнь экрана; сбрасывать его при перезапуске эффекта (refresh) нельзя. */
     const history = useRef<History | null>(null)
@@ -468,6 +479,13 @@ export function useLive(): Live {
                         tx: p.dev[n] ? rate(v.tx - p.dev[n].tx, ms) : null,
                     }
                 setSpeed({ ch: chs, dev: devs2 })
+                const rc: Live['rawSpeed']['ch'] = {}
+                for (const [n, v] of Object.entries(ch))
+                    rc[n] = p.ch[n] ? { up: byteRate(v.up - p.ch[n].up, ms), down: byteRate(v.down - p.ch[n].down, ms) } : { up: 0, down: 0 }
+                const rd: Live['rawSpeed']['dev'] = {}
+                for (const [n, v] of Object.entries(dev))
+                    rd[n] = p.dev[n] ? { rx: byteRate(v.rx - p.dev[n].rx, ms), tx: byteRate(v.tx - p.dev[n].tx, ms) } : { rx: 0, tx: 0 }
+                setRawSpeed({ ch: rc, dev: rd })
             }
             prev.current = { t: now, ch, dev }
         }
@@ -585,6 +603,7 @@ export function useLive(): Live {
             if (document.hidden) return
             prev.current = null
             setSpeed({ ch: {}, dev: {} })
+            setRawSpeed({ ch: {}, dev: {} })
             void load('diag')
         }
         document.addEventListener('visibilitychange', onVisible)
@@ -672,7 +691,7 @@ export function useLive(): Live {
           : null
 
     return {
-        status, error, errorKind: fault?.kind ?? null, diag, devs, speed, history: history.current, conns, dnsLog, engineLog, want, build, net, releases, selfUpdate, stale, phase,
+        status, error, errorKind: fault?.kind ?? null, diag, devs, speed, rawSpeed, history: history.current, conns, dnsLog, engineLog, want, build, net, releases, selfUpdate, stale, phase,
         refresh: () => setNonce((n) => n + 1),
     }
 }

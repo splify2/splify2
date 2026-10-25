@@ -5,7 +5,7 @@ import { dropRule } from '@/lib/ruleout'
 import { Button } from '@/components/ui/button'
 import { Switch } from '@/components/ui/switch'
 import { Badge } from '@/components/ui/badge'
-import { Block, CardHead, Meter } from '@/components/ui/layout'
+import { Block, CardHead, Meter, StateLine } from '@/components/ui/layout'
 import { LooseBlock, SubBlock, TunnelBlock, type Facts } from '@/components/OutputCards'
 import { deadline, rpc, type SubQuota } from '@/lib/rpc'
 import { subsRemember, subsRemembered } from '@/lib/subs'
@@ -27,6 +27,7 @@ import { type SectionId } from '@/lib/sections'
 
 import { S } from '@/copy'
 import { BoardAddress, BoardLabels } from '@/components/BoardDetails'
+import { PluginTiles, usePluginTiles } from '@/components/PluginTile'
 /** Главная: работает ли, куда идут правила и чем роутер выходит наружу.
  *
  *  ДВА СТОЛБЦА, И ЭТО ДВА РАЗНЫХ ВОПРОСА. Слева правила: что куда ведёт, сколько через него
@@ -1038,6 +1039,7 @@ function OutputsColumn({
      * поля `sub_file` не печатает вовсе. Пока группировка шла по состоянию, ни одна локация
      * не попадала ни в один блок — на экране оставался голый остаток. */
     const { shown: spec } = usePending()
+    const pluginTiles = usePluginTiles()
     const outputs = Object.entries(live.status?.outputs || {})
     /* Спарклайн выхода — по устройствам: счётчик правила считает только путь «наружу». */
     const outTrend = (o: Output | undefined, st: OutputStatus) => {
@@ -1093,7 +1095,7 @@ function OutputsColumn({
     /* Ни подписки, ни туннеля — столбца нет вовсе. Пустой столбец с заголовком «Выходы»
      * занимал бы место ради строки «ничего нет», а про отсутствие выходов уже сказано над
      * столбцами, и сказано с последствием («трафику некуда идти»). */
-    if (vless.length === 0 && tunnels.length === 0 && !subs?.length && !(tiles && outputs.some(([, o]) => !!(o.group as { warp?: unknown } | undefined)?.warp))) return null
+    if (vless.length === 0 && tunnels.length === 0 && !subs?.length && !(tiles && outputs.some(([, o]) => !!(o.group as { warp?: unknown } | undefined)?.warp)) && !(tiles && pluginTiles.length)) return null
 
     /* Подписка выхода — файлом, приведённым к полному пути: в спеке v2 путь бывает и
      * относительным, от каталога спеки (`subscription: sub-test.txt`), а перечень sub_list
@@ -1142,6 +1144,7 @@ function OutputsColumn({
                     return <OutTile key={'t:' + name} name={name} st={st} facts={facts[name]} out={o} device={devs[0]} trend={live.history?.series(...devs.map((d) => 'dev:' + d))} />
                 })}
                 {warps.map(([name, st]) => <WarpTile key={'w:' + name} name={name} st={st} facts={facts[name]} />)}
+                <PluginTiles tiles={pluginTiles} live={live} />
             </>
         )
     }
@@ -1223,15 +1226,6 @@ function TileHead({ title, tag }: { title: ReactNode; tag?: ReactNode }) {
         <div className="flex min-w-0 items-center justify-between gap-2">
             <span className="sp-board-tile-name min-w-0 text-sm font-semibold">{title}</span>
             {tag}
-        </div>
-    )
-}
-
-function StateLine({ ok, children }: { ok: boolean | null; children: ReactNode }) {
-    return (
-        <div className="flex min-w-0 items-center gap-2 text-[13px]">
-            <span className={`h-2 w-2 shrink-0 rounded-full ${ok === null ? 'bg-muted-foreground' : ok ? 'bg-success' : 'bg-destructive'}`} aria-hidden="true" />
-            <span className="min-w-0 break-words">{children}</span>
         </div>
     )
 }

@@ -2,6 +2,7 @@ import { StrictMode } from 'react'
 import { createRoot, type Root } from 'react-dom/client'
 import './index.css'
 import App from './App.tsx'
+import { apply as applyTheme, bindTheme, forcedDark } from './plugins/themes'
 
 // The LuCI host view (view/splify/home.js) loads this module ONCE with a stable
 // URL. It must NOT be re-fetched with a cache-busting ?v= query on every visit:
@@ -30,11 +31,20 @@ function teardown() {
 // Sync dark mode with OpenWrt/Argon by reading the actual body background.
 function syncTheme() {
   try {
+    // Режим «светлый»/«тёмный» выбран человеком (Настройки → Интерфейс) — фон страницы не спрашиваем.
+    const forced = forcedDark()
+    if (forced !== null) {
+      document.documentElement.classList.toggle('dark', forced)
+      applyTheme()
+      return
+    }
     const bgColor = window.getComputedStyle(document.body).backgroundColor
     const rgb = bgColor.match(/\d+/g)
     if (rgb && rgb.length >= 3) {
       const brightness = (parseInt(rgb[0]) * 299 + parseInt(rgb[1]) * 587 + parseInt(rgb[2]) * 114) / 1000
       document.documentElement.classList.toggle('dark', brightness < 128)
+      // Тема плагина может задавать разные значения для светлого и тёмного вида.
+      applyTheme()
     }
   } catch (e) {
     console.error('Failed to detect theme', e)
@@ -148,7 +158,11 @@ function mount(el?: HTMLElement | null) {
   observer.observe(document.body, { attributes: true, attributeFilter: ['data-theme', 'class', 'style'] })
   window.__splifyObserver = observer
 
-  const root = createRoot(surface(rootElement))
+  const inner = surface(rootElement)
+  // Тема и стили плагинов — в корень панели: shadow root не видит ни <head>, ни стили страницы.
+  const rn = inner.getRootNode()
+  bindTheme(inner, typeof ShadowRoot !== 'undefined' && rn instanceof ShadowRoot ? rn : null)
+  const root = createRoot(inner)
   window.__splifyRoot = root
   root.render(
     <StrictMode>
