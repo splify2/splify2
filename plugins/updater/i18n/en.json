@@ -1,0 +1,4 @@
+{
+  "plugin.name": "Updater",
+  "plugin.description": "Versions and installation of the steer core and of splify2 itself from the releases, with a periodic check"
+}

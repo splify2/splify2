@@ -385,10 +385,10 @@ rm -rf "$T"
 # post-install печатает в stdout менеджера пакетов, а тот попадает в $PKG_OUT. Пока
 # $PKG_OUT отдавался только в отказе, единственная просьба post-install («перезапустите
 # сеть») существовала лишь в терминале того, кто ставит пакет руками.
-# Метод splify2_install живёт в группе engine объекта rpcd (см. files/usr/lib/splify2/rpcd).
-RPCD=files/usr/lib/splify2/rpcd/m-engine.sh
+# Метод splify2_install живёт в плагине updater (plugins/updater/bin/updater); вывод менеджера пакетов ему отдаёт служба хоста.
+RPCD=plugins/updater/bin/updater
 check "self_update отдаёт вывод установщика и на успехе" "1" \
-    "$(grep -c 'json_add_string output "\$PKG_OUT"' "$RPCD")"
+    "$(grep -c 'json_add_string output "\$INSTALL_OUT"' "$RPCD")"
 # Окно шире двух строк: у объявления появились ещё поля (`via` — путь, которым приехал
 # пакет при обходе закрытого githubusercontent), и на -A2 проверка ловила бы форматирование,
 # а не наличие поля.
@@ -631,7 +631,7 @@ check "rpcd не знает telemetry_state и telemetry_set" "0" \
 # и интерфейса, обзор списков — разом), создаются mktemp, а не по общему имени: общее имя — смесь двух
 # ответов, имя с номером процесса в /tmp предсказуемо.
 check "кэш local_lists и ответы GitHub пишутся в свои файлы (mktemp)" "0;1;1;1" \
-    "$(grep -c '_ll_c\.tmp' plugins/lists-catalog/lib/methods.sh);$(grep -c 'mktemp \"${GH_CACHE:-/tmp/splify2-releases.json}.api.XXXXXX' files/usr/lib/splify2/rpcd/m-engine.sh);$(grep -c 'mktemp \"${GH_CACHE:-/tmp/splify2-releases.json}.version.XXXXXX' files/usr/lib/splify2/rpcd/m-engine.sh);$(grep -c 'mktemp \"$_ll_c.XXXXXX' plugins/lists-catalog/lib/methods.sh)"
+    "$(grep -c '_ll_c\.tmp' plugins/lists-catalog/lib/methods.sh);$(grep -c 'mktemp \"${GH_CACHE:-/tmp/splify2-releases.json}.api.XXXXXX' files/usr/lib/splify2/rpcd/pkg-lib.sh);$(grep -c 'mktemp \"${GH_CACHE:-/tmp/splify2-releases.json}.version.XXXXXX' files/usr/lib/splify2/rpcd/pkg-lib.sh);$(grep -c 'mktemp \"$_ll_c.XXXXXX' plugins/lists-catalog/lib/methods.sh)"
 # Методы, отдающие секреты (архив с приватными ключами туннелей, ссылка xs:// с ключом), — только в
 # группе write: учётная запись «только чтение» их получить не должна.
 check "backup_get и xsteer_link — в write и не в read" "yes" \

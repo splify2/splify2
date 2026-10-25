@@ -82,6 +82,7 @@ host() {  # СЛУЖБА [АРГУМЕНТЫ…] — службы хоста т�
         UCI_STUB_DB="$T/uci.db" XSTEER_DIR="$T/etc/xs" RC_D="${RC_D_FIXTURE:-$T/rc.d}" STEER_INIT="$T/bin/initd-steer" \
         RPCD_BIN="${RPCD_BIN_FIXTURE:-$T/bin/rpcd-apply}" \
         STEER_RC="${STEER_RC:-0}" STEER_ERR="${STEER_ERR:-}" GEO_CURL="${GEO_CURL_FIXTURE:-$T/bin/curl}" \
+        OPENWRT_RELEASE="$T/openwrt_release" PM_FIXTURE="${PM_FIXTURE_HOST:-apk}" PKG_DB="$T/pkgdb" \
         "$@" 2>"$T/stderr" <"${HOST_IN:-/dev/null}"
 }
 hostrun() { host sh "$HOST" "$@"; }
@@ -392,6 +393,40 @@ out="$(GEO_CURL_FIXTURE=/nonexistent/curl hostrun probe geo vless)"
 check "probe geo: нет curl — why no_curl и curl:false" "no_curl;false" "$(printf '%s' "$out" | jget why);$(printf '%s' "$out" | jget curl)"
 check "probe: имя выхода с косой — отказ" "false" "$(hostrun probe geo 'a/b' | jget ok)"
 check "probe: неизвестная проба — использование (код 2)" "2" "$(hostrun probe other vless >/dev/null; echo $?)"
+
+# ---- release, pkg, engine modules: выпуски, пакеты, протоколы ядра -------------------------------------------------
+printf "DISTRIB_ARCH='aarch64_cortex-a53'\n" > "$T/openwrt_release"
+cat > "$T/bin/apk" <<'EOF'
+#!/bin/sh
+case "$1" in
+    list) echo "steer-core-2.1.0-r1 aarch64_cortex-a53 {steer-core} (GPL-2.0) [installed]" ; echo "splify2-26.10.3-r1 noarch {splify2} (MIT) [installed]" ;;
+    add) echo "add $*" >> "$SANDBOX/apk.log"; [ -n "${APK_FAIL:-}" ] && { echo "ERROR: unable to select packages" >&2; exit 1; }; echo OK ;;
+    *) exit 0 ;;
+esac
+EOF
+chmod +x "$T/bin/apk"
+out="$(hostrun pkg info)"
+check "pkg info: менеджер, расширение, архитектура, минимум ядра" "true;apk;apk;noarch.apk;aarch64_cortex-a53" \
+      "$(printf '%s' "$out" | jget ok);$(printf '%s' "$out" | jget manager);$(printf '%s' "$out" | jget ext);$(printf '%s' "$out" | jget noarch);$(printf '%s' "$out" | jget arch)"
+check "pkg info: установленные версии по именам пакетов" "2.1.0;26.10.3" \
+      "$(printf '%s' "$out" | python3 -c 'import json,sys; print(json.load(sys.stdin)["versions"]["steer-core"])');$(printf '%s' "$out" | python3 -c 'import json,sys; print(json.load(sys.stdin)["versions"]["splify2"])')"
+check "pkg info: минимум версии ядра задан" "yes" "$(printf '%s' "$out" | jget steer_min | grep -qE '^[0-9]+(\.[0-9]+)+$' && echo yes || echo no)"
+check "release fetch: продукт не из двух — отказ" "false;1" "$(hostrun release fetch other 1.0 a.apk "$T/dl/x" | jget ok);$(hostrun release fetch other 1.0 a.apk "$T/dl/x" >/dev/null; echo $?)"
+check "release fetch: версия не цифрами — отказ до сети" "false" "$(hostrun release fetch steer '1.0;x' a.apk "$T/dl/x" | jget ok)"
+check "release fetch: имя файла со слэшем — отказ" "false" "$(hostrun release fetch steer 1.0 ../a.apk "$T/dl/x" | jget ok)"
+check "release versions: продукт не из двух — использование (код 2)" "2" "$(hostrun release versions other >/dev/null; echo $?)"
+printf 'x' > "$T/pk.apk"
+check "pkg install: пакет вне /tmp и рабочего каталога плагина — отказ" "false;1" "$(hostrun pkg install /etc/passwd | jget ok);$(hostrun pkg install /etc/passwd >/dev/null; echo $?)"
+check "pkg install: файла нет — отказ" "false" "$(hostrun pkg install /tmp/no-such-file.apk | jget ok)"
+check "pkg install без файлов — использование (код 2)" "2" "$(hostrun pkg install >/dev/null; echo $?)"
+printf '{"version":2,"outputs":{"direct":{"kind":"direct"},"t":{"kind":"tunnel","protocol":"trojan"},"o":{"kind":"interface","device":"wg0","obfs":{"server":"a:1","listen":"b:2"}}}}\n' > "$T/etc/spec.json"
+out="$(hostrun engine modules)"
+check "engine modules: нужные спеке протоколы в порядке карточки" "proxy obfs" "$(printf '%s' "$out" | python3 -c 'import json,sys; print(" ".join(json.load(sys.stdin)["modules"]))')"
+out="$(hostrun engine modules --want hysteria2)"
+check "engine modules --want: просимый добавлен к нужным" "hysteria2 proxy obfs" "$(printf '%s' "$out" | python3 -c 'import json,sys; print(" ".join(json.load(sys.stdin)["modules"]))')"
+out="$(hostrun engine modules --want wireguard)"
+check "engine modules: неизвестный — отказ, названо имя, код 1" "false;yes;1" "$(printf '%s' "$out" | jget ok);$(printf '%s' "$out" | jget error | grep -q wireguard && echo yes || echo no);$(hostrun engine modules --want wireguard >/dev/null; echo $?)"
+rm -f "$T/etc/spec.json"
 
 # ---- подписки: остаток у панели и своё название ---------------------------------------------
 printf 'vless://a\n' > "$T/etc/sub.txt"

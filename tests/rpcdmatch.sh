@@ -26,7 +26,7 @@ ENV_SH="$ROOT/files/usr/lib/splify2/env.sh"
 # usr/lib/splify2/rpcd. Проверки по ТЕКСТУ объекта смотрят во все его файлы разом.
 RPCD_DIR="$ROOT/files/usr/lib/splify2/rpcd"
 # backup и lists-catalog — плагины (plugins/): их код живёт там, и проверки по тексту смотрят и в него.
-RPCD_ALL="$SCRIPT $ROOT/files/usr/lib/splify2/env.sh $RPCD_DIR/common.sh $RPCD_DIR/m-*.sh $ROOT/files/usr/sbin/splify2-host"
+RPCD_ALL="$SCRIPT $ROOT/files/usr/lib/splify2/env.sh $RPCD_DIR/*.sh $ROOT/files/usr/sbin/splify2-host"
 # Исходники плагинов: их проверки по тексту смотрят отдельно (plugin_src).
 plugin_src() { cat "$ROOT"/plugins/backup/lib/*.sh "$ROOT"/plugins/lists-catalog/lib/*.sh "$ROOT"/plugins/lists-catalog/bin/*; }
 rpcd_src() { cat $RPCD_ALL; }  # shellcheck disable=SC2086
@@ -761,7 +761,7 @@ rpcd() {  # МЕТОД [JSON_ЗАПРОСА]
 rpcd_run() {  # МЕТОД [JSON_ЗАПРОСА]  — вызов метода; для перечня методов есть rpcd_list
     case "$1" in
         # Методы, вынесенные в плагины, видят официальные плагины; остальным нужен менеджер плагинов с заглушкой ядра.
-        backup_get|backup_put|lists|list_*|lists_*|local_lists|allow_domains|fetch_mode|fetch_mode_set|sub_*) _rr_pl="$T/off" ;;
+        backup_get|backup_put|lists|list_*|lists_*|local_lists|allow_domains|fetch_mode|fetch_mode_set|sub_*|steer_versions|steer_install|splify2_versions|splify2_install) _rr_pl="$T/off" ;;
         *) _rr_pl="$T/plug" ;;
     esac
     # Проверка, которой нужны плагины каталога (хуки довоза списков) на методе каркаса, называет корень сама.
@@ -1097,9 +1097,13 @@ check "engine видит снятый автозапуск (R-017)" \
 out="$(rpcd engine)"
 check "engine называет минимальную версию движка (цифры и точки)" "yes" \
       "$(printf '%s' "$out" | jget min_version | grep -qE '^[0-9]+(\.[0-9]+)+$' && echo yes || echo no)"
-check "минимум — та константа, что объявлена в m-engine.sh" \
-      "$(sed -n 's/^STEER_MIN_VERSION=//p' "$ROOT/files/usr/lib/splify2/rpcd/m-engine.sh")" \
+check "минимум — та константа, что объявлена в pkg-lib.sh" \
+      "$(sed -n 's/^STEER_MIN_VERSION=//p' "$ROOT/files/usr/lib/splify2/rpcd/pkg-lib.sh")" \
       "$(printf '%s' "$out" | jget min_version)"
+# Минимум обновления, который каркас оставляет у себя (решение О-2 открыто): метод engine отдаёт страницу выпусков и команду
+# установщика — интерфейс показывает их там, где плагина updater нет.
+check "engine: страница выпусков и команда установщика" "https://github.com/splify2/splify2/releases/latest;yes" \
+      "$(printf '%s' "$out" | python3 -c 'import json,sys; print(json.load(sys.stdin)["update"]["url"])');$(printf '%s' "$out" | python3 -c 'import json,sys; print("yes" if "install.sh" in json.load(sys.stdin)["update"]["command"] else "no")')"
 # Интерфейс читает спеку JSON-видом ядра (`steer spec convert --json`, с 2.1.0): минимум младше
 # 2.1.0 одобрял бы ядро, на котором не прочтётся и не запишется ни одна правка.
 check "минимум — не младше 2.1.0" "2.1.0" \
@@ -1500,7 +1504,7 @@ relclean; reset_logs
 # ---- ядро: steer-core одним пакетом, плагины — менеджером ---------------------------------
 # Ядро — пакет steer-core, протоколы — плагины (ядро 2.1): модулей-пакетов steer-<модуль> нет. После
 # установки метод доводит менеджером (`steer plugin ensure`) просимые плагины и нужные спеке.
-apk_adds() { grep '^add' "$T/apk.log" | sed 's|/tmp/steer-\([a-z0-9]*\)-[0-9.]*-1_aarch64_cortex-a53.apk|\1|g; s/^add add //; s/^--allow-untrusted --force-overwrite //'; }
+apk_adds() { grep '^add' "$T/apk.log" | sed 's|[^ ]*/steer-\([a-z0-9]*\)-[0-9.]*-1_aarch64_cortex-a53.apk|\1|g; s/^add add //; s/^--allow-untrusted --force-overwrite //'; }
 spec_keep="$T/etc/spec.json.keep2"; cp "$T/etc/spec.json" "$spec_keep" 2>/dev/null || rm -f "$spec_keep"
 rm -f "$T/etc/spec.json"
 relclean; reset_logs
@@ -1556,7 +1560,7 @@ out="$(PM_FIXTURE=opkg rpcd steer_install '{"version":"2.1.1"}')"
 check "opkg: один install, ничего не снимается" \
       "install" "$(awk '$1 != "list-installed" {print $1}' "$T/opkg.log" | tr '\n' '|' | sed 's/|$//')"
 check "  установка удалась, в ней steer-core 2.1.1 (ipk)" "true;1" \
-      "$(printf '%s' "$out" | jget ok);$(grep '^install' "$T/opkg.log" | head -1 | tr ' ' '\n' | grep -c '/tmp/steer-core-2.1.1-1_aarch64_cortex-a53.ipk')"
+      "$(printf '%s' "$out" | jget ok);$(grep '^install' "$T/opkg.log" | head -1 | tr ' ' '\n' | grep -c 'off/state/updater/steer-core-2.1.1-1_aarch64_cortex-a53.ipk')"
 mv "$T/bin/opkg.orig" "$T/bin/opkg"; rm -f "$T/opkg.lists" "$T/opkg.log"
 plug_reset; relclean; reset_logs
 [ -f "$spec_keep" ] && mv "$spec_keep" "$T/etc/spec.json"
@@ -2113,7 +2117,7 @@ check "прямых путей /etc/config/splify2 в коде не остало
 #
 # Ответ `ok 1` обязан значить «записано», а не «дошли до конца функции»: на роутере с заполненным
 # флешем ползунок переезжал, страница показывала успех, а в конфигурации оставалось прежнее.
-check "файл заводится одной функцией на все места" "6" \
+check "файл заводится одной функцией на все места" "7" \
       "$(rpcd_src | grep -c '^ *uci_file ||')"
 check "перенаправлением файл больше не заводится" "0" \
       "$(rpcd_src | grep -c ': > "\?/etc/config')"

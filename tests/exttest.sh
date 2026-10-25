@@ -179,6 +179,11 @@ check "backup_get без плагина: код not_installed" "not_installed" "
 check "и отказ называет плагин backup" "yes" "$(printf '%s' "$out" | grep -q 'плагин backup' && echo yes || echo no)"
 out="$(rpc lists)"
 check "lists без плагина: нужен lists-catalog" "not_installed;yes" "$(printf '%s' "$out" | pj 'd["code"]');$(printf '%s' "$out" | grep -q 'lists-catalog' && echo yes || echo no)"
+for _mp in "sub_auto subscriptions" "sub_quota subscriptions" "sub_rename subscriptions" "outbound_geo node-check" "steer_install updater" "steer_versions updater" "splify2_install updater" "splify2_versions updater"; do
+    set -- $_mp
+    out="$(rpc "$1" '{}')"
+    check "$1 без плагина: нужен $2" "not_installed;yes" "$(printf '%s' "$out" | pj 'd["code"]');$(printf '%s' "$out" | grep -q "$2" && echo yes || echo no)"
+done
 check "методы каркаса отвечают как раньше (spec_get)" "2" "$(rpc spec_get | pj 'd["version"]')"
 check "реестр заведён и пуст: версия и режим" "api	1.0.0|safe	0" "$(reg | head -2 | tr '\n' '|' | sed 's/|$//')"
 

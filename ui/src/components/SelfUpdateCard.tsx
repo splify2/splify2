@@ -20,12 +20,16 @@ import { S } from '@/copy'
 export default function SelfUpdateCard({
     info,
     installed,
+    help,
     onInstalled,
 }: {
     info: SelfUpdateInfo | null
     /** Установленная версия с метода engine — без сети. Перечень выпусков (info) идёт за ней в
      *  интернет и там, где его нет, едет десятки секунд; «Сейчас» его не ждёт. */
     installed?: string
+    /** Как обновиться руками, когда плагин updater не стоит или не ответил: страница выпусков и команда установщика (метод
+     *  engine отдаёт их всегда — минимум, который каркас оставляет у себя). */
+    help?: { url: string; command: string }
     onInstalled: () => void
 }) {
     const [ver, setVer] = useState('')
@@ -140,6 +144,13 @@ export default function SelfUpdateCard({
                         >
                             {S.selfUpdateCard.gitlabComXyzmeanSplify2}</a>
                     </p>
+                )}
+                {/* Минимум в каркасе: ссылка на выпуск и команда, которая и ставит, и обновляет. */}
+                {info !== null && versions.length === 0 && help && (
+                    <div className="text-xs text-muted-foreground">
+                        <a href={help.url} target="_blank" rel="noreferrer" className="underline decoration-dotted">{help.url}</a>
+                        <pre className="mt-1 overflow-x-auto whitespace-pre-wrap break-words font-mono">{help.command}</pre>
+                    </div>
                 )}
 
                 {/* Сказанное установщиком. Единственное место, где текст приходит от

@@ -55,6 +55,8 @@ run autoapplymatch sh "$ROOT/tests/autoapplymatch.sh"
 run nodecheckmatch sh "$ROOT/tests/nodecheckmatch.sh"
 # Проверки групп выходов (плагин group-check): приговор по членам, подсказка, история, события, расписание.
 run groupcheckmatch sh "$ROOT/tests/groupcheckmatch.sh"
+# Версии и установка ядра и splify2 (плагин updater): порядок шагов, проверки до сети, итог проверки выпусков, задача.
+run updatermatch sh "$ROOT/tests/updatermatch.sh"
 # Плагин subscriptions: расписание автообновления (задача зовёт методы каркаса только по тем подпискам, у которых срок
 # вышел), остаток трафика, название, поля sub_list через хук, архив. Стенд про то, кого позвали и кого не тронули.
 run subsmatch  sh "$ROOT/tests/subsmatch.sh"

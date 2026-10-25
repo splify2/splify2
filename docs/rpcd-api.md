@@ -10,11 +10,12 @@ splify2 — тонкая обёртка на shell поверх ядра [steer]
 же его изменении. Печатает ядро JSON — обёртка пропускает его без правок; не печатает — обёртка
 отвечает единым объектом ошибки.
 
-## Плагины каркаса: backup, lists-catalog и subscriptions (splify2-api)
+## Плагины каркаса: backup, lists-catalog, subscriptions, node-check и updater (splify2-api)
 
 Методы `backup_get`, `backup_put`, `lists`, `list_*`, `local_lists`, `allow_domains`, `fetch_mode*`, `lists_source*`
-(17 методов), `sub_auto`, `sub_quota` и `sub_rename` (вид `moved` в `/usr/lib/splify2/methods.tsv`) вынесены из каркаса в
-плагины `backup`, `lists-catalog` и `subscriptions`
+(17 методов), `sub_auto`, `sub_quota`, `sub_rename` (`subscriptions`), `outbound_geo` (`node-check`), `steer_versions`,
+`steer_install`, `splify2_versions`, `splify2_install` (`updater`) — вид `moved` в `/usr/lib/splify2/methods.tsv` — вынесены из
+каркаса в плагины `backup`, `lists-catalog`, `subscriptions`, `node-check` и `updater`
 (`plugins/`, сборка — `plugins/build.sh`). Имена, входы и ответы **те же**: на объекте `splify2` они остались
 псевдонимами методов плагинов. Без плагина метод отвечает `{ok:false, code:"not_installed", error:"Нужен плагин …"}`.
 
@@ -28,7 +29,8 @@ splify2 — тонкая обёртка на shell поверх ядра [steer]
 
 Плагины пользуются каркасом **только** через API: библиотека `SPLIFY2_LIB` (jshn, `s2_fail`, `s2_setting`) и службы хоста
 `/usr/sbin/splify2-host` (`SPLIFY2_HOST`): `fetch`, `fetch-mode`, `paths`, `spec get|uses|check`, `apply`, `engine`,
-`settings get|set`, `state check|export|import`, `hook backup_sections`, `sub list|info|refresh|quota|title` (описание — splify2-api, раздел 8). Файлы,
+`settings get|set`, `state check|export|import`, `hook backup_sections`, `sub list|info|refresh|quota|title`, `call`, `probe`,
+`release`, `pkg`, `engine modules|settle` (описание — splify2-api, раздел 8). Файлы,
 переменные и функции каркаса плагину не обещаны; `s2p lint --official` и стенд `tests/pluginhygiene.sh` отказывают
 плагину, который к ним обращается. Настройки плагина — в `conf/<id>/settings.json` по схеме плагина (`plugin_settings_get`,
 `plugin_settings_set`), а не в uci каркаса: адрес каталога списков, порог сокращения и тег второго издателя — настройки
@@ -2071,3 +2073,10 @@ HTTP: `bad_request` — 400, `not_installed` и `no_method` — 404, `disabled`,
 (`common.sh` — общие помощники, `m-<группа>.sh` — помощники и ветки методов группы). Разнесено
 ради скорости: busybox ash разбирает файл целиком, и один файл в 4500 строк стоил 110 мс на каждый
 вызов. Если документ и код расходятся — прав код, а документ устарел.
+
+
+## Минимум обновления в каркасе
+
+Метод `engine` отдаёт объект `update` — `{url, command}`: страницу выпусков splify2 и команду установщика (`install.sh`
+ставит и обновляет). Это всё, что каркас оставляет у себя от обновления (решение О-2 открыто): версии, скачивание и
+установка ядра и splify2 — плагин `updater`. Где плагина нет или он не ответил, интерфейс показывает эти две строки.

@@ -1,0 +1,9 @@
+{
+  "Updater": "Обновление",
+  "Check for new versions by itself": "Проверять новые версии само",
+  "Every six hours ask the releases index which versions of the core and of splify2 are out, and remember whether the installed ones are older. Off - only when asked.": "Раз в шесть часов спрашивать у перечня выпусков, какие версии ядра и splify2 вышли, и помнить, старее ли установленные. Выключено — только по запросу.",
+  "Release channel": "Канал выпусков",
+  "stable - only finished releases count as new. prerelease - the current pre-release counts too.": "stable — новыми считаются только законченные выпуски. prerelease — и текущая предварительная.",
+  "stable": "стабильный",
+  "prerelease": "предварительный"
+}

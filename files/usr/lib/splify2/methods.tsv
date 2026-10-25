@@ -70,10 +70,10 @@ helper	frame
 purge	frame
 engine_stop	frame
 engine_start	frame
-splify2_versions	frame
-splify2_install	frame
-steer_versions	frame
-steer_install	frame
+splify2_versions	moved	updater
+splify2_install	moved	updater
+steer_versions	moved	updater
+steer_install	moved	updater
 steer_modules	frame
 recheck_info	frame
 recheck_set	frame

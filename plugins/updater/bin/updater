@@ -1,0 +1,180 @@
+#!/bin/sh
+# Программа rpc плагина updater: $1 — метод, параметры — JSON в stdin, ответ — объект JSON.
+#
+#   steer_versions                  версии ядра в выпусках и как они называются
+#   splify2_versions                версии самого splify2
+#   steer_install {version, modules?}   скачать и поставить ядро (steer-core), довести протоколы-плагины
+#   splify2_install {version}       скачать и поставить splify2
+#   update_status                   итог последней проверки: что стоит, что вышло, есть ли новее
+#   update_check                    проверить сейчас
+. "${STEER_PLUGIN_DIR:?программа запускается хостом splify2 (нет STEER_PLUGIN_DIR)}/lib/base.sh"
+METHOD="${1:?нет метода}"
+read -r input 2>/dev/null || true
+[ -n "$input" ] || input='{}'
+
+# Ответ службы хоста — как есть: перечень версий уже в форме, которую ждёт интерфейс.
+pass() { _p="$("$SPLIFY2_HOST" "$@")"; printf '%s\n' "$_p"; exit 0; }
+
+steer_versions() { pass release versions steer; }
+splify2_versions() { pass release versions splify2; }
+
+# Скачать файл выпуска в рабочий каталог плагина: FETCH_VIA — каким путём приехал, FETCH_NOTE — почему не вышло.
+fetch_asset() {  # ПРОДУКТ ВЕРСИЯ ИМЯ
+    FETCH_VIA=''; FETCH_NOTE=''
+    _fa="$("$SPLIFY2_HOST" release fetch "$1" "$2" "$3" "$RUN_DIR/$3")" && {
+        FETCH_VIA="$(jsonfilter -s "$_fa" -e '@.via' 2>/dev/null)"; return 0; }
+    FETCH_NOTE="$(jsonfilter -s "$_fa" -e '@.note' 2>/dev/null)"
+    return 1
+}
+
+# Установка пакета(ов): INSTALL_OK, INSTALL_OUT, INSTALL_ERR, INSTALL_REMOVED.
+install_files() {  # ФАЙЛ… [-- аргументы хоста]
+    _if="$("$SPLIFY2_HOST" pkg install "$@")"; _irc=$?
+    INSTALL_OUT="$(jsonfilter -s "$_if" -e '@.output' 2>/dev/null)"
+    INSTALL_ERR="$(jsonfilter -s "$_if" -e '@.error' 2>/dev/null)"
+    INSTALL_REMOVED="$(jsonfilter -s "$_if" -e '@.removed' 2>/dev/null)"
+    [ "$_irc" = 0 ]
+}
+
+splify2_install() {
+    json_load "$input" 2>/dev/null || s2_fail "неразбираемый запрос"
+    json_get_var ver version
+    case "$ver" in
+        ''|*[!0-9.]*) s2_fail "в версии допустимы только цифры и точки" ;;
+    esac
+    pkg_info || s2_fail "менеджер пакетов не ответил"
+    # Пакет называется splify2 (до переименования — luci-app-splify2): выпуски до переименования лежат под прежним именем
+    # файла, поэтому при отказе спрашивается и оно. Пакет один и noarch: интерфейс — собранный бандл и shell-скрипты.
+    name=''
+    for pkg in splify2 luci-app-splify2; do
+        n="${pkg}-${ver}-1_${PKG_NOARCH}"
+        if fetch_asset splify2 "$ver" "$n"; then name="$n"; break; fi
+        last_note="$FETCH_NOTE"
+    done
+    if [ -z "$name" ]; then
+        s2_fail "не скачалось: splify2-${ver}-1_${PKG_NOARCH} (нет такой версии?)${last_note:+ — $last_note}"
+    fi
+    via="$FETCH_VIA"
+    # Перезапуск rpcd — обязательная часть установки интерфейса (службой хоста): список методов ubus и ACL читаются им при
+    # старте, без перезапуска новая версия обращается к методам, которых работающий rpcd ещё не знает.
+    install_files "$RUN_DIR/$name" --replace luci-app-splify2 --restart-rpcd
+    rc=$?
+    rm -f "$RUN_DIR/$name"
+    if [ "$rc" != 0 ]; then
+        json_init
+        json_add_boolean ok 0
+        json_add_string error "${INSTALL_OUT:-$INSTALL_ERR}"
+        json_add_boolean removed "$([ "$INSTALL_REMOVED" = true ] && echo 1 || echo 0)"
+        json_dump; exit 0
+    fi
+    json_init
+    json_add_boolean ok 1
+    json_add_string installed "$name"
+    [ -n "$via" ] && json_add_string via "$via"
+    # Вывод менеджера отдаётся и на успехе: там печатает свои строки post-install пакета, например про перезапуск сети.
+    json_add_string output "$INSTALL_OUT"
+    # Страницу придётся перезагрузить: бандл у браузера в кеше, а его версия читается из build-id.txt при загрузке документа.
+    json_add_boolean reload_needed 1
+    json_dump
+}
+
+steer_install() {
+    json_load "$input" 2>/dev/null || s2_fail "неразбираемый запрос"
+    json_get_var ver version
+    want="$(jsonfilter -s "$input" -e '@.modules' 2>/dev/null)"
+    # Ядро ведёт коннектор (podkop, forkop): пакеты ядра там — его, а не наши.
+    eng="$("$SPLIFY2_HOST" engine 2>/dev/null)"
+    busy="$(jsonfilter -s "$eng" -e '@.busy' 2>/dev/null)"
+    [ -z "$busy" ] || s2_fail "ядро занято: $busy"
+    case "$ver" in ''|*[!0-9.]*) s2_fail "в версии допустимы только цифры и точки" ;; esac
+    pkg_info || s2_fail "менеджер пакетов не ответил"
+    [ "$(printf '%s\n%s\n' "$ver" "$STEER_MIN" | sort -V | head -n 1)" = "$STEER_MIN" ] ||
+        s2_fail "интерфейс работает с ядром не старше $STEER_MIN"
+    [ -n "$PKG_ARCH" ] || s2_fail "не определилась архитектура"
+    # Какие плагины довести: просимые и нужные спеке. Имя неизвестного — отказ до скачивания.
+    if [ -n "$want" ]; then mr="$("$SPLIFY2_HOST" engine modules --want "$want")"; else mr="$("$SPLIFY2_HOST" engine modules)"; fi
+    [ "$(jsonfilter -s "$mr" -e '@.ok' 2>/dev/null)" = true ] || s2_fail "$(jsonfilter -s "$mr" -e '@.error' 2>/dev/null)"
+    mods="$(jsonfilter -s "$mr" -e '@.modules[*]' 2>/dev/null | tr '\n' ' ')"
+    mods="${mods% }"
+
+    name="steer-core-${ver}-1_${PKG_ARCH}.${PKG_EXT}"
+    if ! fetch_asset steer "$ver" "$name"; then
+        s2_fail "не скачалось: $name (нет такой версии для $PKG_ARCH?)${FETCH_NOTE:+ — $FETCH_NOTE}"
+    fi
+    via="$FETCH_VIA"
+    # Место на флеше проверяет служба установки до менеджера пакетов.
+    install_files "$RUN_DIR/$name"
+    rc=$?
+    rm -f "$RUN_DIR/$name"
+    [ "$rc" = 0 ] || s2_fail "${INSTALL_OUT:-$INSTALL_ERR}"
+    out="$INSTALL_OUT"
+    # Довод после установки: протоколы-плагины до службы, автозапуск, спека, перезапуск.
+    # shellcheck disable=SC2086
+    st="$("$SPLIFY2_HOST" engine settle $mods)"
+    json_init
+    json_add_boolean ok 1
+    json_add_string installed "steer-core $ver"
+    json_add_array modules
+    for m in $mods; do json_add_string "" "$m"; done
+    json_close_array
+    json_add_boolean restarted "$([ "$(jsonfilter -s "$st" -e '@.restarted' 2>/dev/null)" = true ] && echo 1 || echo 0)"
+    ee="$(jsonfilter -s "$st" -e '@.ensure_error' 2>/dev/null)"
+    [ -n "$ee" ] && json_add_string ensure_error "$ee"
+    [ -n "$via" ] && json_add_string via "$via"
+    [ -n "$out" ] && json_add_string output "$out"
+    json_dump
+}
+
+# Итог проверки: что стоит и что вышло. Ходит в сеть (перечень выпусков с запасными источниками).
+update_check() {
+    pkg_info || s2_fail "менеджер пакетов не ответил"
+    channel="$("$SPLIFY2_HOST" settings get channel 2>/dev/null)"
+    : > "$STATUS.new"
+    json_init
+    json_add_boolean ok 1
+    json_add_int checked_at "$(now)"
+    json_add_string channel "${channel:-stable}"
+    for prod in steer splify2; do
+        if [ "$prod" = steer ]; then cur="$V_STEER"; else cur="$V_SPLIFY2"; fi
+        json_add_object "$prod"
+        json_add_string current "$cur"
+        if release_latest "$prod"; then
+            latest="$LATEST"
+            # Канал prerelease: текущая предварительная тоже считается новой, если она новее стабильной.
+            if [ "${channel:-stable}" = prerelease ] && ver_gt "$PRE" "$latest"; then latest="$PRE"; fi
+            json_add_string latest "$latest"
+            [ -n "$PRE" ] && json_add_string prerelease "$PRE"
+        else
+            latest=''
+            json_add_string why "перечень выпусков не получен"
+        fi
+        json_close_object
+    done
+    json_dump > "$STATUS.new" && mv "$STATUS.new" "$STATUS"
+    cat "$STATUS"
+}
+
+# Последний итог; «есть новее» пересчитывается по тому, что стоит сейчас (после установки отметка сама гаснет).
+update_status() {
+    [ -s "$STATUS" ] || { echo '{"ok":true,"checked_at":0}'; return; }
+    pkg_info || s2_fail "менеджер пакетов не ответил"
+    json_init
+    json_add_boolean ok 1
+    json_add_int checked_at "$(jsonfilter -i "$STATUS" -e '@.checked_at' 2>/dev/null)"
+    json_add_string channel "$(jsonfilter -i "$STATUS" -e '@.channel' 2>/dev/null)"
+    for prod in steer splify2; do
+        if [ "$prod" = steer ]; then cur="$V_STEER"; else cur="$V_SPLIFY2"; fi
+        latest="$(jsonfilter -i "$STATUS" -e "@.$prod.latest" 2>/dev/null)"
+        json_add_object "$prod"
+        json_add_string current "$cur"
+        [ -n "$latest" ] && json_add_string latest "$latest"
+        if ver_gt "$latest" "$cur"; then json_add_boolean available 1; else json_add_boolean available 0; fi
+        json_close_object
+    done
+    json_dump
+}
+
+case "$METHOD" in
+    steer_versions|splify2_versions|steer_install|splify2_install|update_check|update_status) "$METHOD" ;;
+    *) echo "нет такого метода: $METHOD" >&2; exit 2 ;;
+esac

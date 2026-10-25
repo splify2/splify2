@@ -11,8 +11,8 @@
 
 plugins_provision() {  # КАТАЛОГ [ID...]
     _pp_d="$1"; shift
-    # Без списка — официальные плагины (backup, lists-catalog, subscriptions); «-» — пустой корень (стенду нужны только свои плагины).
-    [ $# -gt 0 ] || set -- backup lists-catalog subscriptions
+    # Без списка — официальные плагины (backup, lists-catalog, subscriptions, updater); «-» — пустой корень (стенду нужны только свои плагины).
+    [ $# -gt 0 ] || set -- backup lists-catalog subscriptions updater
     [ "$1" = - ] && shift
     rm -rf "$_pp_d"
     mkdir -p "$_pp_d/lib" "$_pp_d/conf" "$_pp_d/run" "$_pp_d/state"
