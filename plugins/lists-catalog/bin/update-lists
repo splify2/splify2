@@ -11,25 +11,17 @@
 # у них нет размера в элементах набора, набор заполняет резолвер по мере запросов.
 set -u
 
-# Пути переопределяемы окружением — иначе скрипт невозможно проверить, не трогая
-# рабочую систему: всё, к чему он обращается, задано абсолютными путями. Значения по
-# умолчанию прежние, на роутере ничего не меняется; переменные выставляет только
-# tests/listsmatch.sh.
-STEER=${STEER:-/usr/sbin/steer}
-SPEC=${SPEC:-/etc/steer/spec.json}
-# /usr/lib/splify2/spec.sh — рядом с fetch.sh (стенды подставляют FETCH_SH).
-_spec_dir=/usr/lib/splify2
-[ -n "${FETCH_SH:-}" ] && _spec_dir="${FETCH_SH%/*}"
-. "${SPEC_SH:-$_spec_dir/spec.sh}"
-LISTS=${LISTS:-/etc/steer/lists}
-MANIFEST=${MANIFEST:-/etc/splify2/manifest.json}
-STAMP=${STAMP:-/var/lib/splify2/last-update}
-LOCK=${LOCK:-/var/lock/splify2-update.lock}
-
-# Init-скрипт движка и каталог ссылок автозапуска: по ним видно, выключен ли движок
-# человеком. Швы — ради стенда, на роутере пути прежние.
-STEER_INIT=${STEER_INIT:-/etc/init.d/steer}
-RC_D=${RC_D:-/etc/rc.d}
+# Окружение плагина — общее с методами (lib/base.sh): библиотека API, службы хоста, каталог списков и программа
+# ядра, которые называет хост. Файлов и переменных каркаса здесь нет.
+. "${STEER_PLUGIN_DIR:?программа запускается хостом splify2 (нет STEER_PLUGIN_DIR)}/lib/base.sh"
+lists_init
+# Срок одного скачивания — 120 с (методы rpc ждут меньше, ночному прогону торопиться некуда).
+FETCH_TIMEOUT_S=120
+# Замок прогона и отметка последнего обновления — в рабочем каталоге плагина (память, закрытый).
+LOCK="$RUN_DIR/update.lock"
+STAMP="$RUN_DIR/last-update"
+# Копия спеки для чтения (JSON-вид): хост отдаёт её службой `spec get`, формат файла спеки плагину знать незачем.
+SPEC_VIEW="$RUN_DIR/spec.view.json"
 
 # Куда писать отчёт о прогоне, кроме syslog. Пусто — только syslog, как было.
 # Заполняет его rpcd (кнопка «Обновить списки» в каталоге): вызов идёт не из терминала,
@@ -38,13 +30,13 @@ RC_D=${RC_D:-/etc/rc.d}
 REPORT=${REPORT:-}
 
 log() {
-    logger -t splify2-update "$*"
+    logger -t lists-catalog "$*"
     [ -n "$REPORT" ] && printf '%s\n' "$*" >> "$REPORT"
     [ -t 1 ] && echo "$*"
     return 0
 }
 
-spec_have || { log "спеки нет — обновлять нечего"; exit 0; }
+"$SPLIFY2_HOST" spec get "$SPEC_VIEW" >/dev/null 2>&1 || { log "спеки нет — обновлять нечего"; exit 0; }
 
 # Одновременно два прогона перезапишут друг другу файлы, и канал в этот момент увидит
 # полупустой список. Блокировка каталогом: mkdir атомарен и работает без flock.
@@ -76,51 +68,23 @@ echo $$ > "$LOCK/pid"
 trap 'rm -rf "$LOCK" 2>/dev/null' EXIT
 trap 'exit 143' INT TERM
 
-# Каталог по умолчанию — тот же, что у объекта rpcd (MANIFEST_URL_DEFAULT). Два написания
-# одного адреса разошлись бы ровно в тот день, когда его поменяли: интерфейс показывал бы один
-# каталог, а ночь обновляла бы списки по другому.
-manifest_url() {
-    u="$(uci -q get splify2.main.manifest_url)"
-    [ -n "$u" ] && printf '%s' "$u" ||
-        printf '%s' "https://github.com/splify2/splify2-lists/releases/latest/download/lists.json"
-}
-
-# Скачивание — общий файл с rpcd-объектом: обход закрытого издателя (splify2#15) обязан
-# быть у обеих половин один. Своя копия здесь уже приводила к тому, что каталог в
-# интерфейсе открывался, а ночное обновление тихо не приезжало.
-FETCH_TIMEOUT=${FETCH_TIMEOUT:-120}
-. "${FETCH_SH:-/usr/lib/splify2/fetch.sh}"
-
-# ВТОРОЙ ИЗДАТЕЛЬ — itdoginfo/allow-domains. Описание источника отдельным файлом: где он
-# живёт, каким тегом зафиксирован, что публикует и как его наборы становятся нашими
-# списками. Тот же файл подключает объект rpcd, и это не экономия строк: тег и его
-# употребление обязаны лежать в одном месте, иначе кнопка «Загрузить» и ночное обновление
-# разойдутся по версиям, и человек получит списки, состав которых зависит от того, чем он
-# их обновил.
-#
-# ПОД УСЛОВИЕМ существования файла, а не просто точкой — тот же довод, что у ZAPRET_SH
-# ниже: `.` на отсутствующем файле в ash не ошибка команды, а фатальная ошибка оболочки, и
-# скрипт оборвался бы на месте, не обновив ни одного списка ПЕРВОГО издателя.
-AD_SH=${AD_SH:-/usr/share/splify2/allow-domains.sh}
-AD_ON=0
-if [ -r "$AD_SH" ]; then
-    . "$AD_SH"
-    AD_ON=1
-    # Разобранные наборы живут внутри блокировки: её каталог снимается trap-ом на выходе, то
-    # есть и при обрыве. Один набор даёт ОБА вида списка, а по видам скрипт ходит по очереди
-    # (сначала адресные файлы спеки, потом доменные) — без этой памяти набор качался бы
-    # дважды. В /tmp рядом её держать нельзя: чужой прогон оставил бы там разбор недельной
-    # давности, и обновление молча применило бы старое (ровно то, от чего в fetch_tarball
-    # заведено имя по процессу).
-    AD_TMP="$LOCK/srs"
-    # Тег называется вслух один раз за прогон, а не при каждом файле: это версия списков, и
-    # в отчёте она обязана быть — по ней и только по ней можно ответить, что у человека
-    # лежит на диске. Разбор — до подстановки, иначе жалоба на негодную настройку осталась
-    # бы в подоболочке (см. ad_tag_resolve).
-    ad_tag_resolve
-    log "$AD_REPO: тег $AD_TAG"
-    [ -n "$AD_TAG_WARN" ] && log "$AD_REPO: $AD_TAG_WARN"
-fi
+# ВТОРОЙ ИЗДАТЕЛЬ — itdoginfo/allow-domains. Описание источника лежит рядом (lib/allow-domains.sh): где он живёт, каким
+# тегом зафиксирован, что публикует и как его наборы становятся нашими списками. Тот же файл подключают методы rpc, и это
+# не экономия строк: тег и его употребление обязаны лежать в одном месте, иначе кнопка «Загрузить» и ночное обновление
+# разойдутся по версиям, и человек получит списки, состав которых зависит от того, чем он их обновил.
+AD_SH="$STEER_PLUGIN_DIR/lib/allow-domains.sh"
+. "$AD_SH"
+# Разобранные наборы живут внутри блокировки: её каталог снимается trap-ом на выходе, то есть и при обрыве. Один набор
+# даёт ОБА вида списка, а по видам скрипт ходит по очереди (сначала адресные файлы спеки, потом доменные) — без этой
+# памяти набор качался бы дважды. Общий каталог рядом держать нельзя: прошлый прогон оставил бы там разбор недельной
+# давности, и обновление молча применило бы старое.
+AD_TMP="$LOCK/srs"
+# Тег называется вслух один раз за прогон, а не при каждом файле: это версия списков, и в отчёте она обязана быть — по
+# ней и только по ней можно ответить, что у человека лежит на диске. Разбор — до подстановки, иначе жалоба на негодную
+# настройку осталась бы в подоболочке (см. ad_tag_resolve).
+ad_tag_resolve
+log "$AD_REPO: тег $AD_TAG"
+[ -n "$AD_TAG_WARN" ] && log "$AD_REPO: $AD_TAG_WARN"
 
 # Сколько элементов набора эта коробка может держать. Измерено на 4C: загрузка стоит
 # ~1,3 КБ памяти на префикс, и резерв нужен, иначе загрузка сама себя и уронит.
@@ -143,12 +107,12 @@ budget() {
 # падение — обычная жизнь, а не авария.
 #
 # Роутеру неоткуда знать, было сокращение осознанным, поэтому порог грубый и его можно
-# снять: `uci set splify2.main.list_shrink_factor=0`. Иначе законно схлопнутый издателем
+# снять: настройкой плагина `list_shrink_factor` = 0. Иначе законно схлопнутый издателем
 # список остался бы лежать прежней копией, а сказать об этом роутер может только
 # журналом. Ноль снимает КРАТНЫЙ порог; файл без записей не применяется и с ним.
-SHRINK_FACTOR=${SHRINK_FACTOR:-$(uci -q get splify2.main.list_shrink_factor || echo 4)}
+SHRINK_FACTOR=${SHRINK_FACTOR:-$(s2_setting list_shrink_factor)}
 SHRINK_MIN=${SHRINK_MIN:-100}
-# Из uci приходит что угодно, а нечисло в `$(( ))` — это ошибка оболочки на каждом
+# Из настройки приходит что угодно, а нечисло в `$(( ))` — это ошибка оболочки на каждом
 # списке, то есть проверка выключилась бы молча (так же, как это сделано в budget()).
 case "$SHRINK_FACTOR" in ''|*[!0-9]*) SHRINK_FACTOR=4 ;; esac
 
@@ -162,7 +126,7 @@ shrank() {  # НОВОЕ_ЧИСЛО ПРЕЖНЕЕ_ЧИСЛО
     # Пусто вместо записей — это не «список стал меньше», а «списка не стало»: канал
     # после такой подмены не совпадёт ни с чем. Порогом этот отказ не снимается.
     [ "$1" -eq 0 ] && return 0
-    [ "$SHRINK_FACTOR" -gt 0 ] || return 1  # кратный порог снят через uci
+    [ "$SHRINK_FACTOR" -gt 0 ] || return 1  # кратный порог снят настройкой
     [ "$2" -ge "$SHRINK_MIN" ] || return 1  # мелкий список: кратность тут ничего не значит
     [ $(( $1 * SHRINK_FACTOR )) -lt "$2" ]
 }
@@ -173,12 +137,12 @@ used_files() {  # ip|domains|srs
     # Спека v2 (`lists`) и прежняя v1 (`channels`): до первого сохранения интерфейсом на
     # диске может лежать любая. Наборы файлом (`srs`) — только v2.
     if [ "$1" = srs ]; then
-        jsonfilter -i "$(spec_json)" -e '@.lists[*].srs[*]' 2>/dev/null
+        jsonfilter -i "$SPEC_VIEW" -e '@.lists[*].srs[*]' 2>/dev/null
     elif [ "$1" = ip ]; then
-        jsonfilter -i "$(spec_json)" -e '@.lists[*].prefixes_file[*]' \
+        jsonfilter -i "$SPEC_VIEW" -e '@.lists[*].prefixes_file[*]' \
             -e '@.channels[*].match.prefixes_files[*]' 2>/dev/null
     else
-        jsonfilter -i "$(spec_json)" -e '@.lists[*].domains_file[*]' \
+        jsonfilter -i "$SPEC_VIEW" -e '@.lists[*].domains_file[*]' \
             -e '@.channels[*].match.domains_files[*]' 2>/dev/null
     fi
 }
@@ -192,12 +156,12 @@ used_files() {  # ip|domains|srs
 # списки этих категорий не обновлялись вообще, а в журнале стояло «не похоже на
 # domains-записи», то есть обвинение издателя вместо своей ошибки. То же ключевание по
 # полному пути уже сделано в rpcd (`local_path`), здесь оно приводится в соответствие.
-MANIFEST_MAP=/tmp/splify2-manifest.map
+MANIFEST_MAP="$RUN_DIR/manifest.map"
 # Карта переименований издателя: СТАРОЕ_ИМЯ НОВОЕ_ИМЯ.
-MANIFEST_ALIAS=/tmp/splify2-manifest.alias
+MANIFEST_ALIAS="$RUN_DIR/manifest.alias"
 
 parse_manifest() {
-    base="$(jsonfilter -i "$MANIFEST" -e '@.base_url' 2>/dev/null)"
+    base="$(jsonfilter -i "$CATALOG_FILE" -e '@.base_url' 2>/dev/null)"
     rm -f "$MANIFEST_MAP" "$MANIFEST_ALIAS"
     for key in categories domain_lists; do
         # НАБОРЫ SING-BOX, НАЗВАННЫЕ КАТАЛОГОМ, — ПЕРВЫМИ. У такой записи есть своя ссылка и
@@ -214,13 +178,13 @@ parse_manifest() {
         # ПЕРВЫМИ — не косметика. Читатели карты (url_for, fmt_for) берут ПЕРВОЕ совпадение
         # по пути, и обычная строка того же файла, попав в карту раньше, отменила бы набор
         # целиком: файл качался бы как текст с base_url, которого там нет.
-        jsonfilter -i "$MANIFEST" -e "@.$key[@.format='srs'].file" 2>/dev/null > "$MANIFEST_MAP.f"
-        jsonfilter -i "$MANIFEST" -e "@.$key[@.format='srs'].url"  2>/dev/null > "$MANIFEST_MAP.u"
+        jsonfilter -i "$CATALOG_FILE" -e "@.$key[@.format='srs'].file" 2>/dev/null > "$MANIFEST_MAP.f"
+        jsonfilter -i "$CATALOG_FILE" -e "@.$key[@.format='srs'].url"  2>/dev/null > "$MANIFEST_MAP.u"
         if [ -s "$MANIFEST_MAP.f" ]; then
             awk 'NR == FNR { a[FNR] = $0; next } { sub(/^\/*/, "", a[FNR]); print a[FNR], $0, "srs" }' \
                 "$MANIFEST_MAP.f" "$MANIFEST_MAP.u" >> "$MANIFEST_MAP"
         fi
-        [ -n "$base" ] && jsonfilter -i "$MANIFEST" -e "@.$key[*].file" 2>/dev/null |
+        [ -n "$base" ] && jsonfilter -i "$CATALOG_FILE" -e "@.$key[*].file" 2>/dev/null |
         while read -r p; do
             # У записи своя ссылка — обычной строки для неё быть не должно (см. выше).
             grep -qxF "$p" "$MANIFEST_MAP.f" 2>/dev/null && continue
@@ -231,8 +195,8 @@ parse_manifest() {
     [ -s "$MANIFEST_MAP" ] || return 1
     # Переименования читаются двумя проходами и склеиваются построчно: jsonfilter отдаёт
     # по одному значению на строку и не умеет доставать пару полей одним выражением.
-    jsonfilter -i "$MANIFEST" -e '@.aliases[*].from' 2>/dev/null > "$MANIFEST_ALIAS.from"
-    jsonfilter -i "$MANIFEST" -e '@.aliases[*].to' 2>/dev/null > "$MANIFEST_ALIAS.to"
+    jsonfilter -i "$CATALOG_FILE" -e '@.aliases[*].from' 2>/dev/null > "$MANIFEST_ALIAS.from"
+    jsonfilter -i "$CATALOG_FILE" -e '@.aliases[*].to' 2>/dev/null > "$MANIFEST_ALIAS.to"
     if [ -s "$MANIFEST_ALIAS.from" ]; then
         # awk, а не paste: paste есть не в каждой сборке busybox, а awk есть везде —
         # на нём же построена вся остальная разборка карты.
@@ -288,7 +252,7 @@ put_list() {  # СКАЧАННОЕ ЦЕЛЬ
     return 1
 }
 
-mkdir -p "$LISTS" "$(dirname "$STAMP")" "$(dirname "$MANIFEST")"
+mkdir -p "$LISTS_DIR" "$(dirname "$STAMP")" "$(dirname "$CATALOG_FILE")"
 
 # Манифест первым: без свежего манифеста новые списки не найти, а старые могут
 # указывать на переехавшие файлы.
@@ -296,18 +260,18 @@ mkdir -p "$LISTS" "$(dirname "$STAMP")" "$(dirname "$MANIFEST")"
 # portal отдают 200 и HTML, `[ -s ]` такой файл пропускает — и рабочий манифест перезаписывался
 # страницей, jsonfilter на ней молчал, каждый список шёл «нет в манифесте, пропущен», а каталог
 # в интерфейсе пустел до следующей удачной ночи.
-if download "$(manifest_url)" "$MANIFEST.new"; then
-    if jsonfilter -i "$MANIFEST.new" -e '@' >/dev/null 2>&1 && mv "$MANIFEST.new" "$MANIFEST"; then
+if fetch_file "$(catalog_url)" "$CATALOG_FILE.new"; then
+    if jsonfilter -i "$CATALOG_FILE.new" -e '@' >/dev/null 2>&1 && mv "$CATALOG_FILE.new" "$CATALOG_FILE"; then
         # Обход называется вслух: иначе разница между «издатель доступен» и «издатель закрыт,
         # спаслись обходом» видна только по времени прогона, а знать её нужно — это она
         # объясняет, почему обновление вдруг стало занимать минуты.
         [ -n "$FETCH_NOTE" ] && log "манифест: $FETCH_NOTE"
     else
-        rm -f "$MANIFEST.new"
+        rm -f "$CATALOG_FILE.new"
         log "манифест скачался, но это не JSON — оставлен прежний"
     fi
 else
-    rm -f "$MANIFEST.new"
+    rm -f "$CATALOG_FILE.new"
     log "манифест не обновился, работаем со старым${FETCH_NOTE:+ ($FETCH_NOTE)}"
 fi
 parse_manifest
@@ -321,23 +285,22 @@ failed=0
 for kind in ip domains srs; do
     used_files "$kind" | sort -u | while read -r path; do
         [ -n "$path" ] || continue
-        # Путь в спеке — это local_path из rpcd, то есть $LISTS плюс путь у издателя.
+        # Путь в спеке — это local_path из rpcd, то есть $LISTS_DIR плюс путь у издателя.
         # Снимаем префикс и получаем ровно тот ключ, которым карта и построена.
-        rel="${path#$LISTS/}"
+        rel="${path#$LISTS_DIR/}"
         name="$(basename "$path")"      # только для сообщений в журнале
 
         # НАБОР ФАЙЛОМ: запись каталога, которая списком не выразима (list_fetch кладёт сам
         # набор, путь — ad_srs_rel). Качается как есть и проверяется движком; подгонка и
         # проверка строк — про текстовые списки, к двоичному набору они не относятся.
         if [ "$kind" = srs ]; then
-            [ "$AD_ON" = 1 ] || continue
             url=""
             for e in $(ad_srs_entries "$rel"); do
                 [ "$(fmt_for "$e")" = srs ] && url="$(url_for "$e")" && break
             done
             [ -n "$url" ] || { log "$rel: нет в манифесте, пропущен"; continue; }
-            new="$(mktemp /tmp/splify2-list.XXXXXX)"
-            if ! download "$url" "$new"; then
+            new="$(mktemp "$RUN_DIR/list.XXXXXX")"
+            if ! fetch_file "$url" "$new"; then
                 log "$name: не скачался, оставлен прежний${FETCH_NOTE:+ — $FETCH_NOTE}"
                 rm -f "$new"; echo failed >> "$LOCK/flags"; continue
             fi
@@ -363,14 +326,14 @@ for kind in ip domains srs; do
         # издателя свой подкаталог, и это не украшение — `news.lst` есть у обоих, и без
         # разделения имён один список затирал бы другой.
         srs_svc=""
-        if [ "$AD_ON" = 1 ] && ad_pair="$(ad_service_of "$rel")"; then
+        if ad_pair="$(ad_service_of "$rel")"; then
             srs_svc="${ad_pair% *}"
             # Вид у нас зовётся так же, как в спеке (domains/prefixes), а этот цикл ходит по
             # «ip» и «domains» — своё имя того же самого. Переводим один раз здесь.
             [ "$kind" = domains ] && srs_kind=domains || srs_kind=prefixes
         fi
 
-        new="$(mktemp /tmp/splify2-list.XXXXXX)"
+        new="$(mktemp "$RUN_DIR/list.XXXXXX")"
         if [ -n "$srs_svc" ]; then
             # ТЕГ ЗАФИКСИРОВАН, значит содержимое релиза не меняется, и качать те же байты
             # каждую ночь — это трата на ничего (у издателя 25 наборов). Отметка на диске
@@ -419,13 +382,12 @@ for kind in ip domains srs; do
             # но человек должен знать, что у издателя он теперь называется иначе.
             renamed="$(alias_for "$rel")" && log "$rel: издатель переименовал в $renamed, обновляем по прежнему пути"
 
-            if [ "$(fmt_for "$rel")" = srs ] && [ "$AD_ON" = 1 ]; then
+            if [ "$(fmt_for "$rel")" = srs ]; then
                 # НАБОР, НАЗВАННЫЙ КАТАЛОГОМ. Скачивается по своей ссылке и раскладывается
                 # тем же движком, что и наборы зашитого издателя: механика одна, разное
                 # только то, кто назвал ссылку. Память прогона (AD_TMP) общая, поэтому
                 # вторая половина того же набора следующим кругом цикла не качается заново.
-                AD_TMP="${AD_TMP:-/tmp/splify2-srs}"
-                [ "$kind" = domains ] && ml_kind=domains || ml_kind=prefixes
+                                [ "$kind" = domains ] && ml_kind=domains || ml_kind=prefixes
                 # ИМЯ ВРЕМЕННЫХ ФАЙЛОВ — ОТ ССЫЛКИ, а не от пути списка. Набор один даёт
                 # обе половины, а по видам этот цикл ходит по очереди; имя от пути у половин
                 # разное, и тот же набор качался бы дважды за прогон. Хвост ссылки берётся
@@ -450,7 +412,7 @@ for kind in ip domains srs; do
                 fi
                 cp "$ad_src" "$new"
                 [ "$ml_kind" = prefixes ] && ad_meta_install "$path"
-            elif ! download "$url" "$new"; then
+            elif ! fetch_file "$url" "$new"; then
                 log "$name: не скачался, оставлен прежний${FETCH_NOTE:+ — $FETCH_NOTE}"
                 echo failed >> "$LOCK/flags"
                 continue
@@ -475,7 +437,7 @@ for kind in ip domains srs; do
             # туда же, и JSON-отчёт оказывался внутри списка ("{"source":68.8.8.0/24"),
             # после чего nft отвергал весь набор правил — то есть обновление списков
             # снимало маршрутизацию целиком.
-            "$STEER" fit --budget "$BUDGET" --report "$repfile" "$new" > "$fitted" 2>/dev/null
+            "$STEER_BIN" fit --budget "$BUDGET" --report "$repfile" "$new" > "$fitted" 2>/dev/null
             rep="$(cat "$repfile" 2>/dev/null)"
             rm -f "$repfile"
             kept="$(echo "$rep" | sed -n 's/.*"kept":\([0-9]*\).*/\1/p')"
@@ -560,7 +522,7 @@ for kind in ip domains srs; do
         # КАТАЛОГ ПОД ФАЙЛ — здесь, а не в надежде на то, что он уже есть.
         #
         # Списки лежат в подкаталогах: доменные в domains/, у второго издателя ещё и свой
-        # (itdog/, itdog/domains/), а `mkdir -p "$LISTS"` выше создаёт только корень. Пока
+        # (itdog/, itdog/domains/), а `mkdir -p "$LISTS_DIR"` выше создаёт только корень. Пока
         # подкаталог заводил кто-то другой (list_fetch в объекте rpcd делает mkdir перед
         # записью), это не было видно. А списка, который в спеке есть, а на диске ещё нет,
         # хватало, чтобы `mv` молча не сработал: файл не появлялся, отметка о версии
@@ -605,48 +567,60 @@ done
 #
 # Списки при этом обновлены и лежат на диске: включит движок — применятся тем же apply.
 engine_off() {
-    [ -d "$RC_D" ] || return 1
-    set -- "$RC_D"/S[0-9][0-9]steer
-    [ -e "$1" ] && return 1
-    [ -x "$STEER_INIT" ] || return 1
-    "$STEER_INIT" running >/dev/null 2>&1 && return 1
-    return 0
+    _eo="$("$SPLIFY2_HOST" engine)" || return 1
+    json_load "$_eo" 2>/dev/null || return 1
+    json_get_var _eo_known known
+    json_get_var _eo_en enabled
+    json_get_var _eo_run running
+    # Не знаем — считаем включённым: применить лишний раз безопаснее, чем не применить.
+    [ "$_eo_known" = 1 ] && [ "$_eo_en" != 1 ] && [ "$_eo_run" != 1 ]
+}
+
+# Применить сохранённое — службой хоста (то же, что кнопка «Применить»): 0 — ядро применило, 1 — ядро отвергло, 3 —
+# применение не состоялось, ядро ничего не видело (оно занято коннектором или применение остановил хук плагина).
+apply_now() {
+    "$SPLIFY2_HOST" apply >/dev/null 2>&1
 }
 
 if [ "$changed" = 1 ] && engine_off; then
     log "ядро выключено — списки обновлены, правила не применяю"
     # Откатывать нечего: применения не было. Копии прежних списков, оставленные здесь, вернули бы при
     # отказе одного из следующих применений СТАРЫЕ версии списков, которые в том прогоне не менялись.
-    find "$LISTS" -name '*.prev' -type f -delete 2>/dev/null
+    find "$LISTS_DIR" -name '*.prev' -type f -delete 2>/dev/null
 elif [ "$changed" = 1 ]; then
-    if "$STEER" apply --spec "$SPEC"; then
-        /etc/init.d/steer reload_dnsd >/dev/null 2>&1
-        # find, а не глоб: доменные списки лежат в подкаталоге domains/, и `"$LISTS"/*.prev`
+    apply_now; apply_rc=$?
+    if [ "$apply_rc" = 3 ]; then
+        # Откатывать нечего: ядро списки не видело. Копии прежних списков убираются по той же причине, что при
+        # выключенном ядре, а применит человек — по кнопке или при следующем применении.
+        find "$LISTS_DIR" -name '*.prev' -type f -delete 2>/dev/null
+        log "применение не состоялось — списки обновлены и лежат на диске, правила применит человек"
+    elif [ "$apply_rc" = 0 ]; then
+        # find, а не глоб: доменные списки лежат в подкаталоге domains/, и `"$LISTS_DIR"/*.prev`
         # их не видит. Копии там оставались навсегда, то есть каждый доменный список
         # занимал на флеше двойной объём — на overlay в 6,9 МБ это заметно.
-        find "$LISTS" -name '*.prev' -type f -delete 2>/dev/null
+        find "$LISTS_DIR" -name '*.prev' -type f -delete 2>/dev/null
         log "правила применены"
     else
         # Дошли сюда — значит проверка выше что-то пропустила. Правила в этот момент
         # уже сняты неудачным apply, поэтому доводим до рабочего состояния тем, что
         # заведомо компилировалось: копиями, отложенными перед подменой.
         log "ядро отвергло обновлённые списки — откатываю"
-        # Тоже find: глоб `"$LISTS"/*.prev` не заходит в подкаталоги, а доменные списки
+        # Тоже find: глоб `"$LISTS_DIR"/*.prev` не заходит в подкаталоги, а доменные списки
         # лежат именно там (domains/news.lst). Откат поэтому возвращал ТОЛЬКО адресные,
         # повторный apply падал на том же доменном файле, и в журнал уходило «ОТКАТ НЕ
         # ПОМОГ» — при полностью исправном механизме отката.
-        find "$LISTS" -name '*.prev' -type f 2>/dev/null | while read -r b; do
+        find "$LISTS_DIR" -name '*.prev' -type f 2>/dev/null | while read -r b; do
             [ -f "$b" ] || continue
             mv "$b" "${b%.prev}"
         done
         # Отметки версий второго издателя снимаются целиком: на диске снова прежние копии, и
         # каким тегом они набиты, мы больше не знаем. Следующая ночь скачает заново — это
         # дешевле, чем оставить на роутере отметку, которая врёт про версию списков.
-        [ "$AD_ON" = 1 ] && rm -f "$AD_STAMP"
-        if "$STEER" apply --spec "$SPEC"; then
+        rm -f "$AD_STAMP"
+        if apply_now; then
             log "откат удался, работают прежние списки"
         else
-            log "ОТКАТ НЕ ПОМОГ — маршрутизации нет, нужна ручная проверка spec.json"
+            log "ОТКАТ НЕ ПОМОГ — маршрутизации нет, нужна ручная проверка спеки"
         fi
         exit 1
     fi

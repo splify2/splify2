@@ -721,7 +721,7 @@ d = json.load(open(p)); d.setdefault("plugins", {})[i] = {"version": "1.0.0", "s
 json.dump(d, open(p, "w"))
 PY
     done
-    check "в архиве программы исполняемые, как в каталоге" "yes;yes;yes" "$([ -x "$PL/lib/backup/bin/backup" ] && echo yes || echo no);$([ -x "$PL/lib/lists-catalog/bin/lists" ] && echo yes || echo no);$([ -x "$PL/lib/lists-catalog/bin/task-update-lists" ] && echo yes || echo no)"
+    check "в архиве программы исполняемые, как в каталоге" "yes;yes;yes" "$([ -x "$PL/lib/backup/bin/backup" ] && echo yes || echo no);$([ -x "$PL/lib/lists-catalog/bin/lists" ] && echo yes || echo no);$([ -x "$PL/lib/lists-catalog/bin/update-lists" ] && echo yes || echo no)"
     check "из архива: backup_get отвечает" "true" "$(rpc backup_get '{"offset":0}' | pj 'str(d["ok"]).lower()')"
     check "из архива: lists отвечает ответом каталога, а не отказом плагина" "no" "$(rpc lists | pj '"yes" if d.get("code") in ("not_installed", "unavailable", "failed") else "no"')"
     sync_now

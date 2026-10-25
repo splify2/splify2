@@ -1,0 +1,5 @@
+{
+  "Settings archive": "Архив настроек",
+  "Archive size limit, KB": "Предел размера архива, КБ",
+  "The archive is built and received in memory. A larger archive is refused with its size.": "Архив собирается и принимается в памяти. Больший архив отклоняется с названием его размера."
+}

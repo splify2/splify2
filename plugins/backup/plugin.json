@@ -9,6 +9,13 @@
     "splify2-api": "^1.0"
   },
   "arch": "all",
+  "permissions": [],
+  "i18n": {
+    "languages": [
+      "ru",
+      "en"
+    ]
+  },
   "rpc": {
     "prog": "bin/backup",
     "methods": {

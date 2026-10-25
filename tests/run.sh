@@ -40,6 +40,11 @@ run pluginmatch sh "$ROOT/tests/pluginmatch.sh"
 # Точки расширения каркаса (splify2-api): хуки, задачи, события, псевдонимы и переопределения плагинов, безопасный
 # режим, архив настроек с разделами плагинов, сборка .s2p плагинов каркаса.
 run exttest sh "$ROOT/tests/exttest.sh"
+# Граница API официальных плагинов: ни путей, ни файлов, ни швов, ни функций каркаса — только службы хоста; слои: grep и
+# `s2p lint --official`, оба доказаны обратным опытом.
+run pluginhygiene sh "$ROOT/tests/pluginhygiene.sh"
+# Службы хоста для программ плагинов (splify2-host): скачивание, спека, настройки плагина, архив настроек каркаса, применение.
+run hostmatch sh "$ROOT/tests/hostmatch.sh"
 # ReCheck: таблица nftables для IPv4 и IPv6, служба и rpcd без движка.
 run recheckmatch sh "$ROOT/tests/recheckmatch.sh"
 # Спека в spec.yaml (spec.sh): JSON-вид, запись переводом ядра, перевод при обновлении ядра.

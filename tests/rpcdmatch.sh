@@ -26,7 +26,9 @@ ENV_SH="$ROOT/files/usr/lib/splify2/env.sh"
 # usr/lib/splify2/rpcd. Проверки по ТЕКСТУ объекта смотрят во все его файлы разом.
 RPCD_DIR="$ROOT/files/usr/lib/splify2/rpcd"
 # backup и lists-catalog — плагины (plugins/): их код живёт там, и проверки по тексту смотрят и в него.
-RPCD_ALL="$SCRIPT $ROOT/files/usr/lib/splify2/env.sh $RPCD_DIR/common.sh $RPCD_DIR/m-*.sh $ROOT/plugins/backup/lib/backup.sh $ROOT/plugins/lists-catalog/lib/lists.sh"
+RPCD_ALL="$SCRIPT $ROOT/files/usr/lib/splify2/env.sh $RPCD_DIR/common.sh $RPCD_DIR/m-*.sh $ROOT/files/usr/sbin/splify2-host"
+# Исходники плагинов: их проверки по тексту смотрят отдельно (plugin_src).
+plugin_src() { cat "$ROOT"/plugins/backup/lib/*.sh "$ROOT"/plugins/lists-catalog/lib/*.sh "$ROOT"/plugins/lists-catalog/bin/*; }
 rpcd_src() { cat $RPCD_ALL; }  # shellcheck disable=SC2086
 T="$(mktemp -d /tmp/rpcdmatch.XXXXXX)"
 trap 'rm -rf "$T"' EXIT INT TERM
@@ -48,6 +50,12 @@ mkdir -p "$T/bin" "$T/lists/domains" "$T/etc" "$T/var"
 # корень по имени метода.
 . "$ROOT/tests/stub/plugins-env.sh"
 plugins_provision "$T/off"
+# Каталог списков каталога плагина: перечень (манифест) лежит в conf плагина, а не в каталоге каркаса.
+mkdir -p "$T/off/conf/lists-catalog"
+CAT_MANIFEST="$T/off/conf/lists-catalog/manifest.json"
+# Рабочий каталог плагина backup (память, закрытый): там собирается и принимается архив.
+BK_DIR="$T/off/state/backup"; BK_OUT="$BK_DIR/backup.out"; BK_IN="$BK_DIR/restore.in"
+mkdir -p "$BK_DIR"; chmod 700 "$BK_DIR"
 
 # ---- заглушки внешних команд -------------------------------------------------
 # apk: протоколирует каждый вызов первым словом. Поведение `add` задаётся снаружи,
@@ -636,7 +644,7 @@ EOF
 chmod +x "$T/bin"/*
 
 # ---- фикстуры ----------------------------------------------------------------
-cat > "$T/etc/manifest.json" <<'EOF'
+cat > "$CAT_MANIFEST" <<'EOF'
 {
   "base_url": "https://example.invalid/lists",
   "categories":   [ { "id": "news", "file": "news.lst" } ],
@@ -755,6 +763,8 @@ rpcd_run() {  # МЕТОД [JSON_ЗАПРОСА]  — вызов метода; �
         backup_get|backup_put|lists|list_*|lists_*|local_lists|allow_domains|fetch_mode|fetch_mode_set) _rr_pl="$T/off" ;;
         *) _rr_pl="$T/plug" ;;
     esac
+    # Проверка, которой нужны плагины каталога (хуки довоза списков) на методе каркаса, называет корень сама.
+    _rr_pl="${RPCD_PLUGIN_ROOT:-$_rr_pl}"
     if [ "${RPCD_NO_NEWLINE:-0}" = 1 ]; then printf '%s' "${2:-}"; else printf '%s\n' "${2:-}"; fi | env \
         SANDBOX="$T" \
         SPLIFY2_LOCK_DIR="$T/lock" SPLIFY2_LOCK_WAIT="${SPLIFY2_LOCK_WAIT:-120}" \
@@ -762,7 +772,6 @@ rpcd_run() {  # МЕТОД [JSON_ЗАПРОСА]  — вызов метода; �
         JSHN_SH="$ROOT/tests/stub/jshn.sh" FETCH_SH="$ROOT/files/usr/lib/splify2/fetch.sh" \
         FAST_SH="$ROOT/files/usr/lib/splify2/fast.sh" \
         RPCD_LIB="$ROOT/files/usr/lib/splify2/rpcd" \
-        AD_SH="${AD_SH_FIXTURE:-$ROOT/files/usr/share/splify2/allow-domains.sh}" \
         AD_STAMP="$T/etc/allow-domains.tag" AD_TMP="$T/srs-tmp" \
         AD_BASE="${AD_BASE_FIXTURE:-file://$T/adrel}" AD_TAG_DEFAULT="${AD_TAG_FIXTURE:-2026-08-31_16-18}" \
         SYSNET_STATS="${SYSNET_STATS_FIXTURE:-$T/statnet}" \
@@ -773,7 +782,7 @@ rpcd_run() {  # МЕТОД [JSON_ЗАПРОСА]  — вызов метода; �
         LISTS="$T/lists" \
         SUB="$T/etc/sub.txt" \
         SUBS_DIR="$T/etc/subs" \
-        MANIFEST="$T/etc/manifest.json" \
+        MANIFEST="$CAT_MANIFEST" \
         INITD="$T/bin/initd-steer" \
         STEER_INIT="$T/bin/initd-steer" \
         RPCD_INITD="$T/bin/initd-rpcd" \
@@ -799,8 +808,6 @@ rpcd_run() {  # МЕТОД [JSON_ЗАПРОСА]  — вызов метода; �
         CURL_BODY="${CURL_BODY:-}" \
         CURL_RC="${CURL_RC:-0}" \
         APPLIED="$T/etc/spec.applied.json" \
-        BACKUP_OUT="$T/var/backup.out" \
-        BACKUP_IN="$T/var/backup.in" \
         BACKUP_MAX_BYTES="${BACKUP_MAX_BYTES:-262144}" \
         STEER_RC="${STEER_RC:-0}" \
         STEER_VERSION="${STEER_VERSION:-}" STEER_VERSION_JSON="${STEER_VERSION_JSON:-0}" \
@@ -817,7 +824,7 @@ rpcd_run() {  # МЕТОД [JSON_ЗАПРОСА]  — вызов метода; �
         ENGINE_ENABLED="${ENGINE_ENABLED:-0}" \
         APK_LIST="${APK_LIST:-}" \
         PLUGIN_SH="$ROOT/files/usr/lib/splify2/plugin.sh" PLUG="$T/plug" \
-        PLUGIN_ROOT="$_rr_pl/lib" PLUGIN_STATE="$_rr_pl/state.json" PLUGIN_RPCD_DIR="$T/plug/rpcd" \
+        PLUGIN_ROOT="$_rr_pl/lib" PLUGIN_STATE="$_rr_pl/state.json" PLUGIN_STATE_DIR="$_rr_pl/state" PLUGIN_RPCD_DIR="$T/plug/rpcd" \
         PLUGIN_ACL_DIR="$T/plug/acl" PLUGIN_JOBS="$T/plug/jobs" PLUGIN_RELOAD_DELAY=0 \
         EXT_REG="$_rr_pl/run/ext.reg" PLUGIN_CONF_DIR="$_rr_pl/conf" \
         STEER_PLUGIN_STUB="$ROOT/tests/stub/steer-plugin" \
@@ -1778,7 +1785,7 @@ out="$( { printf '%s\n' '{"name":"bytes","kind":"prefixes","offset":0}'; } | env
     JSHN_SH="$ROOT/tests/stub/jshn.sh" FETCH_SH="$ROOT/files/usr/lib/splify2/fetch.sh" \
     FAST_SH="$ROOT/files/usr/lib/splify2/fast.sh" \
     STEER="$T/bin/steer" SPEC="$T/etc/spec.json" LISTS="$T/lists" \
-    SUB="$T/etc/sub.txt" MANIFEST="$T/etc/manifest.json" RPCD_LIB="$RPCD_DIR" \
+    SUB="$T/etc/sub.txt" MANIFEST="$CAT_MANIFEST" RPCD_LIB="$RPCD_DIR" \
     LIST_CHUNK=11 sh "$SCRIPT" call list_get 2>/dev/null)"
 check "первый кусок ровно в предел и с переводом строки на конце" "10.0.0.0/8" \
       "$(printf '%s' "$out" | jget text | tr -d '\n')"
@@ -1837,7 +1844,7 @@ print("yes" if "engine_stop" in w and "engine_start" in w else "no")' "$acl")"
 # list_remove удалял любой файл.
 #
 # Для СВОИХ списков эта мысль додумана давно (list_put проверяет имя), для чужих не была.
-cat > "$T/etc/manifest.json" <<'EOF'
+cat > "$CAT_MANIFEST" <<'EOF'
 {
   "base_url": "https://example.invalid/lists",
   "categories":   [ { "id": "evil", "file": "../../../trav-probe/cron.txt" },
@@ -2113,6 +2120,8 @@ check "путь файла настройки — шов, а не литерал
       "$(grep -c '^UCI_SPLIFY2=' "$ENV_SH")"
 check "прямых путей /etc/config/splify2 в коде не осталось" "1" \
       "$(grep -c '/etc/config/splify2' "$ENV_SH")"
+# (Остальные места — в службе хоста для плагинов: режим скачивания и восстановление полей uci; настройки самих плагинов
+# хост пишет в conf плагина, не в uci.)
 # Десять мест: sub_set, sub_put (ключи подписок), ветка настроек, ui_get|ui_set,
 # fetch_mode|fetch_mode_set, lists_source|lists_source_set, zm_fix|zm_fix_set, doh_tunnel_set,
 # и sub_auto (telemetry_set убран вместе со счётчиком установок). Число растёт вместе с методами, которые пишут в uci, — и это ровно
@@ -2122,7 +2131,7 @@ check "прямых путей /etc/config/splify2 в коде не остало
 #
 # Ответ `ok 1` обязан значить «записано», а не «дошли до конца функции»: на роутере с заполненным
 # флешем ползунок переезжал, страница показывала успех, а в конфигурации оставалось прежнее.
-check "файл заводится одной функцией на все места" "9" \
+check "файл заводится одной функцией на все места" "8" \
       "$(rpcd_src | grep -c '^ *uci_file ||')"
 check "перенаправлением файл больше не заводится" "0" \
       "$(rpcd_src | grep -c ': > "\?/etc/config')"
@@ -2731,35 +2740,44 @@ rm -f "$T/var/vless-dirty" "$T/var/obfs-dirty"
 # звало spec_set, dry-run падал с «cannot read a channel's list», правка откатывалась — и
 # человек видел ошибку применения там, где ничего не применял. Проверяется поэтому не наличие
 # загрузки, а её место: перед каждой проверкой.
-check "доскачивание вынесено в общую функцию" "yes" \
-      "$(rpcd_src | grep -q '^fetch_missing_lists()' && echo yes || echo no)"
-# Мест стало три: к spec_set и apply добавилось восстановление из архива (backup_put) —
-# оно тоже проверяет спеку компилятором, а на чистом роутере зеркал категорий ещё нет, и в
-# архив они намеренно не едут. Проверка на число, а не на перечень имён: имена ниже.
-check "функция вызывается трижды: spec_set, apply, backup_put" "3" \
-      "$(rpcd_src | grep -c 'fetch_missing_lists "')"
-# spec_set и apply живут в группе spec, восстановление — в группе backup.
-set_line=$(grep -n 'set_warn="$(fetch_missing_lists' "$RPCD_DIR/m-spec.sh" | cut -d: -f1)
+# Довозом занимается плагин lists-catalog: хуки pre_spec_set и pre_apply (hooks/ensure-lists), у каркаса своего довоза нет.
+check "доскачивание вынесено в общую функцию плагина" "yes" \
+      "$(grep -q '^fetch_missing_lists()' "$ROOT/plugins/lists-catalog/lib/fetch-missing.sh" && echo yes || echo no)"
+check "у каркаса своего довоза списков нет" "0" \
+      "$(rpcd_src | grep -c 'fetch_missing_lists')"
+# Мест, откуда довоз зовётся, три — те же, что были: проверка присланной спеки (хук pre_spec_set в spec_set), применение
+# (хук pre_apply в apply) и восстановление из архива (хук pre_spec_set в службе хоста `state import`: архив тоже проверяет
+# спеку ядром, а на чистом роутере зеркал категорий ещё нет, и в архив они намеренно не едут).
+check "хуки довоза объявлены: pre_spec_set и pre_apply" "hooks/ensure-lists;hooks/ensure-lists" \
+      "$(python3 -c 'import json,sys
+h = json.load(open(sys.argv[1]))["splify2"]["hooks"]
+print(h["pre_spec_set"]["prog"] + ";" + h["pre_apply"]["prog"])' "$ROOT/plugins/lists-catalog/plugin.json")"
+set_line=$(grep -n 'ext_pre_spec_set "$tmp"' "$RPCD_DIR/m-spec.sh" | cut -d: -f1)
 dry_line=$(grep -n 'engine_check "$tmp"' "$RPCD_DIR/m-spec.sh" | cut -d: -f1)
-check "в spec_set загрузка идёт ДО проверки движком" "yes" \
+check "в spec_set довоз идёт ДО проверки движком" "yes" \
       "$([ -n "$set_line" ] && [ -n "$dry_line" ] && [ "$set_line" -lt "$dry_line" ] && echo yes || echo no)"
-# Порядок ищется ВНУТРИ ветки, а не по всему файлу: `fetch_warn=` встречается и в apply, и
-# в backup_put, и общий `grep -n` отдал бы два номера строк, на которых `[` спотыкается о
-# «Illegal number». Расхождение такого рода стенд однажды уже прятал.
+# Порядок ищется ВНУТРИ ветки, а не по всему файлу: общий `grep -n` отдал бы несколько номеров строк, на которых `[`
+# спотыкается о «Illegal number». Расхождение такого рода стенд однажды уже прятал.
 apply_body="$(sed -n '/^    apply)/,/^        ;;/p' "$RPCD_DIR/m-spec.sh")"
-apply_fetch=$(printf '%s\n' "$apply_body" | grep -n 'fetch_missing_lists' | head -1 | cut -d: -f1)
+apply_fetch=$(printf '%s\n' "$apply_body" | grep -n 'ext_gate pre_apply' | head -1 | cut -d: -f1)
 apply_run=$(printf '%s\n' "$apply_body" | grep -n 'apply --spec "$SPEC" 2>&1)"; rc=' | head -1 | cut -d: -f1)
-check "в apply загрузка идёт ДО применения" "yes" \
+check "в apply довоз идёт ДО применения" "yes" \
       "$([ -n "$apply_fetch" ] && [ -n "$apply_run" ] && [ "$apply_fetch" -lt "$apply_run" ] && echo yes || echo no)"
-put_body="$(sed -n '/^    backup_put)/,/^        ;;/p' "$ROOT/plugins/backup/lib/backup.sh")"
-put_fetch=$(printf '%s\n' "$put_body" | grep -n 'fetch_missing_lists' | head -1 | cut -d: -f1)
-put_dry=$(printf '%s\n' "$put_body" | grep -n 'apply --dry-run --spec "$D/spec"' | head -1 | cut -d: -f1)
-check "в восстановлении загрузка идёт ДО проверки движком" "yes" \
+host_src="$ROOT/files/usr/sbin/splify2-host"
+put_fetch=$(grep -n 'ext_pre_spec_set "$_i_tmp"' "$host_src" | head -1 | cut -d: -f1)
+put_dry=$(grep -n 'engine_check "$_i_tmp"' "$host_src" | head -1 | cut -d: -f1)
+check "в восстановлении довоз идёт ДО проверки движком" "yes" \
       "$([ -n "$put_fetch" ] && [ -n "$put_dry" ] && [ "$put_fetch" -lt "$put_dry" ] && echo yes || echo no)"
-# Сообщение об отказе обязано называть ПРИЧИНУ, а не только следствие: «cannot read a
-# channel's list» отправляет искать испорченный файл, которого никогда не было.
-check "при неудачной загрузке причина ставится перед ошибкой движка" "yes" \
-      "$(rpcd_src | grep -q 'fail "${set_warn:+$set_warn; }' && echo yes || echo no)"
+# Разделы плагинов (свои списки, на которые ссылается спека из архива) восстанавливаются ДО спеки: ядро при проверке читает
+# их с диска.
+put_plug=$(grep -n 'backup_ext_each "$D" restore' "$ROOT/plugins/backup/lib/archive.sh" | head -1 | cut -d: -f1)
+put_state=$(grep -n 'state import "$D"' "$ROOT/plugins/backup/lib/archive.sh" | head -1 | cut -d: -f1)
+check "в восстановлении разделы плагинов идут ДО настроек каркаса" "yes" \
+      "$([ -n "$put_plug" ] && [ -n "$put_state" ] && [ "$put_plug" -lt "$put_state" ] && echo yes || echo no)"
+# Сообщение об отказе обязано называть ПРИЧИНУ, а не только следствие: «cannot read a channel's list» отправляет искать
+# испорченный файл, которого никогда не было.
+check "при неудачной загрузке причина ставится перед ошибкой движка" "yes;yes" \
+      "$(grep -q 'fail "${hook_warn:+$hook_warn; }' "$RPCD_DIR/m-spec.sh" && echo yes || echo no);$(grep -q 'fail "${_i_hook:+$_i_hook; }' "$host_src" && echo yes || echo no)"
 
 # ДОСКАЧИВАНИЕ ЗНАЕТ ПРО НАБОРЫ КАТАЛОГА. Качальщиков в продукте три — кнопка в каталоге,
 # ночное обновление и вот это доскачивание перед проверкой спеки, — и научить надо было все
@@ -2767,7 +2785,7 @@ check "при неудачной загрузке причина ставитс�
 # адресу `base_url` плюс путь и сообщало, что список не скачался; снято с живого роутера:
 # «raw.githubusercontent.com не ответил ни напрямую, ни через выход wg0» на файле
 # itdoginfo/domains/geoblock.srs.lst.
-cat > "$T/etc/manifest.json" <<'MF'
+cat > "$CAT_MANIFEST" <<'MF'
 {
   "base_url": "https://example.invalid/lists",
   "categories": [
@@ -2789,7 +2807,7 @@ cat > "$T/etc/spec.json" <<SPEC
     "match": { "prefixes_files": ["$T/lists/cat/tg.srs.lst"],
                "domains_files":  ["$T/lists/cat/domains/tg.srs.lst"] } } ] }
 SPEC
-out="$(rpcd apply)"
+out="$(RPCD_PLUGIN_ROOT="$T/off" rpcd apply)"
 check "набор каталога скачан по своей ссылке" "1" \
       "$(grep -c '/releases/download/2026-01-01/tg.srs$' "$T/curl.log")"
 check "и по base_url за ним не ходили" "0" \
@@ -2875,43 +2893,45 @@ printf '%s\n' 'eu wg1' 'мусор; reboot' > "$T/etc/select"
 uci_set splify2.sub_work subscription
 uci_set splify2.sub_work.url 'https://panel.example.net/sub/2'
 uci_set splify2.sub_work.kind url
-# Все восемь полей, а не три: перечень получается тем же способом, каким его находят в
-# коде, — `grep -rhoE 'splify2\.(main|sub_[a-z_]*)\.[a-z_]+' files/`.
+# Все шесть полей каркаса, а не три: перечень получается тем же способом, каким его находят в коде, —
+# `grep -rhoE 'splify2\.(main|sub_[a-z_]*)\.[a-z_]+' files/`. Адрес каталога и порог сокращения списка — настройки
+# плагина lists-catalog (его conf/settings.json), они едут его разделом `settings`.
 for _kv in 'sub_url=https://panel.example.net/sub/1' 'sub_kind=url' 'wizard=step3' \
-           'sub_title=Моя панель' 'manifest_url=https://example.net/categories.json' \
-           'fetch_via_tunnel=always' 'list_shrink_factor=4' 'geo_url=https://example.net/trace'; do
+           'sub_title=Моя панель' 'fetch_via_tunnel=always' 'geo_url=https://example.net/trace'; do
     uci_set "splify2.main.${_kv%%=*}" "${_kv#*=}"
 done
+printf '{"manifest_url":"https://example.net/categories.json","list_shrink_factor":4}\n' > "$T/off/conf/lists-catalog/settings.json"
 
 # АРХИВ НАСТРОЕК С ПРИВАТНЫМИ КЛЮЧАМИ СОБИРАЕТСЯ ЗАКРЫТЫМ, ДАЖЕ ЕСЛИ ФАЙЛ ПОДЛОЖИЛИ. umask действует
 # только при создании: чужой процесс, создавший /tmp/splify2-backup.out заранее с правами 0644,
 # читал архив (ключи xsteer, ссылки vless с ключами) весь срок выгрузки, а fs.protected_regular на
 # роутере выключен. Файл обязан пересоздаваться и после сборки иметь наши права.
-rm -f "$T/var/backup.out"; : > "$T/var/backup.out"; chmod 644 "$T/var/backup.out"
+rm -f "$BK_OUT"; : > "$BK_OUT"; chmod 644 "$BK_OUT"
 out="$(rpcd backup_get '{"offset":0}')"
-check "архив: подложенный открытый файл пересоздан закрытым" "600" "$(stat -c %a "$T/var/backup.out" 2>/dev/null)"
-rm -f "$T/var/backup.out"
+check "архив: подложенный открытый файл пересоздан закрытым" "600" "$(stat -c %a "$BK_OUT" 2>/dev/null)"
+rm -f "$BK_OUT"
 
 doc="$(backup_doc)"
 check "архив приезжает несколькими кусками и склеивается" "yes" \
       "$([ "$(cat "$T/doc-parts")" -gt 1 ] && echo yes || echo no)"
 check "склеенный архив не потерял ни строки на границах кусков" "1200" \
-      "$(printf '%s\n' "$doc" | grep -c '^host[0-9]*\.example$')"
-check "архив начинается своим заголовком с версией" "splify2-backup 3" \
+      "$(printf '%s\n' "$doc" | grep -c '^ host[0-9]*\.example$')"
+# Своих списков каркас в архив больше не кладёт: они едут разделами плагина lists-catalog, а архив с разделами плагинов — формат 4.
+check "архив начинается своим заголовком с версией" "splify2-backup 4" \
       "$(printf '%s\n' "$doc" | head -1)"
 check "в архиве есть спека, подписка и оба своих списка" "yes" \
       "$(printf '%s\n' "$doc" | grep -q '^\[spec\]$' &&
          printf '%s\n' "$doc" | grep -q '^\[sub\]$' &&
-         printf '%s\n' "$doc" | grep -q '^\[list prefixes mine-a\]$' &&
-         printf '%s\n' "$doc" | grep -q '^\[list domains mine-d\]$' && echo yes || echo no)"
+         printf '%s\n' "$doc" | grep -q '^\[plugin lists-catalog list_prefixes_mine_da\]$' &&
+         printf '%s\n' "$doc" | grep -q '^\[plugin lists-catalog list_domains_mine_dd\]$' && echo yes || echo no)"
 # Главное свойство экспорта: 284 КБ зеркал категорий издателя в него не едут. Проверяется не
 # размер, а состав — списка издателя нет ни заголовком, ни содержимым.
 check "зеркал категорий издателя в архиве нет (284 КБ, I-037)" "no" \
-      "$(printf '%s\n' "$doc" | grep -qE '^(\[list (prefixes|domains) news\]|10\.0\.0\.0/8|example\.org)$' && echo yes || echo no)"
+      "$(printf '%s\n' "$doc" | grep -qE '^(\[plugin lists-catalog list_(prefixes|domains)_news\]| ?10\.0\.0\.0/8| ?example\.org)$' && echo yes || echo no)"
 check "выбор у групп «вручную» уезжает в архив, чужая строка — нет" "yes;no" \
       "$(printf '%s\n' "$doc" | grep -q '^\[select\]$' && printf '%s\n' "$doc" | grep -qx 'eu wg1' && echo yes || echo no);$(printf '%s\n' "$doc" | grep -q 'reboot' && echo yes || echo no)"
 check "в архиве есть и большой свой список, и оба маленьких" "yes" \
-      "$(printf '%s\n' "$doc" | grep -q '^\[list domains mine-big\]$' && echo yes || echo no)"
+      "$(printf '%s\n' "$doc" | grep -q '^\[plugin lists-catalog list_domains_mine_dbig\]$' && echo yes || echo no)"
 
 # Приватный ключ пира — то, без чего восстановленный роутер туннель не поднимает вовсе.
 # Содержимое едет ДОСЛОВНО, вместе со своими строками в квадратных скобках: файл читает
@@ -2927,8 +2947,11 @@ check "именованная подписка уезжает и файлом, �
       "$(printf '%s\n' "$doc" | grep -q '^\[sub work\]$' &&
          printf '%s\n' "$doc" | grep -qx 'sub_work.url=https://panel.example.net/sub/2' &&
          printf '%s\n' "$doc" | grep -qx 'sub_work.kind=url' && echo yes || echo no)"
-check "в архив уезжают все восемь полей uci, а не три" "8" \
-      "$(printf '%s\n' "$doc" | grep -cE '^(sub_url|sub_kind|wizard|sub_title|manifest_url|fetch_via_tunnel|list_shrink_factor|geo_url)=')"
+check "в архив уезжают все шесть полей uci, а не три" "6" \
+      "$(printf '%s\n' "$doc" | grep -cE '^(sub_url|sub_kind|wizard|sub_title|fetch_via_tunnel|geo_url)=')"
+check "настройки плагина каталога уезжают его разделом settings" "yes" \
+      "$(printf '%s\n' "$doc" | grep -q '^\[plugin lists-catalog settings\]$' &&
+         printf '%s\n' "$doc" | grep -q '^ {.*"manifest_url":"https://example.net/categories.json"' && echo yes || echo no)"
 # Шапка архива предупреждала про ссылки vless://. С приватными ключами туннелей это верно
 # сильнее, и сказать об этом обязана сама шапка: файл человек уносит на флешке и в переписке.
 check "шапка предупреждает и о приватных ключах" "yes" \
@@ -2941,15 +2964,15 @@ check "шапка предупреждает и о приватных ключа
 printf '#!/bin/sh\necho "sh: stat: not found" >&2\nexit 127\n' > "$T/bin/stat"; chmod +x "$T/bin/stat"
 out="$(rpcd backup_get '{"offset":0}')"
 check "архив выгружается и без stat (busybox OpenWrt 25.12)" "true" "$(printf '%s' "$out" | jget ok)"
-rm -f "$T/var/backup.out"
+rm -f "$BK_OUT"
 out="$(printf '%s\n' 'splify2-backup 3' '[select]' 'eu wg1' | backup_put)"
 check "архив восстанавливается и без stat" "true" "$(printf '%s' "$out" | jget ok)"
 rm -f "$T/bin/stat"
-: > "$T/var/backup.out"; chmod 644 "$T/var/backup.out"
+: > "$BK_OUT"; chmod 644 "$BK_OUT"
 out="$(rpcd backup_get '{"offset":0}')"
 check "подложенный открытый файл и без stat пересоздаётся закрытым" "600" \
-      "$(stat -c %a "$T/var/backup.out" 2>/dev/null)"
-rm -f "$T/var/backup.out"
+      "$(stat -c %a "$BK_OUT" 2>/dev/null)"
+rm -f "$BK_OUT"
 
 # Экспорт не отдаёт файл, который его же импорт откажется принять: иначе человек узнал бы
 # об этом в тот день, когда бекап понадобился.
@@ -3091,7 +3114,7 @@ check "предел считается по накопленному, а не п
       "$(printf '%s' "$out" | jget error | grep -q 'больше' && echo yes || echo no)"
 
 # ---- годный архив восстанавливается -------------------------------------------
-rm -f "$T/var/backup.in" "$T/etc/spec.applied.json" "$T/var/vless-dirty"
+rm -f "$BK_IN" "$T/etc/spec.applied.json" "$T/var/vless-dirty"
 : > "$T/steer.log"
 printf '{"schema":1,"outputs":{},"channels":[]}\n' > "$T/etc/spec.json"
 out="$(printf '%s\n' \
@@ -3129,11 +3152,11 @@ check "восстановление ничего не применяет" "0" "$
 check "снимок применённого снят с ПРЕЖНЕЙ спеки" "yes" \
       "$([ -s "$T/etc/spec.applied.json" ] && ! grep -q 'br-lan' "$T/etc/spec.applied.json" && echo yes || echo no)"
 check "накопленный файл убран за собой" "no" \
-      "$([ -f "$T/var/backup.in" ] && echo yes || echo no)"
+      "$([ -f "$BK_IN" ] && echo yes || echo no)"
 
 # Восстановление подписки в виде JSON: файл ложится на место байт в байт, строка с `[` в начале —
 # его содержимое (I-329).
-rm -f "$T/var/backup.in" "$T/etc/spec.applied.json" "$T/var/vless-dirty" "$T/etc/sub.txt"
+rm -f "$BK_IN" "$T/etc/spec.applied.json" "$T/var/vless-dirty" "$T/etc/sub.txt"
 printf '{"schema":1,"outputs":{},"channels":[]}\n' > "$T/etc/spec.json"
 out="$(printf '%s\n' \
   'splify2-backup 1' \
@@ -3157,7 +3180,7 @@ check "архив прежнего формата (1) по-прежнему пр
 # ---- формат 2: ключи туннелей, стратегии обхода и именованные подписки ------------
 # Проверяется методом целиком: присланный архив → файлы на диске и поля в uci. Каталоги
 # перед этим сносятся, иначе «восстановлено» было бы не отличить от «лежало и раньше».
-rm -f "$T/var/backup.in"
+rm -f "$BK_IN"
 rm -rf "$XSTEER_DIR" "$T/etc/subs"
 : > "$T/uci.store"
 : > "$T/steer.log"
@@ -3193,8 +3216,12 @@ check "именованная подписка легла своим файло�
       "$(grep -qx 'vless://k2@h2:443#second' "$T/etc/subs/work.txt" && echo yes || echo no)"
 check "ссылка именованной подписки легла в свою секцию uci" "https://panel.example.net/sub/2;url;subscription" \
       "$(uci_get splify2.sub_work.url);$(uci_get splify2.sub_work.kind);$(uci_get splify2.sub_work)"
-check "остальные поля uci восстановлены, а не только три прежних" "Моя панель;4;https://example.net/trace" \
-      "$(uci_get splify2.main.sub_title);$(uci_get splify2.main.list_shrink_factor);$(uci_get splify2.main.geo_url)"
+check "остальные поля uci восстановлены, а не только три прежних" "Моя панель;https://example.net/trace" \
+      "$(uci_get splify2.main.sub_title);$(uci_get splify2.main.geo_url)"
+# Порог сокращения списка в архивах формата 2 лежал полем uci. Теперь это настройка плагина lists-catalog, и поле из
+# старого архива переезжает в его conf (раздел settings плагина).
+check "порог сокращения из старого архива лёг настройкой плагина каталога" "4" \
+      "$(python3 -c 'import json,sys; print(json.load(open(sys.argv[1])).get("list_shrink_factor", ""))' "$T/off/conf/lists-catalog/settings.json" 2>/dev/null)"
 check "в ответе сказано, что именно восстановлено" "1;1" \
       "$(printf '%s' "$out" | jget xsteer);$(printf '%s' "$out" | jget subs)"
 
@@ -3366,7 +3393,7 @@ mkdir -p "$T/etc"
 # зашитого издателя отвечала на любую чужую приставку отказом, каталог показывал список, а
 # «Загрузить» говорило «неизвестный источник» — поймано на живом роутере.
 printf '{"base_url":"https://example.invalid/l","categories":[{"id":"other:x","file":"other/x.lst"}],"domain_lists":[]}\n' \
-    > "$T/etc/manifest.json"
+    > "$CAT_MANIFEST"
 out="$(rpcd list_fetch '{"id":"other:x","kind":"prefixes"}')"
 check "чужая приставка не отвергается сходу" "no" \
       "$(printf '%s' "$out" | grep -q 'неизвестный источник' && echo yes || echo no)"
@@ -4613,8 +4640,8 @@ cat > "$T/etc/spec.json" <<EOF
  "rules":[{"name":"Новости","to":["a"],"out":"nl"},{"name":"Всё","to":"all","out":"direct","enabled":false}]}
 EOF
 rm -f "$T/lists/domains/v2only.lst" "$T/lists/v2pfx.lst"
-printf '{"categories":[],"domain_lists":[],"base_url":"https://example.invalid/l"}\n' > "$T/etc/manifest.json"
-out="$(rpcd apply)"
+printf '{"categories":[],"domain_lists":[],"base_url":"https://example.invalid/l"}\n' > "$CAT_MANIFEST"
+out="$(RPCD_PLUGIN_ROOT="$T/off" rpcd apply)"
 check "доскачивание видит файлы списков спеки v2" "yes;yes" \
       "$([ -s "$T/lists/domains/v2only.lst" ] && echo yes || echo no);$([ -s "$T/lists/v2pfx.lst" ] && echo yes || echo no)"
 check "подписка выхода tunnel найдена по ключу subscription" "1;2" \

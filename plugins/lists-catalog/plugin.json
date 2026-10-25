@@ -9,7 +9,17 @@
     "splify2-api": "^1.0"
   },
   "arch": "all",
-  "permissions": [],
+  "permissions": [
+    "splify2.hooks",
+    "http",
+    "fs:/etc/steer/lists"
+  ],
+  "i18n": {
+    "languages": [
+      "ru",
+      "en"
+    ]
+  },
   "rpc": {
     "prog": "bin/lists",
     "methods": {
@@ -76,12 +86,34 @@
     }
   },
   "splify2": {
+    "hooks": {
+      "pre_spec_set": {
+        "prog": "hooks/ensure-lists",
+        "mode": "warn",
+        "timeout_s": 300
+      },
+      "pre_apply": {
+        "prog": "hooks/ensure-lists",
+        "mode": "warn",
+        "timeout_s": 300
+      },
+      "backup_sections": {
+        "prog": "hooks/backup",
+        "timeout_s": 60
+      },
+      "support_report": {
+        "prog": "hooks/support"
+      },
+      "purge": {
+        "prog": "hooks/purge"
+      }
+    },
     "tasks": [
       {
         "name": "update-lists",
         "cron": "M 5 * * *",
         "jitter": "random-minute",
-        "prog": "bin/task-update-lists",
+        "prog": "bin/update-lists",
         "only_if": "spec-present",
         "timeout_s": 1800
       }

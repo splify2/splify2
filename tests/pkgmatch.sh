@@ -89,8 +89,10 @@ check "общие куски укладываются в пакет катало
 # пока имя было одно, про второй такой файл он промолчал бы, а второй появился (fast.sh).
 check "на отсутствие подключаемого файла стоит барьер" "1" \
     "$(grep -c "grep -ho '/usr/lib/splify2/" build.sh)"
-check "обе половины подключают общее скачивание" "2" \
-    "$(grep -c 'FETCH_SH:-.*/fetch.sh' files/usr/lib/splify2/env.sh plugins/lists-catalog/bin/update-lists | awk -F: '{s+=$2} END {print s}')"
+# Скачивание одно: каркас подключает fetch.sh лениво (need_fetch в env.sh), а плагины качают службой хоста
+# `splify2-host fetch`, которая зовёт ту же функцию. Своего скачивания у плагина нет.
+check "скачивание одно: каркас и служба хоста для плагинов" "yes;yes" \
+    "$(grep -q 'FETCH_SH:-.*/fetch.sh' files/usr/lib/splify2/env.sh && echo yes || echo no);$(grep -q '^[[:space:]]*need_fetch$' files/usr/sbin/splify2-host && grep -q 'download "\$_f_url"' files/usr/sbin/splify2-host && echo yes || echo no)"
 # Быстрый путь опроса подключается ТОЛЬКО из объекта rpcd, и подключений там несколько: круг
 # опроса, чтение спеки и старые методы, отдающие те же числа. Если файл переименуют, а барьер
 # укладки промолчит — объект перестанет отвечать на самый частый вызов.
@@ -591,6 +593,37 @@ for f in tmp/splify2-ping; do
 done
 check "замер внешнего адреса выхода не тронут" "yes" "$([ -e "$TUD/root/var/lib/splify2/geo-wg0" ] && echo yes || echo no)"
 rm -rf "$TUD"
+# ---- настройки каталога списков переезжают в плагин lists-catalog ----------------------------------
+# Поля uci каркаса (адрес каталога, порог сокращения, тег второго издателя) один раз переносятся в conf плагина, и поля
+# снимаются: человек, менявший их, не теряет выбор при обновлении. Файл настроек плагина, если он уже есть, не затирается.
+TUD="$(mktemp -d /tmp/pkgmatch-mig.XXXXXX)"
+mkdir -p "$TUD/bin" "$TUD/root"
+cat > "$TUD/bin/uci" <<EOF2
+#!/bin/sh
+db="$TUD/uci.db"
+case "\$1" in -q) shift ;; esac
+case "\$1" in
+    get)    v="\$(sed -n "s|^\$2=||p" "\$db" 2>/dev/null | tail -n1)"; [ -n "\$v" ] || exit 1; printf '%s\n' "\$v" ;;
+    delete) sed -i "\\|^\$2=|d" "\$db" 2>/dev/null ;;
+    commit) : ;;
+    *) exit 1 ;;
+esac
+EOF2
+chmod +x "$TUD/bin/uci"
+printf '%s\n' 'splify2.main.manifest_url=https://example.net/own.json' 'splify2.main.list_shrink_factor=0' \
+    'splify2.main.allow_domains_tag=2026-01-01_00-00' 'splify2.main.sub_url=https://panel.example.net/s' > "$TUD/uci.db"
+sed -n '/^# >>> перенос настроек каталога списков/,/^# <<< перенос настроек каталога списков/p' files/etc/uci-defaults/99-splify2 > "$TUD/mig.sh"
+check "блок переноса настроек каталога найден в uci-defaults" "yes" "$([ -s "$TUD/mig.sh" ] && echo yes || echo no)"
+PATH="$TUD/bin:$PATH" SPLIFY2_TEST_ROOT="$TUD/root" sh "$TUD/mig.sh"
+MC="$TUD/root/etc/steer/plugins/conf/lists-catalog/settings.json"
+check "настройки каталога перенесены в conf плагина" "https://example.net/own.json;0;2026-01-01_00-00" \
+    "$(python3 -c 'import json,sys; d=json.load(open(sys.argv[1])); print("%s;%s;%s" % (d["manifest_url"], d["list_shrink_factor"], d["allow_domains_tag"]))' "$MC" 2>/dev/null)"
+check "поля uci каталога сняты, чужие остались" "splify2.main.sub_url=https://panel.example.net/s" "$(cat "$TUD/uci.db")"
+printf '%s\n' 'splify2.main.manifest_url=https://example.net/other.json' >> "$TUD/uci.db"
+PATH="$TUD/bin:$PATH" SPLIFY2_TEST_ROOT="$TUD/root" sh "$TUD/mig.sh"
+check "готовый файл настроек плагина не затирается" "https://example.net/own.json" \
+    "$(python3 -c 'import json,sys; print(json.load(open(sys.argv[1]))["manifest_url"])' "$MC")"
+rm -rf "$TUD"
 # Метод учёта убран из объекта rpcd и из прав интерфейса; ни одного упоминания в рабочих текстах.
 check "rpcd не знает telemetry_state и telemetry_set" "0" \
     "$(grep -c 'telemetry_state\|telemetry_set' files/usr/libexec/rpcd/splify2 luci/root/usr/share/rpcd/acl.d/splify2.json | awk -F: '{s+=$2} END {print s+0}')"
@@ -598,7 +631,7 @@ check "rpcd не знает telemetry_state и telemetry_set" "0" \
 # и интерфейса, обзор списков — разом), создаются mktemp, а не по общему имени: общее имя — смесь двух
 # ответов, имя с номером процесса в /tmp предсказуемо.
 check "кэш local_lists и ответы GitHub пишутся в свои файлы (mktemp)" "0;1;1;1" \
-    "$(grep -c '_ll_c\.tmp' plugins/lists-catalog/lib/lists.sh);$(grep -c 'mktemp \"${GH_CACHE:-/tmp/splify2-releases.json}.api.XXXXXX' files/usr/lib/splify2/rpcd/m-engine.sh);$(grep -c 'mktemp \"${GH_CACHE:-/tmp/splify2-releases.json}.version.XXXXXX' files/usr/lib/splify2/rpcd/m-engine.sh);$(grep -c 'mktemp \"$_ll_c.XXXXXX' plugins/lists-catalog/lib/lists.sh)"
+    "$(grep -c '_ll_c\.tmp' plugins/lists-catalog/lib/methods.sh);$(grep -c 'mktemp \"${GH_CACHE:-/tmp/splify2-releases.json}.api.XXXXXX' files/usr/lib/splify2/rpcd/m-engine.sh);$(grep -c 'mktemp \"${GH_CACHE:-/tmp/splify2-releases.json}.version.XXXXXX' files/usr/lib/splify2/rpcd/m-engine.sh);$(grep -c 'mktemp \"$_ll_c.XXXXXX' plugins/lists-catalog/lib/methods.sh)"
 # Методы, отдающие секреты (архив с приватными ключами туннелей, ссылка xs:// с ключом), — только в
 # группе write: учётная запись «только чтение» их получить не должна.
 check "backup_get и xsteer_link — в write и не в read" "yes" \

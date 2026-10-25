@@ -38,14 +38,22 @@ SPLIFY2_LIBDIR="${SPLIFY2_LIBDIR:-${PLUGIN_SH:+${PLUGIN_SH%/*}}}"
 SPLIFY2_LIBDIR="${SPLIFY2_LIBDIR:-/usr/lib/splify2}"
 EXT_SH="${EXT_SH:-$SPLIFY2_LIBDIR/ext.sh}"
 SPLIFY2_LIB="${SPLIFY2_LIB:-$SPLIFY2_LIBDIR/lib.sh}"
+# Службы хоста для программ плагинов (splify2-api, «Службы хоста») и каталог рабочих файлов плагина в памяти
+# (steer-api: STEER_PLUGIN_STATE, <state>/plugin/<id>).
+SPLIFY2_HOST="${SPLIFY2_HOST:-/usr/sbin/splify2-host}"
+PLUGIN_STATE_DIR="${PLUGIN_STATE_DIR:-${STEER_STATE_DIR:-/var/lib/steer}/plugin}"
 
 # Расширения каркаса подключаются лениво: нужны plugin_sync, хукам и методам с псевдонимами.
 plugin_need_ext() { command -v ext_rebuild >/dev/null 2>&1 || . "$EXT_SH"; }
 
-# Окружение программы плагина: каталог, настройки, версия splify2-api и библиотека для shell-плагинов (lib.sh).
+# Окружение программы плагина: каталог, настройки, рабочий каталог в памяти, версия splify2-api, службы хоста и
+# библиотека для shell-плагинов (lib.sh). Рабочий каталог создаётся закрытым (0700): в нём плагин держит то, что не
+# должно пережить перезагрузку и чего не должен читать чужой процесс.
 plugin_export_env() {  # ID
     export STEER_PLUGIN_ID="$1" STEER_PLUGIN_DIR="$PLUGIN_ROOT/$1" STEER_PLUGIN_CONF="$PLUGIN_CONF_DIR/$1" \
-           SPLIFY2_API=1 SPLIFY2_LIB SPLIFY2_LIBDIR
+           STEER_PLUGIN_STATE="$PLUGIN_STATE_DIR/$1" SPLIFY2_API=1 SPLIFY2_LIB SPLIFY2_HOST
+    ( umask 077; mkdir -p "$STEER_PLUGIN_STATE" ) 2>/dev/null
+    mkdir -p "$STEER_PLUGIN_CONF" 2>/dev/null
 }
 
 # id плагина — [a-z0-9][a-z0-9-]* (manifest.md). Он становится именем файла и попадает в

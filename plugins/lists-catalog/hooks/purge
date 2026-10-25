@@ -1,0 +1,35 @@
+#!/bin/sh
+# Хук purge: следы плагина — кэш каталога, отметки версий второго издателя, рабочие файлы. Свои списки лежат в каталоге
+# списков ядра и уходят вместе с ним, настройки (settings.json) остаются при keep_config.
+. "${STEER_PLUGIN_DIR:?программа запускается хостом splify2 (нет STEER_PLUGIN_DIR)}/lib/base.sh"
+
+input="$(cat)"
+json_load "$input" 2>/dev/null
+json_select ctx 2>/dev/null
+json_get_var dry dry_run
+json_get_var keep keep_config
+
+plan=""
+for f in "$CATALOG_FILE" "$CONF_DIR/allow-domains.tag"; do
+    [ -e "$f" ] || continue
+    plan="${plan:+$plan
+}$f"
+    [ "$dry" = 1 ] || [ "$dry" = true ] || rm -f "$f"
+done
+if [ "$keep" != 1 ] && [ "$keep" != true ] && [ -e "$CONF_DIR/settings.json" ]; then
+    plan="${plan:+$plan
+}$CONF_DIR/settings.json"
+    [ "$dry" = 1 ] || [ "$dry" = true ] || rm -f "$CONF_DIR/settings.json"
+fi
+if [ "$dry" != 1 ] && [ "$dry" != true ]; then rm -rf "${RUN_DIR:?}"/* 2>/dev/null; fi
+
+json_init
+json_add_boolean ok 1
+json_add_array plan
+while IFS= read -r line; do
+    [ -n "$line" ] && json_add_string "" "$line"
+done <<EOT
+$plan
+EOT
+json_close_array
+json_dump

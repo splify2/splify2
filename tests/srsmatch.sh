@@ -44,6 +44,9 @@ mkdir -p "$T/etc" "$T/lists" "$T/bin" "$T/srv" "$T/var"
 # Методы каталога списков — псевдонимы плагина lists-catalog (plugins/), поставленного в песочницу.
 . "$ROOT/tests/stub/plugins-env.sh"
 plugins_provision "$T/plugins" lists-catalog
+export JSHN_SH="$ROOT/tests/stub/jshn.sh"
+CONF="$T/plugins/conf/lists-catalog"; RUN="$T/plugins/state/lists-catalog"
+mkdir -p "$CONF"
 pass=0; fail=0
 check() {  # ИМЯ ОЖИДАЛОСЬ ПОЛУЧЕНО
     if [ "$2" = "$3" ]; then pass=$((pass + 1)); printf '%-66s ok\n' "$1"
@@ -82,66 +85,31 @@ case "\$1" in
 esac
 exit 0
 EOF
-# jsonfilter: выражения, которые встречаются на проверяемых путях, — путь с [*] и выбор записи
-# по полю (`@.domain_lists[@.url='…'].file`). Несколько -e печатают совпадения по всем.
-cat > "$T/bin/jsonfilter" <<'EOF'
-#!/bin/sh
-# Выражения плагинов (манифест, state.json, ответы хуков) — общая заглушка tests/stub/jsonfilter.
-[ -n "${JSONFILTER_PLUGIN:-}" ] && case "$*" in *plugins\[*|*@.splify2*|*@.compat*|*@.rpc*|*@.ui.*|*@.ok*|*@.error*|*@.warn*|*@.plan*|*@.section*|*@.message*) exec sh "$JSONFILTER_PLUGIN" "$@" ;; esac
-file=""; str=""; exprs=""
-while [ $# -gt 0 ]; do
-    case "$1" in
-        -i) file="$2"; shift 2 ;;
-        -s) str="$2"; shift 2 ;;
-        -e) exprs="$exprs$2
-"; shift 2 ;;
-        *) shift ;;
-    esac
-done
-[ -z "$file" ] && [ -z "$str" ] && str="$(cat)"
-EXPRS="$exprs" python3 - "$file" "$str" <<'PY'
-import json, os, re, sys
-path, raw = sys.argv[1], sys.argv[2]
-try:
-    d = json.loads(raw) if raw else json.load(open(path, encoding='utf-8'))
-except Exception:
-    sys.exit(1)
-def render(v):
-    if isinstance(v, bool): return 'true' if v else 'false'
-    if isinstance(v, (dict, list)): return json.dumps(v, ensure_ascii=False)
-    return str(v)
-def walk(cur, parts):
-    if not parts:
-        if cur is not None: yield cur
-        return
-    p, rest = parts[0], parts[1:]
-    if p == '*':
-        items = cur if isinstance(cur, list) else list(cur.values()) if isinstance(cur, dict) else []
-        for it in items: yield from walk(it, rest)
-    elif isinstance(cur, dict) and p in cur:
-        yield from walk(cur[p], rest)
-for expr in os.environ.get('EXPRS', '').splitlines():
-    if not expr: continue
-    m = re.match(r"@\.(\w+)\[@\.(\w+)='([^']*)'\]\.(\w+)$", expr)
-    if m:
-        for e in d.get(m.group(1), []):
-            if e.get(m.group(2)) == m.group(3) and m.group(4) in e: print(render(e[m.group(4)]))
-        continue
-    norm = expr.replace('@.', '', 1).replace('[*]', '.*')
-    norm = re.sub(r"\[(['\"])([^'\"]*)\1\]", lambda m: '.' + m.group(2), norm)
-    for v in walk(d, [x for x in norm.split('.') if x and x != '@']): print(render(v))
-PY
-EOF
+# jsonfilter: общая заглушка tests/stub/jsonfilter — выражения плагина, службы хоста и каталога списков.
+cp "$ROOT/tests/stub/jsonfilter" "$T/bin/jsonfilter"
 chmod +x "$T/bin/jsonfilter"
 printf '#!/bin/sh\necho "$*" >> "$SANDBOX/syslog"\n' > "$T/bin/logger"
 printf '#!/bin/sh\nexit 0\n' > "$T/bin/initd"
-chmod +x "$T/bin/curl" "$T/bin/steer" "$T/bin/logger" "$T/bin/initd"
+cat > "$T/bin/runplugin" <<'EOT'
+#!/bin/sh
+. "$PLUGIN_SH"
+plugin_export_env "$1"; shift
+exec sh "$@"
+EOT
+# Применение — служба хоста `apply` зовёт метод apply каркаса; стенду нужна его суть (ядро применило или отвергло).
+cat > "$T/bin/rpcd-apply" <<'EOT'
+#!/bin/sh
+out="$("$STEER" apply --spec "$SPEC" 2>&1)"; rc=$?
+if [ "$rc" = 0 ]; then printf '{"ok":true,"output":""}\n'; else printf '{"ok":false,"output":"rejected"}\n'; fi
+EOT
+chmod +x "$T/bin/curl" "$T/bin/steer" "$T/bin/logger" "$T/bin/initd" "$T/bin/runplugin" "$T/bin/rpcd-apply"
+export RPCD_BIN="$T/bin/rpcd-apply"
 
 cp "$SRS_FIXTURES/adguard.srs" "$T/srv/adguard.srs"
 cp "$SRS_FIXTURES/telegram.srs" "$T/srv/telegram.srs"
 
 U=https://github.com/example/srs/releases/download/2026-10-01
-cat > "$T/etc/manifest.json" <<MF
+cat > "$CONF/manifest.json" <<MF
 {
   "base_url": "https://example.invalid/lists",
   "categories": [
@@ -160,21 +128,21 @@ rpcd() {  # МЕТОД [ВХОД]
     printf '%s\n' "${2:-}" | env SANDBOX="$T" PATH="$T/bin:$PATH" \
         JSHN_SH="$ROOT/tests/stub/jshn.sh" FETCH_SH="$ROOT/files/usr/lib/splify2/fetch.sh" \
         FAST_SH="$ROOT/files/usr/lib/splify2/fast.sh" RPCD_LIB="$ROOT/files/usr/lib/splify2/rpcd" \
-        AD_SH="$ROOT/files/usr/share/splify2/allow-domains.sh" AD_STAMP="$T/etc/allow-domains.tag" \
+        AD_SH="$ROOT/plugins/lists-catalog/lib/allow-domains.sh" AD_STAMP="$CONF/allow-domains.tag" \
         LOCAL_LISTS_CACHE="$T/var/local_lists.json" \
         STEER="$STEER_BIN" SPEC="$T/etc/spec.json" APPLIED="$T/etc/spec.applied.json" \
-        LISTS="$T/lists" MANIFEST="$T/etc/manifest.json" UCI_SPLIFY2="$T/etc/config-splify2" \
+        LISTS="$T/lists" MANIFEST="$CONF/manifest.json" UCI_SPLIFY2="$T/etc/config-splify2" \
         INITD="$T/bin/initd" FW_OWNED="$T/etc/fw-owned" SUB="$T/etc/sub.txt" SUBS_DIR="$T/etc/subs" \
         sh "$ROOT/files/usr/libexec/rpcd/splify2" call "$1" 2>"$T/stderr"
 }
 req() { python3 -c 'import json,sys; print(json.dumps({"spec": sys.argv[1]}))' "$1"; }
 nightly() {
     env SANDBOX="$T" PATH="$T/bin:$PATH" STEER="$T/bin/steer" SPEC="$T/etc/spec.json" \
-        LISTS="$T/lists" MANIFEST="$T/etc/manifest.json" STAMP="$T/var/last-update" \
-        LOCK="$T/var/update.lock" FETCH_SH="$ROOT/files/usr/lib/splify2/fetch.sh" \
-        AD_SH="$ROOT/files/usr/share/splify2/allow-domains.sh" AD_STAMP="$T/etc/allow-domains.tag" \
+        LISTS="$T/lists" MANIFEST="$CONF/manifest.json" STAMP="$RUN/last-update" \
+        LOCK="$RUN/update.lock" FETCH_SH="$ROOT/files/usr/lib/splify2/fetch.sh" \
+        AD_SH="$ROOT/plugins/lists-catalog/lib/allow-domains.sh" AD_STAMP="$CONF/allow-domains.tag" \
         STEER_INIT="$T/bin/initd" RC_D="$T/no-rc.d" \
-        sh "$ROOT/plugins/lists-catalog/bin/update-lists" > "$T/nightly.out" 2>&1
+        runplugin lists-catalog "$T/plugins/lib/lists-catalog/bin/update-lists" > "$T/nightly.out" 2>&1
 }
 
 AG="$T/lists/jinndi/domains/adguard.srs"

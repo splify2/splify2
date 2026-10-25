@@ -1,16 +1,13 @@
 #!/bin/sh
-# Программа плагина backup: $1 — метод (get, put), параметры — одна строка JSON в stdin, ответ — JSON в stdout.
+# Программа rpc плагина backup: $1 — метод (get, put), параметры — одна строка JSON в stdin, ответ — один объект JSON в
+# stdout. Методы объявлены в plugin.json и видны на объекте splify2 как backup_get и backup_put.
 #
-# Окружение (швы, пути, общие функции каркаса) даёт библиотека splify2-api; код методов — lib/backup.sh, тот же,
-# что до выноса стоял в каркасе: он разбирает `$2` как имя метода, поэтому здесь выставляются позиционные
-# аргументы так, как их видел диспетчер.
-. "${SPLIFY2_LIB:?программа запускается хостом splify2 (нет SPLIFY2_LIB)}"
+# Всё, что принадлежит платформе, плагин берёт через её API: библиотека `$SPLIFY2_LIB` (jshn, s2_fail, s2_setting) и
+# службы хоста `$SPLIFY2_HOST` (настройки каркаса, хуки плагинов). Сам формат архива и передача по кускам — lib/archive.sh.
+. "${STEER_PLUGIN_DIR:?программа запускается хостом splify2 (нет STEER_PLUGIN_DIR)}/lib/archive.sh"
 
 case "${1:-}" in
-    get) set -- call backup_get ;;
-    put) set -- call backup_put ;;
+    get) backup_get ;;
+    put) backup_put ;;
     *) echo "нет такого метода: ${1:-}" >&2; exit 2 ;;
 esac
-# Общая блокировка настроек: архив читает и меняет спеку, подписки, списки и uci целиком (как у spec_set).
-call_lock state
-. "${STEER_PLUGIN_DIR:?}/lib/backup.sh"
