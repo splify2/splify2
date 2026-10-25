@@ -8,7 +8,7 @@ set -eu
 VERSION="$(cat VERSION 2>/dev/null || echo 0.1.0)"
 
 # В VERSION только цифры и точки, и это не педантизм. Этой строкой собираются имя файла
-# пакета (`luci-app-splify2-26.9-1_noarch.apk`), версия для apk/opkg и тег релиза, а ниже она
+# пакета (`splify2-26.9-1_noarch.apk`), версия для apk/opkg и тег релиза, а ниже она
 # подставляется sed-ом внутрь JS (`?v=26.9`). Пробел или буква ломают всё перечисленное, причём
 # по-разному: пакет соберётся с искалеченным именем, а бандл получит битую ссылку на кусок —
 # то есть страница откроется и не заработает.
@@ -49,7 +49,7 @@ echo "splify2 $VERSION"
 # Цифра в имени в наборе символов не случайна: без неё `splify2_versions` резался до
 # `splify`, барьер искал в ACL несуществующее имя и валился на верных данных. Заметить
 # это удалось только когда проверка стала запускаться без docker.
-acl=luci/root/usr/share/rpcd/acl.d/luci-app-splify2.json
+acl=luci/root/usr/share/rpcd/acl.d/splify2.json
 methods="$(sed -n '/^list)/,/^    ;;/p' files/usr/libexec/rpcd/splify2 |
            grep -o 'json_add_object [a-z0-9_]*' | awk '{print $2}' | tr '\n' ' ')"
 missing=''
@@ -191,6 +191,9 @@ mkdir -p "$PKG/usr/share/splify2"
 # тег в нём — это версия списков у каждого, кто ничего не настраивал, поэтому поднимать её
 # может только новая сборка пакета, а не роутер сам себе ночью.
 cp files/usr/share/splify2/allow-domains.sh "$PKG/usr/share/splify2/allow-domains.sh"
+# Схема ключей спеки, которой пользуется каркас на LuCI JS, пока ядро не умеет `steer spec-schema`
+# (метод spec_schema: ответ ядра — главный, этот файл — запасной, с пометкой source: bundled).
+cp files/usr/share/splify2/spec-schema.json "$PKG/usr/share/splify2/spec-schema.json"
 # Общие куски обеих половин: скачивание (fetch.sh) и быстрый путь опроса (fast.sh). Каждый
 # подключается строкой `. /usr/lib/splify2/…`, и забыть любой — значит выкатить пакет, где
 # соответствующая половина не запускается вовсе. Копируется КАТАЛОГ ЦЕЛИКОМ, а не файлы по
@@ -488,6 +491,16 @@ test -s "$PKG/usr/share/splify2/allow-domains.sh" || {
 grep -qE '^AD_TAG_DEFAULT=\$\{AD_TAG_DEFAULT:-[0-9]' "$PKG/usr/share/splify2/allow-domains.sh" || {
     echo "в usr/share/splify2/allow-domains.sh не зашит тег релиза — версия списков окажется плавающей"
     exit 1; }
+# Каркас на классическом LuCI JS: виды лежат в пакете, без сборки (view/splify2/index.js и view/splify2/core).
+for _need in view/splify2/index.js view/splify2/core/main.js view/splify2/core/autoform.js \
+             view/splify2/core/i18n.js view/splify2/core/strings.json; do
+    test -s "$PKG/www/luci-static/resources/$_need" || {
+        echo "в пакете нет $_need — каркас splify2 не откроется"
+        exit 1; }
+done
+test -s "$PKG/usr/share/splify2/spec-schema.json" || {
+    echo "в пакете нет usr/share/splify2/spec-schema.json — у каркаса не будет схемы ключей на ядре без spec-schema"
+    exit 1; }
 mkdir -p "$OUT"
 # `&&` после установки apk-tools, а не `;`. С точкой с запятой провал установки игнорировался
 # и проявлялся командой позже — как отсутствующий `apk mkpkg`, о чём говорилось «упаковка
@@ -495,13 +508,14 @@ mkdir -p "$OUT"
 # называлась вовсе, а она совсем не та, о которой думает читающий это сообщение.
 docker run --rm -v "$PWD":/w -w /w alpine:latest sh -c \
     "apk add --no-cache apk-tools >/dev/null 2>&1 && apk mkpkg \
-       --info name:luci-app-splify2 --info version:$VERSION-r1 \
+       --info name:splify2 --info version:$VERSION-r1 \
+       --info provides:luci-app-splify2 --info replaces:luci-app-splify2 \
        --info description:'splify2: правила, выходы и списки поверх ядра steer' \
        --info arch:noarch --info depends:'luci-base ip-full curl ucode ucode-mod-fs ucode-mod-ubus' \
        --script post-install:build/scripts/post-install \
        --script post-upgrade:build/scripts/post-install \
        --script pre-deinstall:build/scripts/pre-remove \
-       -F $PKG -o $OUT/luci-app-splify2-$VERSION-1_noarch.apk" > "$BUILD_LOG" 2>&1 \
+       -F $PKG -o $OUT/splify2-$VERSION-1_noarch.apk" > "$BUILD_LOG" 2>&1 \
     || { echo "упаковка apk провалилась:"; cat "$BUILD_LOG"; exit 1; }
 
 # ---- тот же пакет в формате opkg ---------------------------------------------
@@ -538,9 +552,12 @@ fi
 # дереву: иначе служебные файлы уехали бы в полезную нагрузку apk.
 mkdir -p "$PKG/CONTROL"
 cat > "$PKG/CONTROL/control" <<EOF
-Package: luci-app-splify2
+Package: splify2
 Version: $VERSION-1
 Depends: luci-base, ip-full, curl, ucode, ucode-mod-fs, ucode-mod-ubus
+Provides: luci-app-splify2
+Replaces: luci-app-splify2
+Conflicts: luci-app-splify2
 Architecture: all
 Maintainer: xyzmean
 Section: luci
@@ -553,8 +570,8 @@ chmod 0755 "$PKG/CONTROL/prerm"
 if "$PWD/$IPKG" "$PKG" "$PWD/$OUT" >/dev/null 2>&1; then
     # ipkg-build называет файл через подчёркивания; приводим к тому же виду, что у apk,
     # чтобы в релизе оба формата одного пакета лежали рядом и читались одинаково.
-    mv "$OUT/luci-app-splify2_${VERSION}-1_all.ipk" \
-       "$OUT/luci-app-splify2-${VERSION}-1_all.ipk" 2>/dev/null || true
+    mv "$OUT/splify2_${VERSION}-1_all.ipk" \
+       "$OUT/splify2-${VERSION}-1_all.ipk" 2>/dev/null || true
 else
     echo "упаковка ipk провалилась"; exit 1
 fi

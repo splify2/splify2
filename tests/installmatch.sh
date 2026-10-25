@@ -198,7 +198,7 @@ doc = {"schema": 1, "updated": "2026-10-02T10:17:36Z", "products": {
             "versions": [v("steer", "1.5.9", "splify2/steer", ["steer-1.5.9-1_x86_64.apk", "steer-extended-1.5.9-1_x86_64.apk", "steer-extended-1.5.9-1_x86_64.ipk"]),
                          v("steer", "1.5.8", "splify2/steer", ["steer-extended-1.5.8-1_x86_64.apk"])]},
   "splify2": {"title": "splify2", "repo": "splify2/splify2", "stable": "26.9.2", "prerelease": None,
-              "versions": [v("splify2", "26.9.2", "splify2/splify2", ["luci-app-splify2-26.9.2-1_noarch.apk"])]}}}
+              "versions": [v("splify2", "26.9.2", "splify2/splify2", ["splify2-26.9.2-1_noarch.apk"])]}}}
 with open(out, "w") as f:
     json.dump(doc, f, ensure_ascii=False, indent=ind if ind else None)
     f.write("\n")
@@ -444,7 +444,7 @@ rm -f "$V1BOX/etc/init.d/splify" "$SB/nftset"
 # Единственное, что установщик снимает, — прежние пакеты СВОЕГО ядра при переходе на steer-core
 # (pm_drop_old у opkg, pm_forget_old — уборка world у apk), и только по своим именам.
 check "установщик ничего не удаляет (кроме прежнего своего ядра)" "0" \
-    "$(sed '/^pm_drop_old() {/,/^}/d; /^pm_forget_old() {/,/^}/d' "$ROOT/install.sh" | grep -c 'apk del\|opkg remove\|rm -rf /etc\|uci -q delete')"
+    "$(sed '/^pm_drop_old() {/,/^}/d; /^pm_forget_old() {/,/^}/d; /^pm_drop_old_ui() {/,/^}/d' "$ROOT/install.sh" | grep -c 'apk del\|opkg remove\|rm -rf /etc\|uci -q delete')"
 check "снимаются только имена прежнего ядра" "2" \
     "$(sed -n '/^pm_drop_old() {/,/^}/p; /^pm_forget_old() {/,/^}/p' "$ROOT/install.sh" | grep -c 'steer|steer-extended|libsteer|libsteer-wolfssl)')"
 

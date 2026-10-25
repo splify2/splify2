@@ -1,10 +1,11 @@
 {
-  "luci-app-splify2": {
-    "description": "Управление ядром steer: правила, выходы, списки и подписки",
+  "splify2": {
+    "description": "splify2: spec, outputs, lists, subscriptions and plugins on top of the steer core",
     "read": {
       "uci": [
         "splify2",
-        "network"
+        "network",
+        "luci"
       ],
       "ubus": {
         "splify2": [
@@ -55,7 +56,12 @@
           "repos_list",
           "plugin_status",
           "plugin_job",
-          "repo_key"
+          "repo_key",
+          "spec_schema",
+          "spec_check",
+          "prefs_get",
+          "i18n_get",
+          "plugin_settings_get"
         ]
       }
     },
@@ -103,7 +109,9 @@
           "plugin_autoupdate",
           "repo_add",
           "repo_del",
-          "plugin_call"
+          "plugin_call",
+          "prefs_set",
+          "plugin_settings_set"
         ]
       }
     }

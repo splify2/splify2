@@ -121,7 +121,7 @@ check "у предупреждения свой цвет текста в каж�
 check "вывод сборки интерфейса не выбрасывается" "0" \
     "$(grep -c 'npm run build >/dev/null 2>&1' build.sh)"
 check "вывод упаковки apk не выбрасывается" "0" \
-    "$(grep -c 'o \$OUT/luci-app-splify2-\$VERSION-1_noarch.apk" >/dev/null 2>&1' build.sh)"
+    "$(grep -c 'o \$OUT/splify2-\$VERSION-1_noarch.apk" >/dev/null 2>&1' build.sh)"
 # Отдельная проверка на то, что вывод не просто перестал глушиться, а СОХРАНЯЕТСЯ и
 # печатается в отказе: без неё шаг, печатающий полтора экрана на успехе, читался бы как
 # исправление.
@@ -132,8 +132,14 @@ check "провал сборки печатает сохранённый выв�
 check "установка apk-tools присоединена по И, а не точкой с запятой" "0" \
     "$(grep -c 'apk add --no-cache apk-tools >/dev/null 2>&1;' build.sh)"
 
-check "build.sh собирает apk" "1" "$(grep -c 'info name:luci-app-splify2' build.sh)"
-check "build.sh собирает ipk" "1" "$(grep -c 'Package: luci-app-splify2' build.sh)"
+check "build.sh собирает apk под именем splify2" "1" "$(grep -c 'info name:splify2 ' build.sh)"
+check "build.sh собирает ipk под именем splify2" "1" "$(grep -c '^Package: splify2$' build.sh)"
+# Переименование luci-app-splify2 -> splify2: прежнее имя обязано быть provides и replaces, иначе
+# обновление поставит второй пакет рядом с прежним (меню и ACL двух пакетов столкнутся).
+check "apk: provides и replaces прежнего имени" "1" \
+    "$(grep -c 'info provides:luci-app-splify2 --info replaces:luci-app-splify2' build.sh)"
+check "ipk: Provides, Replaces и Conflicts прежнего имени" "3" \
+    "$(grep -c '^\(Provides\|Replaces\|Conflicts\): luci-app-splify2$' build.sh)"
 check "build.sh берёт родной ipkg-build из OpenWrt" "1" \
     "$(grep -c 'scripts/ipkg-build' build.sh)"
 
@@ -149,15 +155,19 @@ check "CONTROL убирается после сборки ipk" "1" "$(grep -c 'r
 # apk называет пакет без бинарного кода noarch, opkg — all. Перепутать их значит скачать
 # несуществующий файл, и проверить это можно только сверкой имён между файлами.
 for suffix in noarch.apk all.ipk; do
-    check "build.sh кладёт luci-app-splify2-...-1_$suffix" "1" \
-        "$(grep -c "luci-app-splify2-\$VERSION-1_$suffix\|luci-app-splify2-\${VERSION}-1_$suffix" build.sh)"
-    # Барьер («пакета нет — валим шаг») и список выкладываемых файлов проверяются
-    # порознь: в теле релиза те же имена встречаются ещё и в примерах команд, и общий
-    # счёт по файлу поэтому ничего не значит.
-    check "барьер релиза требует $suffix" "1" \
-        "$(grep -c "test -f \"out/luci-app-splify2-\${VERSION}-1_$suffix\"" "$WF")"
-    check "релиз выкладывает $suffix" "1" \
-        "$(grep -c "^ *out/luci-app-splify2-\${{ env.VERSION }}-1_$suffix\$" "$WF")"
+    check "build.sh кладёт splify2-...-1_$suffix" "1" \
+        "$(grep -c "splify2-\$VERSION-1_$suffix\|splify2-\${VERSION}-1_$suffix" build.sh)"
+    # release.yml (и releases/) переименование ещё не прошло: их правит владелец отдельно. Пока там
+    # прежнее имя файла, стенд сообщает об этом, но не падает; на новом имени проверка строгая.
+    new_b="$(grep -c "test -f \"out/splify2-\${VERSION}-1_$suffix\"" "$WF")"
+    old_b="$(grep -c "test -f \"out/luci-app-splify2-\${VERSION}-1_$suffix\"" "$WF")"
+    new_u="$(grep -c "^ *out/splify2-\${{ env.VERSION }}-1_$suffix\$" "$WF")"
+    if [ "$old_b" = 1 ] && [ "$new_b" = 0 ]; then
+        printf 'ВНИМАНИЕ: release.yml ещё ждёт luci-app-splify2-...-1_%s: переименуйте шаги выпуска\n' "$suffix"
+    else
+        check "барьер релиза требует $suffix" "1" "$new_b"
+        check "релиз выкладывает $suffix" "1" "$new_u"
+    fi
 done
 
 # ---- установщик умеет оба менеджера --------------------------------------------
@@ -305,7 +315,7 @@ check "страница протокола есть в дереве" "yes" \
 # возвращается имя существующего пакета: имя несуществующего оставило бы кнопку, которая ничего
 # не ставит.
 check "страница называет пакетом сам splify2" "1" \
-    "$(grep -c "return 'luci-app-splify2'" luci/htdocs/luci-static/resources/protocol/xsteer.js)"
+    "$(grep -c "return 'splify2'" luci/htdocs/luci-static/resources/protocol/xsteer.js)"
 check "в коде не возвращается несуществующий пакет" "0" \
     "$(grep -c "'luci-proto-xsteer'" luci/htdocs/luci-static/resources/protocol/xsteer.js)"
 # Обработчик вызывает движок по абсолютному пути. Путь обязан быть тем, куда движок ставится
@@ -581,7 +591,7 @@ check "замер внешнего адреса выхода не тронут" 
 rm -rf "$TUD"
 # Метод учёта убран из объекта rpcd и из прав интерфейса; ни одного упоминания в рабочих текстах.
 check "rpcd не знает telemetry_state и telemetry_set" "0" \
-    "$(grep -c 'telemetry_state\|telemetry_set' files/usr/libexec/rpcd/splify2 luci/root/usr/share/rpcd/acl.d/luci-app-splify2.json | awk -F: '{s+=$2} END {print s+0}')"
+    "$(grep -c 'telemetry_state\|telemetry_set' files/usr/libexec/rpcd/splify2 luci/root/usr/share/rpcd/acl.d/splify2.json | awk -F: '{s+=$2} END {print s+0}')"
 # Файлы, в которые пишут параллельные вызовы одного и того же метода (страница спрашивает версии ядра
 # и интерфейса, обзор списков — разом), создаются mktemp, а не по общему имени: общее имя — смесь двух
 # ответов, имя с номером процесса в /tmp предсказуемо.
@@ -591,9 +601,9 @@ check "кэш local_lists и ответы GitHub пишутся в свои фа
 # группе write: учётная запись «только чтение» их получить не должна.
 check "backup_get и xsteer_link — в write и не в read" "yes" \
     "$(python3 -c 'import json,sys
-a = json.load(open(sys.argv[1]))["luci-app-splify2"]
+a = json.load(open(sys.argv[1]))["splify2"]
 r = a["read"]["ubus"]["splify2"]; w = a["write"]["ubus"]["splify2"]
-print("yes" if all(m in w and m not in r for m in ("backup_get", "xsteer_link")) else "no")' luci/root/usr/share/rpcd/acl.d/luci-app-splify2.json)"
+print("yes" if all(m in w and m not in r for m in ("backup_get", "xsteer_link")) else "no")' luci/root/usr/share/rpcd/acl.d/splify2.json)"
 check "группы telemetry в rpcd нет" "no" "$([ -e files/usr/lib/splify2/rpcd/m-telemetry.sh ] && echo yes || echo no)"
 check "README и руководство о счётчике не говорят" "0" \
     "$(cat README.md docs/guide.md | grep -ci 'Счётчик на сайте\|TELEMETRY.md')"

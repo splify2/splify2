@@ -69,14 +69,14 @@ async function inspect(address, password) {
     const lines = []
     await run(address, password,
         '. /etc/openwrt_release 2>/dev/null; echo "release=$DISTRIB_RELEASE"; echo "arch=$DISTRIB_ARCH"; ' +
-        '{ apk list -I 2>/dev/null || opkg list-installed 2>/dev/null; } | grep -E "^(luci-app-splify2|steer-core)[- ]"',
+        '{ apk list -I 2>/dev/null || opkg list-installed 2>/dev/null; } | grep -E "^(splify2|luci-app-splify2|steer-core)[- ]"',
         (l) => lines.push(l), 30000)
     const out = { release: '', arch: '', splify2: null, steer: null }
     for (const l of lines) {
         let m
         if ((m = l.match(/^release=(.*)$/))) out.release = m[1]
         else if ((m = l.match(/^arch=(.*)$/))) out.arch = m[1]
-        else if ((m = l.match(/^luci-app-splify2[- ](?:- )?(\d[\w.]*)/))) out.splify2 = m[1]
+        else if ((m = l.match(/^(?:luci-app-splify2|splify2)[- ](?:- )?(\d[\w.]*)/))) out.splify2 = m[1]
         else if ((m = l.match(/^steer-core[- ](?:- )?(\d[\w.]*)/))) out.steer = m[1]
     }
     return out

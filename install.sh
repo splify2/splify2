@@ -700,6 +700,13 @@ pm_drop_old() {  # ИМЕНА
 
 # Убрать из /etc/apk/world запреты `!имя` и имя steer после перехода: пакетов они уже не
 # касаются (прежние сняты в транзакции, steer-core называет себя steer сам).
+# Прежний пакет интерфейса (luci-app-splify2) — единственное, что установщик снимает сверх ядра.
+pm_drop_old_ui() {
+    pm_has luci-app-splify2 || return 0
+    info "прежний пакет luci-app-splify2 заменяется пакетом splify2"
+    if [ "$PM" = apk ]; then apk del luci-app-splify2 >/dev/null 2>&1 || true
+    else opkg remove --force-depends luci-app-splify2 >/dev/null 2>&1 || true; fi
+}
 pm_forget_old() {  # ИМЕНА
     for _d in "$@"; do
         case "$_d" in steer|steer-extended|libsteer|libsteer-wolfssl) apk del "$_d" >/dev/null 2>&1 || true ;; esac
@@ -750,11 +757,15 @@ fi
 # ---- интерфейс ----------------------------------------------------------------
 UV="$(latest "$REPO_UI")"
 [ -n "$UV" ] || die "не удалось узнать версию интерфейса: не ответили ни перечень выпусков splify2/releases, ни api.github.com, ни raw.githubusercontent.com, ни зеркало на gitlab.com. Пакет можно поставить руками с https://github.com/$REPO_UI/releases"
-UI_PKG="luci-app-splify2-${UV}-1_$(pm_suffix)"
+UI_PKG="splify2-${UV}-1_$(pm_suffix)"
 say ""
 say "Интерфейс splify2 $UV"
 info "$UI_PKG"
 fetch_pkg splify2 "$UV" "$UI_PKG" "$TMP/$UI_PKG" "$REPO_UI"
+# До переименования пакет назывался luci-app-splify2. Новый (splify2) объявляет его provides/replaces,
+# но apk всё равно отказывает в установке рядом с прежним (конфликт одноимённых поставщиков) — прежний
+# снимается заранее; настройки и спека лежат вне пакета и остаются.
+pm_drop_old_ui
 pm_add "$TMP/$UI_PKG" || die "интерфейс не установился"
 info "установлен"
 

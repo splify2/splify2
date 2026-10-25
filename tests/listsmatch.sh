@@ -1090,9 +1090,9 @@ check "allow_domains объявлен в перечне методов объе�
 check "allow_domains разрешён в ACL на чтение" "yes" \
       "$(python3 -c '
 import json,sys
-a=json.load(open(sys.argv[1],encoding="utf-8"))["luci-app-splify2"]
+a=json.load(open(sys.argv[1],encoding="utf-8"))["splify2"]
 print("yes" if "allow_domains" in a["read"]["ubus"]["splify2"] else "no")' \
-        "$ROOT/luci/root/usr/share/rpcd/acl.d/luci-app-splify2.json")"
+        "$ROOT/luci/root/usr/share/rpcd/acl.d/splify2.json")"
 
 # ---- удаление списка второго издателя ---------------------------------------------
 #
