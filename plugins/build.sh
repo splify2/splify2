@@ -1,5 +1,5 @@
 #!/bin/sh
-# Сборка плагинов каркаса (plugins/<id>) в .s2p инструментом SDK: `s2p lint`, затем `s2p build`.
+# Сборка плагинов каркаса (plugins/<id>) в .s2p инструментом SDK: `s2p lint --official`, затем `s2p build`.
 #
 #   sh plugins/build.sh                       lint и сборка всех плагинов в plugins/dist, без подписи
 #   S2P_KEY=ключ.sec sh plugins/build.sh      с подписью (так собирает выпуск)
@@ -23,7 +23,9 @@ OUT="${S2P_OUT_DIR:-$HERE/dist}"
 mkdir -p "$OUT"
 [ $# -gt 0 ] || set -- $(cd "$HERE" && for d in */; do [ -f "$d/plugin.json" ] && echo "${d%/}"; done)
 for id in "$@"; do
-    "$S2P" lint "$HERE/$id"
+    # --official: плагины каркаса — образец и пользуются платформой только через её API (splify2-api, раздел 9); обращение
+    # к внутренностям каркаса здесь — отказ, а не предупреждение.
+    "$S2P" lint --official "$HERE/$id"
     if [ -n "${S2P_KEY:-}" ]; then "$S2P" build "$HERE/$id" --key "$S2P_KEY" -o "$OUT"
     else "$S2P" build "$HERE/$id" --unsigned -o "$OUT"; fi
 done

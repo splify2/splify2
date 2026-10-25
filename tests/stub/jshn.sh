@@ -44,7 +44,9 @@ _j_esc() {
             #
             # Дальше порядок тоже не произволен: обратный слэш удваивается раньше, чем
             # появляются \n и \t, иначе удвоился бы и он.
-            printf '%s' "$1" | sed -e ':a' -e 'N' -e '$!ba' \
+            # `$!{N;ba}`, а не `N` до конца: на единственной строке GNU sed печатает её и выходит на самом N, не дойдя до
+            # подстановок, — строка с кавычкой уезжала бы в JSON неэкранированной.
+            printf '%s' "$1" | sed -e ':a' -e '$!{N;ba' -e '}' \
                                    -e 's/\\/\\\\/g' -e 's/"/\\"/g' \
                                    -e "s/$_J_TAB/\\\\t/g" -e 's/\n/\\n/g'
             ;;
@@ -66,6 +68,7 @@ _j_open() {  # КЛЮЧ
 json_add_string()  { _j_open "$1"; _J_OUT="$_J_OUT\"$(_j_esc "$2")\""; }
 json_add_int()     { _j_open "$1"; _J_OUT="$_J_OUT$((${2:-0}))"; }
 # jshn печатает булево числом, и интерфейс читает его как число: 1/0, не true/false.
+json_add_double()  { _j_open "$1"; _J_OUT="$_J_OUT${2:-0}"; }
 json_add_boolean() { _j_open "$1"; case "$2" in 1|true) _J_OUT="${_J_OUT}true" ;; *) _J_OUT="${_J_OUT}false" ;; esac; }
 
 json_add_object()  { _j_open "$1"; _J_OUT="$_J_OUT{"; _J_FIRST="1$_J_FIRST"; }
@@ -125,6 +128,16 @@ if op == "has":
     ok = (isinstance(cur, dict) and key in cur) or \
          (isinstance(cur, list) and key.isdigit() and int(key) < len(cur))
     sys.exit(0 if ok else 1)
+if op == "type":
+    v = cur[key] if isinstance(cur, dict) and key in cur else (cur[int(key)] if isinstance(cur, list) and key.isdigit() and int(key) < len(cur) else None)
+    if isinstance(v, bool):    sys.stdout.write("boolean")
+    elif isinstance(v, int):   sys.stdout.write("int")
+    elif isinstance(v, float): sys.stdout.write("double")
+    elif isinstance(v, dict):  sys.stdout.write("object")
+    elif isinstance(v, list):  sys.stdout.write("array")
+    elif isinstance(v, str):   sys.stdout.write("string")
+    else:                      sys.exit(1)
+    sys.exit(0)
 if op == "get":
     if isinstance(cur, dict) and key in cur:
         sys.stdout.write(render(cur[key]))
@@ -169,9 +182,8 @@ json_select() {  # КЛЮЧ | ..
 # различии стоит правило «вызов без поля ничего не меняет». Поэтому род упрощён до строки:
 # знать больше стенду незачем, а притворяться, что знаем, — хуже, чем не знать.
 json_get_type() {  # ИМЯ_ПЕРЕМЕННОЙ КЛЮЧ
-    if _j_py has "$2"; then eval "$1=string"; return 0; fi
-    eval "$1="
-    return 1
+    _j_val="$(_j_py type "$2")" || { eval "$1="; return 1; }
+    eval "$1=\$_j_val"
 }
 
 json_get_keys() {  # ИМЯ_ПЕРЕМЕННОЙ

@@ -19,7 +19,6 @@
 set -u
 
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
-SCRIPT="$ROOT/plugins/lists-catalog/bin/update-lists"
 T="$(mktemp -d /tmp/listsmatch.XXXXXX)"
 trap 'rm -rf "$T"' EXIT INT TERM
 
@@ -38,64 +37,32 @@ mkdir -p "$T/bin" "$T/lists/domains" "$T/etc" "$T/var"
 # Методы каталога списков — псевдонимы плагина lists-catalog (plugins/), поставленного в песочницу.
 . "$ROOT/tests/stub/plugins-env.sh"
 plugins_provision "$T/plugins" lists-catalog
+# Плагин в песочнице — его каталог и рабочие каталоги так, как их выставляет хост (plugin_export_env), и швы каркаса
+# для службы хоста, которые наследует программа плагина через окружение. Сам плагин швов не читает.
+export JSHN_SH="$ROOT/tests/stub/jshn.sh"
+CONF="$T/plugins/conf/lists-catalog"; RUN="$T/plugins/state/lists-catalog"
+SCRIPT="$T/plugins/lib/lists-catalog/bin/update-lists"
+mkdir -p "$CONF"
+cat > "$T/bin/runplugin" <<'EOT'
+#!/bin/sh
+. "$PLUGIN_SH"
+plugin_export_env "$1"; shift
+exec sh "$@"
+EOT
+chmod +x "$T/bin/runplugin"
+# Применение — служба хоста `apply` зовёт метод apply каркаса (его проверяет rpcdmatch). Для стенда списков нужна его суть: ядро
+# применило спеку или отвергло — двойник отвечает так же, как метод: ok, а при отказе ядра — output с его словами.
+cat > "$T/bin/rpcd-apply" <<'EOT'
+#!/bin/sh
+out="$("$STEER" apply --spec "$SPEC" 2>&1)"; rc=$?
+if [ "$rc" = 0 ]; then printf '{"ok":true,"output":"%s"}\n' "$out"; else printf '{"ok":false,"output":"%s"}\n' "${out:-rejected}"; fi
+EOT
+chmod +x "$T/bin/rpcd-apply"
+export RPCD_BIN="$T/bin/rpcd-apply"
 
 # ---- заглушки внешних команд -------------------------------------------------
-# jsonfilter: поддерживаются ровно те выражения, которые использует скрипт.
-cat > "$T/bin/jsonfilter" <<'EOF'
-#!/bin/sh
-# Выражения плагинов (манифест, state.json, ответы хуков) — общая заглушка tests/stub/jsonfilter.
-[ -n "${JSONFILTER_PLUGIN:-}" ] && case "$*" in *plugins\[*|*@.splify2*|*@.compat*|*@.rpc*|*@.ui.*|*@.ok*|*@.error*|*@.warn*|*@.plan*|*@.section*|*@.message*) exec sh "$JSONFILTER_PLUGIN" "$@" ;; esac
-# НЕСКОЛЬКО -e В ОДНОМ ВЫЗОВЕ, как это делает настоящий jsonfilter. Прежняя заглушка
-# запоминала только последнее выражение, и вызов `-e prefixes_files -e domains_files`
-# (именно так спрашивает fetch_missing_lists) отдавал одни доменные списки. Из-за этого
-# стенд не видел половину работы: адресные файлы спеки в цикл доскачивания не попадали
-# вовсе, и проверка на них была бы зелена при любом поведении кода.
-file=""
-exprs=""
-while [ $# -gt 0 ]; do
-    case "$1" in
-        -i) file="$2"; shift 2 ;;
-        # Выражения СКЛАДЫВАЮТСЯ в аргументы, а не в stdin: тело заглушки приходит сюда
-        # heredoc-ом, то есть stdin занят, и прочитанное оттуда было бы исходником python.
-        -e) exprs="$exprs $2"; shift 2 ;;
-        *) shift ;;
-    esac
-done
-# shellcheck disable=SC2086
-python3 - "$file" $exprs <<'PY'
-import json, sys
-path = sys.argv[1]
-try:
-    d = json.load(open(path, encoding='utf-8'))
-except Exception:
-    sys.exit(1)
-for expr in sys.argv[2:]:
-  if expr == '@.base_url':
-    print(d.get('base_url', ''))
-  elif expr in ('@.categories[*].file', '@.domain_lists[*].file'):
-    key = 'categories' if 'categories' in expr else 'domain_lists'
-    for e in d.get(key, []):
-        print(e['file'])
-  elif expr.startswith('@.categories[@.format=') or expr.startswith('@.domain_lists[@.format='):
-    # Записи-наборы: фильтр по format плюс имя поля. Заглушка обязана уметь ровно это
-    # выражение, иначе карта манифеста собиралась бы без наборов, и стенд был бы зелен
-    # при любом их поведении.
-    key = 'categories' if 'categories' in expr else 'domain_lists'
-    field = expr.rsplit('.', 1)[1]
-    for e in d.get(key, []):
-        if e.get('format') == 'srs' and field in e:
-            print(e[field])
-  elif expr in ('@.aliases[*].from', '@.aliases[*].to'):
-    field = expr.rsplit('.', 1)[1]
-    for e in d.get('aliases', []):
-        print(e[field])
-  elif expr.endswith('prefixes_files[*]') or expr.endswith('domains_files[*]'):
-    field = 'prefixes_files' if 'prefixes' in expr else 'domains_files'
-    for ch in d.get('channels', []):
-        for f in ch.get('match', {}).get(field, []):
-            print(f)
-PY
-EOF
+# jsonfilter: общая заглушка tests/stub/jsonfilter — выражения плагинов, службы хоста и каталога списков.
+cp "$ROOT/tests/stub/jsonfilter" "$T/bin/jsonfilter"
 
 # curl: пишет в файл содержимое, зависящее от URL, и протоколирует запрос. Содержимое
 # намеренно РАЗНОЕ по виду: адресный список — CIDR, доменный — имена. Именно на этом
@@ -187,12 +154,12 @@ PATH="$T/bin:$PATH" \
 STEER="$T/bin/steer" \
 SPEC="$T/etc/spec.json" \
 LISTS="$T/lists" \
-MANIFEST="$T/etc/manifest.json" \
-STAMP="$T/var/last-update" \
-LOCK="$T/var/update.lock" \
+MANIFEST="$CONF/manifest.json" \
+STAMP="$RUN/last-update" \
+LOCK="$RUN/update.lock" \
 REPORT="$T/report" \
 FETCH_SH="$ROOT/files/usr/lib/splify2/fetch.sh" \
-    sh "$SCRIPT" > "$T/out" 2>&1
+    runplugin lists-catalog "$SCRIPT" > "$T/out" 2>&1
 
 # ---- проверки ----------------------------------------------------------------
 dom_url="$(grep 'domains/news.lst' "$T/requested" 2>/dev/null | head -1)"
@@ -251,7 +218,7 @@ check "пропуска по причине «нет в манифесте» н�
 #
 # Прогон второй, отдельный: движок теперь отвергает применение, то есть срабатывает
 # ровно ветка отката.
-rm -rf "$T/lists" "$T/var/last-update"
+rm -rf "$T/lists" "$RUN/last-update"
 mkdir -p "$T/lists/domains"
 printf 'prev-address.example/32\n' > "$T/lists/news.lst"
 printf 'prev-domain.example\n'     > "$T/lists/domains/news.lst"
@@ -265,7 +232,7 @@ exit 0
 EOF
 chmod +x "$T/bin/steer"
 
-SANDBOX="$T" PATH="$T/bin:$PATH" STEER="$T/bin/steer" SPEC="$T/etc/spec.json" LISTS="$T/lists" MANIFEST="$T/etc/manifest.json" STAMP="$T/var/last-update" LOCK="$T/var/update.lock" FETCH_SH="$ROOT/files/usr/lib/splify2/fetch.sh"     sh "$SCRIPT" > "$T/out2" 2>&1
+SANDBOX="$T" PATH="$T/bin:$PATH" STEER="$T/bin/steer" SPEC="$T/etc/spec.json" LISTS="$T/lists" MANIFEST="$CONF/manifest.json" STAMP="$RUN/last-update" LOCK="$RUN/update.lock" FETCH_SH="$ROOT/files/usr/lib/splify2/fetch.sh"     runplugin lists-catalog "$SCRIPT" > "$T/out2" 2>&1
 
 check "откат вернул адресный список" "prev-address.example/32" \
       "$(cat "$T/lists/news.lst" 2>/dev/null)"
@@ -280,7 +247,7 @@ check "копий .prev после отката не осталось" "" \
 # файл, и кончившееся место оставляло вместо рабочего списка обрубок. Теперь копия идёт в
 # `<список>.new.<pid>` и переименовывается; заглушка cp отказывает на таких целях — рабочий
 # список обязан остаться прежним целиком, а отказ — попасть в журнал и признак неудачи.
-rm -rf "$T/lists" "$T/var/last-update" "$T/var/update.lock"
+rm -rf "$T/lists" "$RUN/last-update" "$RUN/update.lock"
 mkdir -p "$T/lists/domains"
 printf 'keep-address.example/32\n' > "$T/lists/news.lst"
 printf 'keep-domain.example\n'     > "$T/lists/domains/news.lst"
@@ -298,8 +265,8 @@ for a in "$@"; do case "$a" in *.new.*) exit 1 ;; esac; done
 exec /bin/cp "$@"
 EOF
 chmod +x "$T/bin/cp"
-SANDBOX="$T" PATH="$T/bin:$PATH" STEER="$T/bin/steer" SPEC="$T/etc/spec.json" LISTS="$T/lists" MANIFEST="$T/etc/manifest.json" STAMP="$T/var/last-update" LOCK="$T/var/update.lock" FETCH_SH="$ROOT/files/usr/lib/splify2/fetch.sh" \
-    sh "$SCRIPT" > "$T/out_put" 2>&1
+SANDBOX="$T" PATH="$T/bin:$PATH" STEER="$T/bin/steer" SPEC="$T/etc/spec.json" LISTS="$T/lists" MANIFEST="$CONF/manifest.json" STAMP="$RUN/last-update" LOCK="$RUN/update.lock" FETCH_SH="$ROOT/files/usr/lib/splify2/fetch.sh" \
+    runplugin lists-catalog "$SCRIPT" > "$T/out_put" 2>&1
 rc_put=$?
 rm -f "$T/bin/cp"
 check "отказ записи: рабочий адресный список цел" "keep-address.example/32" "$(cat "$T/lists/news.lst" 2>/dev/null)"
@@ -319,7 +286,7 @@ check "временных копий рядом со списками не ос�
 #
 # Прогон третий, со своим манифестом и своей спекой: здесь важны РАЗМЕРЫ файлов, а не
 # коллизия имён, поэтому имена списков нарочно разные.
-rm -rf "$T/lists" "$T/var/last-update" "$T/requested"
+rm -rf "$T/lists" "$RUN/last-update" "$T/requested"
 mkdir -p "$T/lists/domains" "$T/serve"
 
 cat > "$T/manifest.src" <<EOF
@@ -387,8 +354,8 @@ printf 'a.example\nb.example\n' > "$T/lists/domains/dom.lst"
 printf '# всё вычистили\n'      > "$T/serve/dom.lst"   # записей не осталось вовсе
 
 : > "$T/syslog"
-SANDBOX="$T" PATH="$T/bin:$PATH" STEER="$T/bin/steer" SPEC="$T/etc/spec.json" LISTS="$T/lists" MANIFEST="$T/etc/manifest.json" STAMP="$T/var/last-update" LOCK="$T/var/update.lock" FETCH_SH="$ROOT/files/usr/lib/splify2/fetch.sh" \
-    sh "$SCRIPT" > "$T/out3" 2>&1
+SANDBOX="$T" PATH="$T/bin:$PATH" STEER="$T/bin/steer" SPEC="$T/etc/spec.json" LISTS="$T/lists" MANIFEST="$CONF/manifest.json" STAMP="$RUN/last-update" LOCK="$RUN/update.lock" FETCH_SH="$ROOT/files/usr/lib/splify2/fetch.sh" \
+    runplugin lists-catalog "$SCRIPT" > "$T/out3" 2>&1
 rc3=$?
 
 check "кратно поредевший список не подменён" "400" \
@@ -411,12 +378,12 @@ check "просадка объёма поднимает признак неуд�
 # знать неоткуда. Тогда человек снимает порог (`uci set splify2.main.list_shrink_factor=0`,
 # здесь — тем же швом через окружение). Файл без записей это не отменяет: после такой
 # подмены канал не совпадёт ни с чем.
-rm -f "$T/var/last-update"
+rm -f "$RUN/last-update"
 cidrs 400 > "$T/lists/big.lst"
 printf 'a.example\nb.example\n' > "$T/lists/domains/dom.lst"
 : > "$T/syslog"
-SANDBOX="$T" PATH="$T/bin:$PATH" STEER="$T/bin/steer" SPEC="$T/etc/spec.json" LISTS="$T/lists" MANIFEST="$T/etc/manifest.json" STAMP="$T/var/last-update" LOCK="$T/var/update.lock" FETCH_SH="$ROOT/files/usr/lib/splify2/fetch.sh" \
-    SHRINK_FACTOR=0 sh "$SCRIPT" > "$T/out4" 2>&1
+SANDBOX="$T" PATH="$T/bin:$PATH" STEER="$T/bin/steer" SPEC="$T/etc/spec.json" LISTS="$T/lists" MANIFEST="$CONF/manifest.json" STAMP="$RUN/last-update" LOCK="$RUN/update.lock" FETCH_SH="$ROOT/files/usr/lib/splify2/fetch.sh" \
+    SHRINK_FACTOR=0 runplugin lists-catalog "$SCRIPT" > "$T/out4" 2>&1
 
 check "порог снят — кратно поредевший список применён" "40" \
       "$(grep -c . "$T/lists/big.lst" 2>/dev/null)"
@@ -467,7 +434,7 @@ done < "$SANDBOX/uci.store"
 [ -n "$v" ] || exit 1
 printf '%s\n' "$v"
 EOF
-: > "$T/uci.store"
+rm -f "$CONF/settings.json"
 
 # curl: отдаёт ТОЛЬКО то, что издатель действительно опубликовал по этому адресу. На всё
 # прочее — отказ, и это важно: иначе обходные пути GitHub (зеркало, api, архив) «успешно»
@@ -580,7 +547,7 @@ cat > "$T/etc/spec.json" <<EOF
 EOF
 
 srs_lists_reset() {
-    rm -rf "$T/lists" "$T/var/last-update" "$T/requested" "$T/etc/allow-domains.tag"
+    rm -rf "$T/lists" "$RUN/last-update" "$T/requested" "$CONF/allow-domains.tag"
     mkdir -p "$T/lists/itdog/domains"
     printf '0.0.0.0/32\n'      > "$T/lists/itdog/telegram.lst"
     printf '10.1.0.0/16\n'     > "$T/lists/itdog/youtube.lst"
@@ -596,12 +563,12 @@ srs_lists_reset() {
 srs_run() {  # ТЕГ_КОТОРЫЙ_ОТДАЁТ_ИЗДАТЕЛЬ
     SANDBOX="$T" PATH="$T/bin:$PATH" SRS_TAG="$1" \
     STEER="$T/bin/steer" SPEC="$T/etc/spec.json" LISTS="$T/lists" \
-    MANIFEST="$T/etc/manifest.json" STAMP="$T/var/last-update" LOCK="$T/var/update.lock" \
+    MANIFEST="$CONF/manifest.json" STAMP="$RUN/last-update" LOCK="$RUN/update.lock" \
     FETCH_SH="$ROOT/files/usr/lib/splify2/fetch.sh" \
-    AD_SH="$ROOT/files/usr/share/splify2/allow-domains.sh" \
+    AD_SH="$ROOT/plugins/lists-catalog/lib/allow-domains.sh" \
     AD_TAG_DEFAULT="$AD_TAG" AD_BASE="https://github.com/itdoginfo/allow-domains/releases/download" \
-    AD_STAMP="$T/etc/allow-domains.tag" \
-    sh "$SCRIPT" > "$T/out-srs" 2>&1
+    AD_STAMP="$CONF/allow-domains.tag" \
+    runplugin lists-catalog "$SCRIPT" > "$T/out-srs" 2>&1
 }
 
 srs_lists_reset
@@ -682,15 +649,15 @@ check "неудачи подняли признак неудачи прогон�
 # Отметка версии: по строке на ФАЙЛ. Без неё вопрос «какая у тебя версия списков» ответа не
 # имеет, а ночь качала бы одни и те же байты каждый раз.
 check "отметка версии записана по файлам" "yes" \
-      "$(grep -q "^telegram domains $AD_TAG$" "$T/etc/allow-domains.tag" &&
-         grep -q "^telegram prefixes $AD_TAG$" "$T/etc/allow-domains.tag" && echo yes || echo no)"
+      "$(grep -q "^telegram domains $AD_TAG$" "$CONF/allow-domains.tag" &&
+         grep -q "^telegram prefixes $AD_TAG$" "$CONF/allow-domains.tag" && echo yes || echo no)"
 check "того, чего на диске нет, в отметке тоже нет" "" \
-      "$(grep -o '^youtube prefixes' "$T/etc/allow-domains.tag" 2>/dev/null)"
+      "$(grep -o '^youtube prefixes' "$CONF/allow-domains.tag" 2>/dev/null)"
 
 # ---- тот же тег: в сеть не ходим ---------------------------------------------
 # Тег зафиксирован, значит содержимое релиза то же. Двадцать пять файлов каждую ночь ради
 # одинаковых байтов — это трата на ничего.
-rm -f "$T/requested" "$T/var/last-update"
+rm -f "$T/requested" "$RUN/last-update"
 : > "$T/syslog"
 srs_run "$AD_TAG"
 
@@ -701,37 +668,37 @@ check "и сказано, почему не качается" "yes" \
 check "жалоба про отсутствующие подсети повторяется" "yes" \
       "$(grep -q 'в наборе youtube нет подсетей' "$T/syslog" && echo yes || echo no)"
 
-# ---- тег сменили в uci: качаем заново ------------------------------------------
-# Поднять версию списков может только человек — явным `uci set`. Ночь тег не двигает.
-rm -f "$T/requested" "$T/var/last-update"
+# ---- тег сменили настройкой плагина: качаем заново ------------------------------------------
+# Поднять версию списков может только человек — настройкой плагина. Ночь тег не двигает.
+rm -f "$T/requested" "$RUN/last-update"
 : > "$T/syslog"
-printf 'splify2.main.allow_domains_tag=%s\n' "$AD_TAG2" > "$T/uci.store"
+printf '{"allow_domains_tag":"%s"}\n' "$AD_TAG2" > "$CONF/settings.json"
 srs_run "$AD_TAG2"
 
 check "тег из uci заменяет зашитый в пакет" \
       "https://github.com/itdoginfo/allow-domains/releases/download/$AD_TAG2/telegram.srs" \
       "$(grep -x ".*/$AD_TAG2/telegram.srs" "$T/requested" 2>/dev/null | head -1)"
 check "смена тега перезаписала отметку версии" "yes" \
-      "$(grep -q "^telegram domains $AD_TAG2$" "$T/etc/allow-domains.tag" && echo yes || echo no)"
+      "$(grep -q "^telegram domains $AD_TAG2$" "$CONF/allow-domains.tag" && echo yes || echo no)"
 
 # ---- tag=latest фиксацией не является -------------------------------------------
 # Это единственное значение, которое молча отменяет воспроизводимость, и набрать его
 # человек попробует первым. Берём зашитый тег и говорим об этом вслух.
-rm -f "$T/requested" "$T/var/last-update"
+rm -f "$T/requested" "$RUN/last-update"
 : > "$T/syslog"
-printf 'splify2.main.allow_domains_tag=latest\n' > "$T/uci.store"
+printf '{"allow_domains_tag":"latest"}\n' > "$CONF/settings.json"
 srs_run "$AD_TAG"
 
 check "tag=latest отбит, взят зашитый тег" "yes" \
       "$(grep -q "/$AD_TAG/telegram.srs$" "$T/requested" && echo yes || echo no)"
 check "про отбитый latest сказано вслух" "yes" \
       "$(grep -q 'latest' "$T/syslog" && echo yes || echo no)"
-: > "$T/uci.store"
+rm -f "$CONF/settings.json"
 
 # ---- зашитый в пакет тег — настоящий тег релиза, а не latest ----------------------
 # Файл описания источника едет в пакете, и значение в нём — это версия списков у каждого,
 # кто ничего не настраивал.
-AD_SRC="$ROOT/files/usr/share/splify2/allow-domains.sh"
+AD_SRC="$ROOT/plugins/lists-catalog/lib/allow-domains.sh"
 check "в описании источника зашит тег вида ГГГГ-ММ-ДД_ЧЧ-ММ" "yes" \
       "$(grep -qE '^AD_TAG_DEFAULT=\$\{AD_TAG_DEFAULT:-2[0-9]{3}-[0-9]{2}-[0-9]{2}_[0-9]{2}-[0-9]{2}\}$' "$AD_SRC" &&
          echo yes || echo no)"
@@ -746,7 +713,7 @@ check "в описании источника нет ссылки на latest" "
 # своём. Пока подкаталог заводил кто-то другой (объект rpcd делает mkdir перед записью),
 # этого не было видно; без него `mv` молча не срабатывал, файл не появлялся, а в журнал
 # уходило «обновлён ( записей)» — с пустым числом вместо признака беды.
-rm -rf "$T/lists" "$T/var/last-update" "$T/requested" "$T/etc/allow-domains.tag"
+rm -rf "$T/lists" "$RUN/last-update" "$T/requested" "$CONF/allow-domains.tag"
 mkdir -p "$T/lists"
 : > "$T/syslog"
 srs_run "$AD_TAG"
@@ -767,12 +734,12 @@ srs_rpcd() {  # МЕТОД ВХОД   (тег издателя переопре�
         JSHN_SH="$ROOT/tests/stub/jshn.sh" RPCD_LIB="$ROOT/files/usr/lib/splify2/rpcd" \
         FETCH_SH="$ROOT/files/usr/lib/splify2/fetch.sh" \
         INITD="$T/bin/initd-steer" \
-        AD_SH="$ROOT/files/usr/share/splify2/allow-domains.sh" \
+        AD_SH="$ROOT/plugins/lists-catalog/lib/allow-domains.sh" \
         AD_TAG_DEFAULT="${SRS_TAG_NOW:-$AD_TAG}" \
         AD_BASE="https://github.com/itdoginfo/allow-domains/releases/download" \
-        AD_STAMP="$T/etc/allow-domains.tag" \
+        AD_STAMP="$CONF/allow-domains.tag" \
         STEER="$T/bin/steer" SPEC="$T/etc/spec.json" LISTS="$T/lists" \
-        MANIFEST="$T/etc/manifest.json" UCI_SPLIFY2="$T/etc/config-splify2" \
+        MANIFEST="$CONF/manifest.json" UCI_SPLIFY2="$T/etc/config-splify2" \
         sh "$ROOT/files/usr/libexec/rpcd/splify2" call "$1" 2>"$T/rpcd-err"
 }
 
@@ -818,7 +785,7 @@ check "и файла за каталогом не появилось" "yes" \
 # ---- недостающий список второго издателя доскачивается ПО ТРЕБОВАНИЮ ------------------
 #
 # ЗАЧЕМ ЭТА ПРОВЕРКА. Движок умирает на отсутствующем файле списка, поэтому объект rpcd
-# доскачивает недостающее перед каждой проверкой спеки (см. fetch_missing_lists). Знание «где
+# доскачивает недостающее перед каждой проверкой спеки (хук pre_spec_set плагина, lib/fetch-missing.sh). Знание «где
 # живёт второй издатель» в эту функцию не завозили, и потому путь `itdog/telegram.lst` уезжал
 # ПЕРВОМУ издателю: у него такого файла нет, спека применялась, а канал стоял пустым до
 # первого срабатывания ночного расписания — то есть до суток. Молча.
@@ -856,12 +823,12 @@ check "к первому издателю за этим файлом не ход
 # Отметка тега ставится и здесь: иначе ночное обновление скачало бы тот же зафиксированный
 # релиз ещё раз, потому что «чем набит файл» осталось бы неизвестным.
 check "отметка тега поставлена — ночь не будет качать то же ещё раз" "yes" \
-      "$(grep -q "$AD_TAG" "$T/etc/allow-domains.tag" 2>/dev/null && echo yes || echo no)"
+      "$(grep -q "$AD_TAG" "$CONF/allow-domains.tag" 2>/dev/null && echo yes || echo no)"
 # ОТСУТСТВИЕ МАНИФЕСТА БОЛЬШЕ НЕ ПРЕКРАЩАЕТ РАБОТУ ЦЕЛИКОМ, и это вторая половина находки:
 # прежде функция выходила на первой же строке, если манифеста нет, — и вместе с первым
 # издателем молча выпадал второй, которому манифест не нужен вовсе. Состояние настоящее: на
 # чистом роутере манифест появляется только после первого обращения к списку.
-mv "$T/etc/manifest.json" "$T/etc/manifest.away"
+mv "$CONF/manifest.json" "$T/etc/manifest.away"
 rm -f "$T/lists/rkn.lst" "$T/lists/itdog/domains/telegram.lst" "$T/requested"
 out="$(srs_rpcd apply '{}')"
 check "без манифеста набор ВТОРОГО издателя всё равно доскачался" "20" \
@@ -875,12 +842,12 @@ check "каталога не было — он скачался, и список
 # А вот когда каталог скачать НЕЧЕМ, молчать нельзя: список первого издателя не приедет, и
 # сказать об этом надо. Издатель здесь недоступен целиком — заглушка curl не находит образец.
 mv "$T/manifest.src" "$T/manifest.src.away"
-rm -f "$T/etc/manifest.json" "$T/lists/rkn.lst" "$T/requested"
+rm -f "$CONF/manifest.json" "$T/lists/rkn.lst" "$T/requested"
 out="$(srs_rpcd apply '{}')"
 check "каталог недоступен — про список первого сказано вслух" "yes" \
       "$(printf '%s' "$out" | grep -q 'манифест не загружен' && echo yes || echo no)"
 mv "$T/manifest.src.away" "$T/manifest.src"
-mv "$T/etc/manifest.away" "$T/etc/manifest.json"
+mv "$T/etc/manifest.away" "$CONF/manifest.json"
 
 # СМЕНА ТЕГА ОБЯЗАНА ПРИВЕСТИ К НОВОЙ ЗАГРУЗКЕ, и это единственная проверка, которая ловит
 # разбор, оставленный в общем /tmp. `ad_get` помнит уже разобранное по имени файла, а не по
@@ -897,11 +864,11 @@ check "после смены тега набор скачан заново, а �
 check "и файл на месте" "20" \
       "$(grep -c . "$T/lists/itdog/domains/telegram.lst" 2>/dev/null)"
 check "отметка обновилась на новый тег" "yes" \
-      "$(grep -q "$AD_TAG2" "$T/etc/allow-domains.tag" 2>/dev/null && echo yes || echo no)"
+      "$(grep -q "$AD_TAG2" "$CONF/allow-domains.tag" 2>/dev/null && echo yes || echo no)"
 
 # Списки ПЕРВОГО издателя этой развилкой не затронуты: путь без его подкаталога идёт прежней
 # дорогой. Проверка нужна затем, что развилка стоит в общем цикле.
-cp "$T/manifest.src" "$T/etc/manifest.json"
+cp "$T/manifest.src" "$CONF/manifest.json"
 rm -f "$T/lists/rkn.lst" "$T/requested"
 out="$(srs_rpcd apply '{}')"
 check "список первого издателя по-прежнему качается через манифест" "yes" \
@@ -934,7 +901,7 @@ check "и он лёг на место" "yes" \
 # стенде: копия расходится с таблицей на первом же добавленном сервисе, и стенд после этого
 # зелен по неверной причине.
 ad_cat() {  # ОПЕРАЦИЯ   (ответ метода — в $T/cat.json)
-    python3 - "$1" "$T/cat.json" "$ROOT/files/usr/share/splify2/allow-domains.sh" <<'PY'
+    python3 - "$1" "$T/cat.json" "$ROOT/plugins/lists-catalog/lib/allow-domains.sh" <<'PY'
 import json, re, sys
 op, catf, srcf = sys.argv[1], sys.argv[2], sys.argv[3]
 try:
@@ -980,8 +947,8 @@ SRS_TAG_NOW=""
 # на котором каталог открывают впервые.
 srs_lists_reset
 rm -rf "$T/lists"; mkdir -p "$T/lists"
-rm -f "$T/etc/allow-domains.tag" "$T/requested"
-: > "$T/uci.store"
+rm -f "$CONF/allow-domains.tag" "$T/requested"
+rm -f "$CONF/settings.json"
 
 ad_catalog
 check "allow_domains отвечает успехом" "true" "$(ad_cat top:ok)"
@@ -1010,7 +977,7 @@ ad_catalog
 check "у скачанного сервиса have есть" "yes" "$(ad_cat haskey:telegram)"
 check "и в нём оба вида — набор один, кладутся оба" "domains prefixes" "$(ad_cat hvkinds:telegram)"
 check "тег в have — тот, что записан в отметке" \
-      "$(awk '$1=="telegram" && $2=="domains" {print $3}' "$T/etc/allow-domains.tag")" \
+      "$(awk '$1=="telegram" && $2=="domains" {print $3}' "$CONF/allow-domains.tag")" \
       "$(ad_cat hv:telegram:domains:tag)"
 check "число строк в have — то, что лежит на диске" \
       "$(grep -c . "$T/lists/itdog/domains/telegram.lst")" "$(ad_cat hv:telegram:domains:lines)"
@@ -1039,7 +1006,7 @@ rm -f "$T/lists/itdog/domains/anime.lst"
 # Предупреждение, съеденное подоболочкой, — ровно та беда, ради которой разбор и печать
 # тега в описании источника разведены. Проверяется по СЛЕДСТВИЮ: в ответе жалоба непуста,
 # а тег — умолчание, а не мусор из uci.
-printf 'splify2.main.allow_domains_tag=%s\n' 'not a tag/../../x' > "$T/uci.store"
+printf '{"allow_domains_tag":"%s"}\n' 'not a tag/../../x' > "$CONF/settings.json"
 ad_catalog
 check "негодный тег из uci даёт непустую жалобу" "yes" \
       "$(ad_cat top:tag_warn | grep -q . && echo yes || echo no)"
@@ -1047,7 +1014,7 @@ check "и жалоба называет то, что человек набрал
       "$(ad_cat top:tag_warn | grep -q 'not a tag' && echo yes || echo no)"
 check "а качать будем по ЗАШИТОМУ тегу, а не по мусору" "$AD_TAG" "$(ad_cat top:tag)"
 
-printf 'splify2.main.allow_domains_tag=latest\n' > "$T/uci.store"
+printf '{"allow_domains_tag":"latest"}\n' > "$CONF/settings.json"
 ad_catalog
 check "tag=latest отбит и назван вслух" "yes" \
       "$(ad_cat top:tag_warn | grep -q 'latest' && echo yes || echo no)"
@@ -1055,12 +1022,12 @@ check "и тег остался зашитым" "$AD_TAG" "$(ad_cat top:tag)"
 
 # Годный тег из uci метод обязан ПОКАЗАТЬ: иначе человек, поднявший версию руками, видел бы
 # в каталоге не ту, по которой качается.
-printf 'splify2.main.allow_domains_tag=%s\n' "$AD_TAG2" > "$T/uci.store"
+printf '{"allow_domains_tag":"%s"}\n' "$AD_TAG2" > "$CONF/settings.json"
 ad_catalog
 check "годный тег из uci доезжает до каталога" "$AD_TAG2" "$(ad_cat top:tag)"
 check "и жалобы при нём нет" "" "$(ad_cat top:tag_warn)"
 check "а зашитый рядом виден по-прежнему" "$AD_TAG" "$(ad_cat top:tag_default)"
-: > "$T/uci.store"
+rm -f "$CONF/settings.json"
 
 # ---- метод НЕ ХОДИТ В СЕТЬ -------------------------------------------------------
 #
@@ -1110,7 +1077,7 @@ print("yes" if "allow_domains" in a["read"]["ubus"]["splify2"] else "no")' \
 # здесь ничего не значит — ровно так выглядел бы и метод, стирающий не тот путь.
 srs_lists_reset
 rm -rf "$T/lists"; mkdir -p "$T/lists"
-rm -f "$T/etc/allow-domains.tag" "$T/requested"
+rm -f "$CONF/allow-domains.tag" "$T/requested"
 # Спека на время удаления не должна ссылаться на удаляемое — иначе сработает (законный)
 # отказ «список используется каналом», и проверялся бы он, а не удаление.
 cp "$T/etc/spec.json" "$T/etc/spec.keep"
@@ -1130,9 +1097,9 @@ check "а второй вид того же набора не тронут — �
 # пережившая свой файл, она заявляет о том, чего нет, — и каталог показал бы версию у
 # списка, которого на роутере не осталось.
 check "отметка версии удалённого вида снята" "" \
-      "$(awk '$1=="telegram" && $2=="domains" {print $3}' "$T/etc/allow-domains.tag" 2>/dev/null)"
+      "$(awk '$1=="telegram" && $2=="domains" {print $3}' "$CONF/allow-domains.tag" 2>/dev/null)"
 check "а отметка оставшегося вида цела" "yes" \
-      "$(awk '$1=="telegram" && $2=="prefixes" {print $3}' "$T/etc/allow-domains.tag" | grep -q . &&
+      "$(awk '$1=="telegram" && $2=="prefixes" {print $3}' "$CONF/allow-domains.tag" | grep -q . &&
          echo yes || echo no)"
 ad_catalog
 check "и каталог про удалённый вид больше не говорит" "prefixes" "$(ad_cat hvkinds:telegram)"
@@ -1163,7 +1130,7 @@ check "используемый каналом список второго из�
 check "и сказано, почему" "yes" \
       "$(printf '%s' "$out" | grep -q 'используется каналом' && echo yes || echo no)"
 check "и отметка версии при отказе цела" "yes" \
-      "$(awk '$1=="telegram" && $2=="domains" {print $3}' "$T/etc/allow-domains.tag" | grep -q . &&
+      "$(awk '$1=="telegram" && $2=="domains" {print $3}' "$CONF/allow-domains.tag" | grep -q . &&
          echo yes || echo no)"
 
 out="$(srs_rpcd list_remove '{"id":"itdog:nosuchservice","kind":"domains"}')"
@@ -1188,7 +1155,7 @@ check "list_remove отвергает выход за каталог списк�
 #
 # Проверяется ночное обновление: оно ходит по файлам СПЕКИ, и набор должен разложиться на две
 # половины по путям, которые назвал каталог, — ровно как у зашитого издателя.
-rm -rf "$T/lists" "$T/var/last-update" "$T/requested" "$T/etc/allow-domains.tag"
+rm -rf "$T/lists" "$RUN/last-update" "$T/requested" "$CONF/allow-domains.tag"
 mkdir -p "$T/lists/catalog/domains"
 printf '0.0.0.0/32\n'  > "$T/lists/catalog/telegram.srs.lst"
 printf 'old.example\n' > "$T/lists/catalog/domains/telegram.srs.lst"
@@ -1258,7 +1225,7 @@ EOF
 #
 # Признак выключенности — СНЯТАЯ ССЫЛКА автозапуска плюс неработающая служба: остановленная
 # служба бывает случайностью, снятая ссылка ставится ровно одним человеческим действием.
-rm -rf "$T/lists" "$T/var/last-update" "$T/rcd"
+rm -rf "$T/lists" "$RUN/last-update" "$T/rcd"
 mkdir -p "$T/lists/domains" "$T/rcd"
 cat > "$T/bin/steer" <<'EOF'
 #!/bin/sh
@@ -1280,10 +1247,10 @@ rm -f "$T/applied.log" "$T/initd.log" "$T/steer-running"
 
 run_update() {
     SANDBOX="$T" PATH="$T/bin:$PATH" STEER="$T/bin/steer" SPEC="$T/etc/spec.json" \
-        LISTS="$T/lists" MANIFEST="$T/etc/manifest.json" STAMP="$T/var/last-update" \
-        LOCK="$T/var/update.lock" FETCH_SH="$ROOT/files/usr/lib/splify2/fetch.sh" \
+        LISTS="$T/lists" MANIFEST="$CONF/manifest.json" STAMP="$RUN/last-update" \
+        LOCK="$RUN/update.lock" FETCH_SH="$ROOT/files/usr/lib/splify2/fetch.sh" \
         STEER_INIT="$T/bin/initd-steer" RC_D="$T/rcd" \
-        sh "$SCRIPT" > "$T/out-off" 2>&1
+        runplugin lists-catalog "$SCRIPT" > "$T/out-off" 2>&1
 }
 
 run_update
@@ -1299,7 +1266,7 @@ check "и копий .prev при выключенном ядре не оста�
       "$(find "$T/lists" -name '*.prev' 2>/dev/null | tr '\n' ' ')"
 
 # Автозапуск на месте — прежнее поведение целиком: правила ставятся, резолвер перечитывает.
-rm -rf "$T/lists" "$T/var/last-update"
+rm -rf "$T/lists" "$RUN/last-update"
 mkdir -p "$T/lists/domains"
 ln -sf "$T/bin/initd-steer" "$T/rcd/S94steer"
 rm -f "$T/applied.log" "$T/initd.log"
@@ -1308,7 +1275,7 @@ check "включённому движку правила ставятся ка�
       "$([ -s "$T/applied.log" ] && echo yes || echo no)"
 
 # Работающая служба со снятой ссылкой — человек поднял её руками, и мешать ему незачем.
-rm -rf "$T/lists" "$T/var/last-update"
+rm -rf "$T/lists" "$RUN/last-update"
 mkdir -p "$T/lists/domains"
 rm -f "$T/rcd/S94steer" "$T/applied.log"
 : > "$T/steer-running"
@@ -1321,14 +1288,14 @@ check "работающей службе правила ставятся, даж
 # Заглушка провайдера или captive portal отдают 200 и HTML; `[ -s ]` такой файл пропускает.
 # Манифест подменялся без проверки, jsonfilter на нём молчал, и каждый список «нет в манифесте,
 # пропущен» — до следующей удачной ночи каталог был пуст и в интерфейсе.
-rm -rf "$T/lists" "$T/var/last-update"
+rm -rf "$T/lists" "$RUN/last-update"
 mkdir -p "$T/lists/domains"
 cp "$T/manifest.src" "$T/manifest.good"
 printf '<html><body>blocked</body></html>\n' > "$T/manifest.src"
 : > "$T/syslog"
 run_update
 check "HTML вместо манифеста: рабочий манифест остался JSON" "yes" \
-      "$(python3 -c "import json,sys; json.load(open(sys.argv[1]))" "$T/etc/manifest.json" 2>/dev/null && echo yes || echo no)"
+      "$(python3 -c "import json,sys; json.load(open(sys.argv[1]))" "$CONF/manifest.json" 2>/dev/null && echo yes || echo no)"
 check "и об этом сказано" "yes" "$(grep -q 'манифест' "$T/syslog" && grep -q 'не JSON\|не разбирается' "$T/syslog" && echo yes || echo no)"
 cp "$T/manifest.good" "$T/manifest.src"
 
@@ -1339,24 +1306,24 @@ cp "$T/manifest.good" "$T/manifest.src"
 # ровно то, ради чего замок заведён (I-334). Окно здесь застывает: каталог замка есть, pid в нём
 # нет, а заглушка sleep — то, что делает первый прогон, пока второй ждёт: дописывает свой pid.
 # Pid — живого процесса (самого стенда), иначе замок законно сочли бы брошенным.
-rm -rf "$T/lists" "$T/var/last-update" "$T/var/update.lock"
-mkdir -p "$T/lists/domains" "$T/var/update.lock"
+rm -rf "$T/lists" "$RUN/last-update" "$RUN/update.lock"
+mkdir -p "$T/lists/domains" "$RUN/update.lock"
 cat > "$T/bin/sleep" <<EOF
 #!/bin/sh
-[ -f "$T/var/update.lock/pid" ] || echo $$ > "$T/var/update.lock/pid"
+[ -f "$RUN/update.lock/pid" ] || echo $$ > "$RUN/update.lock/pid"
 EOF
 chmod +x "$T/bin/sleep"
 : > "$T/syslog"
 run_update
 rm -f "$T/bin/sleep"
 check "замок без pid не снесён как зависший" "yes;$$" \
-      "$([ -d "$T/var/update.lock" ] && echo yes || echo no);$(cat "$T/var/update.lock/pid" 2>/dev/null)"
+      "$([ -d "$RUN/update.lock" ] && echo yes || echo no);$(cat "$RUN/update.lock/pid" 2>/dev/null)"
 check "и второй прогон вышел, сказав, что обновление идёт" "yes" \
       "$(grep -q 'уже идёт' "$T/syslog" && echo yes || echo no)"
-rm -rf "$T/var/update.lock"
+rm -rf "$RUN/update.lock"
 # А брошенный замок без pid (прогон умер между mkdir и записью pid) по-прежнему снимается:
 # pid не появился и через секунду — значит ждать некого.
-mkdir -p "$T/var/update.lock"
+mkdir -p "$RUN/update.lock"
 : > "$T/syslog"
 run_update
 check "брошенный замок без pid снят, прогон прошёл" "yes;yes" \
@@ -1366,13 +1333,13 @@ check "брошенный замок без pid снят, прогон прош�
 #
 # Ловушка на INT/TERM снимала каталог замка и... продолжала работу: флаги failed/changed
 # терялись вместе с ним, а второй прогон мог начаться параллельно — ровно то, ради чего замок.
-rm -rf "$T/lists" "$T/var/last-update" "$T/var/update.lock"
+rm -rf "$T/lists" "$RUN/last-update" "$RUN/update.lock"
 mkdir -p "$T/lists/domains"
 CURL_SLEEP=5 SANDBOX="$T" PATH="$T/bin:$PATH" STEER="$T/bin/steer" SPEC="$T/etc/spec.json" \
-    LISTS="$T/lists" MANIFEST="$T/etc/manifest.json" STAMP="$T/var/last-update" \
-    LOCK="$T/var/update.lock" FETCH_SH="$ROOT/files/usr/lib/splify2/fetch.sh" \
+    LISTS="$T/lists" MANIFEST="$CONF/manifest.json" STAMP="$RUN/last-update" \
+    LOCK="$RUN/update.lock" FETCH_SH="$ROOT/files/usr/lib/splify2/fetch.sh" \
     STEER_INIT="$T/bin/initd-steer" RC_D="$T/rcd" \
-    sh "$SCRIPT" > "$T/out-term" 2>&1 &
+    runplugin lists-catalog "$SCRIPT" > "$T/out-term" 2>&1 &
 bg=$!
 sleep 1
 kill -TERM "$bg" 2>/dev/null
@@ -1380,14 +1347,14 @@ i=0; while [ $i -lt 40 ] && kill -0 "$bg" 2>/dev/null; do sleep 0.25; i=$((i + 1
 alive=0; kill -0 "$bg" 2>/dev/null && alive=1
 kill -KILL "$bg" 2>/dev/null; wait "$bg" 2>/dev/null
 check "TERM: прогон завершился, а не продолжил работу" "0" "$alive"
-check "TERM: замок снят" "no" "$([ -d "$T/var/update.lock" ] && echo yes || echo no)"
+check "TERM: замок снят" "no" "$([ -d "$RUN/update.lock" ] && echo yes || echo no)"
 pkill -f "$T/bin/curl" 2>/dev/null
 
 # ---- подгонка под память называет числа, а не молчит и не говорит «как есть» (I-545) ----------
 #
 # `steer fit` склеивает соседние подсети, и список после него — другой: меньше записей и больше
 # охват. Журнал и ответ обновления обязаны это сказать, с числами.
-rm -rf "$T/lists" "$T/var/last-update" "$T/var/update.lock"
+rm -rf "$T/lists" "$RUN/last-update" "$RUN/update.lock"
 mkdir -p "$T/lists/domains"
 cat > "$T/bin/steer" <<'EOF'
 #!/bin/sh
@@ -1410,7 +1377,7 @@ chmod +x "$T/bin/steer"
 run_update
 check "подгонка сработала — журнал называет числа" "yes" \
       "$(grep -q 'подогнан под память: было 2 записей, стало 1.*лишних адресов 300' "$T/syslog" && echo yes || echo no)"
-rm -rf "$T/lists" "$T/var/last-update" "$T/var/update.lock"; mkdir -p "$T/lists/domains"; : > "$T/syslog"
+rm -rf "$T/lists" "$RUN/last-update" "$RUN/update.lock"; mkdir -p "$T/lists/domains"; : > "$T/syslog"
 FIT_FITS=false run_update
 check "не влезло — журнал не говорит «как есть» и называет склейку" "yes;no" \
       "$(grep -q 'не влезает в бюджет.*было 2 записей.*лишних адресов 300.*без обрезки' "$T/syslog" && echo yes || echo no);$(grep -q 'загружаем как есть' "$T/syslog" && echo yes || echo no)"

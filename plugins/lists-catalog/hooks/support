@@ -1,0 +1,35 @@
+#!/bin/sh
+# Хук support_report: раздел отчёта поддержки — какой каталог, какая версия списков второго издателя, что лежит на диске.
+# Без секретов: у адреса каталога отрезается всё после «?».
+. "${STEER_PLUGIN_DIR:?программа запускается хостом splify2 (нет STEER_PLUGIN_DIR)}/lib/base.sh"
+. "$STEER_PLUGIN_DIR/lib/allow-domains.sh"
+cat >/dev/null
+lists_init
+
+url="$(catalog_url)"
+text="catalog: ${url%%\?*}"
+if [ -s "$CATALOG_FILE" ]; then
+    text="$text
+catalog file: $(wc -c < "$CATALOG_FILE") bytes"
+else
+    text="$text
+catalog file: none"
+fi
+ad_tag_resolve
+text="$text
+$AD_REPO tag: $AD_TAG${AD_TAG_WARN:+ ($AD_TAG_WARN)}"
+n_lst="$(find "$LISTS_DIR" -name '*.lst' -type f 2>/dev/null | grep -c .)"
+n_srs="$(find "$LISTS_DIR" -name '*.srs' -type f 2>/dev/null | grep -c .)"
+n_own="$(find "$LISTS_DIR/$CUSTOM_DIR" -name '*.lst' -type f 2>/dev/null | grep -c .)"
+text="$text
+lists on disk: $n_lst lst, $n_srs srs, own: $n_own"
+[ -s "$RUN_DIR/last-update" ] && text="$text
+last update: $(cat "$RUN_DIR/last-update")"
+
+json_init
+json_add_boolean ok 1
+json_add_object section
+json_add_string title "lists-catalog"
+json_add_string text "$text"
+json_close_object
+json_dump

@@ -1,0 +1,4 @@
+{
+  "plugin.name": "Settings archive",
+  "plugin.description": "Export the router settings to a file and restore them from it"
+}

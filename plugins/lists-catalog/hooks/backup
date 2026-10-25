@@ -1,0 +1,170 @@
+#!/bin/sh
+# Хук backup_sections: свои списки и настройки плагина в архиве настроек (плагин backup, раздел «Хуки» splify2-api).
+#
+# Три операции (ctx.op):
+#   export  — отдать разделы: `list_domains_<имя>`, `list_prefixes_<имя>` на каждый свой список и `settings` — значения
+#             настроек плагина (JSON одной строкой). Имя списка в имени раздела закодировано (sec_enc): в разделе
+#             допустимы только буквы, цифры и подчёркивание;
+#   check   — проверить присланные разделы, ничего не меняя: отказ (`ok:false`) отменяет восстановление целиком, до
+#             первой записи у кого бы то ни было;
+#   restore — записать: списки — через тот же санитайзер, что при загрузке своего списка (расхождение между «что
+#             принимает загрузка» и «что принимает восстановление» означало бы список, который нельзя вернуть на свой же
+#             роутер), настройки — службой хоста по схеме. Ответ — `restored`: что и сколько записано.
+#
+# Отсутствие приватных данных здесь не случайно: списки издателя в архив не едут — это копия того, что публикуется
+# upstream, одинакова у всех и скачивается сама перед каждой проверкой спеки (hooks/ensure-lists).
+. "${STEER_PLUGIN_DIR:?программа запускается хостом splify2 (нет STEER_PLUGIN_DIR)}/lib/base.sh"
+# Кусок текста для имени раздела не длиннее 64 знаков: «list_domains_» — 13.
+SEC_NAME_MAX=64
+
+input="$(cat)"
+# lists_init читает ответ хоста тем же jshn, поэтому — ДО разбора запроса: json_load заменяет разбираемый документ.
+lists_init
+json_load "$input" 2>/dev/null || { echo '{"ok":false,"error":"неразбираемый запрос"}'; exit 0; }
+json_select ctx 2>/dev/null || { echo '{"ok":false,"error":"нет контекста"}'; exit 0; }
+json_get_var op op
+
+# Раздел → «вид имя» (или код 1, если раздел не наш или имя негодно).
+parse_section() {  # ИМЯ_РАЗДЕЛА -> «вид имя»
+    case "$1" in
+        list_domains_*) _ps_k=domains; _ps_e="${1#list_domains_}" ;;
+        list_prefixes_*) _ps_k=prefixes; _ps_e="${1#list_prefixes_}" ;;
+        *) return 1 ;;
+    esac
+    case "$_ps_e" in ''|*[!A-Za-z0-9_]*) return 1 ;; esac
+    # Хвост «_» без пары — не наша кодировка (за `_` всегда `_` или `d`).
+    _ps_n="$(sec_dec "$_ps_e")"
+    case "$_ps_n" in ''|*[!A-Za-z0-9_-]*) return 1 ;; esac
+    [ "$(sec_enc "$_ps_n")" = "$_ps_e" ] || return 1
+    printf '%s %s' "$_ps_k" "$_ps_n"
+}
+
+case "$op" in
+export)
+    json_init
+    json_add_boolean ok 1
+    warns=""
+    json_add_object sections
+    for f in "$LISTS_DIR/$CUSTOM_DIR"/*.lst "$LISTS_DIR/$CUSTOM_DIR"/domains/*.lst; do
+        [ -f "$f" ] || continue
+        n="${f##*/}"; n="${n%.lst}"
+        # Имя проверяется и на выходе: в каталог мог положить файл не интерфейс, а руки, и заголовок раздела получился
+        # бы таким, какой сам же разборщик отвергнет.
+        case "$n" in ''|*[!A-Za-z0-9_-]*) continue ;; esac
+        case "$f" in *"/$CUSTOM_DIR/domains/"*) k=domains ;; *) k=prefixes ;; esac
+        sec="list_${k}_$(sec_enc "$n")"
+        if [ "${#sec}" -gt "$SEC_NAME_MAX" ]; then
+            warns="${warns:+$warns
+}список $n не попал в архив: имя длиннее допустимого"
+            continue
+        fi
+        # CR и прочие управляющие знаки сняты: архив с ними не восстановится (в нём разрешены только перевод строки и
+        # табуляция).
+        json_add_string "$sec" "$(tr -d '\000-\010\013-\037' < "$f")"
+    done
+    if [ -s "$CONF_DIR/settings.json" ]; then
+        json_add_string settings "$(tr -d '\n\r' < "$CONF_DIR/settings.json")"
+    fi
+    json_close_object
+    if [ -n "$warns" ]; then
+        json_add_array warn
+        while IFS= read -r line; do json_add_string "" "$line"; done <<EOT
+$warns
+EOT
+        json_close_array
+    fi
+    json_dump
+    ;;
+
+check|restore)
+    json_select sections 2>/dev/null || { echo '{"ok":true}'; exit 0; }
+    json_get_keys keys
+    # Разбор: каждый раздел кладётся в рабочий каталог файлом, чтобы его можно было прогнать через санитайзер.
+    W="$(mktemp -d "$RUN_DIR/restore.XXXXXX")" || { echo '{"ok":false,"error":"не удалось развернуть разделы — кончилось место?"}'; exit 0; }
+    trap 'rm -rf "$W"' EXIT
+    entries=""
+    settings_text=""
+    for key in $keys; do
+        json_get_var text "$key"
+        case "$key" in
+            settings) settings_text="$text"; continue ;;
+        esac
+        ks="$(parse_section "$key")" || { s2_fail "раздел «$key» не понят"; }
+        kind="${ks%% *}"; name="${ks#* }"
+        # Пустая запись у одного плагина — один раздел на список: повтор имени невозможен (имена разделов уникальны).
+        printf '%s\n' "$text" > "$W/$key"
+        sz="$(wc -c 2>/dev/null < "$W/$key" || echo 0)"
+        [ "$sz" -le "$LIST_MAX_BYTES" ] ||
+            s2_fail "список «$name» больше $((LIST_MAX_BYTES / 1024)) КБ — столько на роутер не кладём"
+        entries="$entries $key"
+    done
+    if [ -n "$settings_text" ]; then
+        json_load "$settings_text" 2>/dev/null || s2_fail "настройки плагина в архиве не разбираются"
+        json_get_keys skeys
+        for sk in $skeys; do
+            json_get_var sv "$sk"
+            setting_value_ok "$sk" "$sv" || s2_fail "настройка «$sk» из архива не годится"
+        done
+    fi
+    if [ "$op" = check ]; then echo '{"ok":true}'; exit 0; fi
+
+    # ---- restore: с этого места пишем на диск ----
+    res=""
+    warns=""
+    for key in $entries; do
+        ks="$(parse_section "$key")"
+        kind="${ks%% *}"; name="${ks#* }"
+        # Свои списки — ТЕМ ЖЕ санитайзером, что и list_put.
+        sanitize_list "$kind" "$W/$key" "$W/$key.clean" "$W/$key.stat"
+        kept=0; dropped=0
+        read -r kept dropped < "$W/$key.stat"
+        dest="$(custom_path "$name" "$kind")"
+        mkdir -p "$(dirname "$dest")"
+        # Перенос внутри одной ФС: между рабочим каталогом (память) и флешем busybox копирует, и обрыв оставил бы на
+        # месте рабочего списка обрубок.
+        if cp "$W/$key.clean" "$dest.new.$$" && mv "$dest.new.$$" "$dest"; then
+            res="$res $kind:$name:${kept:-0}:${dropped:-0}"
+        else
+            rm -f "$dest.new.$$"
+            warns="${warns:+$warns
+}список $name не записался"
+        fi
+    done
+    if [ -n "$settings_text" ]; then
+        json_load "$settings_text"
+        json_get_keys skeys
+        for sk in $skeys; do
+            json_get_var sv "$sk"
+            "$SPLIFY2_HOST" settings set "$sk" "$sv" >/dev/null 2>&1 ||
+                warns="${warns:+$warns
+}настройка $sk не записалась"
+        done
+        # Адрес каталога мог смениться: кэш перечня — от прежнего.
+        rm -f "$CATALOG_FILE" 2>/dev/null
+    fi
+    json_init
+    json_add_boolean ok 1
+    json_add_array restored
+    for e in $res; do
+        k="${e%%:*}"; rest="${e#*:}"; nm="${rest%%:*}"; rest="${rest#*:}"
+        json_add_object ""
+        json_add_string name "$nm"
+        json_add_string kind "$k"
+        json_add_int count "${rest%%:*}"
+        json_add_int dropped "${rest#*:}"
+        json_close_object
+    done
+    json_close_array
+    if [ -n "$warns" ]; then
+        json_add_array warn
+        while IFS= read -r line; do json_add_string "" "$line"; done <<EOT
+$warns
+EOT
+        json_close_array
+    fi
+    json_dump
+    ;;
+*)
+    echo '{"ok":true}'
+    ;;
+esac

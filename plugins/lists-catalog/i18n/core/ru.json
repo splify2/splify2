@@ -1,0 +1,9 @@
+{
+  "Lists catalog": "Каталог списков",
+  "Catalog address": "Каталог",
+  "Address of the catalog file. Empty - the splify2-lists catalog.": "Адрес файла каталога списков. Пусто — каталог splify2-lists.",
+  "List shrink limit": "Порог сокращения списка",
+  "A list that shrank by this factor or more during an update is not applied. 0 - no limit.": "Список, уменьшившийся при обновлении во столько раз и больше, не применяется. 0 — без порога.",
+  "Second publisher release": "Версия списков второго издателя",
+  "Release tag of the allow-domains lists. Empty - the release pinned in this plugin.": "Тег релиза списков allow-domains. Пусто — версия, закреплённая в плагине."
+}

@@ -186,12 +186,6 @@ cp files/usr/sbin/splify2-plugin-sync "$PKG/usr/sbin/splify2-plugin-sync"
 cp files/etc/init.d/splify2-recheck "$PKG/etc/init.d/splify2-recheck"
 chmod 0755 "$PKG/etc/init.d/splify2-recheck"
 mkdir -p "$PKG/usr/share/splify2"
-# Описание второго издателя списков (itdoginfo/allow-domains): где он живёт, каким ТЕГОМ
-# РЕЛИЗА зафиксирован, что публикует и как его двоичные наборы становятся нашими списками.
-# Едет файлом, а не таблицей в скрипте, по тому же доводу, что каталог резолверов выше; а
-# тег в нём — это версия списков у каждого, кто ничего не настраивал, поэтому поднимать её
-# может только новая сборка пакета, а не роутер сам себе ночью.
-cp files/usr/share/splify2/allow-domains.sh "$PKG/usr/share/splify2/allow-domains.sh"
 # Схема ключей спеки, которой пользуется каркас на LuCI JS, пока ядро не умеет `steer spec-schema`
 # (метод spec_schema: ответ ядра — главный, этот файл — запасной, с пометкой source: bundled).
 cp files/usr/share/splify2/spec-schema.json "$PKG/usr/share/splify2/spec-schema.json"
@@ -232,7 +226,6 @@ chmod 0644 "$PKG/lib/upgrade/keep.d/splify2"
 chmod 0755 "$PKG/usr/libexec/rpcd/splify2" \
            "$PKG/usr/sbin/splify2-update-subs" \
            "$PKG/usr/sbin/splify2-purge"
-chmod 0644 "$PKG/usr/share/splify2/allow-domains.sh"
 chmod 0644 "$PKG"/usr/lib/splify2/*.sh "$PKG"/usr/lib/splify2/rpcd/*.sh
 cp files/usr/lib/splify2/plugin-rpcd "$PKG/usr/lib/splify2/plugin-rpcd"
 chmod 0755 "$PKG/usr/lib/splify2/plugin-rpcd" "$PKG/usr/sbin/splify2-plugin-sync"
@@ -240,6 +233,10 @@ chmod 0755 "$PKG/usr/lib/splify2/plugin-rpcd" "$PKG/usr/sbin/splify2-plugin-sync
 cp files/usr/lib/splify2/methods.tsv "$PKG/usr/lib/splify2/methods.tsv"
 chmod 0644 "$PKG/usr/lib/splify2/methods.tsv"
 cp files/usr/sbin/splify2-task "$PKG/usr/sbin/splify2-task"
+# Службы хоста для программ плагинов (splify2-api, «Службы хоста»): скачивание, спека, архив настроек каркаса,
+# настройки плагина, применение. Единственный путь плагина к файлам каркаса.
+cp files/usr/sbin/splify2-host "$PKG/usr/sbin/splify2-host"
+chmod 0755 "$PKG/usr/sbin/splify2-host"
 cp files/usr/sbin/splify2-events "$PKG/usr/sbin/splify2-events"
 cp files/etc/init.d/splify2-events "$PKG/etc/init.d/splify2-events"
 chmod 0755 "$PKG/usr/sbin/splify2-task" "$PKG/usr/sbin/splify2-events" "$PKG/etc/init.d/splify2-events"
@@ -465,7 +462,7 @@ chmod +x build/scripts/pre-remove
 # (fetch.sh), про второй такой файл он промолчал бы, а второй появился (fast.sh, быстрый путь
 # опроса). Теперь добавить подключение и забыть укладку нельзя.
 for _need in $(grep -ho '/usr/lib/splify2/[a-z0-9_-]*\.sh' \
-                    files/usr/libexec/rpcd/splify2 plugins/lists-catalog/bin/update-lists \
+                    files/usr/libexec/rpcd/splify2 files/usr/sbin/splify2-host \
                     files/etc/init.d/splify2-recheck files/usr/lib/splify2/rpcd/*.sh \
                     files/usr/lib/splify2/*.sh files/usr/sbin/splify2-task files/usr/sbin/splify2-events \
                     plugins/*/lib/*.sh plugins/*/bin/* |
@@ -490,16 +487,11 @@ test -s "$PKG/usr/lib/splify2/rpcd/common.sh" || {
 # автоматически чистить их в postrm нельзя (обновление opkg это удаление плюс установка).
 test -x "$PKG/usr/sbin/splify2-purge" || {
     echo "в пакете нет usr/sbin/splify2-purge — следы пакета убрать будет нечем"; exit 1; }
-# Без описания источника второй издатель не работает вовсе, и молча: объект rpcd ответит
-# «пакет собран не целиком», а ночное обновление объявит каждый его список «нет в манифесте,
-# пропущен» — то есть список замрёт последней скачанной копией НАВСЕГДА, без признака
-# ошибки. Проверяется не только наличие, но и зашитый тег: без него версия списков у
-# человека определялась бы тем, когда он нажал кнопку.
-test -s "$PKG/usr/share/splify2/allow-domains.sh" || {
-    echo "в пакете нет usr/share/splify2/allow-domains.sh — списки itdoginfo/allow-domains брать нечем"
-    exit 1; }
-grep -qE '^AD_TAG_DEFAULT=\$\{AD_TAG_DEFAULT:-[0-9]' "$PKG/usr/share/splify2/allow-domains.sh" || {
-    echo "в usr/share/splify2/allow-domains.sh не зашит тег релиза — версия списков окажется плавающей"
+# Описание второго издателя списков лежит в плагине lists-catalog (plugins/lists-catalog/lib/allow-domains.sh) и едет
+# в его архиве, а не в пакете каркаса. Зашитый в него тег релиза проверяется здесь: без него версия списков у человека
+# определялась бы тем, когда он нажал кнопку, — плавающей ссылкой.
+grep -qE '^AD_TAG_DEFAULT=\$\{AD_TAG_DEFAULT:-[0-9]' plugins/lists-catalog/lib/allow-domains.sh || {
+    echo "в plugins/lists-catalog/lib/allow-domains.sh не зашит тег релиза — версия списков окажется плавающей"
     exit 1; }
 # Каркас на классическом LuCI JS: виды лежат в пакете, без сборки (view/splify2/index.js и view/splify2/core).
 for _need in view/splify2/index.js view/splify2/core/main.js view/splify2/core/autoform.js \
