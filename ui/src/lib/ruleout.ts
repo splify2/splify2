@@ -37,7 +37,10 @@ export interface Target {
     direct: boolean
     /** Блок: трафик правила не пропускается (выход `kind: block`). */
     block?: boolean
-    subs: { mode: Mode; picks: SubPick[] }
+    /** `only` и `exclude` — страны узлов подписки: брать только эти / не брать эти. Пишутся каждому
+     *  туннелю набора (спека v2: `only`, `exclude` туннеля); вместе они не живут — страна в обоих
+     *  ключах отказ ядра. При «вручную» (один узел) не пишутся. */
+    subs: { mode: Mode; picks: SubPick[]; only?: string[]; exclude?: string[] }
     /** Выходы WARP: пилюля — конфигурация целиком, свой выбор узла у неё внутри. */
     warp: string[]
     /** Свои туннели: устройство (`dev:wg0`) либо выход своего туннеля (`out:<имя>`, awg и xsteer). */
@@ -110,7 +113,13 @@ function subPicksOf(o: Output): SubPick[] {
 
 /** Что внутри выхода — подписки или свои туннели. `null` — выход собран не правилом (руками или
  *  прежней панелью) и блоком «Куда» не читается. */
-type Section = { kind: 'subs'; mode: Mode; picks: SubPick[] } | { kind: 'own'; mode: Mode; picks: string[] } | { kind: 'warp'; out: string }
+type Section = { kind: 'subs'; mode: Mode; picks: SubPick[]; only: string[]; exclude: string[] } | { kind: 'own'; mode: Mode; picks: string[] } | { kind: 'warp'; out: string }
+
+/** Страны, записанные туннелям набора (и группе над ними): объединение, чтобы ни одна не пропала. */
+function countriesOf(os: (Output | undefined)[]): { only: string[]; exclude: string[] } {
+    const u = (k: 'only' | 'exclude') => [...new Set(os.flatMap((x) => x?.[k] || []))]
+    return { only: u('only'), exclude: u('exclude') }
+}
 
 function sectionOf(outs: Record<string, Output>, name: string): Section | null {
     const o = outs[name]
@@ -120,14 +129,14 @@ function sectionOf(outs: Record<string, Output>, name: string): Section | null {
     if (isTunnelKind(o.kind)) {
         /* Один узел — «вручную»: ядру это то же, что «первый живой» из одного. */
         const mode: Mode = o.pick === 'latency' ? 'latency' : (o.active ?? 1) > 1 ? 'balance' : nodesOf(o).length === 1 ? 'manual' : 'order'
-        return { kind: 'subs', mode, picks: subPicksOf(o) }
+        return { kind: 'subs', mode, picks: subPicksOf(o), ...countriesOf([o]) }
     }
     if (o.kind === 'interface') {
         const ds = o.devices?.length ? o.devices : o.device ? [o.device] : []
         const parts = ds.map((d) => partOn(outs, name, d))
         const mode: Mode = o.pick === 'latency' ? 'latency' : 'order'
         if (parts.every(Boolean) && parts.length) {
-            return { kind: 'subs', mode, picks: parts.flatMap((p) => subPicksOf(outs[p!])) }
+            return { kind: 'subs', mode, picks: parts.flatMap((p) => subPicksOf(outs[p!])), ...countriesOf([o, ...parts.map((p) => outs[p!])]) }
         }
         if (parts.some(Boolean)) return null
         return { kind: 'own', mode: !o.devices?.length && !o.pick ? 'manual' : mode, picks: ds.map((d) => `dev:${d}`) }
@@ -136,7 +145,7 @@ function sectionOf(outs: Record<string, Output>, name: string): Section | null {
         const ms = (o.members || []).map((m) => outs[m])
         if (!ms.length || ms.some((m) => !m)) return null
         if (ms.every((m) => isTunnelKind(m.kind))) {
-            return { kind: 'subs', mode: o.pick === 'balance' ? 'balance' : o.pick, picks: ms.flatMap(subPicksOf) }
+            return { kind: 'subs', mode: o.pick === 'balance' ? 'balance' : o.pick, picks: ms.flatMap(subPicksOf), ...countriesOf([o, ...ms]) }
         }
         if (ms.every((m) => (m.kind === 'interface' && !m.devices?.length && m.device) || m.kind === 'awg' || m.kind === 'xsteer')) {
             return {
@@ -160,7 +169,12 @@ export function targetOf(spec: Spec, out: string): Target | null {
     const t: Target = structuredClone(EMPTY_TARGET)
     const put = (s: Section) => {
         if (s.kind === 'warp') t.warp.push(s.out)
-        else if (s.kind === 'subs') t.subs = { mode: s.mode, picks: s.picks }
+        else if (s.kind === 'subs') t.subs = {
+            mode: s.mode,
+            picks: s.picks,
+            ...(s.only.length ? { only: s.only } : {}),
+            ...(s.exclude.length ? { exclude: s.exclude } : {}),
+        }
         else t.own = { mode: s.mode, picks: s.picks }
     }
     const one = sectionOf(outs, out)
@@ -213,6 +227,21 @@ function tunnel(name: string, r: { sub: string; proto: Proto; nodes: number[] },
 export interface Caps {
     /** `pick: latency` у туннеля (умение pool_latency): «Самый быстрый» — один туннель на подписку. */
     tunnelLatency?: boolean
+}
+
+/** Страны набора — каждому туннелю: «только эти» и «кроме этих» без повторов, заглавными. */
+function withCountries(b: Built | null, t: Target['subs']): Built | null {
+    if (!b || t.mode === 'manual') return b
+    const norm = (l?: string[]) => [...new Set((l || []).map((c) => c.trim().toUpperCase()).filter(Boolean))]
+    const only = norm(t.only)
+    const exclude = norm(t.exclude).filter((c) => !only.includes(c))
+    if (!only.length && !exclude.length) return b
+    for (const o of [b.top, ...b.owned]) {
+        if (!isTunnelKind(o.kind)) continue
+        if (only.length) o.only = only
+        if (exclude.length) o.exclude = exclude
+    }
+    return b
 }
 
 function buildSubs(mode: Mode, picks: SubPick[], caps: Caps = {}): Built | null {
@@ -296,7 +325,7 @@ function buildOwn(mode: Mode, picks: string[]): Built | { ref: string } | null {
 /** Набор правила целиком. `ref` — правило ведёт прямо в готовый выход. */
 export function buildTarget(t: Target, caps: Caps = {}): Built | { ref: string } | null {
     const secs: (Built | { ref: string })[] = []
-    const s = buildSubs(t.subs.mode, t.subs.picks, caps)
+    const s = withCountries(buildSubs(t.subs.mode, t.subs.picks, caps), t.subs)
     if (s) secs.push(s)
     for (const w of t.warp) secs.push({ ref: w })
     const o = buildOwn(t.own.mode, t.own.picks)
@@ -317,6 +346,9 @@ export function buildTarget(t: Target, caps: Caps = {}): Built | { ref: string }
 /* ------------------------------------------------------------------ запись */
 
 /** Всё, что выход тянет за собой: части пула, члены группы, их части. */
+/** Выход правила и всё под ним (части, члены) — чьё состояние показывает блок «Куда». */
+export const outputTree = (outs: Record<string, Output>, name: string): string[] => [...treeOf(outs, name)]
+
 function treeOf(outs: Record<string, Output>, name: string, acc = new Set<string>()): Set<string> {
     const o = outs[name]
     /* WARP и свои туннели внутри набора — его члены, но не его собственность. */

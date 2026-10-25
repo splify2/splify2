@@ -264,3 +264,54 @@ describe('выход на узлах подписки (addSubOutput)', () => {
         expect(r.spec.outputs[r.name].kind).toBe('vless')
     })
 })
+
+describe('страны узлов в наборе правила', () => {
+    const picks = [{ sub: SUB, proto: 'vless' as const, idx: 0 }, { sub: SUB, proto: 'vless' as const, idx: 2 }]
+    const withCc = (mode: Target['subs']['mode'], only: string[], exclude: string[]): Target =>
+        ({ ...structuredClone(EMPTY_TARGET), subs: { mode, picks, only, exclude } })
+
+    it('only и exclude пишутся туннелю, а при «вручную» не пишутся', () => {
+        const s = applyTarget(spec({}, [rule('a', 'direct')]), 0, withCc('order', ['nl', 'DE'], ['DE', 'RU']))
+        expect(s.outputs.a).toMatchObject({ kind: 'vless', only: ['NL', 'DE'], exclude: ['RU'] })
+        const m = applyTarget(spec({}, [rule('a', 'direct')]), 0, withCc('manual', ['NL'], []))
+        expect(m.outputs.a.only).toBeUndefined()
+    })
+
+    it('в пуле «самый быстрый» страны получает каждая часть', () => {
+        const s = applyTarget(spec({}, [rule('a', 'direct')]), 0, withCc('latency', [], ['US']))
+        const parts = Object.values(s.outputs).filter((o) => o.part_of === 'a')
+        expect(parts).toHaveLength(2)
+        for (const p of parts) expect(p.exclude).toEqual(['US'])
+        expect(s.outputs.a.exclude).toBeUndefined()
+    })
+
+    it('targetOf читает страны обратно, в том числе из спеки после кодирования', () => {
+        for (const mode of ['order', 'latency', 'balance'] as const) {
+            const s = applyTarget(spec({}, [rule('a', 'direct')]), 0, withCc(mode, ['NL'], []))
+            const back = decodeSpec(encodeSpec(s))
+            const t = targetOf(back, back.channels[0].out)!
+            expect(t.subs.mode).toBe(mode)
+            expect(t.subs.only).toEqual(['NL'])
+            expect(t.subs.exclude).toBeUndefined()
+        }
+    })
+
+    it('набор со странами отличается от такого же без них и не склеивается с ним', () => {
+        const s0 = applyTarget(spec({}, [rule('a', 'direct'), rule('b', 'direct')]), 0, subs('order', picks))
+        const s1 = applyTarget(s0, 1, subs('order', picks))
+        expect(s1.channels[1].out).toBe(s1.channels[0].out)
+        const s2 = applyTarget(s1, 1, withCc('order', ['NL'], []))
+        expect(s2.channels[1].out).not.toBe(s2.channels[0].out)
+        expect(s2.outputs[s2.channels[0].out].only).toBeUndefined()
+        expect(s2.outputs[s2.channels[1].out].only).toEqual(['NL'])
+    })
+
+    it('страны правки общего выхода разводят его, а у одиночного правятся на месте', () => {
+        const s0 = applyTarget(spec({}, [rule('a', 'direct')]), 0, subs('order', picks))
+        const s1 = applyTarget(s0, 0, withCc('order', [], ['RU']))
+        expect(s1.channels[0].out).toBe(s0.channels[0].out)
+        expect(s1.outputs.a.exclude).toEqual(['RU'])
+        const s2 = applyTarget(s1, 0, subs('order', picks))
+        expect(s2.outputs.a.exclude).toBeUndefined()
+    })
+})

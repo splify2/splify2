@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState, type ReactNode } from 'react'
+import { useCallback, useEffect, useMemo, useState, type ReactNode } from 'react'
 import { ChevronDown, Gauge, LoaderCircle } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Segmented } from '@/components/ui/layout'
@@ -8,14 +8,16 @@ import ConfBadges from '@/components/ConfBadges'
 import { devProto, protoBadge, type ConfBadge } from '@/lib/badges'
 import { rpc } from '@/lib/rpc'
 import { notify } from '@/lib/notify'
-import { blockSupported, poolLatencySupported } from '@/lib/engine'
+import { blockSupported, nodeOnlySupported, poolLatencySupported } from '@/lib/engine'
+import CountryFilter from '@/components/CountryFilter'
+import { GeoLine } from '@/components/OutputCards'
 import { subsRemember, subsRemembered } from '@/lib/subs'
 import { useRemembered } from '@/lib/cache'
 import { plainName } from '@/lib/nodename'
 import { devList, isPart, isTunnelKind, type Output, type Spec } from '@/lib/model'
 import { type Live } from '@/lib/live'
 import { useSubNodes, type SubNode } from '@/lib/subnodes'
-import { applyTarget, EMPTY_TARGET, sharedWith, subPickKey, targetOf, type Mode, type SubPick, type Target } from '@/lib/ruleout'
+import { applyTarget, EMPTY_TARGET, outputTree, sharedWith, subPickKey, targetOf, type Mode, type SubPick, type Target } from '@/lib/ruleout'
 import { S } from '@/copy'
 
 /** «Куда» правила в приложении для компьютера: блок во всю ширину под остальными, в нём друг под
@@ -58,6 +60,12 @@ export default function RuleTarget({ spec, index, live, onSpec }: {
         rpc.subList().then((r) => { setSubs(r.subs || []); subsRemember(r.subs) }).catch(() => {})
     }, [])
 
+    /* Страны узлов подписок — из чего выбирают «только эти» и «кроме этих». */
+    const [ccBySub, setCcBySub] = useState<Record<string, string[]>>({})
+    const onCountries = useCallback((path: string, ccs: string[]) => {
+        setCcBySub((m) => (m[path]?.join() === ccs.join() ? m : { ...m, [path]: ccs }))
+    }, [])
+
     function put(next: Target) {
         setT(next)
         const s = applyTarget(spec, index, next, { tunnelLatency: poolLatencySupported(live.status) })
@@ -81,6 +89,14 @@ export default function RuleTarget({ spec, index, live, onSpec }: {
         ...Object.entries(outs).filter(([, o]) => o.kind === 'awg' || o.kind === 'xsteer')
             .map(([n, o]) => ({ key: `out:${n}`, name: n, badges: [protoBadge(o.kind === 'awg' ? 'awg' : 'xsteer')], up: live.status?.outputs?.[n]?.up })),
     ]
+
+    /* Страны: умение ядра `node_only`; записанное в спеке видно и без него. Один узел («вручную») страну не выбирает. */
+    const subsOnly = t.subs.only || []
+    const subsExclude = t.subs.exclude || []
+    const canCountry = t.subs.mode !== 'manual' && (nodeOnlySupported(live.status) || subsOnly.length > 0 || subsExclude.length > 0)
+    const ccOptions = [...new Set(Object.values(ccBySub).flat())].sort()
+    /* Какую страну выхода видят сайты: состояние выхода правила и его частей. */
+    const geoSts = ch.out && outs[ch.out] ? outputTree(outs, ch.out).map((n) => live.status?.outputs?.[n]) : []
 
     const shared = sharedWith(spec, index)
     const empty = !t.direct && !t.block && !t.subs.picks.length && !t.warp.length && !t.own.picks.length
@@ -126,7 +142,7 @@ export default function RuleTarget({ spec, index, live, onSpec }: {
     const setMode = (sec: 'subs' | 'own', mode: Mode) => {
         const cur = t[sec]
         const picks = (mode === 'manual' ? cur.picks.slice(0, 1) : cur.picks) as never
-        put({ ...t, [sec]: { mode, picks } })
+        put({ ...t, [sec]: { ...cur, mode, picks } })
     }
 
     return (
@@ -172,8 +188,18 @@ export default function RuleTarget({ spec, index, live, onSpec }: {
                                     live={live}
                                     onToggle={toggleSub}
                                     onAuto={(protos, on) => toggleAuto(s.path, protos, on)}
+                                    onCountries={onCountries}
                                 />
                             ))}
+                            {canCountry && ccOptions.length + subsOnly.length + subsExclude.length > 0 && (
+                                <CountryFilter
+                                    options={ccOptions}
+                                    only={subsOnly}
+                                    exclude={subsExclude}
+                                    onChange={(only, exclude) => put({ ...t, subs: { ...t.subs, only, exclude } })}
+                                />
+                            )}
+                            {t.subs.picks.length > 0 && <GeoLine sts={geoSts} className="" />}
                         </Part>
                     )}
 
@@ -286,15 +312,19 @@ function WarpPill({ name, o, live, chosen, onClick }: { name: string; o: Output;
 }
 
 /** Пилюли одной подписки: «Авто» и по пилюле на конфигурацию, с проверкой задержки. */
-function SubPills({ sub, picks, rank, live, onToggle, onAuto }: {
+function SubPills({ sub, picks, rank, live, onToggle, onAuto, onCountries }: {
     sub: Sub
     picks: SubPick[]
     rank: boolean
     live: Live
     onToggle: (p: SubPick) => void
     onAuto: (protos: SubPick['proto'][], on: boolean) => void
+    onCountries: (path: string, ccs: string[]) => void
 }) {
     const nodes = useSubNodes(sub.path, sub.present)
+    useEffect(() => {
+        if (nodes) onCountries(sub.path, [...new Set(nodes.map((n) => n.cc?.toUpperCase()).filter((c): c is string => !!c))].sort())
+    }, [nodes, sub.path, onCountries])
     const { lat, probe, probing } = useSubProbe(sub.path)
     const [open, setOpen] = useState(false)
     const keys = picks.map(subPickKey)
