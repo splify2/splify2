@@ -1886,13 +1886,13 @@ HTTP: `bad_request` — 400, `not_installed` и `no_method` — 404, `disabled`,
 ### `spec_schema` (read)
 
 Схема всех ключей спеки: `steer spec-schema --json`, то есть тот же источник, что у разбора ядра, плюс виды плагинов.
-Формат — подмножество JSON Schema из `plugin-sdk/schema/kind-keys.schema.json` с расширениями `x-path`, `x-secret`,
-`x-ref` (элемент спеки или `devices`), `x-when` (условие видимости по соседнему ключу), `x-map` (записи с именами
-человека), `x-kinds` (ключи вида записи: `tunnel`, `tunnel:vless`).
+Формат — подмножество JSON Schema с расширениями ядра `x-…`: `x-variants` и `x-discriminator` (выход и сервер DNS
+по видам), `x-when`, `x-when-set`, `x-needs` (условия), `x-ref`, `x-one-or-list`, `x-name`, `x-example`, `x-absent`,
+`x-plugin`, `x-plugins`, `x-unsupported`, `x-platform`, `x-path`, `x-secret`. Полное описание — `steer/docs/spec-schema.md`.
 
 - **Вход:** нет.
 - **Выход:** `{ "ok": true, "source": "core"|"bundled", "schema": { … } }`. Ядро без команды `spec-schema` (до 2.1) —
-  схема из пакета (`/usr/share/splify2/spec-schema.json`, фикстура) и `source: "bundled"`: формы тогда следуют
+  схема из пакета (`/usr/share/splify2/spec-schema.json`, точная копия вывода ядра 2.0.5 на роутере без модулей) и `source: "bundled"`: формы тогда следуют
   пакету, а не ядру, и каркас пишет об этом на экране «Overview».
 
 ### `spec_check` (read)

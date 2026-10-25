@@ -6,41 +6,30 @@
 'require view.splify2.core.autoform as autoform';
 'require view.splify2.core.store as store';
 
-// The sections of the spec: every one is a form built by autoform from the schema of the core
-// (`steer spec-schema`) - one field per key. A section edits some top-level keys of the spec:
-//
-//   Outputs   outputs, except groups         Groups   outputs of kind group
-//   Rules     rules                          Lists    lists
-//   DNS       dns                            Clients  lan, clients
-//   Other     every other key the core knows (a key that no page above owns)
+// The sections of the spec: one tab for every root section of the schema of the core (`steer spec-schema`),
+// in its order: lan, clients, lists, outputs, dns, rules. Every tab is a form built by autoform - one field for
+// every key. `version` is not a form. A root key of a newer core that no tab names goes to "Other keys".
 //
 // The save writes the whole spec (store.save), the Apply button of the frame puts it into effect.
 
 var T = i18n.T.bind(i18n);
 
 return baseclass.extend({
-	// [{ id, title, keys, options }] - a function: titles go through T() after the dictionary is loaded.
-	defs: function() {
-		return [
-			{ id: 'outputs', title: T('Outputs'), keys: [ 'outputs' ], options: {
-				outputs: { filter: function(n, v) { return !v || v.kind !== 'group'; } } } },
-			{ id: 'groups', title: T('Groups'), keys: [ 'outputs' ], options: {
-				outputs: {
-					filter: function(n, v) { return v && v.kind === 'group'; },
-					newValue: function() { return { kind: 'group' }; } } } },
-			{ id: 'rules', title: T('Rules'), keys: [ 'rules' ] },
-			{ id: 'lists', title: T('Lists'), keys: [ 'lists' ] },
-			{ id: 'dns', title: T('DNS'), keys: [ 'dns' ] },
-			{ id: 'clients', title: T('Clients'), keys: [ 'lan', 'clients' ] }
-		];
+	// Titles of the root sections the frame knows (a function: titles go through T() after the dictionary is loaded).
+	titles: function() {
+		return { lan: T('LAN'), clients: T('Clients'), lists: T('Lists'), outputs: T('Outputs'), dns: T('DNS'), rules: T('Rules') };
 	},
 
-	owned: [ 'version', 'outputs', 'rules', 'lists', 'dns', 'lan', 'clients' ],
+	// [{ id, title, keys }]: the root sections that the schema of this core has.
+	defs: function() {
+		var p = (store.schema && store.schema.properties) || {}, t = this.titles();
+		return Object.keys(p).filter(function(k) { return t[k]; }).map(function(k) { return { id: k, title: t[k], keys: [ k ] }; });
+	},
 
-	// Keys of the schema that no page above owns: the frame covers every key of the core.
+	// Keys of the schema that no tab owns: the frame covers every key of the core.
 	otherKeys: function() {
-		var self = this, p = (store.schema && store.schema.properties) || {};
-		return Object.keys(p).filter(function(k) { return self.owned.indexOf(k) < 0; });
+		var p = (store.schema && store.schema.properties) || {}, t = this.titles();
+		return Object.keys(p).filter(function(k) { return k !== 'version' && !t[k]; });
 	},
 
 	otherDef: function() {
@@ -51,7 +40,7 @@ return baseclass.extend({
 	nodeOf: function(def) {
 		var props = {}, root = store.schema;
 		def.keys.forEach(function(k) { if (root.properties && root.properties[k]) props[k] = root.properties[k]; });
-		return { type: 'object', properties: props };
+		return { type: 'object', properties: props, 'x-platform': schema.platformOf(root) };
 	},
 
 	render: function(def, host) {
@@ -65,8 +54,8 @@ return baseclass.extend({
 			var value = {};
 			def.keys.forEach(function(k) { if (store.spec[k] !== undefined) value[k] = store.clone(store.spec[k]); });
 			form = autoform.build(node, value, {
-				spec: store.spec, devices: store.devices, notify: function(m) { note(m, 'warning'); },
-				mapOptions: Object.keys(def.options || {}).reduce(function(o, k) { o[k] = def.options[k]; return o; }, {})
+				spec: store.spec, devices: store.devices, schemaRoot: store.schema, platform: schema.platformOf(store.schema),
+				notify: function(m) { note(m, 'warning'); }
 			});
 			holder.innerHTML = '';
 			holder.appendChild(form.el);

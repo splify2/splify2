@@ -4,13 +4,19 @@
 'require view.splify2.core.i18n as i18n';
 'require view.splify2.core.schema as schema';
 
-// JSON Schema -> LuCI form (SPLIFY2_PLATFORM.md, 4.2 and 4.4): one field for every key of the schema.
-// Used for the sections of the spec (outputs, rules, DNS...) and for the settings of plugins.
+// Schema -> LuCI form (steer/docs/spec-schema.md, "How a form is built"): one field for every key of the
+// schema. Used for the sections of the spec (lan, clients, lists, outputs, DNS, rules) and for the settings of
+// plugins and the keys of a plugin kind - the same words, the same code.
 //
-//   var form = autoform.build(node, value, { spec: spec, devices: [...] });
+//   var form = autoform.build(node, value, { spec: spec, devices: [...], schemaRoot: root, platform: 'router' });
 //   container.appendChild(form.el);
 //   var errors = form.validate();      // [{ path, title, message }]
 //   var value = form.get();            // JSON value, empty keys left out, unknown keys kept
+//
+// An entry with x-variants (an output, a DNS server) first chooses its variant (kind, then protocol for a
+// tunnel; or server / group of DNS), then draws the keys of that variant only. The fields of a variant are
+// built when it is chosen first. A variant that this build does not have (x-absent) is in the list with its
+// reason, not hidden. A kind of a plugin is marked with the plugin.
 //
 // Not here on purpose: themes, animations, own logic. The widgets are the widgets of LuCI (ui.Textfield,
 // ui.Select, ui.Checkbox, ui.DynamicList, ui.Dropdown, ui.Combobox).
@@ -21,6 +27,10 @@
 var T = i18n.T.bind(i18n);
 
 function text(s) { return i18n.T(s); }
+
+function isObj(x) { return x !== null && typeof x === 'object' && !Array.isArray(x); }
+
+function has(o, k) { return Object.prototype.hasOwnProperty.call(o, k); }
 
 function mk(ctx) {
 	var form = { fields: [], ctx: ctx };
@@ -38,7 +48,11 @@ function descOf(node) {
 	if (node['x-path'] === 'etc') extra = T('Path of a file, relative to the spec directory');
 	else if (node['x-path'] === 'conf') extra = T('Path of a file, relative to the plugin settings directory');
 	else if (node['x-path'] === 'abs') extra = T('Absolute path of a file');
-	return [ d, extra ].filter(Boolean).join(' ');
+	var items = node.items && node.items['x-path'];
+	if (!extra && items === 'etc') extra = T('Path of a file, relative to the spec directory');
+	var plug = node['x-plugin'] ? T('Key of the plugin {id}', { id: node['x-plugin'] }) : '';
+	var unsup = node['x-unsupported'] ? T('Not supported yet by this core version') + ' (' + text(node['x-unsupported']) + ')' : '';
+	return [ d, extra, plug, unsup ].filter(Boolean).join(' ');
 }
 
 function row(key, node, control, hint) {
@@ -86,7 +100,7 @@ function hook(widgetEl, field) {
 function leafString(key, node, value, path, ctx, required) {
 	var f = baseField(path, node);
 	var w, kind;
-	var refName = node['x-ref'];
+	var ref = schema.refOf(node);
 	var v = value == null ? '' : String(value);
 	var validate = function(s) {
 		var e = errText(schema.check(node, s));
@@ -95,21 +109,23 @@ function leafString(key, node, value, path, ctx, required) {
 	if (node.enum) {
 		kind = 'select';
 		var pairs = schema.enumChoices(node);
-		// a value the schema does not know (a kind of a plugin that is not installed) is kept, not replaced
+		// a value the schema does not know is kept, not replaced
 		if (v !== '' && !pairs.some(function(p) { return p[0] === v; })) pairs.push([ v, T('{value} (unknown)', { value: v }) ]);
 		var cs = toChoices(pairs, required ? null : T('(default)'));
 		if (required && v === '' && pairs.length) v = pairs[0][0];
 		w = new ui.Select(v, cs.choices, { sort: cs.order, optional: !required });
-	} else if (refName) {
+	} else if (ref) {
 		kind = 'combobox';
-		var rp = toChoices(refPairs(ctx, refName), required ? null : '');
+		var rp = toChoices(refPairs(ctx, ref), required ? null : '');
 		w = new ui.Combobox(v, rp.choices, { sort: rp.order, optional: !required, custom_placeholder: T('or type a name') });
 	} else {
 		kind = 'text';
+		var ex = node['x-example'];
 		w = new ui.Textfield(v, {
 			password: !!node['x-secret'], optional: true, validate: validate,
 			placeholder: node.default != null ? String(node.default) :
-				(node.minimum != null && node.maximum != null ? node.minimum + '..' + node.maximum : (node['x-path'] ? T('path') : ''))
+				(node.minimum != null && node.maximum != null ? node.minimum + '..' + node.maximum :
+					(node['x-path'] ? T('path') : (typeof ex === 'string' || typeof ex === 'number' ? String(ex) : '')))
 		});
 	}
 	f.widget = w;
@@ -158,18 +174,20 @@ function leafArray(key, node, value, path, ctx, required) {
 	var f = baseField(path, node);
 	var items = node.items || { type: 'string' };
 	var vals = (Array.isArray(value) ? value : (value == null ? [] : [ value ])).map(String);
+	// x-one-or-list: `to: youtube` was written as one value; one value stays one value
+	var scalar = !!node['x-one-or-list'] && value != null && !Array.isArray(value);
 	var w, ch = null;
-	var ref = items['x-ref'] || node['x-ref'];
-	var itemType = schema.typeOf(items);
+	var ref = schema.refOf(items) || schema.refOf(node);
 	if (items.enum) {
 		var cs = toChoices(schema.enumChoices(items), null);
 		w = new ui.Dropdown(vals, cs.choices, { multiple: true, sort: cs.order, optional: true, display_items: 8, placeholder: T('(default)') });
 		f.kind = 'multiselect';
 	} else {
 		if (ref) { var rp = toChoices(refPairs(ctx, ref), null); ch = rp.choices; }
+		var ex = Array.isArray(node['x-example']) ? node['x-example'][0] : undefined;
 		w = new ui.DynamicList(vals, ch, {
 			optional: true, allowduplicates: !node.uniqueItems && !ref,
-			placeholder: items['x-path'] ? T('path') : '',
+			placeholder: items['x-path'] ? T('path') : (typeof ex === 'string' || typeof ex === 'number' ? String(ex) : ''),
 			validate: function(s) { var e = errText(schema.check(items, s)); return e ? e : true; }
 		});
 		f.kind = 'list';
@@ -180,7 +198,8 @@ function leafArray(key, node, value, path, ctx, required) {
 	f.raw = function() { var r = w.getValue(); return Array.isArray(r) ? r : (r ? [ r ] : []); };
 	f.get = function() {
 		var a = f.raw().filter(function(s) { return s !== ''; }).map(function(s) { return schema.coerce(items, s); });
-		return a.length ? a : undefined;
+		if (!a.length) return undefined;
+		return scalar && a.length === 1 ? a[0] : a;
 	};
 	f.validate = function() {
 		var out = [], raw = f.raw();
@@ -210,85 +229,262 @@ function buildNode(key, node, value, path, ctx, required) {
 		f.get = function() { return value; };
 	} else if (t === 'union') f = unionField(key, node, value, path, ctx, required);
 	else if (schema.isMap(node)) f = mapField(key, node, value, path, ctx);
-	else if (t === 'object' || node.properties || node['x-kinds']) f = objectField(key, node, value, path, ctx, false);
+	else if (t === 'object') f = objectField(key, node, value, path, ctx, false);
 	else if (t === 'array') {
-		var it = node.items;
-		if (it && (it.properties || it['x-kinds'] || schema.typeOf(it) === 'object')) f = arrayObjectField(key, node, value, path, ctx);
+		if (schema.isObjectArray(node)) f = arrayObjectField(key, node, value, path, ctx);
 		else f = leafArray(key, node, value, path, ctx, required);
 	}
 	else if (t === 'boolean') f = leafBoolean(key, node, value, path, ctx);
-		else f = leafString(key, node, value, path, ctx, required);
+	else f = leafString(key, node, value, path, ctx, required);
 	f.key = key;
+	if (node['x-unsupported'] && f.get) {
+		// drawn, marked, and refused when written: a spec with such a key is not applied
+		var inner = f.validate;
+		f.validate = function() {
+			var out = inner();
+			if (f.get() !== undefined) out.push({ path: path, title: label(key, node), message: T('Not supported yet by this core version') });
+			return out;
+		};
+	}
 	ctx.form.fields.push({ path: path, node: node, field: f });
 	return f;
 }
 
+function variantNote(c) {
+	var bits = [];
+	if (c.description) bits.push(text(c.description));
+	if (c.plugin) bits.push(T('Provided by the plugin {id}', { id: c.plugin.id }));
+	return bits.join(' ');
+}
+
+function choiceLabel(c) {
+	if (c.absent) return T('{name} (not available)', { name: c.value });
+	if (c.plugin) return T('{name} (plugin {id})', { name: c.value, id: c.plugin.id });
+	return c.value;
+}
+
+// The record with variants and plain objects. isEntry: no fieldset around it (it is in a map or a list).
 function objectField(key, node, value, path, ctx, isEntry) {
 	var f = baseField(path, node);
-	var val = (value && typeof value === 'object' && !Array.isArray(value)) ? value : {};
-	var req = node.required || [];
-	var kids = [];
+	var val = isObj(value) ? value : {};
+	var platform = ctx.platform;
+	var V = schema.variantsOf(node), D = V ? schema.disc(node) : null;
+	var kids = [];                 // { layer, key, node, field, required }
+	var built = {};                // layers whose fields exist
 	var body = E('div', { 'class': 'splify2-object' });
-	schema.allLayers(node).forEach(function(layer) {
-		schema.layerProps(node, layer).forEach(function(kv) {
+	var sel = { has: null, kind: null, protocol: null };     // selectors
+	var selFields = {};
+	var reasonEl = E('div', { 'class': 'alert-message warning' });
+	reasonEl.style.display = 'none';
+	var lastObj = {};
+
+	var addSelector = function(selKey, selPath, lab, w, hintEl) {
+		var sf = baseField(selPath, { type: 'string' });
+		sf.kind = 'select';
+		sf.widget = w;
+		sf.el = row(selKey, { title: lab }, w.render(), ' ');
+		sf.hint = sf.el.children[1].children[1];
+		sf.get = function() { return sf.widget.getValue(); };
+		sf.key = selKey;
+		ctx.form.fields.push({ path: selPath, node: sf.node, field: sf });
+		selFields[selKey] = sf;
+		body.appendChild(sf.el);
+		hook(sf.el, sf);
+		return sf;
+	};
+	var selHint = function(sf, text0) {
+		if (!sf.hint || !sf.hint.children) return;
+		sf.hint.textContent = text0 || '';
+	};
+	var pickable = function(list, cur) {
+		if (cur && list.some(function(c) { return c.value === cur; })) return cur;
+		var ok = list.filter(function(c) { return !c.absent; });
+		return (ok[0] || list[0] || { value: '' }).value;
+	};
+	var selChoices = function(list, cur) {
+		var pairs = list.map(function(c) { return [ c.value, choiceLabel(c) ]; });
+		// a value the schema does not know (a kind of a plugin that is not installed) is kept, not replaced
+		if (cur && !list.some(function(c) { return c.value === cur; })) pairs.push([ cur, T('{value} (unknown)', { value: cur }) ]);
+		return toChoices(pairs, null);
+	};
+
+	var drawProtocol = function() {};
+	if (V && D) {
+		if (D.has) {
+			var hl = schema.hasChoices(node);
+			var hcur = pickable(hl, schema.variantName(node, val));
+			var hc = selChoices(hl, '');
+			sel.has = addSelector('variant', path + '.@variant', T('Type'), new ui.Select(hcur, hc.choices, { sort: hc.order, optional: false }));
+			sel.hasList = hl;
+			sel.has.change(function() { refresh(); f.fire(); });
+		} else {
+			var kl = schema.kindChoices(node);
+			var kcur = pickable(kl, typeof val[D.key] === 'string' ? val[D.key] : '');
+			// an unknown kind of the value stays selectable
+			if (typeof val[D.key] === 'string' && val[D.key] !== '') kcur = val[D.key];
+			var kc = selChoices(kl, typeof val[D.key] === 'string' ? val[D.key] : '');
+			sel.kind = addSelector(D.key, path ? path + '.' + D.key : D.key, D.key, new ui.Select(kcur, kc.choices, { sort: kc.order, optional: false }));
+			sel.kindList = kl;
+			var thenKeys = {};
+			Object.keys(D.then || {}).forEach(function(k) { thenKeys[D.then[k]] = 1; });
+			Object.keys(thenKeys).forEach(function(pk) {
+				var holder = E('div', { 'class': 'splify2-protocol' });
+				var pp = path ? path + '.' + pk : pk;
+				var pf = baseField(pp, { type: 'string' });
+				pf.kind = 'select';
+				pf.key = pk;
+				pf.el = holder;
+				pf.get = function() { return pf.widget ? pf.widget.getValue() : undefined; };
+				ctx.form.fields.push({ path: pp, node: pf.node, field: pf });
+				selFields[pk] = pf;
+				body.appendChild(holder);
+				sel.protocol = pf;
+				pf.draw = function(kind, cur) {
+					holder.innerHTML = '';
+					pf.widget = null;
+					pf.list = [];
+					if (!D.then || D.then[kind] !== pk) { pf.show(false); return; }
+					pf.list = schema.protocolChoices(node, kind);
+					var pcur = pickable(pf.list, cur);
+					if (cur) pcur = cur;
+					var pc = selChoices(pf.list, cur || '');
+					pf.widget = new ui.Select(pcur, pc.choices, { sort: pc.order, optional: false });
+					var r = row(pk, { title: pk }, pf.widget.render(), ' ');
+					pf.hint = r.children[1].children[1];
+					holder.appendChild(r);
+					hook(r, pf);
+					pf.show(true);
+				};
+			});
+			drawProtocol = function(cur) {
+				Object.keys(thenKeys).forEach(function(pk) { selFields[pk].draw(sel.kind.get(), cur); });
+			};
+			drawProtocol(typeof val[Object.keys(thenKeys)[0]] === 'string' ? val[Object.keys(thenKeys)[0]] : '');
+			sel.kind.change(function() { drawProtocol(''); refresh(); f.fire(); });
+			Object.keys(thenKeys).forEach(function(pk) { selFields[pk].change(function() { refresh(); f.fire(); }); });
+		}
+		body.appendChild(reasonEl);
+	}
+
+	// the value of the selectors as the keys of the record
+	var selWritten = function() {
+		var o = {};
+		if (!V || !D) return o;
+		if (D.has) return o;
+		o[D.key] = sel.kind.get();
+		Object.keys(D.then || {}).forEach(function(k) {
+			var pf = selFields[D.then[k]];
+			if (o[D.key] === k && pf && pf.get() !== undefined && pf.get() !== '') o[D.then[k]] = pf.get();
+		});
+		return o;
+	};
+	var variantNow = function() {
+		if (!V || !D) return null;
+		if (D.has) return sel.has.get();
+		return schema.variantName(node, selWritten());
+	};
+	var variantLabel = function() {
+		if (!V || !D) return '';
+		if (D.has) return sel.has.get();
+		var w = selWritten();
+		return w[D.key] ? w[D.key] + (w[D.then && D.then[w[D.key]]] ? ':' + w[D.then[w[D.key]]] : '') : '';
+	};
+
+	var addKids = function(layer, seed) {
+		if (built[layer]) return;
+		built[layer] = true;
+		schema.layerProps(node, layer, platform).forEach(function(kv) {
 			var k = kv[0], sub = kv[1];
 			var p = layer === '' ? (path ? path + '.' + k : k) : path + '.@' + layer + '.' + k;
-			var required = req.indexOf(k) >= 0 || (layer !== '' && ((node['x-kinds'][layer].required || []).indexOf(k) >= 0));
-			var c = buildNode(k, sub, val[k], p, ctx, required);
-			var kid = { layer: layer, key: k, node: sub, field: c, required: required };
-			kids.push(kid);
+			var required = schema.requiredOf(node, layer).indexOf(k) >= 0;
+			var c = buildNode(k, sub, seed[k], p, ctx, required);
+			kids.push({ layer: layer, key: k, node: sub, field: c, required: required });
 			if (c.el) body.appendChild(c.el);
 			c.change(function() { refresh(); f.fire(); });
 		});
-	});
-	var extras = schema.extraKeys(node, val);
-	f.extras = extras;
+	};
 
-	var active = function() {
-		// two passes: kind is in the base layer, protocol in the layer of the kind
-		// obj: what is written; eff: the same with the defaults of the schema (for x-when and kinds)
-		var obj = {}, eff = {}, lay = [ '' ];
-		for (var i = 0; i < 3; i++) {
-			obj = {}; eff = {};
-			kids.forEach(function(k) {
-				if (lay.indexOf(k.layer) < 0) return;
-				if (k.field.kind === 'const') return;
+	// what is written and what the record has by default (for x-when), from the fields of the active layers
+	var state = function() {
+		var vn = variantNow();
+		var absent = !!(vn && V[vn]['x-absent']);
+		var layers = [ '' ];
+		if (vn && !absent) layers.push(vn);
+		layers.forEach(function(l) {
+			if (!built[l]) addKids(l, Object.assign({}, val, lastObj));
+		});
+		var sw = selWritten();
+		var vis = kids.map(function() { return true; });
+		var obj = {}, eff = {};
+		for (var pass = 0; pass < 4; pass++) {
+			obj = Object.assign({}, sw); eff = Object.assign({}, sw);
+			kids.forEach(function(k, i) {
+				if (layers.indexOf(k.layer) < 0 || !vis[i] || k.field.kind === 'const') return;
 				var v = k.field.get();
 				if (v !== undefined) { obj[k.key] = v; eff[k.key] = v; }
 				else if (k.node.default !== undefined) eff[k.key] = k.node.default;
 			});
-			var nl = schema.layers(node, eff);
-			if (nl.join('|') === lay.join('|')) break;
-			lay = nl;
+			var nv = kids.map(function(k) { return layers.indexOf(k.layer) >= 0 && schema.visible(k.node, eff, obj); });
+			if (nv.join() === vis.join()) break;
+			vis = nv;
 		}
-		return { layers: lay, obj: eff };
+		return { variant: vn, absent: absent, layers: layers, vis: vis, obj: obj, eff: eff };
 	};
+
 	var refresh = function() {
-		var a = active();
-		kids.forEach(function(k) {
-			k.field.show(a.layers.indexOf(k.layer) >= 0 && schema.visible(k.node, a.obj));
-		});
-		f.layersNow = a.layers;
+		var st = state();
+		lastObj = st.obj;
+		kids.forEach(function(k, i) { k.field.show(st.layers.indexOf(k.layer) >= 0 && st.vis[i]); });
+		f.layersNow = st.layers;
+		f.variant = st.variant;
+		if (V && D) {
+			var hint = '', reason = '';
+			if (D.has) {
+				var hc2 = (sel.hasList || []).filter(function(c) { return c.value === st.variant; })[0];
+				if (hc2) { hint = variantNote(hc2); reason = hc2.absent || ''; }
+				selHint(sel.kind || sel.has, hint);
+			} else {
+				var kc2 = (sel.kindList || []).filter(function(c) { return c.value === sel.kind.get(); })[0];
+				if (kc2) { hint = variantNote(kc2); reason = kc2.absent || ''; }
+				selHint(sel.kind, hint);
+				if (sel.protocol && sel.protocol.widget) {
+					var pc2 = (sel.protocol.list || []).filter(function(c) { return c.value === sel.protocol.get(); })[0];
+					selHint(sel.protocol, pc2 ? variantNote(pc2) : '');
+					if (pc2 && pc2.absent) reason = pc2.absent;
+				}
+			}
+			reasonEl.textContent = reason ? text(reason) : '';
+			reasonEl.style.display = reason ? '' : 'none';
+			f.absentReason = reason || null;
+		}
 	};
 	f.refresh = refresh;
 	f.kids = kids;
+	f.selectors = selFields;
+	f.variantLabel = variantLabel;
 	f.el = isEntry ? body : E('fieldset', { 'class': 'cbi-section splify2-section' }, [
-		node.title && key ? E('legend', {}, label(key, node)) : '', body ]);
+		key ? E('legend', {}, label(key, node)) : '', body ]);
+
 	f.get = function() {
-		var a = active(), out = {};
-		kids.forEach(function(k) {
-			if (a.layers.indexOf(k.layer) < 0 || !schema.visible(k.node, a.obj)) return;
+		var st = state(), out = {};
+		var sw = selWritten();
+		Object.keys(sw).forEach(function(k) { out[k] = sw[k]; });
+		kids.forEach(function(k, i) {
+			if (st.layers.indexOf(k.layer) < 0 || !st.vis[i]) return;
 			var v = k.field.get();
 			if (v !== undefined) out[k.key] = v;
 		});
-		extras.forEach(function(x) { out[x] = val[x]; });
+		schema.extraKeys(node, val, st.variant, platform).forEach(function(x) { if (!has(out, x)) out[x] = val[x]; });
 		return isEntry ? out : schema.clean(out);
 	};
 	f.validate = function() {
-		var a = active(), out = [];
-		kids.forEach(function(k) {
-			if (a.layers.indexOf(k.layer) < 0 || !schema.visible(k.node, a.obj)) return;
+		var st = state(), out = [];
+		if (st.absent) out.push({ path: path, title: V && D && !D.has ? D.key : T('Type'), message: text((V[st.variant] || {})['x-absent'] || '') });
+		kids.forEach(function(k, i) {
+			if (st.layers.indexOf(k.layer) < 0 || !st.vis[i]) return;
 			out = out.concat(k.field.validate());
+			var n = schema.needs(k.node, k.key, k.field.get(), st.obj);
+			if (n) out.push({ path: k.field.path, title: label(k.key, k.node), message: errText(n) });
 		});
 		return out;
 	};
@@ -296,29 +492,34 @@ function objectField(key, node, value, path, ctx, isEntry) {
 	return f;
 }
 
-function summaryOf(name, v) {
-	var bits = [];
-	if (v && v.kind) bits.push(v.kind + (v.protocol ? ':' + v.protocol : ''));
-	return name + (bits.length ? ' · ' + bits.join(' ') : '');
+function summaryOf(name, ef) {
+	var l = ef && ef.variantLabel ? ef.variantLabel() : '';
+	return name + (l ? ' · ' + l : '');
+}
+
+function nameBytes(s) {
+	try { return unescape(encodeURIComponent(s)).length; } catch (e) { return s.length; }
 }
 
 // Map of named entries (outputs, lists, clients, DNS upstreams).
 //   opts.filter(name, value) - which entries this form shows; the rest is kept untouched
-//   opts.newValue(name)      - value of a new entry
+//   opts.newValue(name)      - value of a new entry (by default: the keys of the first variant, or {})
 function mapField(key, node, value, path, ctx) {
 	var f = baseField(path, node);
 	var entryNode = schema.mapNode(node);
 	var opts = (ctx.mapOptions && ctx.mapOptions[path]) || {};
-	var val = (value && typeof value === 'object') ? value : {};
+	var val = isObj(value) ? value : {};
 	var entries = [];
 	var hidden = {};
 	var list = E('div', { 'class': 'splify2-entries' });
-	var namePat = node['x-name-pattern'] ? new RegExp(node['x-name-pattern']) : null;
+	var xn = node['x-name'] || {};
+	var namePat = null;
+	try { if (xn.pattern) namePat = new RegExp(xn.pattern); } catch (e) { /* pattern the browser cannot read */ }
 
 	var addEntry = function(name, v, open) {
 		var ef = objectField('', entryNode, v, path + '.*', ctx, true);
 		ctx.form.fields.push({ path: path + '.*', node: entryNode, field: ef });
-		var sum = E('summary', {}, summaryOf(name, v));
+		var sum = E('summary', {}, summaryOf(name, ef));
 		var rm = E('button', { 'class': 'cbi-button cbi-button-remove', type: 'button', click: function(ev) {
 			ev.preventDefault();
 			var used = ctx.usedBy ? ctx.usedBy(path, name) : [];
@@ -333,8 +534,7 @@ function mapField(key, node, value, path, ctx) {
 		entries.push(ent);
 		list.appendChild(wrap);
 		ef.change(function() {
-			var cur = ef.get();
-			sum.textContent = summaryOf(name, cur);
+			sum.textContent = summaryOf(name, ef);
 			f.fire();
 		});
 	};
@@ -343,15 +543,17 @@ function mapField(key, node, value, path, ctx) {
 		else addEntry(n, val[n], false);
 	});
 
-	var nameIn = new ui.Textfield('', { optional: true, placeholder: T('name'), maxlength: 31 });
+	var nameIn = new ui.Textfield('', { optional: true, placeholder: T('name'), maxlength: xn.maxLength || 255 });
 	var nameEl = nameIn.render();
 	var add = E('button', { 'class': 'cbi-button cbi-button-add', type: 'button', click: function(ev) {
 		ev.preventDefault();
 		var n = String(nameIn.getValue() || '').trim();
 		if (!n) { ctx.notify(T('Enter a name first')); return; }
-		if (namePat && !namePat.test(n)) { ctx.notify(T('The name may contain letters, digits, _ - . and is up to 31 bytes long')); return; }
+		if ((namePat && !namePat.test(n)) || (xn.maxLength && nameBytes(n) > xn.maxLength)) {
+			ctx.notify(T('The name may contain letters, digits, _ - . and is up to {max} bytes long', { max: xn.maxLength || 31 })); return; }
+		if ((xn.reserved || []).indexOf(n) >= 0) { ctx.notify(T('The name {name} is reserved', { name: n })); return; }
 		if (entries.some(function(e) { return e.name === n; }) || has(hidden, n)) { ctx.notify(T('The name {name} is already taken', { name: n })); return; }
-		addEntry(n, opts.newValue ? opts.newValue(n) : (entryNode.properties && entryNode.properties.kind && entryNode.properties.kind.enum ? { kind: entryNode.properties.kind.enum[0] } : {}), true);
+		addEntry(n, opts.newValue ? opts.newValue(n) : schema.newEntry(entryNode), true);
 		nameIn.setValue('');
 		f.fire();
 	} }, T('Add'));
@@ -361,6 +563,7 @@ function mapField(key, node, value, path, ctx) {
 	f.addButton = add;
 	f.el = E('fieldset', { 'class': 'cbi-section splify2-section', 'data-splify2-key': key }, [
 		node.title ? E('legend', {}, label(key, node)) : '',
+		node.description ? E('div', { 'class': 'cbi-section-descr' }, text(node.description)) : '',
 		list,
 		E('div', { 'class': 'cbi-section-create' }, [ nameEl, add ])
 	]);
@@ -379,8 +582,6 @@ function mapField(key, node, value, path, ctx) {
 	};
 	return f;
 }
-
-function has(o, k) { return Object.prototype.hasOwnProperty.call(o, k); }
 
 // Ordered array of objects (rules).
 function arrayObjectField(key, node, value, path, ctx) {
@@ -433,7 +634,9 @@ function arrayObjectField(key, node, value, path, ctx) {
 	f.addButton = add;
 	f.addItem = function(v) { addItem(v, true); renumber(); };
 	f.el = E('fieldset', { 'class': 'cbi-section splify2-section', 'data-splify2-key': key }, [
-		node.title ? E('legend', {}, label(key, node)) : '', list, E('div', { 'class': 'cbi-section-create' }, [ add ]) ]);
+		node.title ? E('legend', {}, label(key, node)) : '',
+		node.description ? E('div', { 'class': 'cbi-section-descr' }, text(node.description)) : '',
+		list, E('div', { 'class': 'cbi-section-create' }, [ add ]) ]);
 	f.get = function() {
 		var a = items.map(function(it) { return it.field.get(); });
 		return a.length ? a : undefined;
@@ -448,37 +651,46 @@ function arrayObjectField(key, node, value, path, ctx) {
 	return f;
 }
 
-// A string (name from x-ref) or an object (inline definition) - the `dns` key of a rule.
+// A string (name from x-ref) or an object (a variant written inline) - the `dns` key of a rule.
 function unionField(key, node, value, path, ctx, required) {
 	var f = baseField(path, node);
 	var strNode = { type: 'string', title: node.title, description: node.description, 'x-ref': node['x-ref'] };
-	var objNode = { type: 'object', properties: node.properties, title: 'Inline definition' };
+	var objNode = Object.assign({}, node, { type: 'object', title: undefined, description: undefined });
 	var sv = typeof value === 'string' ? value : undefined;
-	var ov = (value && typeof value === 'object') ? value : undefined;
+	var ov = isObj(value) ? value : undefined;
 	var sf = leafString(key, strNode, sv, path, ctx, false);
-	var of = objectField('inline', objNode, ov, path, ctx, false);
-	// the keys of the inline object are registered by objectField under the key itself (rules.[].dns.url)
+	var of = objectField('', objNode, ov, path, ctx, true);
 	var det = E('details', { 'class': 'splify2-entry' }, [ E('summary', {}, T('Inline definition')), of.el ]);
 	if (ov) det.setAttribute('open', '');
 	f.el = E('div', { 'class': 'cbi-value-wrap' }, [ sf.el, det ]);
 	hook(f.el, f);
 	sf.change(function() { f.fire(); }); of.change(function() { f.fire(); });
+	// the inline record counts when something is written in it besides the choice of its variant
+	var inline = function() {
+		var o = of.get() || {};
+		var written = Object.keys(o).filter(function(k) { return !(of.selectors && of.selectors[k]); });
+		return written.length ? o : undefined;
+	};
 	f.get = function() {
-		var o = of.get();
+		var o = inline();
 		return o ? o : sf.get();
 	};
-	f.validate = function() { return of.get() ? of.validate() : sf.validate(); };
+	f.validate = function() { return inline() ? of.validate() : sf.validate(); };
 	return f;
 }
 
 return baseclass.extend({
 	// Build the form of a schema node for a value. ctx:
-	//   spec       the spec, for x-ref choices and "used by" checks
-	//   devices    network devices, for x-ref: devices
-	//   notify(s)  show a message to the person
-	//   mapOptions { 'outputs': { filter, newValue } } by path
+	//   spec        the spec, for x-ref choices
+	//   schemaRoot  the schema of the whole spec, for "used by" checks (default: the node)
+	//   platform    router | phone (default: x-platform of the node, or router)
+	//   devices     network devices, for x-ref: devices
+	//   notify(s)   show a message to the person
+	//   mapOptions  { 'outputs': { filter, newValue } } by path
 	build: function(node, value, ctx0) {
 		var ctx = Object.assign({ notify: function() {} }, ctx0 || {});
+		if (!ctx.platform) ctx.platform = schema.platformOf(node);
+		if (!ctx.schemaRoot) ctx.schemaRoot = node;
 		if (!ctx.refs) ctx.refs = function(ref) { return autoformRefs(ctx, ref); };
 		if (!ctx.usedBy) ctx.usedBy = function(path, name) { return autoformUsedBy(ctx, path, name); };
 		var form = mk(ctx);
@@ -499,37 +711,24 @@ return baseclass.extend({
 	usedBy: autoformUsedBy
 });
 
-// Names for x-ref: elements of the spec (+ the built-in names lan and all).
+// Names for x-ref {section, also}: the entries of the section in the spec, and the words of `also`.
 function autoformRefs(ctx, ref) {
 	var spec = ctx.spec || {};
+	if (typeof ref === 'string') ref = { section: ref, also: [] };
 	var names;
-	if (ref === 'devices') {
+	if (ref.section === 'devices') {
 		names = (ctx.devices || []).slice();
 		((spec.lan && spec.lan.devices) || []).forEach(function(d) { if (names.indexOf(d) < 0) names.push(d); });
-		return names;
+	} else {
+		var parts = ref.section.split('.'), cur = spec;
+		for (var i = 0; i < parts.length && cur; i++) cur = cur[parts[i]];
+		names = isObj(cur) ? Object.keys(cur) : [];
 	}
-	var parts = ref.split('.'), cur = spec;
-	for (var i = 0; i < parts.length && cur; i++) cur = cur[parts[i]];
-	names = cur && typeof cur === 'object' ? Object.keys(cur) : [];
-	if (ref === 'clients') names.unshift('lan');
-	if (ref === 'lists') names.unshift('all');
+	(ref.also || []).slice().reverse().forEach(function(w) { if (names.indexOf(w) < 0) names.unshift(w); });
 	return names;
 }
 
 // Where the spec names `name` (a key of the map at `path`): [ 'rules[2].out', ... ]. The entry itself is not counted.
 function autoformUsedBy(ctx, path, name) {
-	var out = [];
-	var spec = ctx.spec || {};
-	// only the keys that name an element: `direct` as the value of kind or on_fail is not a reference
-	var REF_KEYS = [ 'out', 'over', 'members', 'default', 'to', 'for', 'upstream', 'other', 'servers', 'dns' ];
-	var walk = function(v, p, k) {
-		if (typeof v === 'string') { if (v === name && REF_KEYS.indexOf(k) >= 0) out.push(p); return; }
-		if (Array.isArray(v)) { v.forEach(function(x, i) { walk(x, p + '[' + i + ']', k); }); return; }
-		if (v && typeof v === 'object') Object.keys(v).forEach(function(kk) {
-			if (p === path && kk === name) return;   // the entry itself
-			walk(v[kk], p ? p + '.' + kk : kk, kk);
-		});
-	};
-	walk(spec, '', '');
-	return out;
+	return schema.usedBy(ctx.schemaRoot, ctx.spec || {}, path, name);
 }

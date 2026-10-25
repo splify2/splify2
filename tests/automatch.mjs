@@ -10,14 +10,51 @@ let fails = 0, total = 0
 const canon = (v) => JSON.stringify(v, (k, x) => (x && typeof x === 'object' && !Array.isArray(x) ? Object.fromEntries(Object.entries(x).sort(([a], [b]) => a.localeCompare(b))) : x))
 const check = (what, want, got) => {
   total++
-  const w = JSON.stringify(want), g = JSON.stringify(got)
+  const w = canon(want), g = canon(got)
   if (w === g) { console.log(`${what.padEnd(88)} ok`); return }
   fails++
   console.log(`${what.padEnd(88)} ПРОВАЛ\n    ожидалось: ${w.slice(0, 700)}\n    получено:  ${g.slice(0, 1500)}`)
 }
 
 const CORE = resolve(RES, 'view/splify2/core')
-const FIXTURE = JSON.parse(readFileSync(resolve(ROOT, 'files/usr/share/splify2/spec-schema.json'), 'utf8'))
+// Настоящий вывод `steer spec-schema --json` (ядро 2.0.5, роутер, без модулей): tests/fixtures/spec-schema.json.
+// Запасная схема пакета — его точная копия.
+const FIXTURE = JSON.parse(readFileSync(resolve(ROOT, 'tests/fixtures/spec-schema.json'), 'utf8'))
+const BUNDLED = readFileSync(resolve(ROOT, 'files/usr/share/splify2/spec-schema.json'), 'utf8')
+// Вид, которого в сборке без модулей нет, и вид плагина — в сборке с модулями и плагином схема их имеет.
+// Тут они собраны из настоящей схемы: vless получает ключи, плагин warpbox — вид `warp` и ключ с x-plugin.
+const EXT = JSON.parse(JSON.stringify(FIXTURE))
+{
+  const o = EXT.properties.outputs.additionalProperties, V = o['x-variants']
+  const common = V.interface.properties
+  V['tunnel:vless'] = {
+    type: 'object', description: 'Туннель VLESS по подписке.', 'x-spec': { kind: 'tunnel', protocol: 'vless' },
+    'x-example': { kind: 'tunnel', protocol: 'vless', subscription: 's1' }, required: ['kind', 'protocol', 'subscription'], additionalProperties: false,
+    properties: {
+      kind: { type: 'string', const: 'tunnel' }, protocol: { type: 'string', const: 'vless' },
+      on_fail: common.on_fail, ipv6: common.ipv6,
+      subscription: { type: 'string', description: 'Подписка.', 'x-example': 's1' },
+      transport: { type: 'string', enum: ['tcp', 'ws', 'grpc'], default: 'tcp', 'x-example': 'ws' },
+      path: { type: 'string', 'x-when': { transport: ['ws', 'grpc'] }, 'x-example': '/p' },
+      exclude: { type: 'array', items: { type: 'string', pattern: '^[A-Z]{2}$' }, 'x-one-or-list': true, 'x-example': ['NL'] },
+    },
+  }
+  V.warp = JSON.parse(JSON.stringify(V.warp))
+  V.warp['x-plugin'] = { id: 'warpbox', version: '1.0.0' }
+  V.warp.properties.countries['x-plugin'] = 'warpbox'
+  V.vendor = {
+    type: 'object', description: 'Вид плагина.', 'x-spec': { kind: 'vendor' }, 'x-plugin': { id: 'acme', version: '0.1.0' },
+    'x-example': { kind: 'vendor', token: 't' }, required: ['kind', 'token'], additionalProperties: false,
+    properties: {
+      kind: { type: 'string', const: 'vendor' },
+      token: { type: 'string', 'x-secret': true, 'x-plugin': 'acme', 'x-example': 't' },
+      via: { type: 'string', 'x-ref': { section: 'outputs', also: ['direct'] }, 'x-plugin': 'acme', 'x-example': 'direct' },
+      conf: { type: 'string', 'x-path': 'conf', 'x-plugin': 'acme', 'x-example': 'a.conf' },
+    },
+  }
+  o.properties.kind.enum.push('vendor')
+  EXT['x-plugins'] = [ { id: 'warpbox', version: '1.0.0', enabled: true, kinds: ['warp'] }, { id: 'acme', version: '0.1.0', enabled: true, kinds: ['vendor'] } ]
+}
 
 const calls = [], replies = {}
 const { load } = makeLoader({ rpcCalls: calls, rpcReplies: replies })
@@ -50,173 +87,276 @@ const autoform = load('view.splify2.core.autoform')
   check('словарь грузится по языку LuCI с откатом pt-BR -> pt', 'Adicionar', i2.T('Add'))
 }
 
-// ---- 2. покрытие ключей фикстуры полями ---------------------------------------------------
-const paths = schema.paths(FIXTURE, '')
-check('фикстура: ключей в схеме не меньше 100', true, paths.length >= 100)
+// ---- 2. схема пакета и покрытие ключей полями -----------------------------------------------
+const isObj = (x) => x !== null && typeof x === 'object' && !Array.isArray(x)
+const clone = (x) => JSON.parse(JSON.stringify(x))
+const build = (root, spec, extra = {}) => autoform.build(root, spec, { spec, devices: [ 'br-lan' ], notify() {}, schemaRoot: root, ...extra })
+check('запасная схема пакета — точная копия вывода ядра (tests/fixtures)', true, BUNDLED === readFileSync(resolve(ROOT, 'tests/fixtures/spec-schema.json'), 'utf8'))
+check('корневые разделы схемы — как в спеке v2 (без settings)', [ 'version', 'lan', 'clients', 'lists', 'outputs', 'dns', 'rules' ], Object.keys(FIXTURE.properties))
+check('схема не знает слов придуманного формата (x-map, x-kinds, x-name-pattern)', [], ['x-map', 'x-kinds', 'x-name-pattern'].filter((w) => JSON.stringify(FIXTURE).includes('"' + w + '"')))
 
-// минимальная спека с одним элементом в каждой карте и в списке правил
-const SAMPLE = { clients: { a: {} }, lists: { a: {} }, outputs: { a: { kind: 'direct' } }, dns: { upstreams: { a: {} } }, rules: [ { out: 'a' } ] }
-const ctx = { spec: SAMPLE, devices: [ 'br-lan', 'wg0' ], notify() {} }
-const form = autoform.build(FIXTURE, SAMPLE, ctx)
-const have = new Set(form.fields.map((f) => f.path))
-check('каждый ключ схемы имеет поле (' + paths.length + ')', [], paths.filter((p) => !have.has(p)))
-check('поля без ключа в схеме нет', [], [...have].filter((p) => p && !paths.includes(p) && !/\.\*$|\.\[\]$/.test(p) && !/^(clients|lists|outputs|rules|dns\.upstreams)$/.test(p) && !/^(lan|dns|dns\.cache_ttl)$/.test(p) && !/\.obfs$/.test(p) && !/\.inline$/.test(p)))
-
-// ---- 3. круг по каждому ключу ------------------------------------------------------------
 function sample(node) {
   const t = schema.typeOf(node)
+  if (t === 'boolean') return node.default === true ? false : true
+  if (node['x-example'] !== undefined && (t !== 'object' || Object.keys(node['x-example']).length)) return node['x-example']
   if (node.const !== undefined) return node.const
   if (node.enum) return node.enum[0]
-  if (t === 'array') {
-    const it = node.items || { type: 'string' }
-    return [ sample(it) ]
-  }
-  if (t === 'integer' || t === 'number') {
-    let v = node.minimum != null ? node.minimum : 1
-    if (node.default === v) v = v + 1
-    if (node.maximum != null && v > node.maximum) v = node.maximum
-    return v
-  }
-  if (t === 'boolean') return node.default === true ? false : true
-  if (node.pattern) {
-    if (node.pattern === '^[A-Z]{2}$') return 'NL'
-    if (node.pattern.startsWith('^https?://')) return 'http://probe.example/'
-    if (node.pattern.includes('0-9A-Fa-f')) return 'aa:bb:cc:dd:ee:01'
-    if (node.pattern.startsWith('^[0-9]+')) return '443'
-    if (node.pattern.startsWith('^[A-Za-z0-9_.-]')) return 'n1'
-  }
+  if (t === 'array') return [ sample(node.items || { type: 'string' }) ]
+  if (t === 'integer' || t === 'number') return node.minimum != null ? node.minimum : 1
   return 'x'
 }
-// положить значение по пути (+ дискриминаторы слоя и x-when) во вложенную спеку; вернуть узел-лист
-function place(path) {
-  const segs = path.split('.')
-  const spec = {}
-  let cur = spec, node = FIXTURE, parentNode = null
+const isLeaf = (n) => { const t = schema.typeOf(n); return t !== 'object' && !schema.isMap(n) && !schema.isObjectArray(n) }
+
+// Положить в пустую спеку значение по пути поля (+ ключи вида и условия видимости соседей); вернуть лист.
+// Для пути-селектора (kind, protocol, @variant) листа нет: спека — одна запись нужного вида.
+function place(root, path) {
+  const segs = path.split('.'), spec = { version: 2 }
+  let cur = spec, node = root, parent = null, sel = false
+  node = { ...root }
   for (let i = 0; i < segs.length; i++) {
     const s = segs[i], last = i === segs.length - 1
     if (s === '*') { node = schema.mapNode(node); cur.e1 = {}; cur = cur.e1; continue }
     if (s === '[]') { node = node.items; const o = {}; cur.push(o); cur = o; continue }
+    if (s === '@variant') { sel = true; break }
     if (s.startsWith('@')) {
-      const layer = s.slice(1), [kind, proto] = layer.split(':')
-      cur.kind = kind
-      if (proto) cur.protocol = proto
-      parentNode = node
-      node = { properties: node['x-kinds'][layer].properties }
-      continue
+      const name = s.slice(1), V = node['x-variants'], d = node['x-discriminator']
+      Object.assign(cur, clone(V[name]['x-spec'] || {}))
+      if (d && d.has && name === d.yes) cur[d.has] = sample(V[name].properties[d.has])
+      parent = node; node = V[name]; continue
     }
-    const sub = node.properties[s]
-    // условия видимости: значения соседей, а их условия — рекурсивно (prefix -> ipv6 -> kind)
-    const need = (n) => { if (n['x-when']) for (const [k, vals] of Object.entries(n['x-when'])) { if (cur[k] === undefined) cur[k] = vals[0]; const sib = (node.properties || {})[k]; if (sib) need(sib) } }
+    if (schema.selectorKeys(node).includes(s)) {   // kind / protocol
+      sel = true
+      break
+    }
+    const sub = (node.properties || {})[s]
+    if (!sub) throw new Error('нет ключа ' + s + ' в ' + path)
+    // условия: соседи, чьи значения нужны (рекурсивно: prefix -> ipv6)
+    const need = (n) => {
+      for (const [k, vals] of Object.entries(n['x-when'] || {})) { if (cur[k] === undefined) cur[k] = vals[0]; if (node.properties[k]) need(node.properties[k]) }
+      for (const k of n['x-when-set'] || []) { if (cur[k] === undefined) cur[k] = sample(node.properties[k]); if (node.properties[k]) need(node.properties[k]) }
+    }
     need(sub)
-    if (last) { cur[s] = sample(sub); return { spec, leaf: sub, holder: cur, key: s } }
-    const st = schema.typeOf(sub)
-    if (st === 'array' && sub.items && (sub.items.properties || schema.typeOf(sub.items) === 'object')) { cur[s] = []; cur = cur[s]; node = sub; continue }
-    cur[s] = schema.isMap(sub) ? {} : {}
-    cur = cur[s]; node = sub
+    if (last) { cur[s] = sample(sub); return { spec, leaf: sub, holder: cur, key: s, defining: !!(parent && parent['x-discriminator'] && parent['x-discriminator'].has === s) } }
+    if (schema.typeOf(sub) === 'array' && schema.isObjectArray(sub)) { cur[s] = []; cur = cur[s]; node = sub; continue }
+    cur[s] = {}; cur = cur[s]; node = sub
+  }
+  if (sel) {
+    // запись нужного вида: для kind/protocol — первый вид, для has — пустая
+    if (segs[segs.length - 1] === 'protocol') Object.assign(cur, { kind: 'tunnel' })
+    return { spec, leaf: null, holder: cur, key: null }
   }
   throw new Error('нет листа: ' + path)
 }
-let rtFail = []
-for (const p of paths) {
-  const segs = p.split('.')
-  // промежуточные узлы (объекты, карты) не листья
-  let sub = FIXTURE
-  const node = (() => { try { const r = place(p); return r } catch { return null } })()
-  if (!node) continue
-  const { spec, leaf } = node
-  const lt = schema.typeOf(leaf)
-  if ((lt === 'object' || leaf.properties || schema.isMap(leaf) || leaf['x-kinds']) && lt !== 'union') continue
-  if (lt === 'array' && leaf.items && (leaf.items.properties || schema.typeOf(leaf.items) === 'object')) continue
-  if (p === 'version') continue
-  const f = autoform.build(FIXTURE, spec, { spec, devices: [ 'br-lan' ], notify() {} })
-  const got = f.get()
-  const same = canon(got) === canon(spec)
-  if (!same) rtFail.push(p + ': ' + JSON.stringify(spec) + ' -> ' + JSON.stringify(got))
-}
-check('круг «значение -> форма -> значение» без потерь по каждому ключу', [], rtFail)
 
-// заполнить поле руками в пустой записи -> прочитать
-{
-  let miss = []
+for (const [name, root] of [ ['настоящая схема ядра', FIXTURE], ['схема с модулями и плагинами', EXT] ]) {
+  const paths = schema.paths(root, '')
+  check(name + ': ключей в схеме не меньше 100', true, paths.length >= 100)
+  const missing = [], extra = []
   for (const p of paths) {
-    const r = (() => { try { return place(p) } catch { return null } })()
-    if (!r) continue
-    const lt = schema.typeOf(r.leaf)
-    if ((r.leaf.properties || schema.isMap(r.leaf) || r.leaf['x-kinds']) && lt !== 'union') continue
-    if (lt === 'array' && r.leaf.items && (r.leaf.items.properties || schema.typeOf(r.leaf.items) === 'object')) continue
-    if (p === 'version') continue
-    // пустая запись с теми же дискриминаторами, но без самого ключа
-    const spec = JSON.parse(JSON.stringify(r.spec)); delete r.holder[r.key]
-    const empty = JSON.parse(JSON.stringify(r.spec))
-    // holder указывает в r.spec: удаляем ключ из копии через повторный place
-    const r2 = place(p); delete r2.holder[r2.key]
-    const f = autoform.build(FIXTURE, r2.spec, { spec: r2.spec, devices: [ 'br-lan' ], notify() {} })
-    const field = f.fields.filter((x) => x.path === p).pop()?.field
-    if (!field) { miss.push(p + ': нет поля'); continue }
-    const want = sample(r.leaf)
-    const w = field.widget
-    if (field.kind === 'const' || !w) continue
-    const setRaw = (v) => { if (w.constructor.name === 'Checkbox') w.type(v ? '1' : '0'); else if (Array.isArray(v)) w.type(v.map(String)); else if (typeof v === 'boolean') w.type(String(v)); else w.type(String(v)) }
-    if (lt === 'union') { setRaw(want) }
-    else setRaw(want)
-    const got = f.get()
-    const exp = place(p).spec
-    if (canon(got) !== canon(exp)) miss.push(p + ': ' + JSON.stringify(got) + ' != ' + JSON.stringify(exp))
+    let r
+    try { r = place(root, p) } catch (e) { missing.push(p + ': ' + e.message); continue }
+    const f = build(root, r.spec)
+    if (!f.fields.some((x) => x.path === p)) missing.push(p)
   }
-  check('заполнить поле -> прочитать: значение попадает в спеку (каждый ключ)', [], miss)
+  check(name + ': на каждый ключ каждого варианта есть поле (' + paths.length + ')', [], missing)
+  // поле без ключа: каждый путь формы — ключ схемы, запись карты или списка
+  const all = new Set(paths)
+  const spec = { clients: { a: {} }, lists: { a: {} }, outputs: { a: { kind: 'direct' }, g: { kind: 'group', members: ['a'] }, i: { kind: 'interface', device: 'wg0' } },
+    dns: { upstreams: { a: { url: 'udp://1.1.1.1' }, b: { servers: ['a'] } } }, rules: [ { to: 'x', out: 'a', dns: { url: 'udp://1.1.1.1' } } ] }
+  const f = build(root, spec)
+  const stray = f.fields.map((x) => x.path).filter((p) => p && !all.has(p) && !/\.\*$|\.\[\]$/.test(p))
+  check(name + ': поля без ключа в схеме нет', [], stray)
+  // круг «значение -> форма -> значение» без потерь по каждому листу
+  const rt = [], fill = []
+  let nLeaf = 0
+  for (const p of paths) {
+    let r; try { r = place(root, p) } catch { continue }
+    if (!r.leaf || !isLeaf(r.leaf)) continue
+    nLeaf++
+    const f1 = build(root, r.spec)
+    if (canon(f1.get()) !== canon(r.spec)) rt.push(p + ': ' + JSON.stringify(r.spec) + ' -> ' + JSON.stringify(f1.get()))
+    // заполнить поле руками в записи без этого ключа (ключ, которым запись становится группой, и union — отдельно, в разделе вариантов)
+    if (r.defining || schema.typeOf(r.leaf) === 'union') continue
+    const r2 = place(root, p); delete r2.holder[r2.key]
+    const f2 = build(root, r2.spec)
+    const field = f2.fields.filter((x) => x.path === p).pop()?.field
+    if (!field || !field.widget || field.kind === 'const') { fill.push(p + ': нет поля'); continue }
+    const want = sample(r.leaf), w = field.widget
+    if (w.constructor.name === 'Checkbox') w.type(want ? '1' : '0')
+    else if (Array.isArray(want)) w.type(want.map(String))
+    else w.type(String(want))
+    if (canon(f2.get()) !== canon(r.spec)) fill.push(p + ': ' + JSON.stringify(f2.get()) + ' != ' + JSON.stringify(r.spec))
+  }
+  check(name + ': круг «значение -> форма -> значение» без потерь по каждому ключу (' + nLeaf + ')', [], rt)
+  check(name + ': заполнить поле -> прочитать: значение попадает в спеку (каждый ключ)', [], fill)
+  check(name + ': x-example каждого варианта выхода — запись без потерь', [], Object.entries(root.properties.outputs.additionalProperties['x-variants']).filter(([, v]) => v['x-example'] && !v['x-absent'])
+    .filter(([n, v]) => { const spec = { outputs: { e1: clone(v['x-example']) } }; return canon(build(root, spec).get().outputs) !== canon(spec.outputs) }).map(([n]) => n))
 }
 
-// ---- 4. видимость, виды, неизвестное ----------------------------------------------------
+// ---- 3. условия видимости -------------------------------------------------------------------
 {
-  const v = (spec) => autoform.build(FIXTURE, spec, { spec, devices: [], notify() {} })
-  const shown = (f, path) => { const x = f.fields.filter((y) => y.path === path).pop().field; return x.el.shown !== false && !x.hidden }
-  let f = v({ outputs: { g: { kind: 'group', members: [ 'a' ], pick: 'latency' } } })
-  check('группа pick:latency показывает tolerance', true, shown(f, 'outputs.*.@group.tolerance'))
-  check('группа pick:latency прячет weights', false, shown(f, 'outputs.*.@group.weights'))
-  check('группа без pick (умолчание order) показывает only', true, shown(f, 'outputs.*.@group.only'))
-  check('группа не показывает ключи туннеля (members есть, nodes нет)', false, shown(f, 'outputs.*.@tunnel.nodes'))
-  f = v({ outputs: { t: { kind: 'tunnel', protocol: 'vless', subscription: 's', nodes: [ 1 ] } } })
-  check('туннель vless показывает transport', true, shown(f, 'outputs.*.@tunnel:vless.transport'))
-  check('туннель vless прячет members группы', false, shown(f, 'outputs.*.@group.members'))
-  f = v({ outputs: { t: { kind: 'tunnel', protocol: 'socks', subscription: 's' } } })
-  check('туннель socks прячет transport', false, shown(f, 'outputs.*.@tunnel:vless.transport'))
-  // неизвестное сохраняется
-  const spec = { version: 2, future: { a: 1 }, outputs: { z: { kind: 'zzz', secret_key: 'abc' }, d: { kind: 'direct', extra: [ 1 ] } } }
-  f = v(spec)
-  check('неизвестные ключи верхнего уровня, вида и записи сохраняются', JSON.stringify(spec.outputs), JSON.stringify(f.get().outputs))
-  check('неизвестный вид выхода остаётся в списке видов, а не заменяется первым', 'zzz', f.fields.find((x) => x.path === 'outputs.*.kind' && x.field.widget.value === 'zzz').field.get())
-  // отказ: обязательное
-  f = v({ outputs: { g: { kind: 'group' } } })
+  const shown = (f, path) => { const x = f.fields.filter((y) => y.path === path).pop(); return !!x && x.field.el.shown !== false && !x.field.hidden }
+  let f = build(FIXTURE, { outputs: { g: { kind: 'group', members: [ 'a' ], pick: 'latency' } } })
+  check('x-when: группа pick:latency показывает tolerance', true, shown(f, 'outputs.*.@group.tolerance'))
+  check('x-when: группа pick:latency прячет weights и by', [ false, false ], [ shown(f, 'outputs.*.@group.weights'), shown(f, 'outputs.*.@group.by') ])
+  f = build(FIXTURE, { outputs: { g: { kind: 'group', members: [ 'a' ], pick: 'balance' } } })
+  check('x-when: группа pick:balance показывает weights и by, прячет tolerance', [ true, true, false ], [ shown(f, 'outputs.*.@group.weights'), shown(f, 'outputs.*.@group.by'), shown(f, 'outputs.*.@group.tolerance') ])
+  f = build(FIXTURE, { outputs: { g: { kind: 'group', members: [ 'a' ] } } })
+  check('x-when: без pick (умолчание order) tolerance спрятан', false, shown(f, 'outputs.*.@group.tolerance'))
+  f = build(FIXTURE, { outputs: { i: { kind: 'interface', device: 'wg0' } } })
+  check('x-when: prefix виден только при ipv6: routed', [ false ], [ shown(f, 'outputs.*.@interface.prefix') ])
+  f = build(FIXTURE, { outputs: { i: { kind: 'interface', device: 'wg0', ipv6: 'routed' } } })
+  check('x-when: ipv6: routed показывает prefix', true, shown(f, 'outputs.*.@interface.prefix'))
+  f = build(FIXTURE, { outputs: { i: { kind: 'interface', device: 'wg0' } } })
+  check('x-when-set: over спрятан, пока нет obfs', false, shown(f, 'outputs.*.@interface.over'))
+  f = build(FIXTURE, { outputs: { i: { kind: 'interface', device: 'wg0', obfs: { server: '1.2.3.4:1', listen: '127.0.0.1:2' }, over: 'x' } } })
+  check('x-when-set: с obfs over виден', true, shown(f, 'outputs.*.@interface.over'))
+  check('x-when-set: over, записанный при obfs, не теряется', 'x', f.get().outputs.i.over)
+  // x-needs: scope: device без for — отказ разбора, форма говорит это заранее
+  f = build(FIXTURE, { rules: [ { to: 'a', out: 'b', scope: 'device' } ] })
+  check('x-needs: scope: device без for — ошибка у ключа', true, f.validate().some((e) => e.path === 'rules.[].scope' && /for/.test(e.message)))
+  f = build(FIXTURE, { rules: [ { to: 'a', out: 'b', scope: 'device', for: 'kids' } ] })
+  check('x-needs: scope: device с for — без ошибки', [], f.validate())
+  f = build(FIXTURE, { rules: [ { to: 'a', out: 'b', scope: 'global' } ] })
+  check('x-needs: scope: global for не требует', [], f.validate())
+  // x-platform / x-unsupported
+  f = build(FIXTURE, { clients: { a: { addr: '10.0.0.1' } } })
+  check('x-platform: ключи телефона (uid, self, app) на роутере не рисуются', [ false, false, false ], [ 'uid', 'self', 'app' ].map((k) => f.fields.some((x) => x.path === 'clients.*.' + k)))
+  f = build(FIXTURE, { clients: { a: { addr: '10.0.0.1' } } }, { platform: 'phone' })
+  check('x-platform: на телефоне они есть', [ true, true, true ], [ 'uid', 'self', 'app' ].map((k) => f.fields.some((x) => x.path === 'clients.*.' + k)))
+  check('x-platform: ключ телефона в спеке роутера сохраняется, не теряется', { addr: '10.0.0.1', uid: [ 10123 ] }, build(FIXTURE, { clients: { a: { addr: '10.0.0.1', uid: [ 10123 ] } } }).get().clients.a)
+  f = build(FIXTURE, { lists: { a: { domains: [ 'x.example' ] } } })
+  check('x-unsupported: ключ нарисован с пометкой', true, f.fields.find((x) => x.path === 'lists.*.domains').field.el.textContent.includes('Not supported yet'))
+  check('x-unsupported: записанный ключ — ошибка проверки', true, f.validate().some((e) => e.path === 'lists.*.domains'))
+  check('x-unsupported: пустой ключ ошибки не даёт', [], build(FIXTURE, { lists: { a: { srs: [ 'a.srs' ] } } }).validate())
+  // x-one-or-list: одно значение остаётся одним
+  const one = { rules: [ { to: 'youtube', out: 'a', for: 'kids' } ] }
+  check('x-one-or-list: to: youtube остаётся строкой, не списком', one, (({ version, ...r }) => r)(build(FIXTURE, clone(one)).get()))
+  check('x-one-or-list: список из двух остаётся списком', [ 'a', 'b' ], build(FIXTURE, { rules: [ { to: [ 'a', 'b' ], out: 'a' } ] }).get().rules[0].to)
+  // x-ref: имена из спеки и слова also
+  const s2 = { outputs: { a: { kind: 'direct' }, b: { kind: 'block' } }, lists: { l: {} }, clients: { c: {} }, dns: { upstreams: { u: { url: 'udp://1.1.1.1' } } }, rules: [ { to: 'l', out: 'a' } ] }
+  f = build(FIXTURE, s2)
+  const ch = (p) => Object.keys(f.fields.find((x) => x.path === p).field.widget.choices || {}).filter(Boolean)
+  check('x-ref outputs: выбор из выходов спеки', [ 'a', 'b' ], ch('rules.[].out'))
+  check('x-ref lists + also: all и имена списков', [ 'all', 'l' ], ch('rules.[].to'))
+  check('x-ref clients + also: lan и имена клиентов', [ 'lan', 'c' ], ch('rules.[].for'))
+  check('x-ref dns.upstreams: имена серверов', [ 'u' ], ch('dns.upstream'))
+  check('x-ref с also у выхода сервера DNS: direct и выходы', [ 'direct', 'a', 'b' ], ch('dns.upstreams.*.@server.out'))
+  check('usedBy: выход, названный правилом', [ 'rules[0].out' ], autoform.usedBy({ spec: s2, schemaRoot: FIXTURE }, 'outputs', 'a'))
+  check('usedBy: kind: direct и on_fail: direct не ссылки', [], autoform.usedBy({ schemaRoot: FIXTURE, spec: { outputs: { direct: { kind: 'direct' }, x: { kind: 'group', members: [ 'q' ], on_fail: 'direct' } } } }, 'outputs', 'direct'))
+  check('usedBy: members группы и out сервера DNS — ссылки', [ 'outputs.g.members[0]', 'dns.upstreams.u.out' ].sort(), autoform.usedBy({ schemaRoot: FIXTURE, spec: { outputs: { w: { kind: 'direct' }, g: { kind: 'group', members: [ 'w' ] } }, dns: { upstreams: { u: { url: 'udp://1.1.1.1', out: 'w' } } } } }, 'outputs', 'w').sort())
+  check('usedBy: сервер DNS под ссылкой правила (строка и имя в группе)', [ 'dns.upstreams.g.servers[0]', 'rules[0].dns' ], autoform.usedBy({ schemaRoot: FIXTURE, spec: { dns: { upstreams: { u: { url: 'udp://1.1.1.1' }, g: { servers: [ 'u' ] } } }, rules: [ { to: 'a', out: 'b', dns: 'u' } ] } }, 'dns.upstreams', 'u'))
+}
+
+// ---- 4. варианты -----------------------------------------------------------------------------
+{
+  const fld = (f, path) => f.fields.filter((y) => y.path === path).pop()?.field
+  const shown = (f, path) => { const x = fld(f, path); return !!x && x.el.shown !== false && !x.hidden }
+  const choices = (f, path) => Object.entries(fld(f, path).widget.choices)
+  // выбор вида: kind, затем protocol у туннеля; ключи чужих видов не показываются
+  let f = build(EXT, { outputs: { t: { kind: 'tunnel', protocol: 'vless', subscription: 's' } } })
+  check('вид tunnel: после kind выбирается protocol', true, !!fld(f, 'outputs.*.protocol') && fld(f, 'outputs.*.protocol').get() === 'vless')
+  check('вид tunnel:vless: ключи варианта показаны', [ true, true ], [ shown(f, 'outputs.*.@tunnel:vless.transport'), shown(f, 'outputs.*.@tunnel:vless.subscription') ])
+  check('вид tunnel:vless: x-when transport -> path скрыт при tcp', false, shown(f, 'outputs.*.@tunnel:vless.path'))
+  check('вид tunnel:vless: ключи группы и интерфейса не строятся', [ false, false ], [ !!fld(f, 'outputs.*.@group.members'), !!fld(f, 'outputs.*.@interface.device') ])
+  check('вид tunnel:vless: пишется kind и protocol и ключи варианта', { t: { kind: 'tunnel', protocol: 'vless', subscription: 's' } }, f.get().outputs)
+  // смена вида человеком: ключи нового вида появляются, прежнего — скрыты, общие значения переходят
+  f = build(FIXTURE, { outputs: { a: { kind: 'group', members: [ 'x' ], on_fail: 'direct' } } })
+  fld(f, 'outputs.*.kind').widget.type('block')
+  check('смена вида group -> block: ключи block показаны, members скрыт', [ true, false ], [ shown(f, 'outputs.*.@block.on_fail'), shown(f, 'outputs.*.@group.members') ])
+  check('смена вида: общий on_fail перешёл, ключи группы не пишутся', { a: { kind: 'block', on_fail: 'direct' } }, f.get().outputs)
+  fld(f, 'outputs.*.kind').widget.type('interface')
+  check('смена вида на interface: обязательный device — ошибка', true, f.validate().some((e) => e.path === 'outputs.*.@interface.device'))
+  // новый выход начинается с ключей первого доступного вида
+  f = build(FIXTURE, {})
+  const outs = fld(f, 'outputs')
+  outs.nameInput.setValue('n1'); outs.addButton.listeners.click[0]({ preventDefault() {} })
+  check('карта: новый выход — kind первого доступного вида', { n1: { kind: 'direct' } }, f.get().outputs)
+  // вид, которого нет: показан с причиной, не спрятан
+  f = build(FIXTURE, { outputs: { t: { kind: 'tunnel', protocol: 'vless', subscription: 's1', transport: 'ws' } } })
+  const pc = choices(f, 'outputs.*.protocol')
+  check('x-absent: протокол vless в списке и помечен', true, pc.some(([v, l]) => v === 'vless' && /not available/.test(l)))
+  check('x-absent: все протоколы tunnel в списке', [ 'vless', 'hysteria2', 'trojan', 'shadowsocks', 'socks', 'http', 'vmess' ], pc.map(([v]) => v))
+  const entry = f.fields.find((x) => x.path === 'outputs.*' && x.field.absentReason).field
+  check('x-absent: причина из схемы показана на форме', true, entry.el.textContent.includes('steer-vless'))
+  check('x-absent: показ причины не прячет селекторы', true, shown(f, 'outputs.*.protocol') && shown(f, 'outputs.*.kind'))
+  check('x-absent: ключи записи не теряются (форма не может их нарисовать)', { t: { kind: 'tunnel', protocol: 'vless', subscription: 's1', transport: 'ws' } }, f.get().outputs)
+  check('x-absent: проверка отказывает с причиной', true, f.validate().some((e) => /steer-vless/.test(e.message)))
+  f = build(FIXTURE, { outputs: { x: { kind: 'xsteer' } } })
+  check('x-absent у вида без протокола: вид помечен в списке kind', true, choices(f, 'outputs.*.kind').some(([v, l]) => v === 'xsteer' && /not available/.test(l)))
+  f = build(FIXTURE, { outputs: { a: { kind: 'direct' } } })
+  fld(f, 'outputs.*.kind').widget.type('xsteer')
+  check('x-absent: выбор недоступного вида показывает причину', true, f.fields.find((x) => x.path === 'outputs.*').field.absentReason.includes('steer-xsteer'))
+  fld(f, 'outputs.*.kind').widget.type('block')
+  check('x-absent: другой вид — причина убрана', null, f.fields.find((x) => x.path === 'outputs.*').field.absentReason)
+  // вид плагина помечен плагином
+  f = build(EXT, { outputs: { a: { kind: 'direct' } } })
+  const kc = choices(f, 'outputs.*.kind')
+  check('вид плагина: warp помечен плагином warpbox, vendor — acme', [ true, true ], [ kc.some(([v, l]) => v === 'warp' && /plugin warpbox/.test(l)), kc.some(([v, l]) => v === 'vendor' && /plugin acme/.test(l)) ])
+  check('вид плагина: вид ядра не помечен', true, kc.some(([v, l]) => v === 'block' && l === 'block'))
+  f = build(EXT, { outputs: { a: { kind: 'vendor', token: 't' } } })
+  check('вид плагина: x-secret у ключа плагина — поле пароля', true, fld(f, 'outputs.*.@vendor.token').widget.options.password)
+  check('вид плагина: ключ с x-plugin подписан плагином', true, fld(f, 'outputs.*.@vendor.token').el.textContent.includes('acme'))
+  check('вид плагина: x-path conf — подсказка про каталог настроек', true, fld(f, 'outputs.*.@vendor.conf').el.textContent.includes('settings directory'))
+  check('вид плагина: x-ref в ключе плагина — выбор среди выходов и direct', [ 'direct', 'a' ], Object.keys(fld(f, 'outputs.*.@vendor.via').widget.choices).filter(Boolean))
+  check('вид плагина: запись пишется и читается', { a: { kind: 'vendor', token: 't' } }, f.get().outputs)
+  check('вид плагина без плагина (неизвестный kind): вид остаётся, ключи целы', { z: { kind: 'zzz', secret_key: 'abc' } }, build(FIXTURE, { outputs: { z: { kind: 'zzz', secret_key: 'abc' } } }).get().outputs)
+  f = build(FIXTURE, { outputs: { z: { kind: 'zzz' } } })
+  check('неизвестный вид выхода остаётся в списке видов, а не заменяется первым', 'zzz', fld(f, 'outputs.*.kind').get())
+  // DNS: вариант по наличию servers
+  f = build(FIXTURE, { dns: { upstreams: { s: { url: 'tls://x' }, g: { servers: [ 's' ], mode: 'race' } } } })
+  const ents = fld(f, 'dns.upstreams').entries
+  check('dns: запись с servers — группа, без — сервер', [ 'server', 'group' ], ents.map((e) => e.field.variant))
+  check('dns: сервер и группа читаются без потерь', { s: { url: 'tls://x' }, g: { servers: [ 's' ], mode: 'race' } }, f.get().dns.upstreams)
+  fld(f, 'dns.upstreams.*.@variant')
+  const sel = ents[0].field.selectors.variant
+  sel.widget.type('group')
+  check('dns: смена сервера на группу прячет url и показывает servers', [ true, true ], [ ents[0].field.kids.filter((k) => k.key === 'url')[0].field.hidden, !ents[0].field.kids.filter((k) => k.key === 'servers')[0].field.hidden ])
+  check('dns: у новой группы без servers проверка отказывает', true, f.validate().some((e) => /servers/.test(e.path)))
+  // dns правила: имя или запись
+  const ru = { rules: [ { to: 'a', out: 'b', dns: 'u' }, { to: 'a', out: 'b', dns: { url: 'tls://x', fragment: true } } ] }
+  check('rules[].dns: имя и запись читаются без потерь', ru.rules, build(FIXTURE, clone(ru)).get().rules)
+  f = build(FIXTURE, { rules: [ { to: 'a', out: 'b' } ] })
+  check('rules[].dns: пустой остаётся без ключа', { to: 'a', out: 'b' }, f.get().rules[0])
+  // обязательные, границы, шаблоны
+  f = build(FIXTURE, { outputs: { g: { kind: 'group' } } })
   check('валидация: у группы нужен members', true, f.validate().some((e) => e.path === 'outputs.*.@group.members'))
-  f = v({ outputs: { t: { kind: 'tunnel', active: 70000 } } })
-  check('валидация: число вне границ', true, f.validate().some((e) => e.path === 'outputs.*.@tunnel.active'))
-  f = v({ outputs: { t: { kind: 'tunnel', exclude: [ 'ru' ] } } })
-  check('валидация: шаблон кода страны', true, f.validate().some((e) => e.path === 'outputs.*.@tunnel.exclude'))
-  // секрет и путь
-  const sec = autoform.build({ type: 'object', properties: { token: { type: 'string', 'x-secret': true }, file: { type: 'string', 'x-path': 'conf' } } }, {}, {})
+  f = build(EXT, { outputs: { t: { kind: 'tunnel', protocol: 'vless', subscription: 's', exclude: [ 'ru' ] } } })
+  check('валидация: шаблон кода страны', true, f.validate().some((e) => e.path === 'outputs.*.@tunnel:vless.exclude'))
+  f = build(FIXTURE, { dns: { cache: 1000000 } })
+  check('валидация: число вне границ', true, f.validate().some((e) => e.path === 'dns.cache'))
+  f = build(FIXTURE, { dns: { cache_ttl: { min: 5 } } })
+  check('вложенный объект dns.cache_ttl: ключ и круг', { version: 2, dns: { cache_ttl: { min: 5 } } }, f.get())
+  // неизвестное сохраняется
+  const spec = { version: 2, future: { a: 1 }, outputs: { d: { kind: 'direct', extra: [ 1 ] } }, dns: { newkey: 1, cache: 5 } }
+  f = build(FIXTURE, spec)
+  check('неизвестные ключи записи и вложенного объекта сохраняются', { d: { kind: 'direct', extra: [ 1 ] } }, f.get().outputs)
+  check('неизвестный ключ вложенного объекта (dns.newkey) сохраняется', { newkey: 1, cache: 5 }, f.get().dns)
+  // секрет и путь (схема настроек плагина — тот же модуль)
+  const sec = autoform.build({ type: 'object', properties: { token: { type: 'string', 'x-secret': true }, file: { type: 'string', 'x-path': 'conf' }, node: { type: 'string', 'x-ref': 'outputs' } } }, {}, { spec: { outputs: { q: {} } } })
   check('x-secret даёт поле пароля', true, sec.fields.find((x) => x.path === 'token').field.widget.options.password)
   check('x-path даёт подсказку про путь', true, sec.fields.find((x) => x.path === 'file').field.el.textContent.includes('settings directory'))
-  // x-ref: выбор из спеки
-  const s2 = { outputs: { a: { kind: 'direct' }, b: { kind: 'block' } }, rules: [ { out: 'a' } ] }
-  f = v(s2)
-  check('x-ref outputs даёт выбор из выходов спеки', [ 'a', 'b' ], Object.keys(f.fields.find((x) => x.path === 'rules.[].out').field.widget.choices).filter(Boolean))
-  check('x-ref clients добавляет lan', true, Object.keys(f.fields.find((x) => x.path === 'rules.[].for').field.widget.choices || {}).includes('lan'))
-  check('usedBy: выход, названный правилом', [ 'rules[0].out' ], autoform.usedBy({ spec: s2 }, 'outputs', 'a'))
-  check('usedBy: kind: direct не ссылка', [], autoform.usedBy({ spec: { outputs: { direct: { kind: 'direct' }, x: { kind: 'group', on_fail: 'direct' } } } }, 'outputs', 'direct'))
+  check('x-ref строкой (схема плагина) — выбор среди выходов', [ 'q' ], Object.keys(sec.fields.find((x) => x.path === 'node').field.widget.choices).filter(Boolean))
 }
 
-// ---- 5. карты и списки: добавить, убрать, порядок -----------------------------------------
+// ---- 5. карты и списки: добавить, убрать, порядок, имена -------------------------------------
 {
-  const spec = { outputs: { a: { kind: 'direct' } }, rules: [ { name: 'r1', out: 'a' }, { name: 'r2', out: 'a' } ] }
+  const spec = { outputs: { a: { kind: 'direct' } }, rules: [ { name: 'r1', to: 'x', out: 'a' }, { name: 'r2', to: 'x', out: 'a' } ] }
   const notes = []
-  const f = autoform.build(FIXTURE, spec, { spec, devices: [], notify: (s) => notes.push(s) })
+  const f = build(FIXTURE, spec, { notify: (s) => notes.push(s) })
   const outs = f.fields.find((x) => x.path === 'outputs').field
   outs.nameInput.setValue('b'); outs.addButton.listeners.click[0]({ preventDefault() {} })
-  check('карта: добавленный выход попадает в значение с первым видом', { kind: 'direct' }, f.get().outputs.b)
+  check('карта: добавленный выход попадает в значение', { kind: 'direct' }, f.get().outputs.b)
   outs.nameInput.setValue('b'); outs.addButton.listeners.click[0]({ preventDefault() {} })
   check('карта: повтор имени — отказ с сообщением', 1, notes.filter((n) => /already taken/.test(n)).length)
   outs.nameInput.setValue('bad name!'); outs.addButton.listeners.click[0]({ preventDefault() {} })
-  check('карта: имя вне шаблона — отказ', 1, notes.filter((n) => /may contain/.test(n)).length)
+  check('карта: имя вне x-name.pattern — отказ', 1, notes.filter((n) => /may contain/.test(n)).length)
+  outs.nameInput.setValue('x'.repeat(32)); outs.addButton.listeners.click[0]({ preventDefault() {} })
+  check('карта: имя длиннее x-name.maxLength — отказ', 2, notes.filter((n) => /may contain/.test(n)).length)
+  check('карта: предел длины имени берётся из схемы', 31, outs.nameInput.options.maxlength)
+  const cl = build(FIXTURE, {}, { notify: (s) => notes.push(s) }).fields.find((x) => x.path === 'clients').field
+  cl.nameInput.setValue('lan'); cl.addButton.listeners.click[0]({ preventDefault() {} })
+  check('карта: имя из x-name.reserved (клиент lan) — отказ', 1, notes.filter((n) => /reserved/.test(n)).length)
   const rm = outs.entries[0].el.children[1].children[1].children[0]
   rm.listeners.click[0]({ preventDefault() {} })
   check('карта: выход под ссылкой правила не удаляется', true, notes.some((n) => /Cannot remove a/.test(n)) && 'a' in f.get().outputs)
@@ -224,10 +364,28 @@ check('круг «значение -> форма -> значение» без п
   const down = rules.items[0].el.children[1].children[1].children[1]
   down.listeners.click[0]({ preventDefault() {} })
   check('список правил: «вниз» меняет порядок', [ 'r2', 'r1' ], f.get().rules.map((r) => r.name))
-  const filt = autoform.build(FIXTURE, { outputs: { a: { kind: 'direct' }, g: { kind: 'group', members: [ 'a' ] } } },
-    { spec: {}, devices: [], notify() {}, mapOptions: { outputs: { filter: (n, v) => v.kind !== 'group' } } })
+  const filt = build(FIXTURE, { outputs: { a: { kind: 'direct' }, g: { kind: 'group', members: [ 'a' ] } } },
+    { mapOptions: { outputs: { filter: (n, v) => v.kind !== 'group' } } })
   check('карта с фильтром: скрытые записи остаются нетронутыми', { kind: 'group', members: [ 'a' ] }, filt.get().outputs.g)
   check('карта с фильтром: показаны только подходящие', [ 'a' ], filt.fields.find((x) => x.path === 'outputs').field.entries.map((e) => e.name))
+  check('карта: сводка записи — имя и вид', 'a · direct', build(FIXTURE, { outputs: { a: { kind: 'direct' } } }).fields.find((x) => x.path === 'outputs').field.entries[0].el.children[0].textContent)
+  check('карта: сводка туннеля — kind:protocol', 't · tunnel:vless', build(EXT, { outputs: { t: { kind: 'tunnel', protocol: 'vless', subscription: 's' } } }).fields.find((x) => x.path === 'outputs').field.entries[0].el.children[0].textContent)
+}
+
+// ---- 5b. вкладки каркаса по схеме ---------------------------------------------------------------
+{
+  const mk2 = (root) => { const l = makeLoader({ rpcCalls: [], rpcReplies: {} }); const st = l.load('view.splify2.core.store'); st.schema = root; return { st, sections: l.load('view.splify2.core.sections') } }
+  let m = mk2(FIXTURE)
+  check('вкладки: разделы схемы по порядку, без version и без settings', [ 'lan', 'clients', 'lists', 'outputs', 'dns', 'rules' ], m.sections.defs().map((d) => d.id))
+  check('вкладки: «Other keys» нет, пока схема целиком покрыта', null, m.sections.otherDef())
+  const future = clone(FIXTURE); future.properties.future = { type: 'object', properties: { a: { type: 'string' } } }
+  m = mk2(future)
+  check('вкладки: «Other keys» — только то, что ни одна вкладка не покрыла', [ 'future' ], m.sections.otherDef().keys)
+  check('вкладки: форма «Other keys» рисует ключ нового ядра', true, !!build(m.sections.nodeOf(m.sections.otherDef()), { future: { a: 'x' } }).fields.find((x) => x.path === 'future.a'))
+  const noLan = clone(FIXTURE); delete noLan.properties.lan
+  check('вкладки: нет раздела в схеме — нет вкладки', [ 'clients', 'lists', 'outputs', 'dns', 'rules' ], mk2(noLan).sections.defs().map((d) => d.id))
+  const html = readFileSync(resolve(CORE, 'main.js'), 'utf8')
+  check('prefs каркаса (язык, главная страница) остаются отдельной вкладкой «Settings»', true, /id: 'settings'/.test(html))
 }
 
 // ---- 6. список строк T() и словарь -----------------------------------------------------------

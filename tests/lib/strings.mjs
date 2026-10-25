@@ -1,5 +1,4 @@
-// Перечень строк каркаса: литералы в T('…') / TN(n, {…}) всех модулей view/splify2/core и title/description
-// схемы ядра. SDK сверяет словарь языка с этим перечнем (SPLIFY2_PLATFORM.md, 8.3).
+// Перечень строк каркаса: литералы в T(…) / TN(n, {…}) всех модулей view/splify2/core (тексты схемы ядра — слова самого ядра, в перечень не входят). SDK сверяет словарь языка с этим перечнем (SPLIFY2_PLATFORM.md, 8.3).
 import { readFileSync, readdirSync } from 'node:fs'
 import { resolve } from 'node:path'
 
@@ -24,16 +23,7 @@ export function scanStrings(core, schemaRoot) {
       if (o) out.add(unesc(o[1] ?? o[2]))
     }
   }
-  const walk = (n) => {
-    if (!n || typeof n !== 'object') return
-    if (typeof n.title === 'string') out.add(n.title)
-    if (typeof n.description === 'string') out.add(n.description)
-    for (const v of Object.values(n.properties || {})) walk(v)
-    for (const v of Object.values(n['x-kinds'] || {})) walk(v)
-    if (n['x-map']) walk(n['x-map'])
-    if (n.items) walk(n.items)
-  }
-  walk(schemaRoot)
+  // title/description of the schema of the core are the core's own text (the language of the core), not strings of the frame
   return [...out].sort()
 }
 
