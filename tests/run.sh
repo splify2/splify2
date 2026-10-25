@@ -53,6 +53,8 @@ run specfilematch sh "$ROOT/tests/specfilematch.sh"
 run autoapplymatch sh "$ROOT/tests/autoapplymatch.sh"
 # Проверка узлов и выходов на роутере (плагин node-check): страна выхода с кэшем, перебор узлов подписки, лучший узел.
 run nodecheckmatch sh "$ROOT/tests/nodecheckmatch.sh"
+# Проверки групп выходов (плагин group-check): приговор по членам, подсказка, история, события, расписание.
+run groupcheckmatch sh "$ROOT/tests/groupcheckmatch.sh"
 # Плагин subscriptions: расписание автообновления (задача зовёт методы каркаса только по тем подпискам, у которых срок
 # вышел), остаток трафика, название, поля sub_list через хук, архив. Стенд про то, кого позвали и кого не тронули.
 run subsmatch  sh "$ROOT/tests/subsmatch.sh"
