@@ -23,7 +23,6 @@
           "engine",
           "sub_info",
           "sub_list",
-          "backup_get",
           "vless_nodes",
           "vless_probe",
           "hysteria2_nodes",
@@ -49,7 +48,6 @@
           "lists_source",
           "outbound_geo",
           "xsteer_state",
-          "xsteer_link",
           "support_report",
           "steer_modules"
         ]
@@ -72,6 +70,7 @@
           "sub_set",
           "sub_quota",
           "sub_del",
+          "backup_get",
           "backup_put",
           "ui_set",
           "steer_install",
@@ -83,6 +82,7 @@
           "list_srs_put",
           "fetch_mode_set",
           "lists_source_set",
+          "xsteer_link",
           "xsteer_link_put",
           "sub_auto",
           "sub_rename",

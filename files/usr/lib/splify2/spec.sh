@@ -38,12 +38,18 @@ spec_json() {
     fi
     _sj_sum="$(md5sum < "$SPEC_YAML" 2>/dev/null | cut -c1-32)"
     if [ ! -s "$SPEC_VIEW" ] || [ "$(cat "$SPEC_VIEW.sum" 2>/dev/null)" != "$_sj_sum" ] || ! spec_own "$SPEC_VIEW"; then
-        rm -f "$SPEC_VIEW" "$SPEC_VIEW.sum"
-        if "$STEER" spec convert --json --spec "$SPEC_YAML" > "$SPEC_VIEW.$$" 2>/dev/null &&
-                [ "$(head -c 1 "$SPEC_VIEW.$$")" = "{" ]; then
-            mv -f "$SPEC_VIEW.$$" "$SPEC_VIEW" && printf '%s' "$_sj_sum" > "$SPEC_VIEW.sum"
+        # Прежний вид НЕ удаляется перед пересчётом: параллельный читатель (spec_get посреди записи
+        # спеки) получал бы путь к файлу, которого между `rm` и `mv` нет, и видел бы «спеки нет».
+        # Новый вид кладётся поверх одним переименованием; удаляется старый, только если перевод не
+        # вышел (устаревший вид хуже его отсутствия).
+        # Временный файл — mktemp: имя с номером процесса в /tmp предсказуемо.
+        _sj_t="$(mktemp "$SPEC_VIEW.XXXXXX" 2>/dev/null)" || _sj_t=""
+        if [ -n "$_sj_t" ] && "$STEER" spec convert --json --spec "$SPEC_YAML" > "$_sj_t" 2>/dev/null &&
+                [ "$(head -c 1 "$_sj_t")" = "{" ]; then
+            mv -f "$_sj_t" "$SPEC_VIEW" && printf '%s' "$_sj_sum" > "$SPEC_VIEW.sum"
         else
-            rm -f "$SPEC_VIEW.$$"
+            [ -z "$_sj_t" ] || rm -f "$_sj_t"
+            rm -f "$SPEC_VIEW" "$SPEC_VIEW.sum"
         fi
     fi
     printf '%s' "$SPEC_VIEW"
