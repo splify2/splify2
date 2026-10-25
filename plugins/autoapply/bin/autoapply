@@ -1,0 +1,56 @@
+#!/bin/sh
+# Программа rpc плагина autoapply: $1 — метод, параметры — JSON в stdin, ответ — объект JSON.
+#
+#   autoapply_status    включено ли, пауза, ждёт ли применение, есть ли неприменённое, исход последнего применения
+#   autoapply_now       применить сохранённое сейчас (не ждать паузы)
+#   autoapply_cancel    отменить ожидающее применение
+. "${STEER_PLUGIN_DIR:?программа запускается хостом splify2 (нет STEER_PLUGIN_DIR)}/lib/base.sh"
+METHOD="${1:-}"
+cat >/dev/null
+
+autoapply_status() {
+    json_init
+    json_add_boolean ok 1
+    if is_on enabled; then json_add_boolean enabled 1; else json_add_boolean enabled 0; fi
+    json_add_int pause_s "$(pause_s)"
+    if [ -e "$PENDING" ]; then
+        read -r _ since < "$PENDING"
+        json_add_boolean pending 1
+        json_add_int since "$(num_or "$since" 0)"
+    else
+        json_add_boolean pending 0
+    fi
+    if unapplied; then json_add_boolean unapplied 1; else json_add_boolean unapplied 0; fi
+    if [ -s "$FAILED" ] && unapplied && [ "$(cat "$FAILED")" = "$(spec_sum)" ]; then json_add_boolean rejected 1; else json_add_boolean rejected 0; fi
+    if [ -s "$LAST" ]; then
+        json_add_object last
+        json_add_boolean ok "$(jsonfilter -i "$LAST" -e '@.ok' 2>/dev/null | grep -qx true && echo 1 || echo 0)"
+        json_add_int at "$(num_or "$(jsonfilter -i "$LAST" -e '@.at' 2>/dev/null)" 0)"
+        json_add_string source "$(jsonfilter -i "$LAST" -e '@.source' 2>/dev/null)"
+        json_add_string message "$(jsonfilter -i "$LAST" -e '@.message' 2>/dev/null)"
+        json_close_object
+    fi
+    json_dump
+}
+
+autoapply_now() {
+    rm -f "$PENDING"
+    unapplied || { echo '{"ok":true,"applied":false}'; exit 0; }
+    do_apply manual
+    rc=$?
+    json_init
+    json_add_boolean ok "$([ "$rc" = 0 ] && echo 1 || echo 0)"
+    json_add_boolean applied "$([ "$rc" = 0 ] && echo 1 || echo 0)"
+    json_add_int rc "$rc"
+    json_add_string message "$(jsonfilter -i "$LAST" -e '@.message' 2>/dev/null)"
+    json_dump
+}
+
+autoapply_cancel() {
+    if [ -e "$PENDING" ]; then rm -f "$PENDING"; echo '{"ok":true,"cancelled":true}'; else echo '{"ok":true,"cancelled":false}'; fi
+}
+
+case "$METHOD" in
+    autoapply_status|autoapply_now|autoapply_cancel) "$METHOD" ;;
+    *) echo "нет такого метода: $METHOD" >&2; exit 2 ;;
+esac

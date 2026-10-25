@@ -1,0 +1,4 @@
+{
+  "plugin.name": "Auto-apply",
+  "plugin.description": "Applies the saved settings by itself after a pause, even when no page is open"
+}
