@@ -1,10 +1,8 @@
 import { render, screen } from '@testing-library/preact'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { SubBlock, TunnelBlock } from '@/components/OutputCards'
-import { pending } from '@/lib/pending'
 import { rpc } from '@/lib/rpc'
 import type { OutputStatus } from '@/lib/model'
-import { live } from './fixtures'
 
 // Ядро 2.0 различает две беды выхода, у которого устройство ЕСТЬ: `failed` — сторож признал его
 // неработающим и поставил on_fail (тогда `up: false`), и `node_down` — клиент туннеля потерял узел
@@ -51,35 +49,5 @@ describe('выход с устройством, который не отвеча
     it('поля нет — прежний вид «устройства нет»', () => {
         render(<TunnelBlock name="wg" st={{ name: 'wg', kind: 'interface', device: 'wg0', up: false } as OutputStatus} />)
         expect(screen.getByText(/выход wg не поднят: устройства нет/)).toBeInTheDocument()
-    })
-})
-
-describe('строка выхода в «Выходах»', () => {
-    const SPEC = {
-        schema: 1 as const,
-        outputs: { reserve: { name: 'reserve', kind: 'interface' as const, device: 'sbx0', on_fail: 'direct' as const } },
-        channels: [],
-    }
-    beforeEach(() => {
-        vi.restoreAllMocks()
-        window.localStorage.clear()
-        pending.saved = SPEC
-        pending.applied = SPEC
-        vi.spyOn(rpc, 'specGet').mockResolvedValue(SPEC)
-        vi.spyOn(rpc, 'appliedGet').mockResolvedValue(SPEC)
-        vi.spyOn(rpc, 'subList').mockResolvedValue({ subs: [] } as never)
-        vi.spyOn(rpc, 'outboundGeo').mockResolvedValue({} as never)
-    })
-
-    it('не отвечающий выход назван словом, а не одним красным значком', async () => {
-        const { default: PoolList } = await import('@/components/PoolList')
-        render(
-            <PoolList
-                live={live({
-                    status: { schema: 1, outputs: { reserve: failed('direct') }, channels: [] },
-                })}
-            />,
-        )
-        expect(await screen.findByText(/^не отвечает · sbx0/)).toBeInTheDocument()
     })
 })

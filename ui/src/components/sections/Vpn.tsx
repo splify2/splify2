@@ -1,7 +1,6 @@
 import { useEffect, useState } from 'react'
 import { Globe, Network, ShieldCheck } from 'lucide-react'
 import { Group, ScreenHeader, TapRow } from '@/components/ui/layout'
-import PoolList from '@/components/PoolList'
 import IfacesPanel from '@/components/IfacesPanel'
 import VlessScreen from '@/components/VlessScreen'
 import XsteerPanel from '@/components/XsteerPanel'
@@ -12,25 +11,15 @@ import { devList, isPart, isTunnelKind } from '@/lib/model'
 import { type Live } from '@/lib/live'
 
 import { S } from '@/copy'
-/** VPN: чем роутер выходит наружу.
+/** VPN: что у роутера есть для выхода наружу.
  *
- *  Ссылки подписок — сверху, прямо на экране: добавить, обновить, удалить (SubsBoard). Под ними три
- *  входа и один список. Экран один и в LuCI, и в приложении для компьютера (R-156): раньше доска
- *  приложения показывала только ссылки, а туннели, интерфейсы и xsteer жили лишь под LuCI.
+ *  Здесь только добавляем: ссылки подписок — сверху, прямо на экране (добавить, обновить,
+ *  удалить, SubsBoard), под ними три входа — свои туннели, узлы и автообновление подписок,
+ *  XSTEER. Какие конфигурации взять и как выбирать между ними, решает правило, в блоке «Куда»
+ *  (components/board/RuleTarget.tsx): списка выходов здесь нет.
  *
- *  Три входа и один список. Входы отвечают на «что у меня есть»: свои туннели, узлы подписки,
- *  звезда xsteer. Список ниже — выходы, то есть то, во что правила ведут трафик; выход
- *  собирается из того, что нашлось за тремя входами.
- *
- *  Подпункт открывается НА МЕСТЕ раздела, а не отдельной вкладкой рельса: рельс отвечает за
- *  четыре роли, и раздувать его до четырнадцати пунктов значит вернуть строку вкладок, из
- *  которой видно треть.
- *
- *  Bode 26.10, раскладка по образцу приложения Splify2 для телефона: три входа — строками
- *  ОДНОЙ карточки (как перечень в «Настройках»), выходы — строками второй карточки со своим
- *  заголовком и счётчиком, подпункт открывается с шапкой «← заголовок». Прежде каждый вход и
- *  каждый выход был отдельной карточкой, и восемь карточек подряд читались как восемь разных
- *  вещей, а не как два перечня. */
+ *  Экран один и в LuCI, и в приложении для компьютера (R-156). Подпункт открывается НА МЕСТЕ
+ *  раздела с шапкой «← заголовок», а не отдельной вкладкой рельса. */
 
 type Screen = 'root' | 'ifaces' | 'vless' | 'xsteer'
 
@@ -42,9 +31,6 @@ const TITLE: Record<Exclude<Screen, 'root'>, string> = {
 
 export default function Vpn({ live }: { live: Live }) {
     const [screen, setScreen] = useState<Screen>('root')
-    /** Открыт редактор выхода. Тогда раздел показывает ТОЛЬКО его: три строки-входа сверху
-     *  относятся к разделу, а не к правимому выходу, и над формой читались как её часть. */
-    const [editing, setEditing] = useState(false)
     const { spec } = usePending()
     const [devices, setDevices] = useState<{ name: string; up: boolean; kind: string; owner?: 'steer' }[]>([])
 
@@ -93,13 +79,10 @@ export default function Vpn({ live }: { live: Live }) {
         ]),
     ]
 
-    /* PoolList стоит на ОДНОМ месте дерева в обоих состояниях: редактор — его внутреннее
-     * состояние, и отдельная ветка `if (editing) return <PoolList/>` пересоздавала бы список
-     * с нуля, то есть закрывала бы редактор в момент открытия. */
     return (
         <div className="space-y-4">
-            {!editing && <SubsBoard />}
-            {!editing && <Group>
+            <SubsBoard />
+            <Group>
                 {/* «Свои туннели», а не «VPN»: строка «VPN» внутри раздела VPN не говорила,
                     что за ней — WireGuard, AmneziaWG и прочие устройства самого роутера. */}
                 <TapRow
@@ -134,11 +117,7 @@ export default function Vpn({ live }: { live: Live }) {
                     subtitle={xs.length ? xs.join(', ') : S.vpn.interfeysovNet}
                     onClick={() => setScreen('xsteer')}
                 />
-            </Group>}
-
-            {/* Заголовок «Выходы» — у самой карточки списка (PoolList), как у карточек
-                приложения: название слева, счётчик справа. */}
-            <PoolList live={live} onEditingChange={setEditing} />
+            </Group>
         </div>
     )
 }

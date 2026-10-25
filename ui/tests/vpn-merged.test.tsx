@@ -8,7 +8,7 @@ import type { Spec, Status } from '@/lib/model'
 import { live } from './fixtures'
 
 // R-156: экран VPN один — и в LuCI, и в приложении для компьютера. Ссылки подписок (добавить,
-// обновить, удалить) стоят на нём сверху, под ними — свои туннели, узлы подписок, XSTEER и выходы.
+// обновить, удалить) стоят на нём сверху, под ними — свои туннели, узлы подписок и XSTEER. Списка выходов здесь нет: выход собирает правило, в «Куда».
 // Прежде доска приложения показывала только ссылки, а остальное жило лишь под LuCI.
 
 const SPEC = { schema: 1, outputs: {}, channels: [] } as unknown as Spec
@@ -34,6 +34,17 @@ describe('VPN: один экран', () => {
         expect(screen.getByRole('button', { name: /Добавить подписку/ })).toBeInTheDocument()
         for (const name of [/Свои туннели/, /Узлы и автообновление/, /XSTEER/])
             expect(screen.getByRole('button', { name })).toBeInTheDocument()
+    })
+
+    it('списка выходов на экране нет: ни заголовка, ни кнопок добавления выхода и группы', async () => {
+        const spec = { schema: 1, outputs: { direct: { name: 'direct', kind: 'direct' }, vl: { name: 'vl', kind: 'vless', sub_file: '/etc/steer/subs/sub1' } }, channels: [] } as unknown as Spec
+        pending.saved = spec
+        pending.applied = spec
+        render(<Vpn live={live({ status: { schema: 1, outputs: {}, channels: [] } as unknown as Status })} />)
+        await screen.findByText('Мой провайдер')
+        expect(screen.queryByText('Выходы')).toBeNull()
+        expect(screen.queryByRole('button', { name: /Добавить выход/ })).toBeNull()
+        expect(screen.queryByRole('button', { name: /Добавить группу/ })).toBeNull()
     })
 
     it('добавление ссылки уходит в subSet со свободным именем', async () => {

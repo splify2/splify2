@@ -6,7 +6,6 @@ import { GeoLine } from '@/components/OutputCards'
 import { pending } from '@/lib/pending'
 import { rpc } from '@/lib/rpc'
 import { decodeSpec, encodeSpec } from '@/lib/specv2'
-import { outExtras } from '@/lib/outstate'
 import { groupOnlySupported, nodeOnlySupported } from '@/lib/engine'
 import type { Channel, Output, OutputStatus, Spec, Status } from '@/lib/model'
 
@@ -87,21 +86,6 @@ describe('спека: клиенты mesh-VPN', () => {
 
 describe('страна выхода', () => {
     const st = (p: object) => ({ kind: 'vless', up: true, vless: p }) as unknown as OutputStatus
-    it('фактическая страна — словом строки выхода', () => {
-        const r = outExtras({ name: 'vl', kind: 'vless' }, st({ node_cc: 'NL', geo_cc: 'NL' }))
-        expect(r.words).toContain('выход: Нидерланды')
-        expect(r.alarm).toBe(false)
-    })
-    it('геомисмэтч — обе страны и беда', () => {
-        const r = outExtras({ name: 'vl', kind: 'vless' }, st({ node_cc: 'NL', geo_cc: 'US', geo_mismatch: true }))
-        expect(r.words).toContain('выход: США, а в имени узла: Нидерланды')
-        expect(r.alarm).toBe(true)
-    })
-    it('у hysteria2 те же поля; без geo_cc строки нет', () => {
-        const h = { kind: 'hysteria2', up: true, hysteria2: { node: 'x', up: true, geo_cc: 'DE' } } as unknown as OutputStatus
-        expect(outExtras({ name: 'h', kind: 'hysteria2' }, h).words).toContain('выход: Германия')
-        expect(outExtras({ name: 'vl', kind: 'vless' }, st({ node_cc: 'NL' })).words).toEqual([])
-    })
     it('GeoLine рисует расхождение предупреждением', () => {
         render(<GeoLine sts={[st({ node_cc: 'NL', geo_cc: 'US', geo_mismatch: true })]} />)
         expect(screen.getByText(/США, а в имени узла: Нидерланды/)).toBeInTheDocument()
