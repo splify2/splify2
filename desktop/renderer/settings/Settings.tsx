@@ -35,6 +35,9 @@ const NAV: ({ group: string } | { id: Page; label: string; icon: typeof Bell })[
     { id: 'about', label: 'О программе', icon: Info },
 ]
 
+/** Страницы про подключённый роутер: без роутера их нет. */
+const needsRouter = (id: Page) => id.startsWith('r-') || id === 'router' || id === 'devices'
+
 /** Настройки поверх окна — как у Discord: слой на всё окно под рамкой, разделы слева. Открытие
  *  и закрытие — переходом (data-state), чтобы закрытие посреди открытия шло от текущего кадра. */
 export default function Settings({ open, onClose, router, onDisconnect, onPanelHost }: {
@@ -61,6 +64,12 @@ export default function Settings({ open, onClose, router, onDisconnect, onPanelH
         if (open) setMounted(true)
     }, [open])
 
+    /* Роутер отключился (или забыл это устройство) — его экраны из списка ушли, а открытым мог
+     * остаться один из них: пустой заголовок без содержимого. */
+    useEffect(() => {
+        if (!router?.connected && needsRouter(page)) setPage('look')
+    }, [router?.connected, page])
+
     useEffect(() => {
         if (!open) return
         const onKey = (e: KeyboardEvent) => { if (e.key === 'Escape') onClose() }
@@ -83,7 +92,7 @@ export default function Settings({ open, onClose, router, onDisconnect, onPanelH
         >
             <aside className="desk-settings-nav">
                 <nav className="desk-settings-nav-in" aria-label="Разделы настроек">
-                    {NAV.filter((it) => !('id' in it) || !it.id.startsWith('r-') || router?.connected).map((it, i) =>
+                    {NAV.filter((it) => router?.connected || !('id' in it ? needsRouter(it.id) : it.group === 'Роутер')).map((it, i) =>
                         'group' in it ? (
                             it.group ? <div key={i} className="desk-settings-group">{it.group}</div> : <div key={i} className="desk-settings-sep" />
                         ) : (

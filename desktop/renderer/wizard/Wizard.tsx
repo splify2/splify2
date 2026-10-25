@@ -224,13 +224,14 @@ function Install({ target, password, onConnected, onBack }: {
     onBack: () => void
 }) {
     const [lines, setLines] = useState<string[]>([])
-    const [state, setState] = useState<'run' | 'ok' | 'old' | 'fail'>('run')
+    const [state, setState] = useState<'run' | 'ok' | 'old' | 'late' | 'fail'>('run')
     const [err, setErr] = useState('')
     const logRef = useRef<HTMLPreElement>(null)
 
     useEffect(() => {
         const off = desk.wizard.onLog((l) => setLines((v) => [...v.slice(-400), l]))
         let alive = true
+        let installed = false
         ;(async () => {
             try {
                 const r = await desk.wizard.install(target.address, password)
@@ -240,17 +241,27 @@ function Install({ target, password, onConnected, onBack }: {
                     setErr(`Установка остановилась (код ${r.code})`)
                     return
                 }
+                installed = true
                 // splify2 стоит — подключаемся через его API; нет API — версия старше приложения.
-                const found = await desk.wizard.probe(target.address)
+                // Установщик только что перезапустил веб-сервер и rpcd: первые секунды API молчит, и это
+                // не «версия старше», а запуск — ждём, пока ответит.
+                let found = null
+                for (let i = 0; i < 20 && alive; i++) {
+                    found = await desk.wizard.probe(target.address).catch(() => null)
+                    if (found?.kind === 'splify2') break
+                    await sleep(2000)
+                }
+                if (!alive) return
                 if (found?.kind !== 'splify2') {
                     setState('old')
                     return
                 }
                 setState('ok')
-                onConnected(await desk.api.connect(target.address, password))
+                onConnected(await connectRetry(target.address, password, () => alive))
             } catch (x) {
                 if (!alive) return
-                setState('fail')
+                /* Установка прошла, не вышло войти: это не «установка не удалась». */
+                setState(installed ? 'late' : 'fail')
                 setErr(x instanceof Error ? x.message : String(x))
             }
         })()
@@ -265,15 +276,16 @@ function Install({ target, password, onConnected, onBack }: {
     return (
         <div className="desk-step">
             <h1 className="sp-title">
-                {state === 'run' ? 'Ставим splify2' : state === 'ok' ? 'splify2 установлен' : state === 'old' ? 'splify2 установлен' : 'Установка не удалась'}
+                {state === 'run' ? 'Ставим splify2' : state === 'ok' || state === 'old' || state === 'late' ? 'splify2 установлен' : 'Установка не удалась'}
             </h1>
             <p className="sp-sub">
                 {state === 'run' && <><LoaderCircle className="desk-spin desk-inline" aria-hidden="true" /> Не закрывайте окно — это несколько минут</>}
                 {state === 'old' && 'Приложению нужна версия новее — подключите его после обновления splify2'}
+                {state === 'late' && `Подключиться не вышло: ${err}`}
                 {state === 'fail' && err}
             </p>
             <pre ref={logRef} className="desk-wizard-log" aria-label="Ход установки">{lines.join('\n') || '…'}</pre>
-            {(state === 'fail' || state === 'old') && (
+            {(state === 'fail' || state === 'old' || state === 'late') && (
                 <div className="desk-row">
                     <Button variant="outline" onClick={onBack}>Назад</Button>
                     <Button variant="outline" onClick={() => desk.app.open(`http://${target.address}/cgi-bin/luci/admin/services/splify2`)}>
@@ -322,6 +334,22 @@ function Done({ state, onFinish }: { state: ApiState; onFinish: (setup: boolean)
             </button>
         </div>
     )
+}
+
+const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms))
+
+/** Вход сразу после установки: связь могла моргнуть вместе с перезапуском служб — повторяем, но
+ *  неверный пароль и отказ роутера повторять нечего. */
+async function connectRetry(address: string, password: string, alive: () => boolean): Promise<ApiState> {
+    for (let i = 0; ; i++) {
+        try {
+            return await desk.api.connect(address, password)
+        } catch (e) {
+            const code = (e as { code?: string })?.code
+            if (i >= 4 || !alive() || (code !== 'network' && code !== 'timeout')) throw e
+            await sleep(2000)
+        }
+    }
 }
 
 function BackLink({ onClick }: { onClick: () => void }) {

@@ -67,21 +67,41 @@ function Root() {
     useEffect(() => {
         desk.api.state().then(setSt, () => setSt({ connected: false, base: null, hostname: '', device: null }))
         /* Трей: выключатель правила — тем же путём, что на главной (сохранение и применение). */
-        const offTrayRule = desk.win.onTrayRule((i) => {
+        const toggleRule = (i: number) => {
             const real = pending.saved
             const c = real?.channels[i]
             if (!real || !c) return
             const { enabled: _e, ...on } = c
             pending.edit({ ...real, channels: real.channels.map((x, k) => (k === i ? (c.enabled === false ? on : { ...c, enabled: false }) : x)) })
+        }
+        /* Окно могли создать ради этого щелчка (запуск вместе с системой — в трее без окна): спека
+         * ещё не пришла — правило переключится, как только загрузится. */
+        const offTrayRule = desk.win.onTrayRule((i) => {
+            if (pending.saved) { toggleRule(i); return }
+            const off = pending.subscribe(() => {
+                if (!pending.saved) return
+                off()
+                clearTimeout(giveUp)
+                toggleRule(i)
+            })
+            const giveUp = setTimeout(off, 30_000)
         })
         /* Трей: другой роутер — окно перезагружается на нём. */
         const offSwitched = desk.win.onRouterSwitched((base) => { resetMemory(base); location.reload() })
         /* Событие ядра — панели (lib/live.ts): состояние перечитывается сразу. */
         const offEvent = desk.api.onEvent((ev) => window.dispatchEvent(new CustomEvent('splify:router-event', { detail: ev })))
         const offLost = desk.api.onLost((msg) => {
-            resetMemory(lastBase())
-            setLost(msg)
-            setSt((s) => (s ? { ...s, connected: false } : s))
+            const gone = lastBase()
+            resetMemory(gone)
+            const showLost = () => {
+                setLost(msg)
+                setSt((s) => (s ? { ...s, connected: false } : s))
+            }
+            /* Забыл устройство один из нескольких роутеров: активным стал следующий, и окно
+             * переходит на него, а не застывает на форме подключения при подключённом роутере. */
+            desk.api.state().then((s) => {
+                if (s.connected && s.base !== gone) { resetMemory(s.base); location.reload() } else showLost()
+            }, showLost)
         })
         // Щелчок по уведомлению: открыть раздел панели (Console слушает splify:section).
         const offNav = desk.win.onNav((section) => {

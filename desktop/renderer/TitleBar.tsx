@@ -39,6 +39,14 @@ export default function TitleBar({ state, onDisconnect, onAddRouter, onUseRouter
         : health === 'warn' ? `Не отвечает: ${downs.join(', ')}`
         : health === 'ok' ? 'Всё работает' : 'Проверяем роутер'
 
+    /* Esc закрывает меню роутера — как слой настроек. */
+    useEffect(() => {
+        if (!menu) return
+        const onKey = (e: KeyboardEvent) => { if (e.key === 'Escape') setMenu(false) }
+        window.addEventListener('keydown', onKey)
+        return () => window.removeEventListener('keydown', onKey)
+    }, [menu])
+
     useEffect(() => {
         desk.win.state().then((s) => setFocused(s.focused))
         return desk.win.onState((s) => setFocused(s.focused))
