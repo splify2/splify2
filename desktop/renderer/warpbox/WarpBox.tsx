@@ -11,6 +11,7 @@ import type { Live } from '@/lib/live'
 import type { Output, Spec } from '@/lib/model'
 import type { ExtraSection } from '@/components/Console'
 import { desk, type WarpScan, type WarpState } from '../desk'
+import { countItems, freeName, infoErrorText, patchExtra, tunnelCount } from './model'
 
 /** WarpBox — выходы Cloudflare WARP (`kind: warp`, модуль steer-warpbox). Только в приложении:
  *  под LuCI этого раздела нет. Настройка — в спеке через тот же pending, что у всей панели
@@ -39,17 +40,11 @@ interface WarpStatus {
     why?: string
     members?: { out: string; ip?: string; port?: number; colo?: string; seen?: string; ok?: boolean }[]
 }
-const num = (v: unknown, d: number) => (typeof v === 'number' && Number.isFinite(v) ? v : d)
 const codes = (v: unknown) => (Array.isArray(v) ? v.filter((c): c is string => typeof c === 'string') : undefined)
 
-function editOut(spec: Spec, name: string, patch: Record<string, unknown>) {
-    const o = spec.outputs[name] as WarpOut
-    const extra = { ...(o.extra || {}) }
-    for (const [k, v] of Object.entries(patch)) {
-        if (v === undefined) delete extra[k]
-        else extra[k] = v
-    }
-    pending.edit({ ...spec, outputs: { ...spec.outputs, [name]: { ...o, extra } } })
+function editOut(name: string, patch: Record<string, unknown>) {
+    const next = pending.saved && patchExtra(pending.saved, name, patch)
+    if (next) pending.edit(next)
 }
 
 function WarpBox({ live }: { live: Live }) {
@@ -57,16 +52,33 @@ function WarpBox({ live }: { live: Live }) {
     const [info, setInfo] = useState<WarpState | null>(null)
     const [infoErr, setInfoErr] = useState('')
 
+    /* Туннель регистрируется до минуты (ключи, подбор точки, файл): пока что-то не готово,
+     * спрашиваем чаще, чтобы человек видел ход, а не застывшее «регистрация». */
+    const settling = !!info?.groups.some((g) => g.members.some((m) => !m.conf))
     useEffect(() => {
         let alive = true
-        const load = () => desk.warp.state().then(
-            (s) => { if (alive) { setInfo(s); setInfoErr('') } },
-            (e: Error) => { if (alive) setInfoErr(e.message) },
-        )
+        let seq = 0
+        const load = () => {
+            const n = ++seq
+            return desk.warp.state().then(
+                (s) => { if (alive && n === seq) { setInfo(s); setInfoErr('') } },
+                (e: Error) => { if (alive && n === seq) setInfoErr(infoErrorText(e)) },
+            )
+        }
         load()
-        const t = setInterval(load, 10000)
-        return () => { alive = false; clearInterval(t) }
-    }, [])
+        /* Окно спрятано в трей — не опрашиваем; открыли — читаем сразу. */
+        const t = setInterval(() => { if (!document.hidden) void load() }, settling ? 3000 : 10000)
+        const onShow = () => { if (!document.hidden) void load() }
+        document.addEventListener('visibilitychange', onShow)
+        /* Событие ядра (применена спека, выход ожил) — состояние перечитывается сразу. */
+        window.addEventListener('splify:router-event', onShow)
+        return () => {
+            alive = false
+            clearInterval(t)
+            document.removeEventListener('visibilitychange', onShow)
+            window.removeEventListener('splify:router-event', onShow)
+        }
+    }, [settling])
 
     if (!spec) return <div className="desk-note">Загрузка…</div>
     const outs = Object.values(spec.outputs).filter(isWarp) as WarpOut[]
@@ -95,16 +107,17 @@ function WarpBox({ live }: { live: Live }) {
 function Create({ spec, first = false }: { spec: Spec; first?: boolean }) {
     const [open, setOpen] = useState(first)
     const free = (n: string) => !spec.outputs[n]
-    const [name, setName] = useState(free('warp') ? 'warp' : 'warp2')
+    const [name, setName] = useState(() => freeName(spec.outputs))
     const ok = /^[a-z][a-z0-9_-]{0,14}$/.test(name) && free(name)
 
     function add(e: FormEvent) {
         e.preventDefault()
-        if (!ok) return
+        const cur = pending.saved ?? spec
+        if (!ok || cur.outputs[name]) return
         pending.edit({
-            ...spec,
+            ...cur,
             /* Умолчания модуля: один туннель, страны любые. */
-            outputs: { ...spec.outputs, [name]: { name, kind: 'warp' as Output['kind'] } as WarpOut },
+            outputs: { ...cur.outputs, [name]: { name, kind: 'warp' as Output['kind'] } as WarpOut },
         })
         setOpen(false)
     }
@@ -113,7 +126,7 @@ function Create({ spec, first = false }: { spec: Spec; first?: boolean }) {
         return (
             <button
                 type="button"
-                onClick={() => setOpen(true)}
+                onClick={() => { setName(freeName(spec.outputs)); setOpen(true) }}
                 style={{ borderColor: 'color-mix(in srgb, var(--sp-muted-foreground) 45%, transparent)' }}
                 className="flex h-[64px] w-full items-center justify-center gap-2 rounded-2xl border border-dashed bg-transparent text-sm text-muted-foreground transition-colors duration-200 hover:border-primary/50 hover:text-primary"
             >
@@ -149,7 +162,7 @@ function Create({ spec, first = false }: { spec: Spec; first?: boolean }) {
 function Group({ spec, out, live, info }: { spec: Spec; out: WarpOut; live: Live; info: WarpState | null }) {
     const x = out.extra || {}
     /* По умолчанию туннель один (steer 2.1.0): самую быструю точку модуль держит у того же устройства. */
-    const count = num(x.count, 1)
+    const count = tunnelCount(x.count)
     const pick = x.pick === 'order' ? 'order' : 'latency'
     // MASQUE — туннели по HTTP/3, их держит сам модуль (вид членов warp-masque в ядре).
     const transport = x.transport === 'masque' ? 'masque' : 'awg'
@@ -162,6 +175,9 @@ function Group({ spec, out, live, info }: { spec: Spec; out: WarpOut; live: Live
     const [ask, dialog] = useConfirm()
 
     const members = Array.from({ length: count }, (_, i) => `${out.name}.${i + 1}`)
+    /* Что уже применено на роутере: число туннелей у модуля и готовность каждого (файл туннеля). */
+    const appliedCount = winfo ? tunnelCount(winfo.count) : count
+    const settling = !!winfo?.members.some((m) => !m.conf)
     /* Что модуль знает о туннелях — `status.group.warp` (steer, ветка warpbox): точка, колония,
      * страна, которую видят сайты. Поля нет (модуль старше) — точка из файла туннеля (/v1/warp). */
     const wst = (g as { warp?: WarpStatus } | undefined)?.warp
@@ -175,8 +191,10 @@ function Group({ spec, out, live, info }: { spec: Spec; out: WarpOut; live: Live
         ? ` · держится: разница с самым быстрым меньше ${gx.tolerance ?? 50} мс`
         : ''
     const head = !st ? 'Ещё не применён'
-        : selected ? `Работает · через ${selected}${hold}`
+        : selected ? `Работает · через ${selected}${hold}${settling ? ' · туннели готовятся' : ''}`
+        : settling ? 'Регистрация и подбор точек — до минуты'
         : 'Ни один туннель не отвечает'
+    const pendingCount = winfo && appliedCount !== count ? ` · применяется: ${count} туннелей вместо ${appliedCount}` : ''
 
     const GROUP = 'sp-board-group an-glass space-y-3 rounded-2xl border p-3'
     const TILE = 'sp-board-tile an-glass min-w-0 space-y-3 rounded-2xl border p-3.5'
@@ -187,10 +205,10 @@ function Group({ spec, out, live, info }: { spec: Spec; out: WarpOut; live: Live
     return (
         <section className={GROUP}>
             <header className="flex flex-wrap items-center gap-3 px-1 pt-1">
-                <span className="desk-warp-dot" data-state={!st ? 'wait' : selected ? 'ok' : 'bad'} aria-hidden="true" />
+                <span className="desk-warp-dot" data-state={!st || (!selected && settling) ? 'wait' : selected ? 'ok' : 'bad'} aria-hidden="true" />
                 <div className="min-w-0 flex-1">
                     <h2 className="sp-sub truncate">{out.name}</h2>
-                    <div className="desk-note">{head}{used ? ` · правил: ${used}` : ''}</div>
+                    <div className="desk-note">{head}{pendingCount}{used ? ` · правил: ${used}` : ''}</div>
                 </div>
                 <Button
                     variant="ghost"
@@ -205,9 +223,10 @@ function Group({ spec, out, live, info }: { spec: Spec; out: WarpOut; live: Live
                             confirmLabel: 'Удалить',
                         })
                         if (!ok) return
-                        const outputs = { ...spec.outputs }
+                        const cur = pending.saved ?? spec
+                        const outputs = { ...cur.outputs }
                         delete outputs[out.name]
-                        pending.edit({ ...spec, outputs })
+                        pending.edit({ ...cur, outputs })
                     }}
                 >
                     <Trash2 aria-hidden="true" /> Удалить
@@ -224,7 +243,10 @@ function Group({ spec, out, live, info }: { spec: Spec; out: WarpOut; live: Live
                         const ws = wst?.members?.find((mm) => mm.out === m)
                         const ep = ws?.ip ? hostPort(ws.ip, ws.port) : w?.endpoint
                         const lat = g?.latency?.[m]
-                        const state = !st ? 'wait' : alive.has(m) ? 'ok' : 'bad'
+                        /* Красным — только туннель, который готов и не отвечает. Ещё не применённый,
+                         * регистрирующийся или без файла точки — не поломка, а ход настройки. */
+                        const ready = !!w?.conf && !!g?.members?.includes(m)
+                        const state = !st ? 'wait' : alive.has(m) ? 'ok' : ready ? 'bad' : 'wait'
                         const on = m === selected
                         return (
                             <div
@@ -242,7 +264,7 @@ function Group({ spec, out, live, info }: { spec: Spec; out: WarpOut; live: Live
                                 <span className="flex min-w-0 items-center gap-1.5 text-[11.5px] text-muted-foreground">
                                     {ws?.seen && <Flag cc={ws.seen} />}
                                     {ws?.colo && <span className="shrink-0">{ws.colo}</span>}
-                                    <span className="min-w-0 truncate font-mono">{ep ?? (w?.reg ? 'подбирается точка' : 'регистрация')}</span>
+                                    <span className="min-w-0 truncate font-mono" title={ep ?? undefined}>{ep ?? (!info ? '' : !w ? 'ждёт применения' : w.reg ? 'подбирается точка' : 'регистрация…')}</span>
                                 </span>
                             </div>
                         )
@@ -256,8 +278,8 @@ function Group({ spec, out, live, info }: { spec: Spec; out: WarpOut; live: Live
                     <Segmented
                         label="Сколько туннелей"
                         value={String(count)}
-                        onChange={(v) => editOut(spec, out.name, { count: Number(v) === 1 ? undefined : Number(v) })}
-                        items={['1', '2', '3', '4', '5'].map((v) => ({ value: v, label: v }))}
+                        onChange={(v) => editOut(out.name, { count: Number(v) === 1 ? undefined : Number(v) })}
+                        items={countItems(count)}
                     />
                 </div>
                 <div className={TILE}>
@@ -265,7 +287,7 @@ function Group({ spec, out, live, info }: { spec: Spec; out: WarpOut; live: Live
                     <Segmented
                         label="Какой туннель брать"
                         value={pick}
-                        onChange={(v) => editOut(spec, out.name, { pick: v === 'latency' ? undefined : v })}
+                        onChange={(v) => editOut(out.name, { pick: v === 'latency' ? undefined : v })}
                         items={[
                             { value: 'latency', label: 'Самый быстрый' },
                             { value: 'order', label: 'По порядку' },
@@ -278,11 +300,19 @@ function Group({ spec, out, live, info }: { spec: Spec; out: WarpOut; live: Live
                 </div>
                 <div className={TILE}>
                     {tileHead('Страна выхода')}
-                    <Countries
-                        only={only}
-                        except={except}
-                        onChange={(o, e) => editOut(spec, out.name, { countries: o, exclude_countries: e })}
-                    />
+                    {transport === 'masque' ? (
+                        /* docs/warp.md: у MASQUE точку входа назначает Cloudflare, страну подбором не сменить. */
+                        <div className="desk-note">
+                            У MASQUE страну выбрать нельзя: точку входа назначает Cloudflare.
+                            {(only?.length || except?.length) ? ' Заданные страны сработают, если вернуть AmneziaWG.' : ''}
+                        </div>
+                    ) : (
+                        <Countries
+                            only={only}
+                            except={except}
+                            onChange={(o, e) => editOut(out.name, { countries: o, exclude_countries: e })}
+                        />
+                    )}
                 </div>
             </div>
 
@@ -291,7 +321,7 @@ function Group({ spec, out, live, info }: { spec: Spec; out: WarpOut; live: Live
                 <Segmented
                     label="Протокол"
                     value={transport}
-                    onChange={(v) => editOut(spec, out.name, { transport: v === 'awg' ? undefined : v })}
+                    onChange={(v) => editOut(out.name, { transport: v === 'awg' ? undefined : v })}
                     items={[
                         { value: 'awg', label: 'AmneziaWG' },
                         { value: 'masque', label: 'MASQUE' },
@@ -371,7 +401,12 @@ function Scan({ group, applied, initial }: { group: string; applied: boolean; in
     const [scan, setScan] = useState<WarpScan | null>(initial ?? null)
     const [err, setErr] = useState('')
 
-    useEffect(() => { if (initial && !scan) setScan(initial) }, [initial])
+    /* Состояние шлюза опрашивается: подбор, начатый с другого места или не замеченный сразу после
+     * нажатия, подхватывается, а прежний снимок не затирает более свежий. */
+    useEffect(() => {
+        if (!initial) return
+        setScan((s) => (!s || initial.at > s.at || (initial.running && !s.running && initial.at >= s.at) ? initial : s))
+    }, [initial])
 
     useEffect(() => {
         if (!scan?.running) return
@@ -382,7 +417,7 @@ function Scan({ group, applied, initial }: { group: string; applied: boolean; in
     const start = () => {
         setErr('')
         desk.warp.scan(group).then(
-            () => desk.warp.scanState(group).then(setScan, () => {}),
+            () => desk.warp.scanState(group).then((st) => setScan(st.running ? st : { ...st, running: true }), () => setScan((s) => (s ? { ...s, running: true } : { running: true, at: 0, result: null }))),
             (e: Error) => setErr(e.message),
         )
     }
@@ -405,7 +440,7 @@ function Scan({ group, applied, initial }: { group: string; applied: boolean; in
             </div>
             {err && <div className="desk-error">{err}</div>}
             {pts.length > 0 && !scan?.running && scan?.result?.transport === 'masque' && (
-                <table className="desk-warp-points">
+                <div className="desk-warp-tablewrap"><table className="desk-warp-points">
                     <thead>
                         <tr><th>Точка</th><th>Задержка</th><th /></tr>
                     </thead>
@@ -418,25 +453,27 @@ function Scan({ group, applied, initial }: { group: string; applied: boolean; in
                             </tr>
                         ))}
                     </tbody>
-                </table>
+                </table></div>
             )}
             {pts.length > 0 && !scan?.running && scan?.result?.transport !== 'masque' && (
-                <table className="desk-warp-points">
+                <div className="desk-warp-tablewrap"><table className="desk-warp-points">
                     <thead>
-                        <tr><th>Точка</th><th>Колония</th><th>Задержка</th><th>Потери</th><th /></tr>
+                        <tr><th>Точка</th><th>Колония</th><th>Задержка</th><th>Потери</th></tr>
                     </thead>
                     <tbody>
                         {pts.map((p) => (
                             <tr key={hostPort(p.ip, p.port)} data-class={p.class}>
-                                <td className="desk-mono">{hostPort(p.ip, p.port)}</td>
+                                <td>
+                                    <div className="desk-mono">{hostPort(p.ip, p.port)}</div>
+                                    {p.class ? <div className="desk-note">{CLASS_TEXT[p.class] ?? ''}</div> : null}
+                                </td>
                                 <td><Flag cc={p.cc} /> {p.colo || '—'}</td>
                                 <td>{typeof p.rtt === 'number' && p.rtt >= 0 ? `${p.rtt} мс` : '—'}</td>
                                 <td>{p.loss ?? 0}%</td>
-                                <td className="desk-note">{CLASS_TEXT[p.class ?? -1] ?? ''}</td>
                             </tr>
                         ))}
                     </tbody>
-                </table>
+                </table></div>
             )}
         </div>
     )

@@ -248,6 +248,12 @@
   gap: 10px;
 }
 
+/* Таблица точек шире плитки — прокручивается внутри неё, а не выпирает на соседние плитки. */
+.desk-warp-tablewrap {
+  max-width: 100%;
+  overflow-x: auto;
+}
+
 .desk-warp-points {
   width: 100%;
   border-collapse: collapse;

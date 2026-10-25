@@ -15,7 +15,8 @@
     "dist:win": "npm run renderer && electron-builder --win squirrel --x64",
     "dist:linux": "npm run renderer && electron-builder --linux AppImage --x64",
     "dist:win:nsis": "npm run renderer && electron-builder --win nsis --x64",
-    "check": "node ../ui/node_modules/typescript/bin/tsc -p tsconfig.json --noEmit"
+    "check": "node ../ui/node_modules/typescript/bin/tsc -p tsconfig.json --noEmit",
+    "test": "node --test \"tests/*.test.cjs\" && node ../ui/node_modules/vitest/vitest.mjs run --config vitest.config.mjs"
   },
   "devDependencies": {
     "electron": "44.4.5",
