@@ -14,7 +14,7 @@ export interface RouterEntry extends ApiState {
     active: boolean
 }
 
-export interface WinState {
+interface WinState {
     maximized: boolean
     focused: boolean
 }
@@ -85,7 +85,7 @@ export interface RouterInventory {
 
 /** Точка входа WARP из подбора (`steer warp-scan`). AWG: class (0 — годна, 1 — колония занята,
  *  2 — без HTTPS), потери, колония. MASQUE: только ok и rtt либо error. */
-export interface WarpPoint {
+interface WarpPoint {
     ip: string
     port: number
     class?: number

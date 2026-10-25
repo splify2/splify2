@@ -115,4 +115,4 @@ class Settings extends EventEmitter {
     }
 }
 
-module.exports = { Settings, DEFAULTS, ZOOMS, POLLS, BASE_ZOOM }
+module.exports = { Settings, BASE_ZOOM }

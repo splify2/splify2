@@ -2,13 +2,13 @@
  *  репозитории) и строки событий из журнала. Только чтение: движок пишет, экран показывает. */
 
 /** Способы обхода по номеру `enum dpi_mod_kind` движка. */
-export const MOD_NAMES = [
+const MOD_NAMES = [
     'Разрез', 'Перестановка', 'Ложный TLS', 'Ложный хост', 'Ложный QUIC',
     'Фрагменты IP', 'Разрез QUIC', 'Перестановка QUIC', 'Ложный STUN',
 ] as const
 const MOD_KINDS = MOD_NAMES.length
 
-export type Transport = 'TCP' | 'QUIC' | 'STUN' | 'Discord'
+type Transport = 'TCP' | 'QUIC' | 'STUN' | 'Discord'
 
 export interface Learned {
     host: string

@@ -65,4 +65,4 @@ function handled(argv = process.argv) {
     }
 }
 
-module.exports = { handled, SQUIRREL_AUMID }
+module.exports = { handled }
