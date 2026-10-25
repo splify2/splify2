@@ -269,6 +269,40 @@ check "откат вернул и ДОМЕННЫЙ список" "prev-domain.ex
 check "копий .prev после отката не осталось" "" \
       "$(find "$T/lists" -name '*.prev' 2>/dev/null | tr '\n' ' ' | sed 's/ $//')"
 
+# ---- запись списка: копия рядом и переименование, а не mv из /tmp -------------------
+#
+# Скачанное лежит в /tmp (tmpfs), список — на overlay. `mv` между ними копирует прямо в целевой
+# файл, и кончившееся место оставляло вместо рабочего списка обрубок. Теперь копия идёт в
+# `<список>.new.<pid>` и переименовывается; заглушка cp отказывает на таких целях — рабочий
+# список обязан остаться прежним целиком, а отказ — попасть в журнал и признак неудачи.
+rm -rf "$T/lists" "$T/var/last-update" "$T/var/update.lock"
+mkdir -p "$T/lists/domains"
+printf 'keep-address.example/32\n' > "$T/lists/news.lst"
+printf 'keep-domain.example\n'     > "$T/lists/domains/news.lst"
+cat > "$T/bin/steer" <<'EOF'
+#!/bin/sh
+case "${1:-}" in
+    fit) src=""; for a in "$@"; do src="$a"; done; cat "$src" ;;
+esac
+exit 0
+EOF
+chmod +x "$T/bin/steer"
+cat > "$T/bin/cp" <<'EOF'
+#!/bin/sh
+for a in "$@"; do case "$a" in *.new.*) exit 1 ;; esac; done
+exec /bin/cp "$@"
+EOF
+chmod +x "$T/bin/cp"
+SANDBOX="$T" PATH="$T/bin:$PATH" STEER="$T/bin/steer" SPEC="$T/etc/spec.json" LISTS="$T/lists" MANIFEST="$T/etc/manifest.json" STAMP="$T/var/last-update" LOCK="$T/var/update.lock" FETCH_SH="$ROOT/files/usr/lib/splify2/fetch.sh" \
+    sh "$SCRIPT" > "$T/out_put" 2>&1
+rc_put=$?
+rm -f "$T/bin/cp"
+check "отказ записи: рабочий адресный список цел" "keep-address.example/32" "$(cat "$T/lists/news.lst" 2>/dev/null)"
+check "отказ записи: рабочий доменный список цел" "keep-domain.example" "$(cat "$T/lists/domains/news.lst" 2>/dev/null)"
+check "отказ записи назван в журнале" "yes" "$(grep -q "не записался" "$T/syslog" && echo yes || echo no)"
+check "отказ записи поднял признак неудачи" "1" "$rc_put"
+check "временных копий рядом со списками не осталось" "" "$(find "$T/lists" -name '*.new.*' 2>/dev/null | tr '\n' ' ')"
+
 # ---- просадка объёма: кратно поредевший список не применяется (R-085, I-118) ----
 #
 # Проверка формы («строки похожи на записи») пропускает файл, в котором записи выглядят
@@ -1256,6 +1290,8 @@ check "но списки при этом обновлены" "yes" \
       "$([ -s "$T/lists/rkn.lst" ] && echo yes || echo no)"
 check "и сказано, почему правила не применены" "yes" \
       "$(grep -q 'ядро выключено' "$T/syslog" && echo yes || echo no)"
+check "и копий .prev при выключенном ядре не осталось (откатывать нечего)" "" \
+      "$(find "$T/lists" -name '*.prev' 2>/dev/null | tr '\n' ' ')"
 
 # Автозапуск на месте — прежнее поведение целиком: правила ставятся, резолвер перечитывает.
 rm -rf "$T/lists" "$T/var/last-update"

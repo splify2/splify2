@@ -126,7 +126,16 @@ plan() {  # ОПИСАНИЕ
 }
 
 # ---- движок ------------------------------------------------------------------------
+# Ядро ведёт steer-box-connector (podkop, forkop): его служба sing-box держит свой steerd, свою таблицу
+# nftables `inet steer` и метки. Это не наше — ядро, его таблица и пакеты остаются, о чём сказано.
+BOX_INITD=${BOX_INITD:-/etc/init.d/sing-box}
+box_present() { grep -q steer-box-connector "$BOX_INITD" 2>/dev/null; }
+
 purge_engine() {
+    if box_present; then
+        say "ядро ведёт steer-box-connector — служба steer, её таблица nftables и пакеты ядра остаются: это не наше"
+        return 0
+    fi
     [ -x "$INITD" ] || return 0
     plan "служба ядра останавливается и снимается с автозапуска ($INITD)"
     [ "$DO" = 1 ] || return 0
@@ -266,6 +275,7 @@ purge_nft() {
         # Существование проверяется ДО показа: обещать удалить таблицу, которой нет, значит
         # заставить человека искать её потом руками, чтобы понять, удалилась ли она.
         nft list table inet "$_t" >/dev/null 2>&1 || continue
+        [ "$_t" = steer ] && box_present && continue
         plan "таблица nftables inet $_t удаляется"
         [ "$DO" = 1 ] || continue
         nft delete table inet "$_t" 2>/dev/null

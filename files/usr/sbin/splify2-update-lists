@@ -275,6 +275,19 @@ fmt_for() {  # ПУТЬ_У_ИЗДАТЕЛЯ
     awk -v v="$1" '$1 == v { print $3; exit }' "$MANIFEST_MAP"
 }
 
+# Положить скачанное (оно в /tmp — это tmpfs) на место списка. Не `mv` через границу файловых
+# систем: busybox копирует тогда прямо в целевой файл, и кончившееся на overlay место оставляло
+# вместо рабочего списка обрубок, который ядро прочло бы при ближайшем применении. Копия — рядом
+# с целью, переименование внутри одной файловой системы атомарно: список либо прежний, либо новый.
+put_list() {  # СКАЧАННОЕ ЦЕЛЬ
+    if cp "$1" "$2.new.$$" && mv "$2.new.$$" "$2"; then
+        rm -f "$1"
+        return 0
+    fi
+    rm -f "$2.new.$$"
+    return 1
+}
+
 mkdir -p "$LISTS" "$(dirname "$STAMP")" "$(dirname "$MANIFEST")"
 
 # Манифест первым: без свежего манифеста новые списки не найти, а старые могут
@@ -335,7 +348,7 @@ for kind in ip domains srs; do
             if [ -f "$path" ] && cmp -s "$new" "$path"; then rm -f "$new"; continue; fi
             [ -f "$path" ] && cp "$path" "$path.prev"
             mkdir -p "$(dirname "$path")"
-            if ! mv "$new" "$path"; then
+            if ! put_list "$new" "$path"; then
                 log "$name: не записался в $(dirname "$path") — кончилось место?"
                 rm -f "$new"; echo failed >> "$LOCK/flags"; continue
             fi
@@ -555,7 +568,7 @@ for kind in ip domains srs; do
         # считать было нечего. Поймано прогоном на настоящих наборах: НИ ОДИН список нового
         # издателя не лёг, а отчёт говорил, что легли все.
         mkdir -p "$(dirname "$path")"
-        if ! mv "$new" "$path"; then
+        if ! put_list "$new" "$path"; then
             log "$name: не записался в $(dirname "$path") — кончилось место?"
             rm -f "$new"
             echo failed >> "$LOCK/flags"
@@ -602,6 +615,9 @@ engine_off() {
 
 if [ "$changed" = 1 ] && engine_off; then
     log "ядро выключено — списки обновлены, правила не применяю"
+    # Откатывать нечего: применения не было. Копии прежних списков, оставленные здесь, вернули бы при
+    # отказе одного из следующих применений СТАРЫЕ версии списков, которые в том прогоне не менялись.
+    find "$LISTS" -name '*.prev' -type f -delete 2>/dev/null
 elif [ "$changed" = 1 ]; then
     if "$STEER" apply --spec "$SPEC"; then
         /etc/init.d/steer reload_dnsd >/dev/null 2>&1
@@ -654,13 +670,18 @@ date -u +%s > "$STAMP"
 #
 # Молча и без влияния на код возврата: остаток — не часть обновления списков, и его неудача не
 # повод объявлять неудачным весь прогон.
-if [ "$(uci -q get splify2.main.sub_kind)" = url ]; then
-    if ubus call splify2 sub_quota >/dev/null 2>&1; then
-        log "остаток трафика подписки обновлён"
+# У КАЖДОЙ подписки с адресом, а не только у первой: темп расхода у именованной подписки иначе
+# появлялся бы только при открытой странице. Перечень — у того же объекта, что их ведёт.
+ubus call splify2 sub_list 2>/dev/null | jsonfilter -e '@.subs[*]' 2>/dev/null | while read -r row; do
+    [ "$(jsonfilter -s "$row" -e '@.kind' 2>/dev/null)" = url ] || continue
+    sq_n="$(jsonfilter -s "$row" -e '@.name' 2>/dev/null)"
+    [ -n "$sq_n" ] || continue
+    if ubus call splify2 sub_quota "{\"name\":\"$sq_n\"}" >/dev/null 2>&1; then
+        log "остаток трафика подписки $sq_n обновлён"
     else
-        log "остаток трафика подписки спросить не удалось"
+        log "остаток трафика подписки $sq_n спросить не удалось"
     fi
-fi
+done
 
 [ "$failed" = 1 ] && exit 1
 exit 0
