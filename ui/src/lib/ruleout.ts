@@ -51,7 +51,7 @@ export const EMPTY_TARGET: Target = { direct: false, block: false, subs: { mode:
 
 /** Виды, которые правило не переписывает и не убирает: у них регистрация, ключи или настройка
  *  человека вне правила. */
-const KEEP = new Set(['direct', 'block', 'warp', 'zapret', 'tgws', 'xsteer', 'awg'])
+const KEEP = new Set(['direct', 'block', 'warp', 'tgws', 'xsteer', 'awg'])
 const kept = (o: Output | undefined) => !o || KEEP.has(o.kind as string)
 
 const NAME_MAX = 15

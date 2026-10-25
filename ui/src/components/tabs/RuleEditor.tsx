@@ -185,7 +185,7 @@ export default function RuleEditor({
      *  в спеке. */
     const ownGroup = isUpstreamGroup(ch.dns)
     const dnsOuts = Object.entries(fullSpec?.outputs || {})
-        .filter(([, o]) => !isPart(o) && o.kind !== 'direct' && o.kind !== 'zapret' && o.kind !== 'tgws' && o.kind !== 'group')
+        .filter(([, o]) => !isPart(o) && o.kind !== 'direct' && o.kind !== 'tgws' && o.kind !== 'group')
         .map(([n]) => n)
     const setOwnDns = (u: Upstream) => onChange({ ...ch, dns: u })
     const hasDomains = isDomains(ch)

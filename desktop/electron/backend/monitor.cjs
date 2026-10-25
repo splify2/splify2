@@ -26,7 +26,6 @@ function outWord(st) {
 const FAIL_TEXT = {
     drop: 'Трафик этого выхода остановлен',
     direct: 'Трафик этого выхода идёт напрямую',
-    zapret: 'Трафик этого выхода идёт через обход',
 }
 
 class Monitor extends EventEmitter {

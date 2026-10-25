@@ -326,7 +326,7 @@ export default function Dns({ live, board = false }: { live?: Live; board?: bool
     const h3Ok = dnsH3Supported(live?.status, coreVersion)
     const showOther = dnsOtherSupported(live?.status) || !!dns.other
     const outs = Object.entries(spec.outputs)
-        .filter(([, o]) => !isPart(o) && o.kind !== 'direct' && o.kind !== 'zapret' && o.kind !== 'tgws' && o.kind !== 'group')
+        .filter(([, o]) => !isPart(o) && o.kind !== 'direct' && o.kind !== 'tgws' && o.kind !== 'group')
         .map(([n]) => n)
 
     function setDns(next: DnsSpec) {

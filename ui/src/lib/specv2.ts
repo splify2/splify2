@@ -241,10 +241,6 @@ function decodeOutput(name: string, o: J): Output {
         const dm = str(take('domain'))
         if (dm) out.domain = dm
     }
-    if (kind === 'zapret') {
-        const s = str(take('strategy'))
-        if (s) out.opts_file = s
-    }
     if (kind === 'group') {
         out.members = arr(take('members'))
         out.pick = (str(take('pick')) as Output['pick']) || 'order'
@@ -727,10 +723,6 @@ function encodeOutput(o: Output): J {
             out.kind = 'tgws'
             put('domain', o.domain)
             break
-        case 'zapret':
-            out.kind = 'zapret'
-            put('strategy', o.opts_file)
-            break
         case 'group':
             out.kind = 'group'
             put('members', o.members)
@@ -761,7 +753,7 @@ function encodeOutput(o: Output): J {
     }
     put('on_fail', o.kind === 'direct' ? undefined : o.on_fail)
     put('over', o.over)
-    if (o.kind === 'zapret' || o.kind === 'group') put('ipv6', o.ipv6 === 'off' ? 'off' : undefined)
+    if (o.kind === 'group') put('ipv6', o.ipv6 === 'off' ? 'off' : undefined)
     if (o.extra) for (const [k, v] of Object.entries(o.extra)) if (!(k in out)) out[k] = v
     return out
 }

@@ -41,7 +41,7 @@ export const PILL = 'an-glass sp-pill flex h-[64px] w-full min-w-0 flex-col just
 /** Строка бейджей в пилюле — одна линия, лишние бейджи переносятся за её край и не видны. */
 export const BADGE_ROW = 'h-5 content-start overflow-hidden'
 
-/** Пилюля конфигурации по образцу вкладки Steer апстримного Zapret Manager: флаг и имя,
+/** Пилюля конфигурации по образцу вкладки Steer: флаг и имя,
  *  «протокол · транспорт · защита», задержка цветом. `chosen` — узел взят правилом,
  *  `on` — ядро держит его сейчас. */
 export function NodePill({ node, lat, chosen, on, onClick, disabled }: {

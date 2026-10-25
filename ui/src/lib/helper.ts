@@ -4,7 +4,7 @@ import { rpc } from '@/lib/rpc'
 
 import { S } from '@/copy'
 /** Помощник выхода — процесс, который ядро steer держит ради выхода (клиент VLESS, hysteria2,
- *  прокси, xsteer, мост tgws, обфускатор, обработчик zapret), — глазами демона (`steer ctl
+ *  прокси, xsteer, мост tgws, обфускатор), — глазами демона (`steer ctl
  *  helper <выход>`, steer docs/ctl.md, «helper»). Строка JSON на помощника; у выхода их бывает
  *  несколько (интерфейс с обфускацией и ещё что-то), поэтому — массив.
  *
@@ -12,7 +12,7 @@ import { S } from '@/copy'
  *  состояния) — их у такого выхода не знает никто, кроме самого процесса. */
 export interface HelperState {
     out: string
-    /** Вид помощника: vless, hysteria2, proxy, xsteer, tgws, obfs, zapret… */
+    /** Вид помощника: vless, hysteria2, proxy, xsteer, tgws, obfs… */
     helper: string
     /** Процесс есть. */
     running: boolean
@@ -57,7 +57,7 @@ export function parseHelpers(r: { code?: number; stdout?: string } | null | unde
 export function hasHelper(o: Output): boolean {
     return (
         o.kind === 'vless' || o.kind === 'hysteria2' || o.kind === 'tunnel' || o.kind === 'xsteer' ||
-        o.kind === 'tgws' || o.kind === 'zapret' || (o.kind === 'interface' && !!o.obfs)
+        o.kind === 'tgws' || (o.kind === 'interface' && !!o.obfs)
     )
 }
 

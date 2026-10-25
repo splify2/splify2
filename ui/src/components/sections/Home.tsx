@@ -88,7 +88,6 @@ function downOutputs(live: Live): { out: string; rules: string[]; onFail: OnFail
 const HOW: Record<OnFail, string> = {
     drop: S.home.kakOstanovlen,
     direct: S.home.kakNapryamuyu,
-    zapret: S.home.kakCherezObhod,
 }
 
 function verdict(live: Live): Verdict {
@@ -109,8 +108,8 @@ function verdict(live: Live): Verdict {
             text: S.home.estPolomki, tone: 'bad', why: S.home.proverokSOtkazom(live.diag.fail), notes,
             finding: { go: 'diag', bad: true },
         }
-    /* Выход правила не отвечает. on_fail: drop — трафик правила стоит, это поломка; direct и
-     * zapret — трафик идёт мимо туннеля, это предупреждение. Раньше проверок-предупреждений: у
+    /* Выход правила не отвечает. on_fail: drop — трафик правила стоит, это поломка; direct —
+     * трафик идёт мимо туннеля, это предупреждение. Раньше проверок-предупреждений: у
      * них своя строка в «Диагностике», а остановленный трафик — первое, что надо знать. */
     const down = downOutputs(live)
     if (down.length) {
@@ -962,7 +961,7 @@ function RuleRow({
     const reserve = spare.length
         ? S.home.zapas(spare.join(', '))
         : st && st.kind !== 'direct'
-          ? S.home.esliVseUpalo(ON_FAIL_TEXT[st.on_fail || 'drop'])
+          ? S.home.esliVseUpalo((ON_FAIL_TEXT[st.on_fail || 'drop'] ?? ON_FAIL_TEXT.drop))
           : ''
 
     /* Строка устроена как строка «Трафика по правилам» приложения: имя слева, счётчики у

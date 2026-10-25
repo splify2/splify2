@@ -228,7 +228,6 @@ export const ru = {
         uzelNeOtvechaetT: "Узел не отвечает",
         trafikOstanovlen: "Трафик этого выхода остановлен, пока выход не ответит.",
         trafikNapryamuyu: "Трафик этого выхода идёт напрямую, пока выход не ответит.",
-        trafikCherezObhod: "Трафик этого выхода идёт через обход, пока выход не ответит.",
         vernyotsyaSam: "Выход вернётся сам, когда узел ответит.",
         mostTelegram: "мост Telegram",
         putiNeOtvechayut: (n: number) => `не отвечает путей: ${n}`,
@@ -611,7 +610,6 @@ export const ru = {
             `${out}: трафик ${rules.length > 1 ? 'правил' : 'правила'} ${rules.join(', ')} ${how}`,
         kakOstanovlen: "остановлен",
         kakNapryamuyu: "идёт напрямую",
-        kakCherezObhod: "идёт через обход",
         kVyhodam: "выходы ",
         proverokSPreduprezhdeniem: (p0: unknown) => `проверок с предупреждением: ${p0}`,
         zagruzka: "Загрузка…",
@@ -715,7 +713,6 @@ export const ru = {
     model: {
         ostanovitTrafik: "остановить трафик",
         pustitNapryamuyu: "пустить напрямую",
-        napryamuyuCherezZapret: "напрямую через zapret",
         porty: (p0: unknown, p1: unknown) => `${p0} (порты ${p1})`,
         porty2: (p0: unknown) => `${p0} (порты)`,
         svoySpisokDomenov: "свой список доменов",

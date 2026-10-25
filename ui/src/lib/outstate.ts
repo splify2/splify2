@@ -57,11 +57,7 @@ export function outDownWord(st?: OutputStatus | null): string | null {
  *  сторожа (узел потерян, а сторож ещё не переключил) — что выход вернётся сам. */
 export function outDownLine(st: OutputStatus): string {
     if (!st.failed) return S.outState.vernyotsyaSam
-    return st.on_fail === 'direct'
-        ? S.outState.trafikNapryamuyu
-        : st.on_fail === 'zapret'
-          ? S.outState.trafikCherezObhod
-          : S.outState.trafikOstanovlen
+    return st.on_fail === 'direct' ? S.outState.trafikNapryamuyu : S.outState.trafikOstanovlen
 }
 
 /** Пул узлов туннеля сейчас (spec-v2.md, «Пул узлов туннеля»): объект `vless` или `proxy` у

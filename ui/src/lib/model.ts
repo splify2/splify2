@@ -11,17 +11,11 @@ import { S } from '@/copy'
  *  TUN — so as far as marks, tables and failover go it IS a device, and the only reason
  *  it is a separate kind is that the device has to be created and kept alive by a
  *  process. Needs the steer-extended package.
- *
- *  `zapret` — выход БЕЗ устройства и БЕЗ своей таблицы маршрутизации: трафик уходит обычным
- *  маршрутом, а по дороге его разбирает отдельный экземпляр nfqws со своей стратегией обхода
- *  DPI. Первый вид, у которого «нужна метка» и «есть устройство» разошлись. splify2 таких
- *  выходов больше не создаёт и обход не настраивает (движок вид сохранил); уже стоящий в
- *  спеке выход читается и записывается обратно как есть, чтобы правка правил его не портила.
- *
+ * *
  *  `tunnel` — туннель спеки v2 с протоколом, которого у модели нет своим видом (`protocol`):
  *  прокси-протоколы steer-proxy и всё, что появится позже. Тоже читается и пишется как есть. */
 export type OutputKind =
-    | 'interface' | 'direct' | 'vless' | 'hysteria2' | 'xsteer' | 'awg' | 'tgws' | 'group' | 'zapret' | 'tunnel'
+    | 'interface' | 'direct' | 'vless' | 'hysteria2' | 'xsteer' | 'awg' | 'tgws' | 'group' | 'tunnel'
     | ProxyKind
 
 /** Протоколы прокси модуля steer-proxy (steer/docs/proxy.md). В спеке v2 каждый — `kind: tunnel`
@@ -64,7 +58,7 @@ export type Ipv6Mode = 'routed' | 'nat' | 'off'
  *  drop по умолчанию: канал заводят ровно для того, чтобы трафик НЕ шёл напрямую, и
  *  молча вернуть его на открытый путь в момент поломки — это нарушить обещание
  *  выхода тогда, когда это опаснее всего, причём незаметно. */
-export type OnFail = 'drop' | 'direct' | 'zapret'
+export type OnFail = 'drop' | 'direct'
 
 export interface Output {
     name: string
@@ -100,11 +94,6 @@ export interface Output {
      *  Не отдельный вид выхода — свойство существующего, потому что маршрутизация,
      *  метки и failover от этого не меняются. */
     obfs?: Obfs
-    /** kind=zapret: файл с ключами nfqws. ПУТЬ, а не сама стратегия: спека печатается целиком
-     *  в status, в diag и в резервную копию, а стратегия — это два десятка строк с путями к
-     *  файлам-подделкам. Поле необязательно и обычно опущено: движок выводит путь из имени
-     *  выхода, и два имени, которым позволено разойтись, пользы не приносят. */
-    opts_file?: string
     /** ЧАСТЬ СОСТАВНОГО ВЫХОДА: имя выхода-пула, которому принадлежит этот выход.
      *
      *  Пул из локаций двух подписок и своего туннеля движок выражает одной формой — выход
@@ -452,7 +441,6 @@ export interface PathDown {
 export const ON_FAIL_TEXT: Record<OnFail, string> = {
     drop: S.model.ostanovitTrafik,
     direct: S.model.pustitNapryamuyu,
-    zapret: S.model.napryamuyuCherezZapret,
 }
 
 /** fake-IP is precise per domain; real-IP keeps traceroute hops legible and loses
