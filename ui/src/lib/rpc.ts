@@ -835,22 +835,6 @@ export const rpc = {
     fetchMode: declare<{ mode?: string; out?: string }>('fetch_mode'),
     fetchModeSet: declare<{ ok: boolean; mode?: string; error?: string }>('fetch_mode_set', ['mode']),
 
-    /** Учёт роутера в счётчике на splify2.github.io (docs/TELEMETRY.md). Включено по
-     *  умолчанию: `consent` — unset | on | off, `on` — уйдёт ли отклик (считает роутер).
-     *  `last_at` — когда сайт последний раз принял отклик (0 — ещё не было с загрузки),
-     *  `last_error` — слово причины последнего сбоя: rejected | toomany | unavailable |
-     *  network | noid | nosender. */
-    telemetryState: declare<{
-        consent?: string
-        on?: boolean
-        last_at?: number
-        last_error?: string
-    }>('telemetry_state'),
-
-    /** Включить или выключить. Выключение на роутере убирает идентификатор и отметку. */
-    telemetrySet: declare<{ ok: boolean; consent?: string; error?: string }>(
-        'telemetry_set', ['on']),
-
     /** ВЕСЬ КРУГ ОПРОСА ОДНИМ ВЫЗОВОМ: состояние, счётчики устройств, сведения о сети и —
      *  по просьбе — проверки движка.
      *

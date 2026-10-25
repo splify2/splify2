@@ -1100,22 +1100,6 @@ JSON — то есть решение принималось по переска
 `vless_probe`, `proxy_nodes` и `proxy_probe`; у `hysteria2_*` ключа нет (`insecure=1` там —
 параметр ссылки узла, такие узлы пригодны всегда).
 
-### `telemetry_state` (read) · `telemetry_set` (write)
-
-Учёт роутера в счётчике на splify2.github.io; что и когда уходит — [`docs/TELEMETRY.md`](TELEMETRY.md).
-Отправки здесь нет: её делает `/usr/sbin/splify2-ping` по расписанию.
-
-`telemetry_state` → `{consent, on, last_at, last_error}`. `consent` — `unset` (ключа
-`splify2.main.telemetry` нет), `on` (`1`) или `off` (`0` или непонятное значение); `on` —
-уйдёт ли отклик: везде, кроме `off`. `last_at` — когда сайт последний раз принял отклик
-(unix-время, `0` — с загрузки ещё не было), `last_error` — слово причины последнего сбоя или
-пусто: `rejected` (400), `toomany` (429), `unavailable` (5xx и прочие ответы), `network` (сайт не
-ответил ни по одному пути: напрямую, через выходы ядра и обычным), `noid` (ядро не дало
-идентификатор), `nosender` (нет ни curl, ни uclient-fetch). Оба берутся из `/tmp/splify2-ping`.
-
-`telemetry_set {on}` пишет ключ; выключение вдобавок удаляет `splify2.main.telemetry_id` и
-отметку `/tmp/splify2-ping`. Ответ — `{ok, consent}`.
-
 ## Архив настроек
 
 Экспорт и восстановление пользовательской настройки одним файлом. Файл собирается и
@@ -1713,7 +1697,7 @@ allowed-ips (сервер для своих); и отдельным поводо
 
 ## Перечень методов
 
-Все 74 объявленных метода (из блока `list)` скрипта rpcd). Группа ACL в скобках.
+Все 72 объявленных метода (из блока `list)` скрипта rpcd). Группа ACL в скобках.
 
 | Метод | ACL | Вход на stdin |
 |---|---|---|
@@ -1761,8 +1745,6 @@ allowed-ips (сервер для своих); и отдельным поводо
 | `xsteer_state` | read | — |
 | `xsteer_link` | read | `{iface}` или `{link}` |
 | `xsteer_link_put` | write | `{iface, link}` |
-| `telemetry_state` | read | — |
-| `telemetry_set` | write | `{on}` — 1 включить, 0 выключить |
 | `lists_source` | read | — |
 | `lists_source_set` | write | `{url}` |
 | `fetch_mode` | read | — |

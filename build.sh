@@ -180,8 +180,6 @@ cp files/usr/sbin/splify2-purge "$PKG/usr/sbin/splify2-purge"
 # если тот стоит и обход включён (/etc/splify2/recheck.conf); иначе ничего не делает.
 cp files/etc/init.d/splify2-recheck "$PKG/etc/init.d/splify2-recheck"
 chmod 0755 "$PKG/etc/init.d/splify2-recheck"
-# Отклик для счётчика роутеров на сайте: своё задание крона раз в час (post-install ниже).
-cp files/usr/sbin/splify2-ping "$PKG/usr/sbin/splify2-ping"
 mkdir -p "$PKG/usr/share/splify2"
 # Описание второго издателя списков (itdoginfo/allow-domains): где он живёт, каким ТЕГОМ
 # РЕЛИЗА зафиксирован, что публикует и как его двоичные наборы становятся нашими списками.
@@ -225,7 +223,7 @@ cp files/lib/upgrade/keep.d/splify2 "$PKG/lib/upgrade/keep.d/splify2"
 chmod 0644 "$PKG/lib/upgrade/keep.d/splify2"
 chmod 0755 "$PKG/usr/libexec/rpcd/splify2" "$PKG/usr/sbin/splify2-update-lists" \
            "$PKG/usr/sbin/splify2-update-subs" \
-           "$PKG/usr/sbin/splify2-purge" "$PKG/usr/sbin/splify2-ping"
+           "$PKG/usr/sbin/splify2-purge"
 chmod 0644 "$PKG/usr/share/splify2/allow-domains.sh"
 chmod 0644 "$PKG"/usr/lib/splify2/*.sh "$PKG"/usr/lib/splify2/rpcd/*.sh
 
@@ -315,7 +313,7 @@ fi
 # МИНУТА ЗДЕСЬ НЕ СЛУЧАЙНАЯ, и это не забывчивость: обращение наружу делает не само задание, а
 # только те подписки, чей срок подошёл, — то есть всплеска в одну секунду у тысячи роутеров не
 # получится при любой минуте. Случайность живёт там, где она нужна: у суточного обновления
-# списков и у отклика для счётчика на сайте.
+# списков.
 if ! grep -q splify2-update-subs /etc/crontabs/root 2>/dev/null; then
     mkdir -p /etc/crontabs
     printf '*/10 * * * * /usr/sbin/splify2-update-subs
@@ -323,24 +321,10 @@ if ! grep -q splify2-update-subs /etc/crontabs/root 2>/dev/null; then
     /etc/init.d/cron enable 2>/dev/null
     /etc/init.d/cron restart 2>/dev/null
 fi
-# Отклик для счётчика роутеров на сайте. Крон зовёт команду раз в час, а отправляет она сама,
-# когда с прошлого отклика прошло 23 часа (после перезагрузки — на ближайшем такте).
-#
-# МИНУТА СЛУЧАЙНАЯ И СВОЯ, чтобы роутеры не стучались в сайт в одну секунду. `srand()` в
-# busybox awk сеет временем, а задания ставятся в одну секунду — поэтому к времени подмешан
-# номер процесса, иначе минута совпала бы с минутой обновления списков.
-#
-# Прежняя почасовая отправка отчёта (splify2-telemetry) убрана вместе со своей строкой.
-if grep -q splify2-telemetry /etc/crontabs/root 2>/dev/null; then
-    sed -i '/splify2-telemetry/d' /etc/crontabs/root
-    /etc/init.d/cron restart 2>/dev/null
-fi
-if ! grep -q splify2-ping /etc/crontabs/root 2>/dev/null; then
-    mkdir -p /etc/crontabs
-    printf '%s * * * * /usr/sbin/splify2-ping\n' \
-        "$(awk -v s=$$ "BEGIN{srand();srand(s+int(rand()*100000));print int(rand()*60)}")" \
-        >> /etc/crontabs/root
-    /etc/init.d/cron enable 2>/dev/null
+# Счётчика установок больше нет: строки крона прежних отправок (splify2-ping, а до 26.10 —
+# splify2-telemetry) снимаются при обновлении.
+if grep -q 'splify2-telemetry\|splify2-ping' /etc/crontabs/root 2>/dev/null; then
+    sed -i '/splify2-telemetry/d;/splify2-ping/d' /etc/crontabs/root
     /etc/init.d/cron restart 2>/dev/null
 fi
 # https-dns-proxy и zapret этот пакет не настраивает и от них не зависит: шифрованный DNS
@@ -425,9 +409,7 @@ chmod +x build/scripts/pre-remove
 # пакет, и мы его не трогаем.
 #
 # curl — объявлен. Страну, внешний адрес и отклик выхода мерит outbound_geo запросом curl через
-# устройство выхода (`--interface`; uclient-fetch к устройству не привязывается). Тем же способом
-# отклик для счётчика на сайте (splify2-ping) идёт напрямую по внешнему устройству и через выходы
-# ядра, если напрямую сайт не ответил. До 26.10 curl
+# устройство выхода (`--interface`; uclient-fetch к устройству не привязывается). До 26.10 curl
 # приезжал зависимостью https-dns-proxy, и снятие той зависимости его забрало: на OpenWrt 25.12
 # apk при обновлении пакета вычищает и https-dns-proxy, и curl с libcurl как осиротевшие (снято
 # с QEMU-стенда: 26.9.2 → 26.10.0), а на свежей установке curl не появлялся вовсе — обзор писал
@@ -460,7 +442,7 @@ chmod +x build/scripts/pre-remove
 # опроса). Теперь добавить подключение и забыть укладку нельзя.
 for _need in $(grep -ho '/usr/lib/splify2/[a-z0-9_-]*\.sh' \
                     files/usr/libexec/rpcd/splify2 files/usr/sbin/splify2-update-lists \
-                    files/usr/sbin/splify2-ping files/etc/init.d/splify2-recheck files/usr/lib/splify2/rpcd/*.sh |
+                    files/etc/init.d/splify2-recheck files/usr/lib/splify2/rpcd/*.sh |
                sort -u); do
     test -s "$PKG$_need" || {
         echo "в пакете нет ${_need#/} — подключающая его половина не запустится"; exit 1; }
@@ -478,11 +460,6 @@ test -s "$PKG/usr/lib/splify2/rpcd/common.sh" || {
 # автоматически чистить их в postrm нельзя (обновление opkg это удаление плюс установка).
 test -x "$PKG/usr/sbin/splify2-purge" || {
     echo "в пакете нет usr/sbin/splify2-purge — следы пакета убрать будет нечем"; exit 1; }
-# Без этой команды крон зовёт пустоту, а переключатель в интерфейсе включён — обещание,
-# которого пакет не исполняет. Проверяется и бит исполнения.
-test -x "$PKG/usr/sbin/splify2-ping" || {
-    echo "в пакете нет usr/sbin/splify2-ping — отклик для счётчика на сайте не уйдёт"
-    exit 1; }
 # Без описания источника второй издатель не работает вовсе, и молча: объект rpcd ответит
 # «пакет собран не целиком», а ночное обновление объявит каждый его список «нет в манифесте,
 # пропущен» — то есть список замрёт последней скачанной копией НАВСЕГДА, без признака

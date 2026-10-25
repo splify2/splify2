@@ -346,40 +346,25 @@ check "post-install называет команду перезапуска се�
 check "post-install сеть не перезапускает" "0" \
     "$(sed -n '/^cat > build\/scripts\/post-install/,/^EOF$/p' build.sh | grep -c '^ *"\?/etc/init.d/network"\? restart')"
 
-# ---- расписание: отклик для счётчика на сайте -----------------------------------
+# ---- расписание: счётчика установок больше нет ---------------------------------
 #
-# Отклик живёт своей строкой crontab: крон зовёт команду КАЖДЫЙ час, а 23 часа отсчитывает
-# она сама. Проверяется строка, которую post-install действительно допишет: блок берётся из
-# build.sh (сгенерированный build/scripts/post-install — артефакт, он может быть от прежней
-# сборки), а случайность минуты меряется ЗАПУСКОМ той самой команды awk.
+# Строки крона прежних отправок (splify2-ping, а до 26.10 — splify2-telemetry) при обновлении
+# снимаются, новых не ставится. Проверяется блок post-install, который действительно исполнится:
+# он берётся из build.sh (сгенерированный build/scripts/post-install — артефакт, он может быть от
+# прежней сборки).
 T="$(mktemp -d /tmp/pkgmatch.XXXXXX)"
 PI="$T/post-install.block"
 sed -n '/^cat > build\/scripts\/post-install/,/^EOF$/p' build.sh > "$PI"
-# Час — КАЖДЫЙ: после минуты идут четыре звёздочки. Строка `%s 5 * * *` дала бы раз в сутки,
-# и отклик раз в 23 часа превратился бы в отклик раз в 24 — роутер выпадал бы из счёта.
-check "post-install ставит отклик каждый час" "1" \
+check "post-install отклик для счётчика не ставит" "0" \
     "$(grep -c "printf '%s \\* \\* \\* \\* /usr/sbin/splify2-ping" "$PI")"
-check "и убирает строку прежней отправки отчёта" "1" \
-    "$(grep -c "sed -i '/splify2-telemetry/d' /etc/crontabs/root" "$PI")"
+check "и убирает строки прежних отправок: отклика и отчёта" "1" \
+    "$(grep -c "sed -i '/splify2-telemetry/d;/splify2-ping/d' /etc/crontabs/root" "$PI")"
 check "а обновление списков осталось суточным" "1" \
     "$(grep -c "printf '%s 5 \\* \\* \\* /usr/sbin/splify2-update-lists" "$PI")"
-# МИНУТА СЛУЧАЙНА И СВОЯ. Задания ставятся в одну и ту же СЕКУНДУ, а `srand()` в busybox awk
-# сеет временем — поэтому меряется следствие: команда берётся ИЗ САМОГО post-install и
-# запускается двадцать раз разными процессами.
-tm_min_cmd="$(grep -o 'awk -v s=\$\$ "BEGIN{[^"]*}"' "$PI" | head -1)"
-check "минута отклика считается командой из post-install" "yes" \
-    "$([ -n "$tm_min_cmd" ] && echo yes || echo no)"
-mins="$T/minutes"
-: > "$mins"
-_n=0
-while [ "$_n" -lt 20 ]; do
-    _n=$((_n + 1))
-    sh -c "$tm_min_cmd" >> "$mins" 2>/dev/null
-done
-check "и двадцать запусков подряд дают не одно число" "yes" \
-    "$([ "$(sort -u "$mins" | grep -c .)" -gt 1 ] && echo yes || echo no)"
-check "и все числа — минуты часа" "0" \
-    "$(awk 'NF && ($1 < 0 || $1 > 59)' "$mins" | grep -c .)"
+check "пакет не везёт команду отклика" "0" \
+    "$(grep -c 'cp files/usr/sbin/splify2-ping' build.sh)"
+check "и в дереве её нет" "no" "$([ -e files/usr/sbin/splify2-ping ] && echo yes || echo no)"
+check "как и общего скрипта отклика" "no" "$([ -e files/usr/lib/splify2/ping.sh ] && echo yes || echo no)"
 rm -rf "$T"
 
 # ---- сказанное установщиком доходит до браузера ---------------------------------
@@ -612,6 +597,47 @@ check "apk получает pre-deinstall" "1" "$(grep -c 'pre-deinstall:build/s
 check "ipk получает prerm" "1" "$(grep -c 'build/scripts/pre-remove "\$PKG/CONTROL/prerm"' build.sh)"
 check "post-install поднимает включённый ReCheck после обновления" "1" \
     "$(sed -n '/^cat > build\/scripts\/post-install/,/^EOF$/p' build.sh | grep -c 'splify2-recheck restart')"
+
+# ---- счётчика установок больше нет: следы прежних версий уходят при обновлении ------
+# Блок uci-defaults снимает ключи отклика (согласие, идентификатор, адрес для стендов), ключи
+# отчёта до 26.10 и файлы в /var и /tmp; соседи, которые живы (замер внешнего адреса выхода), не
+# трогаются. uci подменён файлом ключей, корень — каталог в /tmp.
+TUD="$(mktemp -d /tmp/pkgmatch-ud.XXXXXX)"
+mkdir -p "$TUD/bin" "$TUD/root/var/lib/splify2" "$TUD/root/var/run" "$TUD/root/tmp"
+cat > "$TUD/bin/uci" <<EOF2
+#!/bin/sh
+db="$TUD/uci.db"
+case "\$1" in -q) shift ;; esac
+case "\$1" in
+    get)    v="\$(sed -n "s|^\$2=||p" "\$db" 2>/dev/null | tail -n1)"; [ -n "\$v" ] || exit 1; printf '%s\n' "\$v" ;;
+    delete) sed -i "\\|^\$2=|d" "\$db" 2>/dev/null ;;
+    commit) : ;;
+    *) exit 1 ;;
+esac
+EOF2
+chmod +x "$TUD/bin/uci"
+for k in telemetry telemetry_id ping_url telemetry_url telemetry_key geo_city_url; do echo "splify2.main.$k=x" >> "$TUD/uci.db"; done
+echo "splify2.main.manifest_url=keep" >> "$TUD/uci.db"
+for f in var/lib/splify2/net var/run/splify2-boot-id var/run/splify2-events var/run/splify2-crash \
+         var/run/splify2-telemetry-now tmp/splify2-telemetry.4242 tmp/splify2-ping; do
+    echo x > "$TUD/root/$f"
+done
+echo x > "$TUD/root/var/lib/splify2/geo-wg0"
+sed -n '/^# Ключи прежнего отчёта/,/^\[ -n "\$_old" \]/p' files/etc/uci-defaults/99-splify2 > "$TUD/olds.sh"
+check "блок чистки прежних ключей найден в uci-defaults" "yes" "$([ -s "$TUD/olds.sh" ] && echo yes || echo no)"
+PATH="$TUD/bin:$PATH" SPLIFY2_TEST_ROOT="$TUD/root" sh "$TUD/olds.sh"
+check "ключи счётчика и прежнего отчёта сняты" "splify2.main.manifest_url=keep" "$(cat "$TUD/uci.db")"
+for f in var/lib/splify2/net var/run/splify2-boot-id tmp/splify2-telemetry.4242 tmp/splify2-ping; do
+    check "прежний файл /$f убран" "no" "$([ -e "$TUD/root/$f" ] && echo yes || echo no)"
+done
+check "замер внешнего адреса выхода не тронут" "yes" "$([ -e "$TUD/root/var/lib/splify2/geo-wg0" ] && echo yes || echo no)"
+rm -rf "$TUD"
+# Метод учёта убран из объекта rpcd и из прав интерфейса; ни одного упоминания в рабочих текстах.
+check "rpcd не знает telemetry_state и telemetry_set" "0" \
+    "$(grep -c 'telemetry_state\|telemetry_set' files/usr/libexec/rpcd/splify2 luci/root/usr/share/rpcd/acl.d/luci-app-splify2.json | awk -F: '{s+=$2} END {print s+0}')"
+check "группы telemetry в rpcd нет" "no" "$([ -e files/usr/lib/splify2/rpcd/m-telemetry.sh ] && echo yes || echo no)"
+check "README и руководство о счётчике не говорят" "0" \
+    "$(cat README.md docs/guide.md | grep -ci 'Счётчик на сайте\|TELEMETRY.md')"
 
 printf '\n%d проверок пройдено' "$pass"
 if [ "$fail" -gt 0 ]; then printf ', %d ПРОВАЛЕНО\n' "$fail"; exit 1; fi

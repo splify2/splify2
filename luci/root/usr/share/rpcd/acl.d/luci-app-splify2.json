@@ -50,7 +50,6 @@
           "outbound_geo",
           "xsteer_state",
           "xsteer_link",
-          "telemetry_state",
           "support_report",
           "steer_modules"
         ]
@@ -85,7 +84,6 @@
           "fetch_mode_set",
           "lists_source_set",
           "xsteer_link_put",
-          "telemetry_set",
           "sub_auto",
           "sub_rename",
           "sub_refresh",

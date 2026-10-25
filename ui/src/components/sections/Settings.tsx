@@ -11,7 +11,6 @@ import ListsSourceCard from '@/components/ListsSourceCard'
 import ModulesCard from '@/components/ModulesCard'
 import SelfUpdateCard from '@/components/SelfUpdateCard'
 import PurgeCard from '@/components/PurgeCard'
-import TelemetryCard from '@/components/TelemetryCard'
 import XsteerPanel from '@/components/XsteerPanel'
 import { rpc } from '@/lib/rpc'
 import { pending, usePending } from '@/lib/pending'
@@ -96,10 +95,6 @@ export default function Settings({
                             />
                             <ModulesCard onChanged={live.refresh} />
                             <SelfUpdateCard info={live.selfUpdate} installed={live.build?.ui_version} onInstalled={live.refresh} />
-                            {/* Счётчик на сайте живёт здесь: «Интерфейс» — раздел про сам продукт,
-                                и именно это место названо в документации как то, где учёт
-                                роутера выключается. */}
-                            <TelemetryCard />
                             <PurgeCard />
                         </div>
                     )}

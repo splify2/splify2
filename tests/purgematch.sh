@@ -283,10 +283,9 @@ EOF
         printf "\toption splify2_state 'saved'\n"
         printf "\tlist splify2_orig 'option resolver_url https://dns.foreign/dns-query'\n"
     } > "$T/etc/config/https-dns-proxy"
-    # ДВЕ НАШИХ СТРОКИ, а не одна: отклик для счётчика на сайте живёт своим почасовым
-    # заданием. Обе обязаны уйти — забытая строка зовёт каждый час команду, которой уже нет.
-    # Третья — строка прежнего почасового отчёта (до 26.10): её снимает установка новой
-    # версии, но чистку зовут и на роутере, где обновления не было.
+    # НАШИ СТРОКИ: обновление списков и две строки прежних отправок — отклика счётчика и
+    # почасового отчёта (до 26.10). Обновление пакета их снимает, но чистку зовут и на роутере,
+    # где обновления не было; забытая строка зовёт каждый час команду, которой уже нет.
     printf '%s\n%s\n%s\n%s\n' '0 3 * * * /usr/bin/чужое-обновление' \
         '17 5 * * * /usr/sbin/splify2-update-lists' \
         '41 * * * * /usr/sbin/splify2-ping' \
@@ -465,17 +464,16 @@ check "с --keep-config запись в crontab всё равно убрана" 
 check "с --keep-config строка отклика убрана" "0" \
     "$(grep -c splify2-ping "$T/etc/crontabs/root")"
 
-# ---- отклик для счётчика на сайте -----------------------------------------------
+# ---- следы прежнего счётчика установок -------------------------------------------
 #
-# Здесь ЕДИНСТВЕННОЕ место в настройке, где --keep-config не спасает всё подряд, и проверять
-# надо обе стороны сразу: наше состояние уходит, ОТВЕТ ЧЕЛОВЕКА остаётся. Стерев ноль в
-# `telemetry`, чистка включила бы отклик тому, кто его выключил: пустой ключ значит «включено».
+# Счётчика больше нет; ключи прежних версий — наше состояние, а не настройка человека, и
+# уходят даже с --keep-config, чужая настройка рядом остаётся.
 setup
 run_purge --yes --keep-config
 check "с --keep-config идентификатор снят" "no" "$(has 'splify2.main.telemetry_id=sp-00112233445566778899aabbccddeeff')"
 check "с --keep-config адрес для стендов снят" "no" "$(has 'splify2.main.ping_url=https://panel.example/api/ping')"
 check "с --keep-config ключ прежнего отчёта снят" "no" "$(has 'splify2.main.telemetry_url=https://old-panel.example/api/report')"
-check "НО ОТКАЗ ЧЕЛОВЕКА ОСТАЛСЯ" "yes" "$(has 'splify2.main.telemetry=0')"
+check "с --keep-config согласие прежнего счётчика снято" "no" "$(has 'splify2.main.telemetry=0')"
 check "и чужая настройка рядом не пострадала" "yes" "$(has 'zapret.config.run_on_boot=1')"
 check "отметка отклика удалена" "no" "$(exists "$T/var/run/splify2-ping")"
 # А ЭТО — ПРО УМОЛЧАНИЕ САМОГО СКРИПТА. Проверки выше подменяют STATE_PATHS швом, то есть
@@ -488,14 +486,13 @@ state_paths_default() {
 }
 check "умолчание скрипта: список путей вообще разбирается" "yes" \
       "$([ "$(state_paths_default | grep -c .)" -ge 8 ] && echo yes || echo no)"
-# Отметка отклика лежит там, где её пишет команда отправки (PING_STATE в ping.sh).
-ping_state="$(sed -n 's/^PING_STATE=\${PING_STATE:-\(.*\)}$/\1/p' "$ROOT/files/usr/lib/splify2/ping.sh")"
-check "умолчание скрипта знает отметку отклика $ping_state" "1" \
-      "$(state_paths_default | grep -cx "${ping_state:-нет}")"
+# Отметка прежнего отклика (команды отправки больше нет) всё ещё убирается чисткой.
+check "умолчание скрипта знает отметку прежнего отклика /tmp/splify2-ping" "1" \
+      "$(state_paths_default | grep -cx '/tmp/splify2-ping')"
 # Показ обязан назвать это словами: по нему человек решает, звать ли с --yes.
 setup
 run_purge
-check "показ называет идентификатор отклика" "yes" "$(outhas 'идентификатор отклика')"
+check "показ называет следы прежнего счётчика" "yes" "$(outhas 'следы прежнего счётчика')"
 check "и при показе ничего не удалено" "yes" "$(has 'splify2.main.telemetry_id=sp-00112233445566778899aabbccddeeff')"
 check "и отметка отклика на месте" "yes" "$(exists "$T/var/run/splify2-ping")"
 

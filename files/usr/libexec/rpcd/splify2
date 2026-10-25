@@ -198,10 +198,6 @@ UPDATE_LISTS=${UPDATE_LISTS:-/usr/sbin/splify2-update-lists}
 # Чужие установленные zapret / Zapret Manager и https-dns-proxy мы не снимаем и не читаем:
 # это настройка человека.
 #
-# Отклик для счётчика на сайте: согласие и отметка последнего отклика. Общий файл с командой
-# отправки (splify2-ping) — экран показывает ровно то, что делает расписание.
-need_ping() { [ "${_ping_loaded:-}" = 1 ] || { . "${PING_SH:-/usr/lib/splify2/ping.sh}"; _ping_loaded=1; }; }
-
 # ---- идентификатор устройства для панели подписки (HWID) ----------------------------
 #
 # Считает его ДВИЖОК (`steer sub-hwid`), а не этот файл. Почему так — в
@@ -641,9 +637,6 @@ list)
     json_add_object xsteer_link_put
         json_add_string iface; json_add_string link
     json_close_object
-    # Учёт роутера в счётчике на сайте: ключа нет или 1 — включено, 0 — выключено.
-    json_add_object telemetry_state; json_close_object
-    json_add_object telemetry_set; json_add_boolean on; json_close_object
     json_add_object lists_source; json_close_object
     json_add_object lists_source_set; json_add_string url; json_close_object
     json_add_object fetch_mode; json_close_object
@@ -710,7 +703,6 @@ call)
         sub_set|sub_info|sub_quota|sub_list|sub_del|sub_auto|sub_refresh|sub_rename) _grp=sub ;;
         backup_get|backup_put) _grp=backup ;;
         xsteer_link|xsteer_link_put) _grp=xsteer ;;
-        telemetry_state|telemetry_set) _grp=telemetry ;;
         recheck_info|recheck_set) _grp=recheck ;;
         *) fail "неизвестный метод" ;;
     esac
