@@ -112,10 +112,10 @@ fi
 
 rm -f "$T/etc/spec.yaml" "$T/etc/spec.json"
 printf '{"schema":1,"outputs":{"direct":{"kind":"direct"}},"channels":[]}\n' > "$T/etc/spec.json"
-rm -f "$T/etc/spec.json.v1.bak"
+rm -f "$T/etc/spec.json.bak"
 out="$(rpcd spec_set "$(req '{"version":2,"outputs":{"direct":{"kind":"direct"}}}')")"
 check "перенос v1 → v2 прошёл" "true" "$(printf '%s' "$out" | jget ok)"
-check "копия v1 осталась рядом" "yes" "$(grep -q schema "$T/etc/spec.json.v1.bak" && echo yes || echo no)"
+check "копия v1 осталась рядом" "yes" "$(grep -q schema "$T/etc/spec.json.bak" && echo yes || echo no)"
 
 printf '\n%d проверок пройдено' "$pass"
 if [ "$fail" -gt 0 ]; then printf ', %d ПРОВАЛЕНО\n' "$fail"; exit 1; fi

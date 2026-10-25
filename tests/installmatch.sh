@@ -481,7 +481,7 @@ check "README ведёт на docs/guide.md" "да" \
 # Вариантов «базовый/расширенный» больше нет: ядро — steer-core, протоколы — модули. Состав
 # установки: выбор человека (умолчание — vless, hysteria2, proxy), уже стоящие модули и, при
 # переходе со steer-extended 1.x, вшитые в него vless, xsteer, obfs, tgws.
-eval "$(sed -n '/^REPO_STEER=/p; /^pm_names() {/,/^}/p; /^pm_has() {/,/^}/p; /^STEER_MODULES=/p; /^STEER_DEFAULT_MODULES=/p; /^steer_mods() {/,/^}/p; /^steer_version() {/,/^}/p; /^BOX_INITD=/p; /^box_busy() {/,/^}/p' "$ROOT/install.sh")"
+eval "$(sed -n '/^REPO_STEER=/p; /^pm_names() {/,/^}/p; /^pm_has() {/,/^}/p; /^STEER_MODULES=/p; /^STEER_DEFAULT_MODULES=/p; /^steer_mods() {/,/^}/p; /^ver_ok() {/,/^}/p; /^steer_version() {/,/^}/p; /^BOX_INITD=/p; /^box_busy() {/,/^}/p' "$ROOT/install.sh")"
 check "функция steer_mods достана из install.sh" "steer_mods" "$(command -v steer_mods >/dev/null && echo steer_mods)"
 check "умолчание к первой установке — vless hysteria2 proxy" "vless hysteria2 proxy" "$STEER_DEFAULT_MODULES"
 : > "$SB/pkglist"
@@ -497,15 +497,15 @@ check "стоящий модуль входит в состав" "vless obfs" "$
 : > "$SB/pkglist"
 
 # Версия ядра: стабильная 1.5.9 этому интерфейсу не годится (он пишет спеку v2) — тогда
-# предварительная из перечня, если она 2.0 или новее.
+# предварительная из перечня, если она 2.1 или новее.
 relreset
 mkrel "$SB/resp-rel-raw"
-sed -i 's/"prerelease": null/"prerelease": "2.0.0"/' "$SB/resp-rel-raw"
-check "стабильная 1.x — берётся предварительная 2.0.0" "2.0.0" "$(steer_version 2>/dev/null | tail -1)"
+sed -i 's/"prerelease": null/"prerelease": "2.1.0"/' "$SB/resp-rel-raw"
+check "стабильная младше 2.1 — берётся предварительная 2.1.0" "2.1.0" "$(steer_version 2>/dev/null | tail -1)"
 relreset
 mkrel "$SB/resp-rel-raw"
 check "предварительной нет — версия как есть (установщик откажет словами)" "1.5.9" "$(steer_version 2>/dev/null | tail -1)"
-check "отказ на ядре старше 2.0 назван" "1" "$(grep -c 'этому интерфейсу нужно ядро 2.0 или новее' "$ROOT/install.sh")"
+check "отказ на ядре старше 2.1 назван" "1" "$(grep -c 'этому интерфейсу нужно ядро 2.1 или новее' "$ROOT/install.sh")"
 relreset
 
 # Пакеты 2.0: ядро и модули — одной транзакцией, прежнее ядро — в ней же (`!имя`).

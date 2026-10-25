@@ -1,10 +1,10 @@
 #!/bin/sh
 # Спека в spec.yaml (files/usr/lib/splify2/spec.sh): чтение JSON-видом, запись переводом ядра,
-# перевод spec.json и v1 при обновлении ядра — ПОВЕДЕНИЕ на заглушке ядра.
+# перевод spec.json и v1 при установке ядра — ПОВЕДЕНИЕ на заглушке ядра.
 #
 # Заглушка `steer` умеет то, что нужно spec.sh от ядра 2.1: `spec convert --spec Ф` печатает
 # «YAML» (строка-метка и JSON следом), `spec convert --json --spec Ф` — JSON (метка снимается).
-# Без STUB_JSON=1 заглушка — прежнее ядро: `--json` не знает.
+# Без STUB_JSON=1 перевод в JSON не выходит (`--json` заглушка отвергает): так проверяется отказ.
 #
 # Запуск: sh tests/specfilematch.sh
 set -u
@@ -57,23 +57,11 @@ run() {  # STUB_JSON КОД
 }
 reset() { rm -rf "$T/etc" "$T"/view.json*; mkdir -p "$T/etc"; }
 
-# --- прежнее ядро: всё как было ---
-reset
-printf '{"version":2,"a":1}' > "$T/etc/spec.json.new.1"
-check "прежнее ядро: spec_put кладёт spec.json" "0" "$(run 0 'spec_put spec.json.new.1; echo $?')"
-check "  spec.yaml не появляется" "no" "$([ -e "$T/etc/spec.yaml" ] && echo yes || echo no)"
-check "  читать — spec.json" "$T/etc/spec.json" "$(run 0 'spec_json')"
-check "  умения нет" "no" "$(run 0 'spec_yaml_ok && echo yes || echo no')"
-printf '# yaml\n{"version":2}\n' > "$T/etc/spec.yaml"
-printf '{"version":2,"b":1}' > "$T/etc/spec.json.new.2"
-check "прежнее ядро и spec.yaml рядом: spec_put отказывает" "1" "$(run 0 'spec_put spec.json.new.2; echo $?')"
-check "  временный файл убран" "no" "$([ -e "$T/etc/spec.json.new.2" ] && echo yes || echo no)"
-
-# --- ядро 2.1: запись spec.yaml ---
+# --- запись spec.yaml ---
 reset
 printf '{"version":2,"a":1}' > "$T/etc/spec.json"
 printf '{"version":2,"a":2}' > "$T/etc/spec.json.new.1"
-check "ядро 2.1: spec_put" "0" "$(run 1 'spec_put spec.json.new.1; echo $?')"
+check "spec_put" "0" "$(run 1 'spec_put spec.json.new.1; echo $?')"
 check "  spec.yaml записан переводом" "# yaml" "$(head -1 "$T/etc/spec.yaml")"
 check "  spec.json убран" "no" "$([ -e "$T/etc/spec.json" ] && echo yes || echo no)"
 check "  прежний spec.json — копией" '{"version":2,"a":1}' "$(cat "$T/etc/spec.json.bak")"
@@ -85,26 +73,23 @@ printf '{"version":2,"BAD":1}' > "$T/etc/spec.json.new.3"
 check "ядро отвергло — spec_put 1" "1" "$(run 1 'spec_put spec.json.new.3; echo $?')"
 check "  прежняя спека цела" '{"version":2,"a":3}' "$(run 1 'cat "$(spec_json)"')"
 check "  временные убраны" "" "$(ls "$T/etc" | grep new)"
-check "прежнее ядро при spec.yaml: вида нет — не чужой текст" "no" "$(rm -f "$T"/view.json*; run 0 '[ -s "$(spec_json)" ] && echo yes || echo no')"
+check "перевод не вышел: вида нет — не чужой текст" "no" "$(rm -f "$T"/view.json*; run 0 '[ -s "$(spec_json)" ] && echo yes || echo no')"
 
-# --- перевод при обновлении ядра ---
+# --- перевод при установке ядра ---
 reset
 printf '{"schema":1,"outputs":{}}' > "$T/etc/spec.json"
-pre="$(run 0 'spec_premigrate')"
-check "v1: заготовку делает прежнее ядро" "# yaml" "$(head -1 "$pre" 2>/dev/null)"
-check "  новое ядро без --json — spec.json остаётся" "yes" "$(run 0 "spec_migrate '$pre'; [ -e spec.json ] && echo yes")"
-check "  заготовка убрана" "no" "$([ -e "$pre" ] && echo yes || echo no)"
-pre="$(run 0 'spec_premigrate')"
-run 1 "spec_migrate '$pre'" >/dev/null
-check "  новое ядро с --json — spec.yaml из заготовки" '{"version":2,"outputs":{}}' "$(run 1 'cat "$(spec_json)"')"
+run 1 'spec_migrate' >/dev/null
+check "v1: spec.yaml переведён ядром" '{"version":2,"outputs":{}}' "$(run 1 'cat "$(spec_json)"')"
 check "  копия v1" '{"schema":1,"outputs":{}}' "$(cat "$T/etc/spec.json.v1.bak")"
 check "  лишней копии нет" "no" "$([ -e "$T/etc/spec.json.bak" ] && echo yes || echo no)"
 reset
 printf '{"version":2,"z":1}' > "$T/etc/spec.json"
-check "v2 JSON: заготовки нет" "" "$(run 1 'spec_premigrate')"
-run 1 'spec_migrate ""' >/dev/null
-check "  переведена в spec.yaml" '{"version":2,"z":1}' "$(run 1 'cat "$(spec_json)"')"
+run 1 'spec_migrate' >/dev/null
+check "v2 JSON: переведена в spec.yaml" '{"version":2,"z":1}' "$(run 1 'cat "$(spec_json)"')"
 check "  spec.json убран" "no" "$([ -e "$T/etc/spec.json" ] && echo yes || echo no)"
+check "  копии v1 нет" "no" "$([ -e "$T/etc/spec.json.v1.bak" ] && echo yes || echo no)"
+reset
+check "без spec.json spec_migrate ничего не делает" "no" "$(run 1 'spec_migrate; [ -e spec.yaml ] && echo yes || echo no')"
 
 # --- вид спеки пересчитывается без окна «файла нет» ---
 # Прежний вид не удалялся лишь после перевода: читатель между `rm` и `mv` получал путь к несуществующему

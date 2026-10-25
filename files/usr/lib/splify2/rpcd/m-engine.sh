@@ -5,19 +5,15 @@
 # Диспетчер разбирает только себя, общие помощники (common.sh) и группу вызванного метода.
 # Переменные и швы для стендов объявлены в диспетчере и здесь доступны как есть.
 
-# МИНИМАЛЬНАЯ ВЕРСИЯ ДВИЖКА, ПОД КОТОРУЮ СОБРАН ЭТОТ ИНТЕРФЕЙС. Одно число в одном месте:
-# бэкенд отдаёт его методом engine, интерфейс сравнивает с установленным и говорит человеку,
-# что не заработает, ДО того как он это обнаружит сам. По версии, а не по перечню features:
-# умения, ради которых 26.9 нужен движок не старше этого (sub-fetch/sub-quota/sub-hwid,
-# srs-read, выход kind=zapret и reload_zapret, схема спеки 2),
-# имён в features не имеют, и спросить о них у состояния нечем. Без этого движок 1.3.0 отвечал
-# на «добавить подписку» словами «подписка не скачалась» без причины, каталог второго издателя —
-# «набор понят, но списком не выразим».
+# МИНИМАЛЬНАЯ ВЕРСИЯ ЯДРА, ПОД КОТОРУЮ СОБРАН ЭТОТ ИНТЕРФЕЙС. Одно число в одном месте: бэкенд
+# отдаёт его методом engine, интерфейс сравнивает с установленным и говорит человеку, что не
+# заработает, ДО того как он это обнаружит сам. По версии, а не по перечню features.
 #
-# 2.0.0 — интерфейс пишет спеку v2 (`version: 2`, ui/src/lib/specv2.ts), а её читает только ядро
-# 2.0: 1.5.x отвергает такую спеку целиком, и с ним не применяется ни одна правка. Прежний
-# минимум 1.5.3 одобрял именно такое ядро.
-STEER_MIN_VERSION=2.0.0
+# 2.1.0 — интерфейс ведёт спеку в spec.yaml и читает её JSON-видом ядра (`steer spec convert
+# --json`), пишет спеку v2 и не знает выходов zapret: прежнее ядро не печатает JSON-вид, и
+# без него не читается и не пишется ни одна правка. Зависимость пакета от ядра не объявлена
+# (см. build.sh), поэтому о несоответствии говорит интерфейс.
+STEER_MIN_VERSION=2.1.0
 
 
 
@@ -111,8 +107,8 @@ EOF
 }
 
 # Файл выпуска по version.json: sha256 — в REL_SUM, адреса по порядку — в REL_URLS (через
-# пробел). Версия и файл ищутся по значению: имена пакетов 1.5.x (steer, steer-extended) и 2.0
-# (steer-core и модули) лежат в перечне как есть, а имя файла собирается так же, как для
+# пробел). Версия и файл ищутся по значению: имена пакетов (steer-core и модули) лежат в
+# перечне как есть, а имя файла собирается так же, как для
 # выпусков. Адрес берётся, только если он https, из безопасных знаков (дальше он перебирается
 # словами, и `*` или `?` раскрылись бы как шаблон) и кончается именем файла.
 rel_asset() {  # ПРОДУКТ ВЕРСИЯ ИМЯ_ФАЙЛА
@@ -312,13 +308,12 @@ pkg_version() {  # ИМЯ_ПАКЕТА
     printf '%s' "$_pv_v"
 }
 
-# ФАЙЛЫ — один или несколько через пробел (пути в /tmp, без пробелов): ядро 2.0 и его модули
-# ставятся одной транзакцией. PKG_EXTRA — добавки к той же транзакции (у apk — `!имя`: снять
-# прежний пакет в ней же), см. steer_install.
+# ФАЙЛЫ — один или несколько через пробел (пути в /tmp, без пробелов): ядро и его модули
+# ставятся одной транзакцией.
 pkg_install() {  # ФАЙЛЫ [ИМЯ_ДЛЯ_СНЯТИЯ...]
     file="$1"; shift
     # shellcheck disable=SC2086 — файлы и добавки разбираются словами нарочно
-    PKG_OUT="$(pkg_add_file $file ${PKG_EXTRA:-})"
+    PKG_OUT="$(pkg_add_file $file)"
     rc=$?
     PKG_REMOVED=0
     [ "$rc" = 0 ] && return 0
@@ -328,9 +323,8 @@ pkg_install() {  # ФАЙЛЫ [ИМЯ_ДЛЯ_СНЯТИЯ...]
     # рабочий пакет значило бы вернуть ровно ту поломку, ради которой порядок и
     # переставлен.
     #
-    # Узости одного слова, однако, мало. Смысл ветки — замена steer ↔ steer-extended:
-    # два пакета владеют одним /usr/sbin/steer, менеджер называет мешающий по имени, и
-    # снятие названного и есть разрешение конфликта. Конфликт МЕЖДУ ЧУЖИМИ пакетами
+    # Узости одного слова, однако, мало. Смысл ветки — замена пакета, который менеджер
+    # называет мешающим по имени: снятие названного и есть разрешение конфликта. Конфликт МЕЖДУ ЧУЖИМИ пакетами
     # (26.9 требует ip-full, на роутере стоит ip-tiny) выглядит в выводе точно так же —
     # а снятие по нему сняло бы работающий luci-app-splify2 и оставило человека без
     # интерфейса, потому что повторная попытка упадёт по той же самой причине. Поэтому
@@ -348,7 +342,7 @@ pkg_install() {  # ФАЙЛЫ [ИМЯ_ДЛЯ_СНЯТИЯ...]
     for n in $_pi_named; do pkg_del "$n"; done
     PKG_REMOVED=1
     # shellcheck disable=SC2086
-    PKG_OUT="$(pkg_add_file $file ${PKG_EXTRA:-})"
+    PKG_OUT="$(pkg_add_file $file)"
     return $?
 }
 
@@ -519,15 +513,9 @@ case "$2" in
         # пакета steer-<модуль>. Наличие спрашивается у файла, а не у базы пакетов: так отвечает
         # и ядро, которое видит модуль, и ручная установка мимо менеджера.
         mods="$(mods_present)"
-        # VLESS — по модулю steer-vless, а у прежнего ядра 1.x (один бинарник) — по пакету
-        # steer-extended, в который клиент был вшит. Прежде здесь читался отказ `steer vless ''`
-        # и искалась в нём подстрока «steer-extended»: признак держался на слове в чужом тексте,
-        # а ядро 2.0 оставляло это слово в отказе только ради такого чтения.
+        # VLESS — по модулю steer-vless.
         vless=0
         case " $mods " in *" vless "*) vless=1 ;; esac
-        if [ "$vless" = 0 ] && [ -z "$(pkg_version steer-core)" ] && [ -n "$(pkg_version steer-extended)" ]; then
-            vless=1
-        fi
         json_init
         json_add_boolean present 1
         json_add_boolean vless "$vless"
@@ -541,10 +529,8 @@ case "$2" in
         json_add_boolean running "$svc_running"
         [ -n "$busy" ] && json_add_string busy "$busy"
         json_add_string arch "$(pkg_arch)"
-        # Версия любого из двух вариантов пакета. Через pkg_version, а не своим разбором
-        # `apk list`: на opkg-роутере тот отдавал пустоту, и карточка движка показывала
-        # установленный движок без версии.
-        json_add_string version "$(v="$(pkg_version steer-core)"; [ -n "$v" ] || v="$(pkg_version steer-extended)"; [ -n "$v" ] || v="$(pkg_version steer)"; printf '%s' "$v")"
+        # Через pkg_version, а не своим разбором `apk list`: на opkg-роутере тот отдавал пустоту.
+        json_add_string version "$(pkg_version steer-core)"
         # Не старше какой версии должен быть движок — см. STEER_MIN_VERSION в шапке файла.
         json_add_string min_version "$STEER_MIN_VERSION"
         json_add_string ui_version "$ui_ver"
@@ -778,216 +764,84 @@ EOF
         ;;
 
     steer_install)
-        # Скачать и поставить ядро выбранной версии.
-        #
-        # Ядро 2.0 и новее — пакет steer-core и модули steer-<модуль> (ниже). Прежние выпуски 1.x —
-        # один пакет, steer или steer-extended по полю `extended` (ветка после этой).
+        # Скачать и поставить ядро выбранной версии: пакет steer-core и модули steer-<модуль>
+        # ОДНОЙ транзакцией.
         read -r input
         ver="$(jsonfilter -s "$input" -e '@.version' 2>/dev/null)"
-        ext="$(jsonfilter -s "$input" -e '@.extended' 2>/dev/null)"
         want="$(jsonfilter -s "$input" -e '@.modules' 2>/dev/null)"
         arch="$(pkg_arch)"
         # Ядро ведёт steer-box-connector: его пакет зависит от steer-core точной версии, и пакеты
         # ядра здесь — его, а не наши (box_busy).
         box_busy && fail "ядро занято: $BOX_BY"
         case "$ver" in ''|*[!0-9.]*) fail "в версии допустимы только цифры и точки" ;; esac
+        [ "$(printf '%s\n%s\n' "$ver" "$STEER_MIN_VERSION" | sort -V | head -n 1)" = "$STEER_MIN_VERSION" ] ||
+            fail "интерфейс работает с ядром не старше $STEER_MIN_VERSION"
+        [ -n "$arch" ] || fail "не определилась архитектура"
 
-        # ---- ядро 2.0: steer-core и модули ОДНОЙ транзакцией ------------------------------
-        #
         # Модуль зависит от steer-core ТОЧНОЙ версии (формат событий ядра и модуля между
         # выпусками не обещан), поэтому обновить ядро, оставив хоть один стоящий модуль прежним,
         # менеджер не даст. Состав транзакции:
         #   - модули, которые попросили (`modules` — имена через пробел или запятую);
         #   - модули, которые уже стоят: без них транзакция не пройдёт, а снимать их без спроса
         #     нельзя;
-        #   - модули, которые нужны спеке (spec_mods): ядро без них её не примет;
-        #   - при переходе с steer-extended 1.x — vless, xsteer, obfs, tgws: в нём это было вшито,
-        #     и переход не должен отнимать ничего из того, что работало.
+        #   - модули, которые нужны спеке (spec_mods): ядро без них её не примет.
         # kmod-tun (зависимость модулей с TUN) менеджер берёт из фидов сам.
-        #
-        # ПЕРЕХОД С 1.x и с промежуточной раскладки. steer-core заменяет пакеты steer, libsteer и
-        # libsteer-wolfssl и конфликтует с ними, а steer-extended 1.x (provides steer, conflicts
-        # steer) с ним просто конфликтует. Снять старое надо в той же транзакции, иначе между
-        # двумя командами роутер остался бы без ядра. apk это умеет: `!имя` в той же транзакции
-        # убирает пакет вместе с установкой нового (проверено на OpenWrt 25.12.5: «Purging
-        # steer-extended … Installing steer-core»), а /etc/steer — спека, списки, подписки —
-        # пакету не принадлежит и остаётся на месте. Пакет `steer` так снять нельзя: steer-core
-        # сам называет себя steer, и `!steer` запретил бы и его. Мешает там только закрепление
-        # имени за файлом 1.x в /etc/apk/world; pkg_unpin снимает закрепление, ничего не меняя в
-        # пакетах, и steer-core в транзакции замещает steer по replaces. После успеха pkg_del этих
-        # имён убирает из world запреты и имя steer — пакетов уже не трогая.
-        # opkg транзакций и запретов не знает: на конфликте прежние пакеты снимает pkg_install
-        # и повторяет установку (removed в ответе, если и повтор не удался).
-        if [ "${ver%%.*}" -ge 2 ] 2>/dev/null; then
-            [ -n "$arch" ] || fail "не определилась архитектура"
-            PKGS="$(pkg_list)"
-            spec_mods
-            for m in $(printf '%s' "$want" | tr ',' ' '); do
-                case " $STEER_MODULES " in *" $m "*) ;; *) fail "неизвестный модуль: $m" ;; esac
-            done
-            ext_old="$(pkg_in steer-extended)"
-            # steer-extended 1.x заменяется мета-пакетом steer-extended 2.0 В ТОЙ ЖЕ транзакции
-            # (тот же выпуск). Без него запись 1.x оставалась в базе менеджера, и позднейшее
-            # `pkg_del steer-extended` запускало её prerm: тот гасит службу steer и снимает
-            # автозапуск. Мета-пакет 2.0 заменяет её на месте (одно имя — обновление), а его
-            # зависимости — те же модули, так что ничего лишнего не ставится.
-            meta=""
-            case "$ext_old" in 0.*|1.*) ext_old="vless xsteer obfs tgws"; meta=1 ;; *) ext_old="" ;; esac
-            have=" $want $(mods_present) $SPEC_MODS $ext_old "
-            have="$(printf '%s' "$have" | tr ',' ' ')"
-            mods=""
-            for m in $STEER_MODULES; do
-                case "$have" in *" $m "*) mods="$mods $m" ;; esac
-            done
-            mods="${mods# }"
+        PKGS="$(pkg_list)"
+        spec_mods
+        for m in $(printf '%s' "$want" | tr ',' ' '); do
+            case " $STEER_MODULES " in *" $m "*) ;; *) fail "неизвестный модуль: $m" ;; esac
+        done
+        have=" $want $(mods_present) $SPEC_MODS "
+        have="$(printf '%s' "$have" | tr ',' ' ')"
+        mods=""
+        for m in $STEER_MODULES; do
+            case "$have" in *" $m "*) mods="$mods $m" ;; esac
+        done
+        mods="${mods# }"
 
-            FETCH_VIA=""; files=""
-            for p in steer-core $(for m in $mods; do printf 'steer-%s ' "$m"; done) ${meta:+steer-extended}; do
-                name="$p-${ver}-1_${arch}.$(pkg_ext)"
-                if ! steer_fetch "$ver" "$name"; then
-                    rm -f $files
-                    fail "не скачалось: $name (нет такой версии для $arch?)${FETCH_NOTE:+ — $FETCH_NOTE}"
-                fi
-                files="$files /tmp/$name"
-            done
-
-            # Место на флеше — до apk (flash_room_ok, common.sh).
-            # shellcheck disable=SC2086
-            if ! flash_room_ok $files; then
-                # shellcheck disable=SC2086
+        FETCH_VIA=""; files=""
+        for p in steer-core $(for m in $mods; do printf 'steer-%s ' "$m"; done); do
+            name="$p-${ver}-1_${arch}.$(pkg_ext)"
+            if ! steer_fetch "$ver" "$name"; then
                 rm -f $files
-                fail "$ROOM_ERR"
+                fail "не скачалось: $name (нет такой версии для $arch?)${FETCH_NOTE:+ — $FETCH_NOTE}"
             fi
+            files="$files /tmp/$name"
+        done
 
-            legacy=""
-            for n in steer steer-extended libsteer libsteer-wolfssl; do
-                # steer-extended 1.x в этой транзакции заменяется мета-пакетом 2.0, а не снимается.
-                [ "$n" = steer-extended ] && [ -n "$meta" ] && continue
-                pkg_in "$n" >/dev/null && legacy="$legacy $n"
-            done
-            PKG_EXTRA=""
-            if [ "$PM" = apk ]; then
-                for n in $legacy; do
-                    case "$n" in
-                        steer) pkg_unpin steer ;;
-                        *) PKG_EXTRA="$PKG_EXTRA !$n" ;;
-                    esac
-                done
-            fi
-            # Спека v1 — переводом прежнего ядра, пока оно стоит (spec.sh, spec_premigrate).
-            premig="$(spec_premigrate)"
-            # shellcheck disable=SC2086
-            pkg_install "${files# }" $legacy
-            rc=$?
-            out="$PKG_OUT"; removed="$PKG_REMOVED"
+        # Место на флеше — до apk (flash_room_ok, common.sh).
+        # shellcheck disable=SC2086
+        if ! flash_room_ok $files; then
             # shellcheck disable=SC2086
             rm -f $files
-            json_init
-            if [ "$rc" != 0 ]; then
-                [ -n "$premig" ] && rm -f "$premig"
-                json_add_boolean ok 0
-                if [ "$removed" = 1 ]; then
-                    json_add_string error "$out
-Прежнее ядро при этом снято: маршрутизации сейчас нет. Поставьте любую версию заново или перезагрузите роутер после установки."
-                else
-                    json_add_string error "$out"
-                fi
-                json_add_boolean removed "$removed"
-                json_dump; exit 0
-            fi
-            if [ "$PM" = apk ]; then
-                for n in $legacy; do pkg_del "$n"; done
-            fi
-            "$INITD" enable >/dev/null 2>&1 || true
-            # Ядро 2.1 печатает спеку JSON-ом — спека переезжает в spec.yaml (v1 — переведённой).
-            spec_migrate "$premig"
-            restarted=0
-            if spec_have; then
-                "$INITD" restart >/dev/null 2>&1 && restarted=1
-            fi
-            json_add_boolean ok 1
-            json_add_string installed "steer-core $ver"
-            json_add_array modules
-            for m in $mods; do json_add_string "" "$m"; done
-            json_close_array
-            json_add_boolean restarted "$restarted"
-            [ -n "$FETCH_VIA" ] && json_add_string via "$FETCH_VIA"
-            [ -n "$out" ] && json_add_string output "$out"
-            json_dump
-            exit 0
+            fail "$ROOM_ERR"
         fi
 
-        # ---- ядро 1.x: один пакет, steer или steer-extended -------------------------------
-        json_init
-        case "$ver" in
-            ''|*[!0-9.]*) json_add_boolean ok 0; json_add_string error "в версии допустимы только цифры и точки"; json_dump; exit 0 ;;
-        esac
-        [ -n "$arch" ] || { json_add_boolean ok 0; json_add_string error "не определилась архитектура"; json_dump; exit 0; }
-
-        case "$ext" in
-            1|true) name="steer-extended-${ver}-1_${arch}.$(pkg_ext)" ;;
-            *)      name="steer-${ver}-1_${arch}.$(pkg_ext)" ;;
-        esac
-        url="https://github.com/splify2/steer/releases/download/v${ver}/${name}"
-        tmp="/tmp/${name}"
-        rm -f "$tmp"
-        # Адреса и sha256 — из перечня выпусков, затем прежняя лестница по этой ссылке.
-        rel_asset steer "$ver" "$name"
-        if ! download_rel "$tmp" "$REL_SUM" "$url" $REL_URLS; then
-            rm -f "$tmp"
-            json_add_boolean ok 0
-            json_add_string error "не скачалось: $name (нет такой версии для $arch?)${FETCH_NOTE:+ — $FETCH_NOTE}"
-            json_dump; exit 0
-        fi
-        [ -n "$FETCH_NOTE" ] && json_add_string via "$FETCH_NOTE"
-        if ! flash_room_ok "$tmp"; then
-            rm -f "$tmp"
-            json_add_boolean ok 0
-            json_add_string error "$ROOM_ERR"
-            json_dump; exit 0
-        fi
-        # Порядок apk и разбор конфликта — в pkg_install: он же обслуживает установку
-        # самого интерфейса, и две копии этой логики означали бы два разных ответа на
-        # вопрос «что делать, когда apk отказал».
-        #
-        # Снимаем оба имени: расширенный и базовый пакеты владеют одним /usr/sbin/steer
-        # и объявлены конфликтующими, поэтому смена варианта иначе не проходит.
-        pkg_install "$tmp" steer steer-extended
+        pkg_install "${files# }"
         rc=$?
         out="$PKG_OUT"
-        removed="$PKG_REMOVED"
-        rm -f "$tmp"
+        # shellcheck disable=SC2086
+        rm -f $files
+        json_init
         if [ "$rc" != 0 ]; then
             json_add_boolean ok 0
-            # Про снятый пакет обязан сказать ответ, а не журнал: человек видит только
-            # его, а в stderr apk про снос нет ни слова. Молчание здесь означало бы, что
-            # роутер стоит без движка, а сообщение говорит только «не удалось поставить».
-            if [ "$removed" = 1 ]; then
-                json_add_string error "$out
-Прежнее ядро при этом снято: маршрутизации сейчас нет. Поставьте любую версию заново или перезагрузите роутер после установки."
-            else
-                json_add_string error "$out"
-            fi
-            json_add_boolean removed "$removed"
+            json_add_string error "$out"
             json_dump; exit 0
         fi
         "$INITD" enable >/dev/null 2>&1 || true
-        # Переинициализация — обязательная часть установки, а не любезность. Замена
-        # пакета останавливает сервис (а на ветке с удалением pre-deinstall ещё и сносит
-        # таблицу nft вместе с ip rule): без restart роутер после «обновить движок»
-        # оставался без маршрутизации до ручного вмешательства или перезагрузки, и
-        # выглядело это как «переустановил — всё сломалось». restart применяет спеку,
-        # поднимает резолвер и туннели vless — то же, что происходит при загрузке.
+        # Спека переезжает в spec.yaml (v1 — переведённой ядром).
+        spec_migrate
         restarted=0
         if spec_have; then
             "$INITD" restart >/dev/null 2>&1 && restarted=1
         fi
         json_add_boolean ok 1
-        json_add_string installed "$name"
+        json_add_string installed "steer-core $ver"
+        json_add_array modules
+        for m in $mods; do json_add_string "" "$m"; done
+        json_close_array
         json_add_boolean restarted "$restarted"
-        # Слова менеджера пакетов — и на успехе тоже: именно там сказано, например, что
-        # списки пакетов были пусты и их пришлось обновить. Без этой строки человек видит
-        # «установлено» и не знает, что по дороге чинилось.
+        [ -n "$FETCH_VIA" ] && json_add_string via "$FETCH_VIA"
         [ -n "$out" ] && json_add_string output "$out"
         json_dump
         ;;
@@ -996,7 +850,7 @@ EOF
         # Модули ядра для карточки «Интерфейс»: какие стоят (файл модуля рядом с ядром) и какой версии
         # пакет, какие нужны спеке (такой снять нельзя — ядро её не примет) и каким выходам.
         # Плюс версия steer-core: модуль ставится той же версией, что ядро, и без steer-core
-        # (ядро 1.x или нет ядра) ставить модули нечему.
+        # (ядра нет) ставить модули нечему.
         PKGS="$(pkg_list)"
         spec_mods
         have=" $(mods_present) "
@@ -1071,7 +925,6 @@ EOF
         name="steer-$m-${cver}-1_${arch}.$(pkg_ext)"
         FETCH_VIA=""
         steer_fetch "$cver" "$name" || fail "не скачалось: $name (нет такой версии для $arch?)${FETCH_NOTE:+ — $FETCH_NOTE}"
-        PKG_EXTRA=""
         pkg_install "/tmp/$name"
         rc=$?
         out="$PKG_OUT"

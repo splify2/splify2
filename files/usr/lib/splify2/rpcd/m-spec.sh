@@ -518,7 +518,7 @@ spec_is_v1() {
 #   - только если устройство лежит в зоне steer_zone, которую ведём мы, и у зоны нет masq6:
 #     устройство в чужой зоне — чужая настройка (зона узнаётся и по `device`, и по `network`:
 #     fw_zone_id_of_dev), а при masq6 у зоны жалобы и нет;
-#   - только спека v2 (v1 ключа не знает) и только когда рядом нет spec.yaml (его ведёт человек).
+#   - только спека v2 (v1 ключа не знает).
 # masq6 у зоны мы НЕ включаем: зона общая, и подмена всего её IPv6 сломала бы соседний выход с
 # `ipv6: routed` (diag тогда советует masq6 снять).
 #
@@ -660,6 +660,150 @@ EOF
     return 0
 }
 
+# ВЫХОДЫ `kind: zapret` БОЛЬШЕ НЕ ПОДДЕРЖИВАЮТСЯ: ядро отвергает такую спеку целиком. Прежняя панель
+# и руки их писали, поэтому при обновлении (uci-defaults зовёт spec_heal) и при каждом apply спека
+# приводится к виду, который ядро принимает:
+#   - выход с kind zapret убирается из outputs;
+#   - правила и апстримы DNS (`out`), ссылавшиеся на него, идут в `direct`; если выхода direct в
+#     спеке не было, он заводится на месте первого убранного (слово direct в `out` ядро принимает и
+#     так, но явный выход виден в редакторе);
+#   - `on_fail: zapret` у остальных выходов становится `direct`.
+# Правка текстом по тому же приёму, что у spec_heal_ipv6: awk идёт по JSON с глубиной и строками,
+# меняются только названные участки, остальное — байт в байт. Пакет zapret и его настройку не
+# трогаем никогда. Прежняя спека — копией spec.json.zapret.bak (одна, старейшая).
+# Идемпотентна: после правки выходов этого вида нет. Печатает строки отчёта; код 0 — спека
+# изменена, 1 — менять нечего (или ядро не приняло результат).
+spec_heal_zapret() {
+    [ -s "$(spec_json)" ] || return 1
+    spec_is_v1 && return 1
+    grep -q zapret "$(spec_json)" 2>/dev/null || return 1
+    _sz_tmp="$SPEC.new.$$"
+    _sz_rep="$_sz_tmp.rep"
+    awk -v repf="$_sz_rep" '
+    { s = s $0 "\n" }
+    function str_end(i,   j, c, v) {
+        v = ""; j = i + 1
+        while (j <= n) {
+            c = substr(s, j, 1)
+            if (c == "\\") { v = v substr(s, j, 2); j += 2; continue }
+            if (c == "\"") break
+            v = v c; j++
+        }
+        STR = v
+        return j
+    }
+    function skip_ws(i,   c) {
+        while (i <= n) {
+            c = substr(s, i, 1)
+            if (c != " " && c != "\t" && c != "\n" && c != "\r") break
+            i++
+        }
+        return i
+    }
+    function cover(a, b,   q) { for (q = a; q <= b; q++) skip[q] = 1 }
+    END {
+        n = length(s); depth = 0; top = ""; nm = 0; nr = 0; inobj = 0; hasdirect = 0
+        i = 1
+        while (i <= n) {
+            c = substr(s, i, 1)
+            if (c == "\"") {
+                j = str_end(i); tok = STR
+                k = skip_ws(j + 1)
+                if (substr(s, k, 1) == ":") {
+                    if (depth == 1) top = tok
+                    else if (depth == 2 && top == "outputs") {
+                        nm++; mname[nm] = tok; mks[nm] = i; mkind[nm] = ""; mve[nm] = 0; mca[nm] = 0
+                        if (tok == "direct") hasdirect = 1
+                    }
+                    else if (depth == 3 && top == "outputs" && tok == "kind") {
+                        v = skip_ws(k + 1)
+                        if (substr(s, v, 1) == "\"") { e = str_end(v); mkind[nm] = STR }
+                    }
+                    if ((tok == "out" && top != "outputs") || tok == "on_fail") {
+                        v = skip_ws(k + 1)
+                        if (substr(s, v, 1) == "\"") {
+                            e = str_end(v)
+                            nr++; ra[nr] = v; rb[nr] = e; rv[nr] = STR; rk[nr] = tok
+                        }
+                    }
+                }
+                i = j + 1; continue
+            }
+            if (c == "{" || c == "[") { depth++; i++; continue }
+            if (c == "}" || c == "]") {
+                if (depth == 3 && top == "outputs" && c == "}") mve[nm] = i
+                depth--; i++; continue
+            }
+            if (c == "," && depth == 2 && top == "outputs" && nm > 0 && mve[nm] > 0 && !mca[nm]) mca[nm] = i
+            i++
+        }
+        zn = " "; nz = 0
+        for (m = 1; m <= nm; m++) if (mkind[m] == "zapret") { nz++; zn = zn mname[m] " " }
+        edits = 0
+        # Ссылки: out на убранный выход — в direct; on_fail: zapret — в direct.
+        nrules = 0
+        for (q = 1; q <= nr; q++) {
+            if ((rk[q] == "out" && index(zn, " " rv[q] " ")) || (rk[q] == "on_fail" && rv[q] == "zapret")) {
+                rrep[q] = 1; edits++
+                if (rk[q] == "out") nrules++
+            }
+        }
+        if (!nz && !edits) exit 1
+        # Убранные выходы.
+        first = 1
+        for (m = 1; m <= nm; m++) {
+            if (mkind[m] != "zapret" || !mve[m]) continue
+            gone[m] = 1
+        }
+        for (m = 1; m <= nm; m++) {
+            if (!gone[m]) continue
+            if (first && !hasdirect) {
+                # Первый убранный выход становится выходом direct: запятые вокруг остаются.
+                cover(mks[m], mve[m]); drep[mks[m]] = "\"direct\":{\"kind\":\"direct\"}"
+                hasdirect = 1; first = 0; gone[m] = 0; repl[m] = 1
+                continue
+            }
+            first = 0
+        }
+        for (m = 1; m <= nm; m++) {
+            if (!gone[m]) continue
+            if (mca[m]) cover(mks[m], mca[m])
+            else {
+                # Последний член: уходит и запятая перед ним (у ближайшего оставшегося члена).
+                pc = 0
+                for (p = m - 1; p >= 1; p--) if (!gone[p]) { pc = mca[p]; break }
+                cover(pc ? pc : mks[m], mve[m])
+            }
+        }
+        for (q = 1; q <= nr; q++) if (rrep[q] && !skip[ra[q]]) { cover(ra[q], rb[q]); drep[ra[q]] = "\"direct\"" }
+        out = ""; run = 1
+        for (q = 1; q <= n; q++) {
+            if (!skip[q]) continue
+            if (q > run) out = out substr(s, run, q - run)
+            run = q + 1
+            if (q in drep) out = out drep[q]
+        }
+        printf "%s%s", out, substr(s, run)
+        names = ""
+        for (m = 1; m <= nm; m++) if (mkind[m] == "zapret") names = names " " mname[m]
+        print "outputs" names > repf
+        print "rules " nrules > repf
+    }' "$(spec_json)" > "$_sz_tmp" 2>/dev/null || { rm -f "$_sz_tmp" "$_sz_rep"; return 1; }
+    [ -s "$_sz_tmp" ] || { rm -f "$_sz_tmp" "$_sz_rep"; return 1; }
+    if ! engine_check "$_sz_tmp" >/dev/null 2>&1; then
+        rm -f "$_sz_tmp" "$_sz_rep"
+        return 1
+    fi
+    [ -e "$SPEC.zapret.bak" ] || cp "$(spec_json)" "$SPEC.zapret.bak" 2>/dev/null
+    spec_put "$_sz_tmp" || { rm -f "$_sz_rep"; return 1; }
+    _sz_o="$(sed -n 's/^outputs *//p' "$_sz_rep")"
+    _sz_n="$(sed -n 's/^rules //p' "$_sz_rep")"
+    rm -f "$_sz_rep"
+    printf 'splify2: обход DPI (zapret) больше не поддерживается: убраны выходы%s, правил переведено в direct: %s\n' "${_sz_o:+ $_sz_o}" "${_sz_n:-0}"
+    logger -t splify2 "выходы zapret убраны из спеки (${_sz_o# }), правил в direct: ${_sz_n:-0}; прежняя спека — $SPEC.zapret.bak" 2>/dev/null
+    return 0
+}
+
 # Имена выходов с этим режимом из вывода spec_heal_ipv6, через пробел.
 heal_names() {  # РЕЖИМ ВЫВОД
     printf '%s\n' "$2" | sed -n "s/^$1 //p" | tr '\n' ' ' | sed 's/ $//'
@@ -690,7 +834,7 @@ case "$2" in
         # ревизия, с которой страница начала (spec_get); не совпала с лежащей — отказ с текущей
         # ревизией, и страница сливает правки с тем, что на роутере, вместо молчаливой замены.
         # Замок группы spec держится на весь вызов, так что между сверкой и записью файл не меняется.
-        # Без `rev` (прежний клиент, ssh) — пишется как раньше.
+        # Без `rev` (ssh) — пишется без сверки.
         if [ -n "$rev" ]; then
             cur="$(spec_rev)"
             if [ -n "$cur" ] && [ "$cur" != "$rev" ]; then
@@ -700,11 +844,6 @@ case "$2" in
                 json_dump
                 exit 0
             fi
-        fi
-        # Спека в spec.yaml, а ядро прежнее: JSON-вида оно не печатает, писать YAML нечем, а
-        # второй файл рядом ядро не прочтёт («две спеки»).
-        if [ -s "$SPEC_YAML" ] && ! spec_yaml_ok; then
-            fail "спека ведётся в spec.yaml, а это ядро не переводит её в JSON — обновите ядро до 2.1"
         fi
         # Временный файл РЯДОМ с целевым, а не в /tmp, и это не мелочь. /tmp на OpenWrt —
         # tmpfs, а спека лежит на overlay; mv между разными файловыми системами busybox
@@ -732,12 +871,6 @@ case "$2" in
             # при недоступном списке ответ был ровно таким, без единого слова о загрузке.
             fail "${set_warn:+$set_warn; }${err:-ядро отвергло спецификацию}"
         fi
-        # Прежняя спека v1 (`schema`) перед первой заменой на v2 остаётся копией рядом:
-        # интерфейс переписывает формат сам, и откатить перенос должно быть чем. Копия
-        # одна и старейшая — повторные сохранения её не затирают.
-        if [ -s "$SPEC" ] && spec_is_v1 && [ ! -e "$SPEC.v1.bak" ]; then
-            cp "$SPEC" "$SPEC.v1.bak" 2>/dev/null
-        fi
         # СНИМОК ПРИМЕНЁННОГО — ДО ПЕРВОЙ ПРАВКИ. Пока снимка нет (свежая установка, ни разу не
         # нажатое «Применить»), applied_get отдаёт саму спеку, и любая записанная правка выглядела
         # применённой: страницу перезагрузили — пилюля «Применить · N» пропала, хотя ядро о правке
@@ -754,7 +887,7 @@ case "$2" in
         fi
         # Код возврата mv проверяется: без этого «Сохранено» печаталось независимо от
         # того, легла спека на диск или нет.
-        # spec_put (spec.sh): на ядре 2.1 — spec.yaml (переводом), на прежнем — spec.json.
+        # spec_put (spec.sh): spec.yaml (переводом ядром).
         spec_put "$tmp" || fail "не удалось заменить спецификацию"
         # Предупреждение о нескачанном списке едет В ОТВЕТЕ, а не в журнал: сохранение
         # прошло, спека верна, но канал, ссылающийся на недоступный список, не поднимется —
@@ -777,7 +910,11 @@ case "$2" in
         # туннельных выходов не осталось (см. fw_sync). Ответ netifd о логических интерфейсах
         # спрашивается один раз и здесь, до подоболочек fw_sync и лечения (net_dump_load).
         net_dump_load
+        # Выходы zapret ядро больше не принимает: спека приводится к принимаемой до apply.
+        zap_msg="$(spec_heal_zapret)"
         zone_msg="$(fw_sync 2>&1)"
+        [ -n "$zap_msg" ] && zone_msg="$zap_msg${zone_msg:+
+$zone_msg}"
         # Самолечение выходов без ipv6 (spec_heal_ipv6, шапка там же): после fw_sync, потому что
         # устройство попадает в нашу зону именно им, и до `steer apply`, чтобы тот же apply
         # довёл правку до ядра — отдельной перезагрузки не нужно. В ответ apply — что записано и
@@ -847,15 +984,18 @@ $out"
         # человека лечение применять не должно.
         _sh_clean=0
         if [ -s "$APPLIED" ] && cmp -s "$(spec_json)" "$APPLIED" 2>/dev/null; then _sh_clean=1; fi
+        healed=0
+        zap_msg="$(spec_heal_zapret)" && healed=1
         if heal_out="$(spec_heal_ipv6)"; then
             healed=1
+        fi
+        if [ "$healed" = 1 ]; then
             if [ "$_sh_clean" = 1 ]; then
                 "$0" call apply </dev/null >/dev/null 2>&1
             fi
-        else
-            healed=0
         fi
         json_init; json_add_boolean ok 1; json_add_boolean healed "$healed"
+        [ -n "${zap_msg:-}" ] && json_add_string zapret "$zap_msg"
         json_add_string outputs "$(printf '%s\n' "${heal_out:-}" | sed -n 's/^[a-z]* //p' | tr '\n' ' ' | sed 's/ $//')"
         json_add_string nat "$(heal_names nat "${heal_out:-}")"
         json_add_string off "$(heal_names off "${heal_out:-}")"

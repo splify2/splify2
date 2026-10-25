@@ -357,8 +357,8 @@ PI="$T/post-install.block"
 sed -n '/^cat > build\/scripts\/post-install/,/^EOF$/p' build.sh > "$PI"
 check "post-install отклик для счётчика не ставит" "0" \
     "$(grep -c "printf '%s \\* \\* \\* \\* /usr/sbin/splify2-ping" "$PI")"
-check "и убирает строки прежних отправок: отклика и отчёта" "1" \
-    "$(grep -c "sed -i '/splify2-telemetry/d;/splify2-ping/d' /etc/crontabs/root" "$PI")"
+check "и убирает строку прежнего отклика" "1" \
+    "$(grep -c "sed -i '/splify2-ping/d' /etc/crontabs/root" "$PI")"
 check "а обновление списков осталось суточным" "1" \
     "$(grep -c "printf '%s 5 \\* \\* \\* /usr/sbin/splify2-update-lists" "$PI")"
 check "пакет не везёт команду отклика" "0" \
@@ -427,13 +427,6 @@ check "перезапуск rpcd в uci-defaults отложен и уведён 
     "$(grep -c '( sleep 2; /etc/init.d/rpcd restart ) >/dev/null 2>&1 &$' "$UD")"
 check "немедленного перезапуска rpcd в uci-defaults нет" "0" \
     "$(grep -c '^[[:space:]]*\[ -x /etc/init.d/rpcd \] && /etc/init.d/rpcd restart' "$UD")"
-# Кеш каталога умолчания сбрасывается при обновлении: адрес умолчания сменил издателя, а
-# файл перечитывается только когда его нет. Только для умолчания — свой адрес не трогаем.
-check "uci-defaults сбрасывает кеш каталога умолчания" "1" \
-    "$(grep -c 'rm -f /etc/splify2/manifest.json' "$UD")"
-check "сброс кеша обусловлен пустым manifest_url" "1" \
-    "$(grep -B1 'rm -f /etc/splify2/manifest.json' "$UD" | grep -c 'uci -q get splify2.main.manifest_url')"
-
 # ---- что именно переживает обновление прошивки --------------------------------
 # Настройку МАЛО ЗАВЕСТИ. sysupgrade и «Создать архив» собирают список из conffiles
 # установленных пакетов, /etc/sysupgrade.conf и /lib/upgrade/keep.d/* — общего правила
@@ -465,52 +458,7 @@ check "keep.d не тащит каталог стратегий" "0" "$(grep -c 
 check "uci-defaults называет keep.d" "yes" \
     "$(grep -q 'keep.d' "$UD" 2>/dev/null && echo yes || echo no)"
 check "и говорит, что соседство в /etc/config ничего не сохраняет" "yes" \
-    "$(grep -q 'общего правила' "$UD" 2>/dev/null && echo yes || echo no)"
-
-# Следы DoH и обхода DPI 26.9.x при обновлении (блок «следы DoH и zapret» в uci-defaults):
-# ключи uci, правило «DoH через туннель» (pref 29000, таблица 290) и таблицы nft splify2_*.
-# Гоняется сам блок с подменёнными uci, ip и nft: чужое правило и чужая таблица не трогаются.
-T26="$(mktemp -d)"
-sed -n '/^# >>> следы DoH и zapret/,/^# <<< следы DoH и zapret/p' "$UD" > "$T26/blk.sh"
-mkdir -p "$T26/bin"
-cat > "$T26/bin/uci" <<'STUB'
-#!/bin/sh
-echo "uci $*" >> "$T26LOG"
-case "$*" in "-q get splify2.main.doh_via_tunnel"|"-q get splify2.main.zm_fix") echo 1; exit 0 ;; "-q get "*) exit 1 ;; esac
-exit 0
-STUB
-cat > "$T26/bin/ip" <<'STUB'
-#!/bin/sh
-echo "ip $*" >> "$T26LOG"
-case "$*" in
-    "rule show")
-        printf '0:\tfrom all lookup local\n29000:\tfrom all uidrange 1000-1000 lookup 77\n'
-        [ -f "$T26ST" ] || printf '29000:\tfrom all uidrange 65534-65534 lookup 290\n' ;;
-    "rule del pref 29000 table 290") touch "$T26ST" ;;
-esac
-exit 0
-STUB
-cat > "$T26/bin/nft" <<'STUB'
-#!/bin/sh
-echo "nft $*" >> "$T26LOG"
-case "$*" in "list table inet splify2_zm"|"list table inet splify2_doh") exit 0 ;; "list table"*) exit 1 ;; esac
-exit 0
-STUB
-chmod +x "$T26/bin/"*
-T26LOG="$T26/log" T26ST="$T26/gone" PATH="$T26/bin:$PATH" timeout 20 sh "$T26/blk.sh"
-L26="$(cat "$T26/log" 2>/dev/null)"
-check "обновление снимает ключ doh_via_tunnel" "yes" \
-    "$(echo "$L26" | grep -qx 'uci -q delete splify2.main.doh_via_tunnel' && echo yes || echo no)"
-check "и zm_fix, и сохраняет это" "yes,yes" \
-    "$(echo "$L26" | grep -qx 'uci -q delete splify2.main.zm_fix' && echo yes || echo no),$(echo "$L26" | grep -qx 'uci -q commit splify2' && echo yes || echo no)"
-check "своё правило pref 29000 снимается один раз" "1" \
-    "$(echo "$L26" | grep -cx 'ip rule del pref 29000 table 290')"
-check "таблица 290 вычищается" "1" "$(echo "$L26" | grep -cx 'ip route flush table 290')"
-check "таблицы splify2_doh и splify2_zm снимаются, отсутствующей splify2_ztest — нет" \
-    "nft delete table inet splify2_doh,nft delete table inet splify2_zm" \
-    "$(echo "$L26" | grep '^nft delete' | sort | paste -sd, -)"
-check "чужое правило pref 29000 (таблица 77) не тронуто" "0" "$(echo "$L26" | grep -c 'table 77\|lookup 77')"
-rm -rf "$T26"
+    "$(grep -q 'Общего правила' "$UD" 2>/dev/null && echo yes || echo no)"
 
 # Заведение спеки и служба ядра (блок «пустая спека и служба ядра» в uci-defaults). Ядро ставят
 # раньше интерфейса, и его демон встаёт без спеки: `start` для РАБОТАЮЩЕЙ службы — пустой вызов
@@ -599,8 +547,7 @@ check "post-install поднимает включённый ReCheck после �
     "$(sed -n '/^cat > build\/scripts\/post-install/,/^EOF$/p' build.sh | grep -c 'splify2-recheck restart')"
 
 # ---- счётчика установок больше нет: следы прежних версий уходят при обновлении ------
-# Блок uci-defaults снимает ключи отклика (согласие, идентификатор, адрес для стендов), ключи
-# отчёта до 26.10 и файлы в /var и /tmp; соседи, которые живы (замер внешнего адреса выхода), не
+# Блок uci-defaults снимает ключи отклика (согласие, идентификатор, адрес для стендов) и файл в /var и /tmp; соседи, которые живы (замер внешнего адреса выхода), не
 # трогаются. uci подменён файлом ключей, корень — каталог в /tmp.
 TUD="$(mktemp -d /tmp/pkgmatch-ud.XXXXXX)"
 mkdir -p "$TUD/bin" "$TUD/root/var/lib/splify2" "$TUD/root/var/run" "$TUD/root/tmp"
@@ -617,37 +564,20 @@ case "\$1" in
 esac
 EOF2
 chmod +x "$TUD/bin/uci"
-for k in telemetry telemetry_id ping_url telemetry_url telemetry_key geo_city_url; do echo "splify2.main.$k=x" >> "$TUD/uci.db"; done
+for k in telemetry telemetry_id ping_url; do echo "splify2.main.$k=x" >> "$TUD/uci.db"; done
 echo "splify2.main.manifest_url=keep" >> "$TUD/uci.db"
-for f in var/lib/splify2/net var/run/splify2-boot-id var/run/splify2-events var/run/splify2-crash \
-         var/run/splify2-telemetry-now tmp/splify2-telemetry.4242 tmp/splify2-ping; do
+for f in tmp/splify2-ping; do
     echo x > "$TUD/root/$f"
 done
 echo x > "$TUD/root/var/lib/splify2/geo-wg0"
-sed -n '/^# Ключи прежнего отчёта/,/^\[ -n "\$_old" \]/p' files/etc/uci-defaults/99-splify2 > "$TUD/olds.sh"
+sed -n '/^# Ключи счётчика установок/,/^\[ -n "\$_old" \]/p' files/etc/uci-defaults/99-splify2 > "$TUD/olds.sh"
 check "блок чистки прежних ключей найден в uci-defaults" "yes" "$([ -s "$TUD/olds.sh" ] && echo yes || echo no)"
 PATH="$TUD/bin:$PATH" SPLIFY2_TEST_ROOT="$TUD/root" sh "$TUD/olds.sh"
-check "ключи счётчика и прежнего отчёта сняты" "splify2.main.manifest_url=keep" "$(cat "$TUD/uci.db")"
-for f in var/lib/splify2/net var/run/splify2-boot-id tmp/splify2-telemetry.4242 tmp/splify2-ping; do
+check "ключи счётчика сняты" "splify2.main.manifest_url=keep" "$(cat "$TUD/uci.db")"
+for f in tmp/splify2-ping; do
     check "прежний файл /$f убран" "no" "$([ -e "$TUD/root/$f" ] && echo yes || echo no)"
 done
 check "замер внешнего адреса выхода не тронут" "yes" "$([ -e "$TUD/root/var/lib/splify2/geo-wg0" ] && echo yes || echo no)"
-# Интервал автообновления первой подписки, записанный прежними версиями в sub_title (sub_uci_key
-# отдавал этот ключ на любое поле, кроме url и kind), переезжает в sub_auto; настоящее название — нет.
-sed -n '/^# Интервал автообновления первой подписки/,/^esac$/p' files/etc/uci-defaults/99-splify2 > "$TUD/mig.sh"
-check "блок переноса интервала найден в uci-defaults" "yes" "$([ -s "$TUD/mig.sh" ] && echo yes || echo no)"
-: > "$TUD/uci.db"; echo "splify2.main.sub_title=60" >> "$TUD/uci.db"
-PATH="$TUD/bin:$PATH" sh "$TUD/mig.sh"
-check "интервал из sub_title перенесён в sub_auto" "splify2.main.sub_auto=60" "$(cat "$TUD/uci.db")"
-: > "$TUD/uci.db"; echo "splify2.main.sub_title=Моя подписка" >> "$TUD/uci.db"
-PATH="$TUD/bin:$PATH" sh "$TUD/mig.sh"
-check "настоящее название не тронуто" "splify2.main.sub_title=Моя подписка" "$(cat "$TUD/uci.db")"
-: > "$TUD/uci.db"; printf 'splify2.main.sub_title=7\n' >> "$TUD/uci.db"
-PATH="$TUD/bin:$PATH" sh "$TUD/mig.sh"
-check "число вне 30..4320 — это название, а не интервал" "splify2.main.sub_title=7" "$(cat "$TUD/uci.db")"
-: > "$TUD/uci.db"; printf 'splify2.main.sub_title=60\nsplify2.main.sub_auto=120\n' >> "$TUD/uci.db"
-PATH="$TUD/bin:$PATH" sh "$TUD/mig.sh"
-check "уже стоящий sub_auto не перезаписывается" "splify2.main.sub_title=60;splify2.main.sub_auto=120" "$(tr '\n' ';' < "$TUD/uci.db" | sed 's/;$//')"
 rm -rf "$TUD"
 # Метод учёта убран из объекта rpcd и из прав интерфейса; ни одного упоминания в рабочих текстах.
 check "rpcd не знает telemetry_state и telemetry_set" "0" \

@@ -321,10 +321,10 @@ if ! grep -q splify2-update-subs /etc/crontabs/root 2>/dev/null; then
     /etc/init.d/cron enable 2>/dev/null
     /etc/init.d/cron restart 2>/dev/null
 fi
-# Счётчика установок больше нет: строки крона прежних отправок (splify2-ping, а до 26.10 —
-# splify2-telemetry) снимаются при обновлении.
-if grep -q 'splify2-telemetry\|splify2-ping' /etc/crontabs/root 2>/dev/null; then
-    sed -i '/splify2-telemetry/d;/splify2-ping/d' /etc/crontabs/root
+# Счётчика установок больше нет: строка крона прежнего отклика (splify2-ping) снимается
+# при обновлении.
+if grep -q 'splify2-ping' /etc/crontabs/root 2>/dev/null; then
+    sed -i '/splify2-ping/d' /etc/crontabs/root
     /etc/init.d/cron restart 2>/dev/null
 fi
 # https-dns-proxy и zapret этот пакет не настраивает и от них не зависит: шифрованный DNS
