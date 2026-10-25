@@ -367,7 +367,7 @@ function Location({ name, st, facts, note, phase, out }: OutRef) {
 /** Пул узлов туннеля сейчас (spec-v2.md, «Пул узлов туннеля»): какие узлы работают сразу и —
  *  когда их меньше заданного — почему: кандидатов в подписке меньше либо остальные не отвечают.
  *  Пула нет (один узел) или живых узлов нет — строки нет: беду выхода говорит Trouble. */
-export function PoolNowLine({ sts, className = 'mt-0.5', none }: {
+function PoolNowLine({ sts, className = 'mt-0.5', none }: {
     sts: (OutputStatus | undefined)[]
     className?: string
     /** Сказать и «живых узлов нет» (редактор выхода: беды выхода там больше никто не говорит). */

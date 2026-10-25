@@ -149,7 +149,7 @@ export function readQuota(q: SubQuota, now: number = Date.now()): QuotaView {
  *  Четверть часа: числа панели меняются не быстрее, чем человек качает трафик, а запрос
  *  уходит с роутера в интернет с таймаутом двадцать секунд. Открытие обзора чаще раза в
  *  четверть часа — обычное дело, и ходить наружу на каждое из них незачем. */
-export const STALE_MS = 15 * 60 * 1000
+const STALE_MS = 15 * 60 * 1000
 
 export function isStale(q: SubQuota | undefined, now: number = Date.now()): boolean {
     if (!q || !q.at) return true

@@ -25,12 +25,6 @@ type DeskMemory = { snapshot: Record<string, unknown> | null; set(k: string, v: 
 const desk = (globalThis as { splifyDesktop?: { memory?: DeskMemory } }).splifyDesktop?.memory
 const deskSnap: Record<string, unknown> | null = desk ? { ...(desk.snapshot || {}) } : null
 
-/** Забыть память окна (смена роутера): файл роутера ведёт главный процесс. */
-export function cacheClear(): void {
-    if (deskSnap) for (const k of Object.keys(deskSnap)) delete deskSnap[k]
-    mem.clear()
-}
-
 export function cacheGet<T>(key: string): T | null {
     if (deskSnap) return key in deskSnap ? (deskSnap[key] as T) : null
     try {

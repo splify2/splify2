@@ -1,5 +1,4 @@
-import { insecureApplies, ipv6Of, type Output, type OutputStatus, type TunnelPoolState } from '@/lib/model'
-import { country } from '@/lib/geo'
+import { type OutputStatus, type TunnelPoolState } from '@/lib/model'
 import { plainName } from '@/lib/nodename'
 
 import { S } from '@/copy'
@@ -101,72 +100,4 @@ export function geoNow(sts: (OutputStatus | null | undefined)[]): GeoNow | null 
     const any = bad || ps.find((p) => p!.geo_cc)
     if (!any) return null
     return { geo: any.geo_cc!, node: any.node_cc, mismatch: !!bad }
-}
-
-/** Что ещё ядро 2.0 говорит о выходе сверх «работает ли» — словами для строки выхода в
- *  «Выходах». `alarm` — среди слов есть беда (строка цветом предупреждения).
- *
- *  - мост tgws: пути, которые помощник отставил (`paths_down`); пустой массив — все пути живы;
- *  - VLESS, trojan, vmess, http с `insecure`: сертификат узла не проверяется — решение человека,
- *    не беда;
- *  - IPv6 от хоста, только у выхода с записанным `ipv6`: какой префикс раздаётся (записанный
- *    или выведенный ядром; `null` — не узнать), подменяется ли IPv6 при `nat`, и не действует
- *    ли ключ на этой платформе (`ipv6_applied: false`). Без ключа о IPv6 здесь молчим: подмену
- *    по умолчанию проверяет «Диагностика», и повторять её в каждой строке — шум. */
-export function outExtras(
-    o: Output,
-    st?: OutputStatus | null,
-    /** insecure: false — проверку сертификата показывает бейдж (lib/badges.ts), словом не нужно.
-     *  parts — состояние частей пула выхода (туннелей по подписке, из которых он собран). */
-    opts: { insecure?: boolean; parts?: (OutputStatus | undefined)[] } = {},
-): { words: string[]; alarm: boolean } {
-    const words: string[] = []
-    let alarm = false
-    /* Пул узлов: какие узлы работают сейчас; меньше заданного — беда. */
-    const pool = poolNow([st, ...(opts.parts || [])])
-    if (pool) {
-        if (pool.have < pool.want) {
-            words.push(pool.have ? `${S.outState.rabotayutIz(pool.have, pool.want)}: ${pool.names.join(', ')}` : S.outState.zhivyhNet)
-            alarm = true
-        } else words.push(S.outState.rabotayutUzly(pool.names.join(', ')))
-    }
-    /* Страна выхода: фактическую показываем всегда, когда ядро её знает; расхождение с именем узла —
-     * беда: продавец обещал одну страну, а сайты видят другую. */
-    const geo = geoNow([st, ...(opts.parts || [])])
-    if (geo) {
-        if (geo.mismatch && geo.node) {
-            words.push(S.outState.stranaVyhodaRashoditsya(country(geo.geo) || geo.geo, country(geo.node) || geo.node))
-            alarm = true
-        } else words.push(S.outState.stranaVyhoda(country(geo.geo) || geo.geo))
-    }
-    if (!st) return { words, alarm }
-    if (o.kind === 'tgws' && Array.isArray(st.paths_down) && st.paths_down.length) {
-        words.push(S.outState.putiNeOtvechayut(st.paths_down.length))
-        alarm = true
-    }
-    /* У vless признак печатает ядро, у прокси с TLS (trojan, vmess, http) — нет: там он из спеки. */
-    if (opts.insecure !== false && (st.insecure || (o.insecure && insecureApplies(o.kind)))) words.push(S.outState.sertifikatNeProveryaetsya)
-    /* Ключ — у устройства, которое несёт трафик сейчас: у пула с разным IPv6 он у каждого свой, а
-     * `nat6` ядро отдаёт именно по этому устройству (status.c, out_ipv6_mode_dev). */
-    const v6 = ipv6Of(o, st.device)
-    if (st.ipv6_applied === false) {
-        words.push(S.outState.ipv6ZdesNeDeystvuet)
-    } else if (v6 === 'routed') {
-        /* `prefix` в ответе status — у выхода-донора: записанный или выведенный по ядру сейчас,
-         * null — не узнать. Поля нет вовсе (ядро старше) — записанный в спеке. */
-        const raw = (st as { prefix?: string | null }).prefix
-        const p = raw === undefined ? o.prefix : raw
-        if (p) words.push(S.outState.ipv6Prefiks(p))
-        else {
-            words.push(S.outState.ipv6PrefiksNeIzvesten)
-            alarm = true
-        }
-    } else if (v6 === 'nat' && st.nat6 !== undefined) {
-        if (st.nat6) words.push(S.outState.ipv6AdresomHosta)
-        else {
-            words.push(S.outState.ipv6NePodmenyaetsya)
-            alarm = true
-        }
-    }
-    return { words, alarm }
 }

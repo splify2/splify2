@@ -2,8 +2,8 @@ import { useEffect, useState } from 'react'
 import { Badge } from '@/components/ui/badge'
 import { rpc, type VlessNodesReply } from '@/lib/rpc'
 import { cn } from '@/lib/utils'
-import { isProxyKind, type Output, type OutputStatus } from '@/lib/model'
-import { outNodes, outputBadges, PROTO_TONE, type ConfBadge } from '@/lib/badges'
+import { isProxyKind } from '@/lib/model'
+import { PROTO_TONE, type ConfBadge } from '@/lib/badges'
 
 /** Бейджи конфигурации строкой: протокол → транспорт → защита → особенности (lib/badges.ts).
  *  На узком экране переносятся целыми бейджами и строку не распирают.
@@ -48,24 +48,4 @@ export function useOutNodes(name: string, kind: string | undefined, key?: unknow
         return () => { stop = true }
     }, [name, kind, key])
     return r
-}
-
-/** Бейджи выхода: спека, состояние и узлы, которые он берёт. */
-export function OutBadges({
-    name, out, st, devKind, reply, className,
-}: {
-    name: string
-    out?: Output | null
-    st?: OutputStatus | null
-    devKind?: string | null
-    /** Узлы уже спрошены снаружи (строка локации спрашивает их ради имени узла) — второй раз не
-     *  спрашиваем. undefined — спросить здесь. */
-    reply?: VlessNodesReply | null
-    className?: string
-}) {
-    const kind = out?.kind || st?.kind
-    const own = useOutNodes(name, reply === undefined ? kind : undefined, st?.device)
-    const r = reply === undefined ? own : reply
-    const nodes = outNodes(r, st?.proxy?.node || st?.hysteria2?.node || null)
-    return <ConfBadges list={outputBadges({ out, st, nodes, devKind })} className={className} />
 }

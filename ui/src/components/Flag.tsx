@@ -25,7 +25,7 @@
 import { assetUrl } from '@/lib/assets'
 
 const STYLE_ID = 'splify2-flag-font'
-export const FLAG_FONT = "'Twemoji Country Flags', 'Apple Color Emoji', 'Segoe UI Emoji', 'Noto Color Emoji', sans-serif"
+const FLAG_FONT = "'Twemoji Country Flags', 'Apple Color Emoji', 'Segoe UI Emoji', 'Noto Color Emoji', sans-serif"
 
 /** Объявить шрифт один раз на страницу, сколько бы флагов её ни просило. */
 function ensureFont() {

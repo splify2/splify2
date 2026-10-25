@@ -14,15 +14,15 @@ const CIDR4 = new RegExp(`^${OCTET}\\.${OCTET}\\.${OCTET}\\.${OCTET}/(3[0-2]|[12
  *  своего алфавита и до роутера в таком виде доезжать не должно. */
 const NON_ASCII = /[^\u0000-\u007F]/
 
-export const isIp4 = (v: string) => IPV4.test(v.trim())
+const isIp4 = (v: string) => IPV4.test(v.trim())
 /** Подсеть с длиной префикса — то, что принимает `from` канала и наборы nft. */
-export const isCidr4 = (v: string) => CIDR4.test(v.trim())
+const isCidr4 = (v: string) => CIDR4.test(v.trim())
 
 /** Адрес IPv6 без длины префикса. Разбирает браузер (`URL` с хостом в скобках) — тот же
  *  разборщик, что у адресной строки: сжатие `::` и хвост в точечной записи регуляркой не
  *  опишешь, а ядро steer проверяет ту же запись через inet_pton. Знаки вне состава IPv6
  *  отсекаются заранее: `]`, `/` или `%` в скобках поменяли бы смысл записи. */
-export const isIp6 = (v: string) => {
+const isIp6 = (v: string) => {
   const s = v.trim()
   if (!s.includes(':') || !/^[0-9a-f:.]+$/i.test(s)) return false
   try {

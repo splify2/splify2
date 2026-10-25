@@ -42,16 +42,6 @@ export function onRouter(sv: ServiceEntry, local: Record<string, unknown>): bool
     return (!!set && !!local[relOf(set)]) || sv.parts.every((p) => local[relOf(p.file)])
 }
 
-/** Как сервис встаёт в правило: путь набора файлом или `undefined` — списками, как всегда.
- *
- *  Набор каталога бывает не выразим списком (исключения фильтра AdGuard, splify2-lists#1):
- *  тогда роутер кладёт его самого, и правило берёт его ключом `srs`. Узнать это можно только
- *  разобрав набор, то есть скачав его (`list_fetch` отвечает полем `srs`); лежащее на роутере
- *  отвечает без сети. Не вышло спросить — списками: сохранение доскачает их само. */
-export async function srsOf(sv: ServiceEntry, local: Record<string, unknown>): Promise<string | undefined> {
-    return (await srsProbe(sv, local)).set
-}
-
 /** То же, что srsOf, и заодно сужение подсетей из того же ответа роутера (`list_fetch` отдаёт
  *  `narrow` у набора, где подсети ограничены протоколом и портами, — Discord). `asked` — роутер
  *  отвечал про подсети: тогда отсутствие `narrow` и есть ответ «подсети не сужены», и второй

@@ -29,12 +29,6 @@ export function isProxyKind(k: string | undefined | null): k is ProxyKind {
     return (PROXY_KINDS as readonly string[]).includes(k || '')
 }
 
-/** Имя протокола туннеля для человека — так протоколы и называют, не переводя. */
-export const TUNNEL_LABEL: Record<'vless' | 'hysteria2' | ProxyKind, string> = {
-    vless: 'VLESS', hysteria2: 'hysteria2',
-    trojan: 'Trojan', shadowsocks: 'Shadowsocks', socks: 'SOCKS', http: 'HTTP', vmess: 'VMess',
-}
-
 /** Виды, у которых есть ключ `insecure` (не проверять сертификат узлов): у них есть TLS. У
  *  hysteria2 это параметр ссылки узла, у shadowsocks и socks TLS нет — ядро такой ключ отвергает. */
 export function insecureApplies(k: string | undefined | null): boolean {
@@ -44,10 +38,10 @@ export function insecureApplies(k: string | undefined | null): boolean {
 /** Как группа выбирает член (спека v2, docs/spec-v2.md): `order` — первый живой, `latency` —
  *  самый быстрый с допуском, `manual` — выбор человека (`steer select`), `balance` — ядро
  *  раскидывает новые соединения по живым членам по весам. */
-export type GroupPick = 'order' | 'latency' | 'manual' | 'balance'
+type GroupPick = 'order' | 'latency' | 'manual' | 'balance'
 /** pick=balance: чем раздаются новые соединения (спека v2 `by`): каждое случайно по весам, сайт —
  *  на одном члене, сайт у одного устройства — на одном члене. */
-export type BalanceBy = 'connection' | 'site' | 'site_client'
+type BalanceBy = 'connection' | 'site' | 'site_client'
 
 /** IPv6 от хоста на том конце туннеля: `routed` — хост маршрутизует префикс, `nat` — один адрес
  *  и masquerade IPv6, `off` — выход IPv6 не несёт. Нет ключа — несёт, если несёт его вид. */
@@ -231,7 +225,7 @@ export function poolIpv6(devs: string[], modeOf: (dev: string) => Ipv6Mode | und
     return { ipv6_by_device: by }
 }
 
-export interface Obfs {
+interface Obfs {
     /** Сегодня единственный. Поле есть, чтобы второй режим не потребовал менять форму. */
     mode?: 'wg-over-tcp'
     /** Сервер обфускации: «адрес:порт». Адрес, а не имя — движок его не резолвит, потому
@@ -737,33 +731,13 @@ export interface Status {
 /** A list a channel can point at. The two kinds are not interchangeable: an IP list
  *  fills its set from the file, a domain list is filled by the resolver at query
  *  time. One manifest carries both so the picker can offer either. */
-export type ListKind = 'prefixes' | 'domains'
-
-export interface ListEntry {
-    id: string
-    kind: ListKind
-    /** Russian display name from the manifest. */
-    name: string
-    description?: string
-    /** Prefixes or domains, as counted by whoever published the manifest. */
-    count?: number
-    /** Sensible default per the publisher — not a promise this router can hold it. */
-    default_on?: boolean
-    file: string
-    /** Where the list came from, so the UI can say why two lists disagree. */
-    source?: string
-    /** Address categories covering the same target. Shown as a warning, not hidden:
-     *  the choice between forms is real (domains are more precise, addresses cheaper),
-     *  but enabling both is never what someone means. */
-    same_as_ip?: string[]
-}
+type ListKind = 'prefixes' | 'domains'
 
 /** Признак источника доменного списка. Форма одна на оба случая, а имя ключа в манифесте
  *  разное: `upstream` — список зеркалится из чужого репозитория и перезаписывается целиком,
  *  `maintained_here` — список ведёт сам издатель, и домен предлагают ему.
  *
- *  Поле необязательное: манифест на уже установленных роутерах его не несёт, и его
- *  отсутствие значит «не знаем», а не «список наш». */
+ *  Поле необязательное: отсутствие значит «не знаем», а не «список наш». */
 export interface ListOrigin {
     /** `owner/repo`, где список ведётся, — то, что показывается человеку. */
     repo?: string
@@ -833,12 +807,6 @@ export interface RawManifest {
          *  его отправляет порядок манифеста (сначала адресные категории, потом доменные). */
         after?: string
     }[]
-}
-
-export interface Manifest {
-    version: string
-    base_url: string
-    lists: ListEntry[]
 }
 
 /** Одна запись каталога — ОДИН СЕРВИС, а не один вид списка.
@@ -947,7 +915,7 @@ export interface AllowDomains {
  *  Раскладка повторяет роутерную (`ad_rel` в allow-domains.sh) — и это единственное место,
  *  где интерфейс её знает. Разойдясь с ней, каталог начнёт считать скачанное нескачанным:
  *  «что уже лежит» он ищет по пути, а не по имени. */
-export const allowDomainsPath = (pub: string, svc: string, kind: ListKind) =>
+const allowDomainsPath = (pub: string, svc: string, kind: ListKind) =>
     kind === 'domains' ? `${pub}/domains/${svc}.lst` : `${pub}/${svc}.lst`
 
 /** Сервисы второго издателя в общем виде каталога.
@@ -998,7 +966,7 @@ export function toAllowDomainsServices(a: AllowDomains | null): ServiceEntry[] {
  *  это только порядок показа. Признак — по id и названию записи, без списка «правильных» id. */
 const WANTED_FIRST = /block|заблокир|геоблок/i
 const HOSTING_LAST = /hetzner|ovh|digitalocean|cloudflare|cloudfront|akamai|hodca|h\.o\.d\.c\.a|\baws\b/i
-export function catalogRank(sv: Pick<ServiceEntry, 'id' | 'name'>): 0 | 1 | 2 {
+function catalogRank(sv: Pick<ServiceEntry, 'id' | 'name'>): 0 | 1 | 2 {
     const key = `${sv.id} ${sv.name}`
     if (HOSTING_LAST.test(key)) return 2
     return WANTED_FIRST.test(key) ? 0 : 1

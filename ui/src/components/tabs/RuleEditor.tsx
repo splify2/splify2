@@ -30,7 +30,7 @@ const OWN_DNS = ' own'
 /** Значение списка для своей группы серверов правила — тоже не имя апстрима. */
 const OWN_GROUP = ' own-group'
 
-export { pathFor, srsPathFor, ruleFiles, onRouter, srsOf, selectedIds, isDomains } from '@/lib/rulefiles'
+export { selectedIds, isDomains } from '@/lib/rulefiles'
 import { pathFor, srsPathFor, ruleFiles, onRouter, srsProbe, mayNarrow, selectedIds, isDomains, serviceFiles, overridePortOf, withOverridePort, directDomains } from '@/lib/rulefiles'
 
 

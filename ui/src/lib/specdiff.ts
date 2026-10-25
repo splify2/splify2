@@ -34,7 +34,7 @@ const DEFAULTS: Record<string, unknown> = {
  *  Порядок ключей тоже выброшен нарочно: он ничего не значит ни для движка, ни для человека,
  *  а JSON.stringify считал его различием — то есть спека, пересобранная другим порядком
  *  полей, показывала бы «не применено» на всех правилах сразу. */
-export function canon(v: unknown): unknown {
+function canon(v: unknown): unknown {
     if (Array.isArray(v)) return v.map(canon)
     if (!v || typeof v !== 'object') return v
     const src = v as Record<string, unknown>
@@ -70,8 +70,8 @@ export function same(a: unknown, b: unknown): boolean {
 }
 
 
-export type ChangeKind = 'added' | 'removed' | 'changed' | 'moved'
-export type ChangeSubject = 'rule' | 'output' | 'settings' | 'order'
+type ChangeKind = 'added' | 'removed' | 'changed' | 'moved'
+type ChangeSubject = 'rule' | 'output' | 'settings' | 'order'
 
 export interface Change {
     /** Стабильный в пределах одного списка ключ строки. */

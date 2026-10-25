@@ -22,13 +22,13 @@ export interface SubNode {
     badges: ConfBadge[]
 }
 
-export const PROTO_NAME: Record<string, string> = {
+const PROTO_NAME: Record<string, string> = {
     vless: 'VLESS', hysteria2: 'Hysteria2', trojan: 'Trojan', shadowsocks: 'Shadowsocks',
     socks: 'SOCKS', http: 'HTTP', vmess: 'VMess',
 }
 
 /** Узлы прокси — номерами внутри своего протокола, как их считает ядро (у файла — сквозные). */
-export function pxSplit(nodes: VlessNode[] | undefined): { nd: VlessNode; proto: ProxyKind; at: number }[] {
+function pxSplit(nodes: VlessNode[] | undefined): { nd: VlessNode; proto: ProxyKind; at: number }[] {
     const seen: Partial<Record<ProxyKind, number>> = {}
     const out: { nd: VlessNode; proto: ProxyKind; at: number }[] = []
     for (const n of nodes || []) {

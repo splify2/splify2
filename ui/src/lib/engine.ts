@@ -157,13 +157,6 @@ export function xsLinkSupported(status: Status | null): boolean {
     return Array.isArray(status?.features) && status.features.includes('xslink')
 }
 
-/** Умеет ли установленное ядро режим раздачи у группы «поровну по весам» (ключ `by` спеки v2,
- *  умение `balance_by`). Спрашивается у состояния, как `xsLinkSupported`: ядро без умения спеку с
- *  `by` отвергает целиком, и выбор режима, который не применится, лучше не показывать вовсе. */
-export function balanceBySupported(status: Status | null | undefined): boolean {
-    return Array.isArray(status?.features) && status.features.includes('balance_by')
-}
-
 /** Умеет ли установленное ядро исключать узлы туннеля по стране и куску имени (ключи `exclude` и
  *  `exclude_name` спеки v2, умение `exclude`). Спрашивается у состояния, как `balanceBySupported`:
  *  ядро без умения спеку с этими ключами отвергает целиком. */
@@ -216,7 +209,7 @@ export function dnsOtherSupported(status: Status | null | undefined): boolean {
 /** С какой версии ядро знает `fragment` у серверов DoT/DoH и адрес `h3://` (steer после 2.0.4).
  *  Сначала спрашивается умение `dns_fragment`/`dns_h3` в `status.features` (ядро печатает их
  *  вместе с самой поддержкой); версия — запасной признак для ядер без перечня этих имён. */
-export const DNS_FRAGMENT_SINCE = '2.0.5'
+const DNS_FRAGMENT_SINCE = '2.0.5'
 
 function dnsFeature(status: Status | null | undefined, name: string, version?: string): boolean {
     if (Array.isArray(status?.features) && status.features.includes(name)) return true
@@ -248,7 +241,7 @@ export const DEFAULT_MODULES = ['vless', 'hysteria2', 'proxy']
  *  Модель держит vless, hysteria2 и пять протоколов прокси своими видами (протоколы прокси — один
  *  модуль steer-proxy, isProxyKind); вид `tunnel` с `protocol`, которого модель не знает, сводится
  *  к тому же по протоколу. */
-export function moduleFor(o: { kind: string; obfs?: unknown; protocol?: string } | undefined | null): string | null {
+function moduleFor(o: { kind: string; obfs?: unknown; protocol?: string } | undefined | null): string | null {
     if (!o) return null
     const k = o.kind === 'tunnel' ? o.protocol || '' : o.kind
     if (k === 'vless' || k === 'hysteria2' || k === 'xsteer' || k === 'tgws') return k

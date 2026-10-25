@@ -323,7 +323,7 @@ function buildOwn(mode: Mode, picks: string[]): Built | { ref: string } | null {
 }
 
 /** Набор правила целиком. `ref` — правило ведёт прямо в готовый выход. */
-export function buildTarget(t: Target, caps: Caps = {}): Built | { ref: string } | null {
+function buildTarget(t: Target, caps: Caps = {}): Built | { ref: string } | null {
     const secs: (Built | { ref: string })[] = []
     const s = withCountries(buildSubs(t.subs.mode, t.subs.picks, caps), t.subs)
     if (s) secs.push(s)
@@ -380,7 +380,7 @@ function prune(spec: Spec, root: string): Spec {
 }
 
 /** Свободное имя на основе `base` (латиница, цифры, `_`, `-`; не длиннее имени устройства). */
-export function freeName(taken: (n: string) => boolean, base: string): string {
+function freeName(taken: (n: string) => boolean, base: string): string {
     const tr: Record<string, string> = {
         а: 'a', б: 'b', в: 'v', г: 'g', д: 'd', е: 'e', ё: 'e', ж: 'zh', з: 'z', и: 'i', й: 'y', к: 'k', л: 'l', м: 'm', н: 'n',
         о: 'o', п: 'p', р: 'r', с: 's', т: 't', у: 'u', ф: 'f', х: 'h', ц: 'c', ч: 'ch', ш: 'sh', щ: 'sch', ъ: '', ы: 'y', ь: '',

@@ -63,7 +63,7 @@ import { S } from '@/copy'
 /** Правило без единого сервиса или в режиме «только эти устройства» без единого устройства:
  *  движку такое не отдаётся. Второе редактор хранит как from:[""] — пока человек не отметил
  *  первое устройство; в спеку такое значение (`addr: [""]`) не пишется, ядро считает его ошибкой. */
-export function isDraft(c: Channel): boolean {
+function isDraft(c: Channel): boolean {
     const m = c.match || {}
     if (c.from?.length && c.from.every((x) => !x.trim())) return true
     return !m.any && !(m.prefixes_files?.length) && !(m.domains_files?.length) && !(m.srs_files?.length)
@@ -690,11 +690,11 @@ class PendingStore {
 }
 
 /** Паузы между попытками первой загрузки спеки, мс. Меняется только в стенде. */
-export let LOAD_RETRY_MS: number[] = [700, 2000]
+let LOAD_RETRY_MS: number[] = [700, 2000]
 export function setLoadRetry(ms: number[]) { LOAD_RETRY_MS = ms }
 
 /** Хвост применения: сколько после ответа apply ответы опроса считаются переходными. */
-export const SETTLE_MS = 15000
+const SETTLE_MS = 15000
 
 export const pending = new PendingStore()
 

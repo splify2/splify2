@@ -33,7 +33,7 @@ export interface DiagCheck {
     why: string
 }
 
-export interface Diag {
+interface Diag {
     checks: DiagCheck[]
     warn: number
     fail: number
@@ -60,7 +60,7 @@ export interface Build {
     ui_version?: string
 }
 
-export type FeedTopic = 'conns' | 'dnsLog' | 'engineLog'
+type FeedTopic = 'conns' | 'dnsLog' | 'engineLog'
 
 export interface Live {
     status: Status | null
@@ -151,12 +151,12 @@ export function human(n: number) {
 
 /** Скорость из разницы двух опросов. Отрицательная разница значит, что счётчики начались
  *  заново (перезагрузка) — такую не показываем вовсе. */
-export function bps(bytes: number, ms: number): number | null {
+function bps(bytes: number, ms: number): number | null {
     if (!(ms > 0) || !(bytes > 0)) return null
     return (bytes * 8 * 1000) / ms
 }
 
-export function rate(bytes: number, ms: number) {
+function rate(bytes: number, ms: number) {
     const bits = bps(bytes, ms)
     return bits === null ? null : bitRate(bits)
 }

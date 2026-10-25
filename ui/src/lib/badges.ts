@@ -28,7 +28,7 @@ export type ProtoId =
     | 'xsteer' | 'wireguard' | 'awg' | 'masque'
 
 /** Место бейджа в строке — оно же порядок. */
-export type BadgeGroup = 'proto' | 'transport' | 'security' | 'feature'
+type BadgeGroup = 'proto' | 'transport' | 'security' | 'feature'
 
 export interface ConfBadge {
     /** Устойчивый ключ: по нему бейджи сравниваются (общие у нескольких узлов) и рисуются. */
@@ -392,7 +392,7 @@ const featRank = (b: ConfBadge) => {
 
 /** Протокол → транспорт → защита → особенности. Предупреждение — последним: оно читается после
  *  того, что о выходе сказано. */
-export function sortBadges(list: ConfBadge[]): ConfBadge[] {
+function sortBadges(list: ConfBadge[]): ConfBadge[] {
     return list
         .map((b, i) => ({ b, i }))
         .sort((x, y) =>
