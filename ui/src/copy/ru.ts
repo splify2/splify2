@@ -1104,7 +1104,7 @@ export const ru = {
         servisov: (p0: unknown) => `сервисов: ${p0}`,
         servisNeVybran: "сервис не выбран",
         zapisey: (p0: unknown) => ` · записей: ${p0}`,
-        poiskPoKataloguServisy: "поиск по каталогу — сервисы, категории",
+        poiskPoKataloguServisy: "поиск по каталогу",
         zapisey2: (n: number) => plural(n, 'запись', 'записи', 'записей'),
         nichegoNeNashlos: "Ничего не нашлось.",
         skachivaetsya: "скачивается",

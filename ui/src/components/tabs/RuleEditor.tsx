@@ -927,9 +927,9 @@ export default function RuleEditor({
                     backLabel={S.ruleEditor.vsePravila}
                     right={
                         <div className="flex shrink-0 items-center gap-2">
-                            <Button size="sm" variant="outline" onClick={onDelete}
+                            <Button size="sm" variant="outline" onClick={onDelete} aria-label={S.ruleEditor.udalit} title={S.ruleEditor.udalit}
                                 className="border-destructive/60 text-destructive hover:bg-destructive/10 hover:text-destructive">
-                                <Trash2 aria-hidden="true" /> {S.ruleEditor.udalit}
+                                <Trash2 aria-hidden="true" /> <span className="hidden sm:inline">{S.ruleEditor.udalit}</span>
                             </Button>
                             <Button size="sm" onClick={save} disabled={saving}>
                                 {saving && <LoaderCircle className="animate-spin" aria-hidden="true" />}
