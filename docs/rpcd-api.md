@@ -1775,17 +1775,21 @@ allowed-ips (сервер для своих); и отдельным поводо
 Открытие вкладки и загрузка интерфейсов плагинов: установленные плагины, подключённые репозитории, версия
 host API панели.
 
-- **Вход:** нет.
+- **Вход:** `{ "lang"?: "ru" }` — язык человека; без него названия идут на `en`.
 - **Выход:**
 
   ```json
   { "ok": true, "host_api": "1.0.0",
+    "names": { "vless": { "name": "VLESS", "description": "…" } },
     "plugins": [ { "id": "vless", "version": "2.1.1", "repo": "splify2", "state": "enabled", "why": null,
                    "auto_update": true, "pinned": null } ],
     "repos":   [ { "name": "splify2", "url": "https://…", "official": true } ] }
   ```
 
   - `plugins`, `repos` — массивы менеджера как есть; пустой список — `[]`, не отказ.
+  - `names` — название и описание стоящих плагинов на языке `lang` (ключи `plugin.name` и `plugin.description`
+    словаря `i18n/<язык>.json` плагина; порядок: язык, язык без региона, `en`). Плагина, у которого словаря нет,
+    в объекте нет — интерфейс берёт `name` и `description` из `plugins` (слова манифеста).
   - `repos_error` — есть только если `steer plugin repo list` не ответил: плагины при этом показываются.
   - Побочное действие: ссылки и ACL объектов плагинов приводятся в согласие с тем, что стоит и включено
     (после обновления прошивки плагины на месте, а ссылки rpcd — нет); если что-то изменилось, rpcd
@@ -2040,7 +2044,7 @@ HTTP: `bad_request` — 400, `not_installed` и `no_method` — 404, `disabled`,
 | `steer_modules` | read | — |
 | `steer_module_add` | write | `{module}` |
 | `steer_module_del` | write | `{module}` |
-| `plugins_list` | read | — |
+| `plugins_list` | read | `{lang?}` |
 | `plugins_search` | read | `{query?}` |
 | `repos_list` | read | — |
 | `plugin_status` | read | `{id?}` |

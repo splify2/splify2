@@ -29,7 +29,7 @@ var M = {
 	prefs_set: [ 'interface' ],
 	fetch_mode: [],
 	fetch_mode_set: [ 'mode' ],
-	plugins_list: [],
+	plugins_list: [ 'lang' ],
 	plugins_search: [ 'query' ],
 	plugin_status: [ 'id' ],
 	plugin_job: [ 'id' ],

@@ -203,6 +203,24 @@ check "не ответил список репозиториев — плаги�
 rm -f "$PLUG/fail.repo"
 printf 'busy\n' > "$PLUG/fail.list"
 check "менеджер занят другим запросом — код busy" "busy" "$(rpcd plugins_list | pj 'd["code"]')"
+
+# Название и описание на языке человека: ключи plugin.name и plugin.description словаря плагина.
+plug_reset
+printf '%s\n' '{"plugins":[{"id":"backup","name":"Архив настроек","version":"1.0.0","state":"enabled"}]}' > "$PLUG/list.json"
+mkdir -p "$PLUG/lib/backup/i18n" "$PLUG/lib/solo"
+printf '%s\n' '{"schema":1,"id":"backup","version":"1.0.0","name":"Архив настроек","i18n":{"languages":["ru","en"]}}' > "$PLUG/lib/backup/plugin.json"
+printf '%s\n' '{"plugin.name":"Архив настроек","plugin.description":"Выгрузка в файл"}' > "$PLUG/lib/backup/i18n/ru.json"
+printf '%s\n' '{"plugin.name":"Settings \"archive\"","plugin.description":"Export to a file"}' > "$PLUG/lib/backup/i18n/en.json"
+printf '%s\n' '{"schema":1,"id":"solo","version":"1.0.0","name":"Один"}' > "$PLUG/lib/solo/plugin.json"
+check "plugins_list: без языка — названия на en" "Settings \"archive\";Export to a file" \
+    "$(rpcd plugins_list '{}' | pj 'd["names"]["backup"]["name"]');$(rpcd plugins_list '{}' | pj 'd["names"]["backup"]["description"]')"
+check "plugins_list: язык ru — словарь ru" "Архив настроек;Выгрузка в файл" \
+    "$(rpcd plugins_list '{"lang":"ru"}' | pj 'd["names"]["backup"]["name"]');$(rpcd plugins_list '{"lang":"ru"}' | pj 'd["names"]["backup"]["description"]')"
+check "plugins_list: языка нет (de-AT) — en" "Export to a file" "$(rpcd plugins_list '{"lang":"de-AT"}' | pj 'd["names"]["backup"]["description"]')"
+check "plugins_list: плагина без словаря в names нет (интерфейс берёт слова манифеста)" "no" \
+    "$(rpcd plugins_list '{"lang":"ru"}' | pj '"solo" in d["names"]' | sed 's/True/yes/;s/true/yes/;s/False/no/;s/false/no/')"
+check "plugins_list: недопустимый язык — не ломает ответ, en" "true;Export to a file" \
+    "$(rpcd plugins_list '{"lang":"../x"}' | pj 'd["ok"]');$(rpcd plugins_list '{"lang":"../x"}' | pj 'd["names"]["backup"]["description"]')"
 rm -f "$PLUG/fail.list"
 out="$(STEER_FIXTURE=/nonexistent/steer rpcd plugins_list)"
 check "ядро без менеджера плагинов — понятный отказ" "false;ядро не умеет плагины — обновите steer" \

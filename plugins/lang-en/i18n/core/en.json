@@ -85,6 +85,7 @@
   "Reload and discard my changes": "Reload and discard my changes",
   "Remove": "Remove",
   "Remove anyway": "Remove anyway",
+  "Required by: {list}": "Required by: {list}",
   "Remove it anyway? The outputs that need it stop working.": "Remove it anyway? The outputs that need it stop working.",
   "Remove {id}?": "Remove {id}?",
   "Removed: {id}": "Removed: {id}",

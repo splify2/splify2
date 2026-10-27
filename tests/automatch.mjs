@@ -496,6 +496,37 @@ import { scanStrings, stringsFile } from './lib/strings.mjs'
   check('старое ядро: кнопка предлагает свежий выпуск (не предварительный)', 'Update steer to 2.1.0?', modals.at(-1).title)
   click(find(modals.at(-1).el, (n) => n.tag === 'button' && n.textContent === 'Update the core')); await tick()
   check('старое ядро: обновление зовёт steer_install с этой версией', [ '2.1.0' ], (rc.find((c) => c.method === 'steer_install') || { args: [] }).args.slice(0, 1))
+  // Вкладка плагинов: название и описание на языке человека (names из plugins_list), иначе слова манифеста.
+  rc.length = 0
+  rr.plugins_list = { ok: true, host_api: '1.0.0', repos: [ { name: 'splify2', official: true } ],
+    names: { backup: { name: 'Settings archive', description: 'Export the router settings to a file' } },
+    plugins: [
+      { id: 'backup', name: 'Архив настроек', description: 'Выгрузка настроек в файл', version: '1.0.0', state: 'enabled', repo: 'splify2' },
+      { id: 'solo', name: 'Один', description: 'Слова манифеста', version: '1.0.0', state: 'enabled', repo: 'splify2' },
+    ] }
+  rr.plugins_search = { ok: true, plugins: [] }
+  const pl2 = L2.load('view.splify2.core.plugins').render(host)
+  await tick(); await tick()
+  const row = (id) => find(pl2, (n) => n.attrs && n.attrs['data-plugin'] === id)
+  check('плагины: язык человека уходит в plugins_list', true, rc.some((c) => c.method === 'plugins_list' && c.args[0] === 'en'))
+  check('плагины: название и описание из словаря плагина', [ true, false ], [ /Settings archive/.test(row('backup').textContent) && /Export the router settings/.test(row('backup').textContent), /Архив/.test(row('backup').textContent) ])
+  check('плагины: у плагина без словаря — слова манифеста', true, /Один/.test(row('solo').textContent) && /Слова манифеста/.test(row('solo').textContent))
+  // Remove недоступна, пока от плагина зависят другие: причина названа (used_by ядра, иначе requires.plugins списка).
+  rr.plugins_list = { ok: true, host_api: '1.0.0', repos: [], plugins: [
+    { id: 'net1', version: '1.0.0', state: 'enabled', type: 'library', used_by: [ 'vless', 'hysteria2' ] },
+    { id: 'vless', version: '1.0.0', state: 'enabled', used_by: [], requires: { plugins: { net1: '^1.0' } } },
+    { id: 'lib2', version: '1.0.0', state: 'enabled' },
+    { id: 'user2', version: '1.0.0', state: 'enabled', requires: { plugins: { lib2: '^1.0' } } },
+  ] }
+  const pl3 = L2.load('view.splify2.core.plugins').render(host)
+  await tick(); await tick()
+  const rm = (id) => find(row3(id), (n) => n.tag === 'button' && n.textContent === 'Remove')
+  const row3 = (id) => find(pl3, (n) => n.attrs && n.attrs['data-plugin'] === id)
+  const why = (id) => (find(row3(id), (n) => n.attrs && n.attrs['data-needed'] === id) || { textContent: '' }).textContent
+  check('Remove: у net1 кнопка недоступна, причина названа', [ 'disabled', 'Required by: vless, hysteria2' ], [ rm('net1').attrs.disabled, why('net1') ])
+  check('Remove: причина и в подсказке кнопки', 'Required by: vless, hysteria2', rm('net1').attrs.title)
+  check('Remove: плагин, которого никто не требует, снимается', [ undefined, '' ], [ rm('vless').attrs.disabled, why('vless') ])
+  check('Remove: used_by нет в ответе — зависимые считаются по requires.plugins списка', [ 'disabled', 'Required by: user2' ], [ rm('lib2').attrs.disabled, why('lib2') ])
   // запасная схема: одна строка на странице разделов
   check('запасная схема названа одной строкой', true, /follow the package/.test(readFileSync(resolve(CORE, 'sections.js'), 'utf8')))
 }

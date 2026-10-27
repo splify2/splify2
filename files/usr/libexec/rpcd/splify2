@@ -264,7 +264,7 @@ list)
     json_add_object steer_module_del; json_add_string module; json_close_object
     # Плагины: обёртка над менеджером ядра (rpcd/m-plugin.sh). У plugin_call поле params — объект
     # произвольной формы: в сигнатуре его нет, rpcd отдаёт обработчику сообщение целиком.
-    json_add_object plugins_list; json_close_object
+    json_add_object plugins_list; json_add_string lang; json_close_object
     json_add_object plugins_search; json_add_string query; json_close_object
     json_add_object repos_list; json_close_object
     json_add_object plugin_status; json_add_string id; json_close_object
