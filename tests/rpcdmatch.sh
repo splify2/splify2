@@ -4204,13 +4204,13 @@ check "версия OpenWrt названа" "yes" "$(has '24.10.0')"
 check "архитектура пакетов названа" "yes" "$(has 'aarch64_cortex-a53')"
 check "версия пакета интерфейса названа" "yes" "$(has '26.9-ab12cd')"
 check "версия пакета ядра названа" "yes" "$(has '2.1.0')"
-check "наличие модуля VLESS названо словом, а не признаком" "yes" "$(has 'модуль VLESS')"
-check "состояние службы движка названо" "yes" "$(has 'автозапуск')"
+check "наличие модуля VLESS названо словом, а не признаком" "yes" "$(has 'VLESS module')"
+check "состояние службы движка названо" "yes" "$(has 'autostart')"
 
 # ---- состав: приговоры diag по-русски, а не JSON ----
 check "приговоры diag попали в отчёт читаемым видом" "yes" "$(has 'таблица на месте')"
 check "и не JSON'ом" "no" "$(has '"verdict"')"
-check "итог проверок назван числом" "yes" "$(has 'провалов 0')"
+check "итог проверок назван числом" "yes" "$(has 'failures 0')"
 
 # ---- состав: выходы и правила ----
 check "выход-туннель назван" "yes" "$(has 'vpn')"
@@ -4219,20 +4219,20 @@ check "выход-туннель назван" "yes" "$(has 'vpn')"
 # движка печатает в `status` только kind/up/mark/table, поэтому имени устройства в стенде
 # взяться неоткуда, а на роутере его печатает движок (контракт steer §2: состояние выхода —
 # это его запись в спеке плюс поля состояния).
-check "устройство выхода названо отдельным словом" "yes" "$(has 'устройство не создано')"
-check "состояние выхода названо словом" "yes" "$(has 'поднят')"
+check "устройство выхода названо отдельным словом" "yes" "$(has 'device not created')"
+check "состояние выхода названо словом" "yes" "$(has 'up')"
 check "выход-локация подписки назван своим видом" "yes" "$(has 'vless')"
 check "правила из спеки перечислены" "yes" "$(has 'Новости')"
 check "и второе правило тоже" "yes" "$(has 'Соцсети')"
 
 # ---- состав: DNS ----
-check "резолвер доменов движка описан" "yes" "$(has 'резолвер доменов ядра')"
+check "резолвер доменов движка описан" "yes" "$(has 'domain resolver of the core')"
 check "чужой https-dns-proxy в отчёте не читается" "no" "$(has 'https-dns-proxy')"
 check "и обход DPI в отчёте не упоминается" "no" "$(has 'обход DPI')"
 
 # ---- состав: подписка ----
-check "подписка: сказано, что она есть" "yes" "$(has 'подписка')"
-check "подписка: число пригодных узлов названо" "yes" "$(has 'пригодных узлов: 3')"
+check "подписка: сказано, что она есть" "yes" "$(has 'subscription')"
+check "подписка: число пригодных узлов названо" "yes" "$(has 'usable nodes: 3')"
 
 # ---- ГЛАВНОЕ: секретов в отчёте нет -------------------------------------------------
 check "в отчёте нет ссылок узлов" "no" "$(has 'vless://')"
@@ -4247,7 +4247,7 @@ check "в отчёте нет адреса узла" "no" "$(has '203.0.113.9')"
 check "в отчёте нет внешнего адреса роутера" "no" "$(has '46.42.17.15')"
 # И отдельно — что отчёт сам говорит человеку, чего в нём нет: он вставляет текст в общий
 # чат и вправе это знать, не читая наш исходник.
-check "отчёт сам говорит, что секретов в нём нет" "yes" "$(has 'не попали')"
+check "отчёт сам говорит, что секретов в нём нет" "yes" "$(has 'Left out of the report')"
 
 # ---- ребра контракта: список ubus и ACL ---------------------------------------------
 check "метод support_report объявлен в списке ubus" "yes" \
@@ -4272,13 +4272,13 @@ printf '{"schema":1,"outputs":{},"channels":[]}\n' > "$T/etc/spec.json"
 out="$(BUILD_ID_FILE="$T/etc/build-id.txt" rpcd support_report)"
 rep="$(printf '%s' "$out" | jget text)"
 check "без движка отчёт всё равно собирается" "true" "$(printf '%s' "$out" | jget ok)"
-check "и говорит, что движка нет" "yes" "$(has 'ядро steer: НЕ УСТАНОВЛЕНО')"
+check "и говорит, что движка нет" "yes" "$(has 'steer core: NOT INSTALLED')"
 # Незнание называется незнанием: «движок не ответил» и «движка нет» — разные диагнозы, и
 # второй уводит помогающего чинить не то.
-check "и не выдаёт молчание diag за исправность" "yes" "$(has 'не ответило на diag')"
+check "и не выдаёт молчание diag за исправность" "yes" "$(has 'did not answer diag')"
 check "модель и прошивка при этом на месте — их знает не движок" "yes" "$(has 'Xiaomi AX3000T')"
 check "пустая спека — это «правил нет», а не пустой раздел" "yes" \
-      "$(has 'правил нет')"
+      "$(has 'no rules')"
 mv "$T/bin/steer.off" "$T/bin/steer"
 
 # Подписки нет вовсе — тоже состояние, а не пустое место: с него начинается половина
@@ -4287,7 +4287,7 @@ rm -f "$T/etc/sub.txt" "$T/etc/subs"/*.txt
 uci_set splify2.main.sub_url ''
 out="$(BUILD_ID_FILE="$T/etc/build-id.txt" rpcd support_report)"
 rep="$(printf '%s' "$out" | jget text)"
-check "отсутствие подписки названо словами" "yes" "$(has 'подписок нет')"
+check "отсутствие подписки названо словами" "yes" "$(has 'no subscriptions')"
 
 # ---- источники трафика: свой исходящий туннель источником быть не может ---------------
 # Перечень сетей клиентов (splify2#16, выше по файлу) отдавал ВСЁ, что нашлось в /sys, кроме
@@ -4641,7 +4641,7 @@ d=[d for d in json.load(sys.stdin)["subs"] if d["name"]=="v2"]
 print("%s;%s" % (d[0]["used"], d[0]["used_nodes"]) if d else "нет")')"
 rep="$(rpcd support_report | jget text)"
 check "отчёт читает правила v2 с видом списка" "yes;yes;yes" \
-      "$(printf '%s' "$rep" | grep -q 'Новости -> nl (доменные списки)' && echo yes || echo no);$(printf '%s' "$rep" | grep -q 'Всё -> direct (весь трафик) \[ВЫКЛЮЧЕНО\]' && echo yes || echo no);$(printf '%s' "$rep" | grep -q 'vless://' && echo no || echo yes)"
+      "$(printf '%s' "$rep" | grep -q 'Новости -> nl (domain lists)' && echo yes || echo no);$(printf '%s' "$rep" | grep -q 'Всё -> direct (all traffic) \[OFF\]' && echo yes || echo no);$(printf '%s' "$rep" | grep -q 'vless://' && echo no || echo yes)"
 # Архив со спекой v2 принимается восстановлением.
 out="$(printf '%s\n' 'splify2-backup 2' '[spec]' '{"version":2,"outputs":{"direct":{"kind":"direct"}},"rules":[{"name":"x","to":"all","out":"direct"}]}' | backup_put)"
 check "архив со спекой v2 принимается" "true" "$(printf '%s' "$out" | jget ok)"
@@ -4942,7 +4942,7 @@ check "heal: applied_get после apply отдаёт то же, что spec_ge
 # Строки самолечения интерфейс в тосте не показывает и узнаёт их по началу (applyText в pending.ts;
 # его проверка читает исходник бэкенда): по две строки, nat и off, обе с этим началом.
 check "heal: обе строки самолечения начинаются так, как их узнаёт интерфейс" "2" \
-      "$(printf '%s\n' "$txt" | grep -c '^splify2: выходам без ключа ipv6 записан ')"
+      "$(printf '%s\n' "$txt" | grep -c '^splify2: outputs without an ipv6 key got ')"
 sum1="$(cksum < "$T/etc/spec.json")"
 out="$(heal_apply apply)"
 check "heal: второй apply спеку не меняет (идемпотентно)" "$sum1" "$(cksum < "$T/etc/spec.json")"
@@ -5164,11 +5164,11 @@ echo "$*" >> "$SANDBOX/purge.log"
 if [ "${1:-}" = "--yes" ]; then
     echo "splify2-purge: служба ядра останавливается"; exit 0
 fi
-echo "splify2-purge: будет сделано: таблица nftables inet steer удаляется"
-echo "splify2-purge: будет сделано: /etc/steer удаляется — вместе со спекой"
+echo "splify2-purge: @plan таблица nftables inet steer удаляется"
+echo "splify2-purge: @plan /etc/steer удаляется — вместе со спекой"
 echo "splify2-purge: интерфейсы с протоколом xsteer остаются в настройке сети: wg1"
-echo "splify2-purge: пакеты этот скрипт не снимает. Чтобы снять:  apk del steer"
-echo "splify2-purge: ничего не удалено. Чтобы удалить: splify2-purge --yes"
+echo "splify2-purge: @hint пакеты этот скрипт не снимает. Чтобы снять:  apk del steer"
+echo "splify2-purge: @hint ничего не удалено. Чтобы удалить: splify2-purge --yes"
 EOF
 chmod +x "$T/bin/purge-stub"
 export PURGE_BIN="$T/bin/purge-stub" PURGE_DELAY=0 PURGE_LOG="$T/purge-job.log"

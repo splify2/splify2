@@ -403,7 +403,7 @@ EOF
 out="$(rpc support_report)"
 txt="$(printf '%s' "$out" | pj 'd["text"]')"
 check "support_report: раздел плагина в отчёте" "yes;yes;yes" "$(printf '%s' "$txt" | grep -q -- '-- Проверка плагина --' && echo yes || echo no);$(printf '%s' "$txt" | grep -q 'строка один' && echo yes || echo no);$(printf '%s' "$txt" | grep -q 'строка два' && echo yes || echo no)"
-check "и текст про исключённое остался последним" "yes" "$(printf '%s' "$txt" | tail -n 3 | grep -q 'В отчёт намеренно не попали' && echo yes || echo no)"
+check "и текст про исключённое остался последним" "yes" "$(printf '%s' "$txt" | tail -n 3 | grep -q 'Left out of the report' && echo yes || echo no)"
 
 reset
 fixture_plugin obs '{'"$M"',"id":"obs","name":"x","permissions":["splify2.hooks"],"splify2":{"hooks":{"plugin_changed":{"prog":"h"}}}}'
@@ -650,7 +650,7 @@ purge() {  # КЛЮЧИ
     mkdir -p "$T/etc/splify2" "$T/etc/steer"
     envs SPLIFY2_DIR="$T/etc/splify2" STEER_DIR="$T/etc/steer" CRONTAB="$T/etc/crontabs-purge" CRON_INITD="$T/bin/none" \
         INITD="$T/bin/none" FW_INITD="$T/bin/none" BOX_INITD="$T/bin/none" RECHECK_INITD="$T/bin/none" \
-        STATE_PATHS="$T/var/none" NFT_TABLES="" FW_ZONES="" FW_LEGACY_ZONES="" EXT_LIB_SH="$LIBD/ext.sh" \
+        STATE_PATHS="$T/var/none" NFT_TABLES="" FW_ZONES="" FW_LEGACY_ZONES="" EXT_LIB_SH="$LIBD/ext.sh" I18N_SH="$LIBD/i18n.sh" \
         sh "$SBIN/splify2-purge" "$@" 2>&1
 }
 out="$(purge)"

@@ -42,6 +42,8 @@ FETCH_GITLAB=${FETCH_GITLAB:-https://gitlab.com}
 FETCH_CODELOAD=${FETCH_CODELOAD:-https://codeload.github.com}
 FETCH_DIST_BRANCH=${FETCH_DIST_BRANCH:-dist}
 FETCH_CACHE=${FETCH_CACHE:-/tmp/splify2-fetch}
+# Тексты для человека (s2_t): файл подключают и отдельно от env.sh (стенд, программы).
+command -v s2_t >/dev/null 2>&1 || . "${I18N_SH:-${SPLIFY2_LIBDIR:-/usr/lib/splify2}/i18n.sh}"
 # Перечень выпусков splify2/releases — три адреса одного version.json, по порядку. Читает его
 # объект rpcd (m-engine.sh) ПЕРВЫМ, раньше api.github.com; адреса файлов из него качает
 # download_rel ниже.

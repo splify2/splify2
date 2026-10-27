@@ -49,7 +49,7 @@ beforeEach(async () => {
         disk = clone(disk)
         for (const o of Object.values(disk.outputs)) if (o.kind === 'interface' && !o.ipv6) o.ipv6 = 'nat'
         snapshot = clone(disk)
-        return { ok: true, output: 'splify2: выходам без ключа ipv6 записан ipv6: nat (у туннеля есть адрес IPv6): wg0' }
+        return { ok: true, output: 'splify2: outputs without an ipv6 key got ipv6: nat (the tunnel has an IPv6 address): wg0' }
     }) as never)
     // @ts-expect-error — сброс внутреннего состояния между проверками
     pending.saved = null; pending.applied = null; pending.dirty = false; pending.applying = false

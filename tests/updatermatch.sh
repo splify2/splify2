@@ -202,7 +202,7 @@ check "по умолчанию выключена — в сеть не ходи�
 settings '{"check":true}'
 pl "$PD/bin/check-updates" </dev/null
 check "включена — спросила выпуски и запомнила итог" "yes;yes" "$([ "$(grep -c 'release versions' "$T/host.log")" -ge 2 ] && echo yes || echo no);$([ -s "$RUN/status.json" ] && echo yes || echo no)"
-check "о новой версии сказано в журнале" "yes" "$(grep -q 'steer: вышла 2.1.2, стоит 2.1.0' "$T/log.txt" && echo yes || echo no)"
+check "о новой версии сказано в журнале" "yes" "$(grep -q 'steer: 2.1.2 is out, 2.1.0 is installed' "$T/log.txt" && echo yes || echo no)"
 rm -f "$CONF/settings.json"
 
 echo "== архив настроек, отчёт, чистка =="

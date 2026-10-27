@@ -117,8 +117,6 @@
   "group.bad_name": "недопустимое имя группы",
   "group.none": "группы «{name}» нет",
   "group.none_given": "не указана группа",
-  "heal.ipv6_nat": "выходам без ключа ipv6 записан ipv6: nat (у туннеля есть адрес IPv6): {outputs}",
-  "heal.ipv6_off": "выходам без ключа ipv6 записан ipv6: off (у туннеля нет адреса IPv6, клиенты идут по IPv4): {outputs}",
   "heal.plugin": "плагин поправил спеку",
   "heal.zapret": "обход DPI (zapret) больше не поддерживается: убраны выходы{outputs}, правил переведено в direct: {rules}",
   "hook.reason_exit": "завершился с ошибкой (код {code})",

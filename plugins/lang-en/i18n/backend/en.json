@@ -117,8 +117,6 @@
   "group.bad_name": "Invalid group name",
   "group.none": "There is no group \"{name}\"",
   "group.none_given": "No group given",
-  "heal.ipv6_nat": "Outputs without an ipv6 key got ipv6: nat (the tunnel has an IPv6 address): {outputs}",
-  "heal.ipv6_off": "Outputs without an ipv6 key got ipv6: off (the tunnel has no IPv6 address, clients use IPv4): {outputs}",
   "heal.plugin": "A plugin fixed the spec",
   "heal.zapret": "DPI bypass (zapret) is no longer supported: outputs removed{outputs}, rules moved to direct: {rules}",
   "hook.reason_exit": "stopped with an error (code {code})",

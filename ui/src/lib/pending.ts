@@ -92,12 +92,12 @@ export function writable(spec: Spec): { spec: Spec; drafts: number } {
     return { spec: kept.length === channels.length ? spec : { ...spec, channels: kept }, drafts: channels.length - kept.length }
 }
 
-/** Строки самолечения в ответе apply: «splify2: выходам без ключа ipv6 записан ipv6: nat (…): wg0».
+/** Строки самолечения в ответе apply: «splify2: outputs without an ipv6 key got ipv6: nat (…): wg0».
  *  Бэкенд пишет их тому, кто смотрит в ssh и журнал (rpcd/m-spec.sh, heal_report), а человеку на
- *  экране они ни к чему: ключ — внутренность настройки, а как выход ходит в IPv6, видно в самом
+ *  экране они ни к чему (это строки журнала, они всегда английские и не переводятся): ключ — внутренность настройки, а как выход ходит в IPv6, видно в самом
  *  выходе, который после применения перечитан с роутера. Поэтому в тосте их нет. Начало строки то
  *  же, что в бэкенде; сверка с его исходником — в tests/apply-refetch.test.ts. */
-const HEAL_LINE = /^splify2: выходам без ключа ipv6 записан /
+const HEAL_LINE = /^splify2: outputs without an ipv6 key got /
 
 /** Текст тоста по ответу apply: слова ядра и зон фаервола — без строк самолечения. */
 export function applyText(output: string | undefined): string {

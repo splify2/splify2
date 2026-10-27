@@ -824,10 +824,10 @@ heal_names() {  # РЕЖИМ ВЫВОД
 heal_report() {  # ВЫВОД spec_heal_ipv6
     _hr_n="$(heal_names nat "$1")"
     [ -n "$_hr_n" ] &&
-        printf 'splify2: %s\n' "$(s2_t heal.ipv6_nat "Outputs without an ipv6 key got ipv6: nat (the tunnel has an IPv6 address): {outputs}" outputs "$_hr_n")"
+        printf 'splify2: outputs without an ipv6 key got ipv6: nat (the tunnel has an IPv6 address): %s\n' "$_hr_n"
     _hr_f="$(heal_names off "$1")"
     [ -n "$_hr_f" ] &&
-        printf 'splify2: %s\n' "$(s2_t heal.ipv6_off "Outputs without an ipv6 key got ipv6: off (the tunnel has no IPv6 address, clients use IPv4): {outputs}" outputs "$_hr_f")"
+        printf 'splify2: outputs without an ipv6 key got ipv6: off (the tunnel has no IPv6 address, clients use IPv4): %s\n' "$_hr_f"
     return 0
 }
 
