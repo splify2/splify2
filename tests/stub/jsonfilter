@@ -80,14 +80,14 @@ for expr in os.environ.get('EXPRS', '').splitlines():
     # следовала и делила путь по точкам как угодно — из-за чего стенд не видел, что имя
     # выхода `de-1` ломает каждый запрос по нему (I-284).
     norm = expr.replace('@.', '', 1).replace('[*]', '.*')
-    norm = re.sub(r"\[(['\"])([^'\"]*)\1\]", lambda m: '.\x00' + m.group(2), norm)
+    norm = re.sub(r"\[(['\"])([^'\"]*)\1\]", lambda m: '.\x00' + m.group(2).replace('.', '\x01'), norm)
     norm = norm.replace('[', '.').replace(']', '')
     parts = [x for x in norm.split('.') if x and x != '@']
     bad = False
     clean = []
     for x in parts:
         if x.startswith('\x00'):
-            clean.append(x[1:])
+            clean.append(x[1:].replace('\x01', '.'))   # ключ в скобках может нести точку: ['req.unknown_method']
         elif x == '*' or x.isdigit() or re.match(r'^[A-Za-z_][A-Za-z0-9_]*$', x):
             clean.append(x)
         else:

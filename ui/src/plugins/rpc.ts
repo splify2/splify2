@@ -9,10 +9,14 @@ import type { Rpc, RpcError as RpcErrorT } from './api'
 
 export class RpcError extends Error implements RpcErrorT {
     readonly kind: RpcErrorT['kind']
-    constructor(message: string, kind: RpcErrorT['kind']) {
+    readonly code?: string
+    readonly args?: Record<string, string>
+    constructor(message: string, kind: RpcErrorT['kind'], code?: string, args?: Record<string, string>) {
         super(message)
         this.name = 'RpcError'
         this.kind = kind
+        this.code = code
+        this.args = args
     }
 }
 
@@ -60,7 +64,11 @@ export async function callPlugin<T>(id: string, method: string, params: Record<s
         const code = (r as { code?: unknown }).code
         const kind = code === 'timeout' ? 'timeout'
             : code === 'unavailable' || code === 'not_installed' || code === 'disabled' || code === 'no_method' ? 'unavailable' : 'failed'
-        throw new RpcError(String((r as { error?: unknown }).error ?? S.plugins.otkaz), kind)
+        // Текст `error` хост уже подставил на языке каркаса; `code` и `args` — для плагина, у которого свой перевод.
+        const args = (r as { args?: unknown }).args
+        throw new RpcError(String((r as { error?: unknown }).error ?? S.plugins.otkaz), kind,
+            typeof code === 'string' ? code : undefined,
+            args && typeof args === 'object' ? (args as Record<string, string>) : undefined)
     }
     return r as T
 }

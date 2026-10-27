@@ -91,6 +91,12 @@ export interface Rpc {
 export interface RpcError extends Error {
   /** denied — нет прав ACL; timeout; unavailable — нет ubus (вне LuCI); failed — метод сказал ok:false. */
   readonly kind: 'denied' | 'timeout' | 'unavailable' | 'failed'
+  /** Машинное слово отказа (`code` ответа), если метод его назвал: у отказов бэкенда — код текста
+   *  (`lists.too_big`), у отказов хоста — вид (`bad_request`, `not_installed`). Текст сообщения хост уже подставил
+   *  на языке каркаса; код и `args` нужны плагину, у которого свой перевод. */
+  readonly code?: string
+  /** Подстановки `{имя}` текста отказа: значения как есть. */
+  readonly args?: Record<string, string>
 }
 
 // ---------------------------------------------------------------------------------------------

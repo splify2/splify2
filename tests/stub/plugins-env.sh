@@ -11,9 +11,11 @@
 
 plugins_provision() {  # КАТАЛОГ [ID...]
     _pp_d="$1"; shift
-    # Без списка — официальные плагины (backup, lists-catalog, subscriptions, updater); «-» — пустой корень (стенду нужны только свои плагины).
+    # Без списка — официальные плагины (backup, lists-catalog, subscriptions, updater). К любому списку добавляется русский
+    # язык (lang-ru): тексты отказов бэкенда английские, а стенды сверяют русские (S2_LANG=ru ниже), и словарь lang-ru должен
+    # давать прежние слова. «-» — пустой корень (стенду нужны только свои плагины, без языка).
     [ $# -gt 0 ] || set -- backup lists-catalog subscriptions updater
-    [ "$1" = - ] && shift
+    if [ "$1" = - ]; then shift; else case " $* " in *" lang-ru "*) ;; *) set -- "$@" lang-ru ;; esac; fi
     rm -rf "$_pp_d"
     mkdir -p "$_pp_d/lib" "$_pp_d/conf" "$_pp_d/run" "$_pp_d/state"
     _pp_st='{"schema":1,"plugins":{'
@@ -25,6 +27,7 @@ plugins_provision() {  # КАТАЛОГ [ID...]
         _pp_sep=","
     done
     printf '%s}}\n' "$_pp_st" > "$_pp_d/state.json"
+    export S2_LANG="${S2_LANG:-ru}" S2_DICT_EXTRA="${S2_DICT_EXTRA:-$ROOT/plugins/lang-ru/i18n/backend}"
     export PLUGIN_ROOT="$_pp_d/lib" PLUGIN_STATE="$_pp_d/state.json" \
            PLUGIN_CONF_DIR="$_pp_d/conf" PLUGIN_JOBS="$_pp_d/jobs" \
            PLUGIN_SH="$ROOT/files/usr/lib/splify2/plugin.sh" \

@@ -93,7 +93,7 @@ PL="$T/p"
 
 # Окружение вызова объекта — как у стенда pluginmatch/rpcdmatch, но только то, что нужно этим методам.
 envs() {
-    env SANDBOX="$T" PATH="$T/bin:$PATH" JSHN_SH="$ROOT/tests/stub/jshn.sh" \
+    env SANDBOX="$T" PATH="$T/bin:$PATH" S2_LANG=ru S2_DICT_EXTRA="$ROOT/plugins/lang-ru/i18n/backend" JSHN_SH="$ROOT/tests/stub/jshn.sh" \
         RPCD_LIB="$LIBD/rpcd" FAST_SH="$LIBD/fast.sh" FETCH_SH="$LIBD/fetch.sh" \
         SPLIFY2_LOCK_DIR="$T/lock" STEER="$T/bin/steer" STEER_PLUGIN_STUB="$ROOT/tests/stub/steer-plugin" PLUG="$PL" \
         SPEC="$T/etc/spec.json" SPEC_VIEW="$T/spec.view.json" APPLIED="$T/etc/spec.applied.json" \
@@ -458,7 +458,7 @@ sync_now
 check "второй плагин на то же новое имя отвергнут, называет занявшего" "yes" "$(has 'hello2: псевдоним «hello_say» уже занят плагином hello' "$PL/run/ext.reg")"
 rm -rf "$PL/lib/hello2"; set_state hello2 disabled 2>/dev/null || true
 sync_now
-check "синхронизация без перемен ничего не пишет: перечитка rpcd не просится" "без изменений" "$(envs sh "$SBIN/splify2-plugin-sync" --no-reload)"
+check "синхронизация без перемен ничего не пишет: перечитка rpcd не просится" "unchanged" "$(envs sh "$SBIN/splify2-plugin-sync" --no-reload)"
 
 echo "== методы: переопределения"
 reset

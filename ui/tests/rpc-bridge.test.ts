@@ -39,4 +39,24 @@ describe('мост к ubus', () => {
         const { rpc } = await import('@/lib/rpc')
         await expect(rpc.conns()).rejects.toThrow(/ubus is unavailable/)
     })
+
+    it('отказ метода плагина несёт текст на языке каркаса, code и args', async () => {
+        const { callPlugin } = await import('@/plugins/rpc')
+        const call = vi.fn(async () => ({
+            ok: false, error: 'список больше 64 КБ', code: 'lists.too_big', args: { kb: '64' },
+        }))
+        ;(window as unknown as Record<string, unknown>).luci_rpc = { declare: vi.fn(() => call) }
+        const e = await callPlugin('lists-catalog', 'list_put', {}).catch((x) => x)
+        expect(e.message).toBe('список больше 64 КБ')
+        expect([e.kind, e.code, e.args]).toEqual(['failed', 'lists.too_big', { kb: '64' }])
+    })
+
+    it('отказ без code и args — как прежде', async () => {
+        const { callPlugin } = await import('@/plugins/rpc')
+        ;(window as unknown as Record<string, unknown>).luci_rpc = {
+            declare: vi.fn(() => async () => ({ ok: false, error: 'нет' })),
+        }
+        const e = await callPlugin('p', 'm', {}).catch((x) => x)
+        expect([e.message, e.kind, e.code, e.args]).toEqual(['нет', 'failed', undefined, undefined])
+    })
 })
