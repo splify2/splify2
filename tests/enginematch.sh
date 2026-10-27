@@ -109,12 +109,17 @@ check "прежняя спека при отказе цела (DNS через wg
 NOMOD='{"version":2,"outputs":{"direct":{"kind":"direct"},"nl":{"kind":"tunnel","protocol":"hysteria2","subscription":"'"$T"'/etc/sub.txt"}}}'
 printf 'hy2://x@h:443#n\n' > "$T/etc/sub.txt"
 out="$(rpcd spec_set "$(req "$NOMOD")")"
-# Базовая сборка без модуля отвечает отказом с именем пакета; сборка с модулем принимает.
+# Ядро 2.1 без плагина hysteria2 отвечает отказом, который называет протокол (или плагин, когда семя
+# знает, кто его даёт), а не пакет steer-hysteria2 — пакетов протоколов больше нет; с плагином принимает.
 if [ "$(printf '%s' "$out" | jget ok)" = false ]; then
-    check "выход без установленного модуля — отказ называет пакет" "yes" \
+    check "выход без плагина протокола — отказ называет протокол" "yes" \
+          "$(printf '%s' "$out" | jget error | grep -q 'hysteria2' && echo yes || echo no)"
+    check "  и не зовёт ставить пакет" "no" \
           "$(printf '%s' "$out" | jget error | grep -q 'steer-hysteria2' && echo yes || echo no)"
+    check "  и несёт код ядра" "yes" \
+          "$(printf '%s' "$out" | jget code | grep -q '^steer\.' && echo yes || echo no)"
 else
-    check "движок с модулем hysteria2 принял спеку" "true" "$(printf '%s' "$out" | jget ok)"
+    check "ядро с плагином hysteria2 приняло спеку" "true" "$(printf '%s' "$out" | jget ok)"
 fi
 
 rm -f "$T/etc/spec.yaml" "$T/etc/spec.json"
