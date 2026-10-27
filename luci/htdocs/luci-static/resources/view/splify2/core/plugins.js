@@ -47,6 +47,14 @@ return baseclass.extend({
 			var n = state.list && state.list.names && state.list.names[p.id];
 			return (n && n[field]) || p[field] || '';
 		};
+		// Who needs the plugin: the list of the core says it (used_by); without it - from the manifests of the list.
+		var usedBy = function(p) {
+			if (Array.isArray(p.used_by)) return p.used_by;
+			return ((state.list && state.list.plugins) || []).filter(function(o) {
+				return o.id !== p.id && o.requires && o.requires.plugins && Object.prototype.hasOwnProperty.call(o.requires.plugins, p.id);
+			}).map(function(o) { return o.id; });
+		};
+
 		var repoOf = function(name) {
 			var rs = (state.list && state.list.repos) || [];
 			for (var i = 0; i < rs.length; i++) if (rs[i].name === name) return rs[i];
@@ -161,6 +169,8 @@ return baseclass.extend({
 				var enabled = p.state === 'enabled';
 				var upd = p.update || p.update_available || p.available;
 				var busy = jobs[p.id];
+				var needed = usedBy(p);
+				var reason = T('Required by: {list}', { list: needed.join(', ') });
 				var au = E('input', { type: 'checkbox', checked: p.auto_update ? 'checked' : null, change: function(ev) {
 					api.call('plugin_autoupdate', { id: p.id, enabled: ev.target.checked }).then(function() { load(); }, function(e) { fail(e); load(); });
 				} });
@@ -176,7 +186,10 @@ return baseclass.extend({
 						enabled ? E('button', { 'class': 'cbi-button', click: act('plugin_disable', { id: p.id }, T('Disabled: {id}', { id: p.id })) }, T('Disable')) :
 							E('button', { 'class': 'cbi-button cbi-button-positive', click: act('plugin_enable', { id: p.id }, T('Enabled: {id}', { id: p.id })) }, T('Enable')), ' ',
 						upd ? E('button', { 'class': 'cbi-button cbi-button-action', click: act('plugin_update', { id: p.id }) }, T('Update')) : '', upd ? ' ' : '',
-						E('button', { 'class': 'cbi-button cbi-button-remove', click: function() { remove(p); } }, T('Remove')) ])
+						needed.length ?
+							[ E('button', { 'class': 'cbi-button cbi-button-remove', disabled: 'disabled', title: reason }, T('Remove')),
+								E('div', { 'class': 'cbi-value-description', 'data-needed': p.id }, reason) ] :
+							E('button', { 'class': 'cbi-button cbi-button-remove', click: function() { remove(p); } }, T('Remove')) ])
 				]);
 			})));
 		};

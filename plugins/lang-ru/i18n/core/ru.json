@@ -85,6 +85,7 @@
   "Reload and discard my changes": "Перечитать и отбросить мои правки",
   "Remove": "Удалить",
   "Remove anyway": "Всё равно удалить",
+  "Required by: {list}": "Нужен для: {list}",
   "Remove it anyway? The outputs that need it stop working.": "Всё равно удалить? Выходы, которым он нужен, перестанут работать.",
   "Remove {id}?": "Удалить {id}?",
   "Removed: {id}": "Удалён: {id}",

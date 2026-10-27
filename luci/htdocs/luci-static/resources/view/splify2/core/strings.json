@@ -92,6 +92,7 @@
  "Repository",
  "Repository added.",
  "Repository removed.",
+ "Required by: {list}",
  "Reset",
  "Rules",
  "Running",
