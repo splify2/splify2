@@ -484,6 +484,11 @@ plugin_job_state() {  # НОМЕР
     _pjs="$PLUGIN_JOBS/$1"
     [ -d "$_pjs" ] || return 1
     PJ_PROGRESS="$(plugin_last_line "$_pjs/err")"
+    # Жив ли процесс — ДО взгляда на rc: задание кончается между двумя проверками, и обратный порядок
+    # («rc нет» → процесс уже умер) принимал только что законченное задание за оборванное.
+    _pjs_pid="$(cat "$_pjs/pid" 2>/dev/null)"
+    _pjs_dead=""
+    [ -n "$_pjs_pid" ] && ! kill -0 "$_pjs_pid" 2>/dev/null && _pjs_dead=1
     if [ -f "$_pjs/rc" ]; then
         PJ_RC="$(cat "$_pjs/rc")"
         _pjs_out="$(cat "$_pjs/out" 2>/dev/null)"
@@ -510,8 +515,7 @@ plugin_job_state() {  # НОМЕР
     fi
     # Конца нет. Процесс умер — след оборванного задания (перезапуск rpcd, убитый вручную): иначе
     # «идёт» висело бы вечно.
-    _pjs_pid="$(cat "$_pjs/pid" 2>/dev/null)"
-    if [ -n "$_pjs_pid" ] && ! kill -0 "$_pjs_pid" 2>/dev/null; then
+    if [ -n "$_pjs_dead" ]; then
         PJ_STATE=failed
         PJ_ERROR="$(s2_t job.aborted "The job was interrupted")"
         return 0
