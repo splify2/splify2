@@ -1,4 +1,4 @@
-/* Раздел WarpBox — в карточках панели (стекло Andromeda), классы desk-warp-*. */
+/* Раздел ReCheck — в карточках панели (стекло Andromeda). Классы desk-warp-* остались от раздела WarpBox, который уехал в плагин warpbox-ui. */
 
 .desk-warp {
   display: flex;

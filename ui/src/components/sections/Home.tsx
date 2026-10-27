@@ -1030,7 +1030,7 @@ function OutputsColumn({
     busy: boolean
     noCurl?: boolean
     onRefresh: () => void
-    /** «Доска»: каждый выход — своей плиткой (подписка, выход, свой туннель, WARP), без общей
+    /** «Доска»: каждый выход — своей плиткой (подписка, выход, свой туннель, плагин), без общей
      *  карточки «Выходы»; плитки встают в сетку блока состояния (владелец: «есть выход
      *  stresskvn — ему свой блок, есть выход warp — ему свой»). */
     tiles?: boolean
@@ -1095,7 +1095,7 @@ function OutputsColumn({
     /* Ни подписки, ни туннеля — столбца нет вовсе. Пустой столбец с заголовком «Выходы»
      * занимал бы место ради строки «ничего нет», а про отсутствие выходов уже сказано над
      * столбцами, и сказано с последствием («трафику некуда идти»). */
-    if (vless.length === 0 && tunnels.length === 0 && !subs?.length && !(tiles && outputs.some(([, o]) => !!(o.group as { warp?: unknown } | undefined)?.warp)) && !(tiles && pluginTiles.length)) return null
+    if (vless.length === 0 && tunnels.length === 0 && !subs?.length && !(tiles && pluginTiles.length)) return null
 
     /* Подписка выхода — файлом, приведённым к полному пути: в спеке v2 путь бывает и
      * относительным, от каталога спеки (`subscription: sub-test.txt`), а перечень sub_list
@@ -1124,7 +1124,6 @@ function OutputsColumn({
      * каждая подписка и каждый туннель были отдельной карточкой, и три карточки подряд
      * читались как три разных раздела, хотя это один перечень «чем роутер выходит наружу». */
     if (tiles) {
-        const warps = outputs.filter(([, o]) => !!(o.group as { warp?: unknown } | undefined)?.warp)
         return (
             <>
                 {(subs ?? []).map((sub) => {
@@ -1143,7 +1142,6 @@ function OutputsColumn({
                     if (devs.length > 0 && devs.every((d) => isPart(spec?.outputs?.[d]))) return null
                     return <OutTile key={'t:' + name} name={name} st={st} facts={facts[name]} out={o} device={devs[0]} trend={live.history?.series(...devs.map((d) => 'dev:' + d))} />
                 })}
-                {warps.map(([name, st]) => <WarpTile key={'w:' + name} name={name} st={st} facts={facts[name]} />)}
                 <PluginTiles tiles={pluginTiles} live={live} />
             </>
         )
@@ -1215,7 +1213,7 @@ function OutputsColumn({
  *  отвечает на него ЖИВОЕ ядро, а не настройка. Поэтому поле здесь, на главной, а не в
  *  диагностике: спрашивают его до того, как решат, что что-то сломано. */
 /** Плитка «доски»: одна высота у всех (владелец: «нормальный размер… скомпонуй»), содержимое —
- *  главное в три-четыре строки; подробности — в разделах VPN и WarpBox. */
+ *  главное в три-четыре строки; подробности — в разделе VPN и в карточках плагинов. */
 /* Высота одна у всех плиток «доски» — и выходов, и правил, и призрачной: владелец просил
  * одинаковый и компактный размер («че за гигаблоки»). Содержимое не обрезается: из плитки
  * правила раскрывается список «ещё N». */
@@ -1294,28 +1292,6 @@ function OutTile({ name, st, facts, out, device, trend }: {
             </div>
             <StateLine ok={ok}>
                 <Flag cc={facts?.geo?.cc} /> {[country(facts?.geo?.cc), ms(facts, st), outDownWord(st)].filter(Boolean).join(' · ') || (st.up ? S.home.rabotaet : S.home.nePodnyat2)}
-            </StateLine>
-            <BoardAddress ip={facts?.geo?.ip} />
-        </div>
-    )
-}
-
-/** Выход WARP: какой туннель несёт трафик, колония, отклик. Поля `group.warp` печатает модуль
- *  steer-warpbox (ветка warpbox); нет — только выбранный член. */
-function WarpTile({ name, st, facts }: { name: string; st: OutputStatus; facts?: Facts }) {
-    const grp = st.group
-    const w = (grp as { warp?: { members?: { out: string; colo?: string; seen?: string; ok?: boolean }[] } } | undefined)?.warp
-    const sel = grp?.selected ?? null
-    const m = w?.members?.find((x) => x.out === sel)
-    const ok = (w?.members ?? []).filter((x) => x.ok).length
-    const total = w?.members?.length ?? grp?.members.length ?? 0
-    const cc = m?.seen ?? facts?.geo?.cc
-    return (
-        <div className={TILE}>
-            <TileHead title={name} tag={<Badge variant="proto">WARP</Badge>} />
-            <div className="text-xs text-muted-foreground">{total > 0 ? S.home.warpTunneley(ok || (sel ? 1 : 0), total) : ''}</div>
-            <StateLine ok={!!sel}>
-                <Flag cc={cc} /> {sel ? [country(cc), m?.colo, ms(facts, st)].filter(Boolean).join(' · ') || S.home.rabotaet : S.home.chlenyNeOtvechayut}
             </StateLine>
             <BoardAddress ip={facts?.geo?.ip} />
         </div>

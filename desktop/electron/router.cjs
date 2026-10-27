@@ -347,19 +347,6 @@ class Router extends EventEmitter {
         await this.request('POST', `/v1/devices/${encodeURIComponent(id)}/revoke`, {})
     }
 
-    /** WarpBox: группы WARP, их туннели и точки, подбор (шлюз /v1/warp, только для ПК). */
-    async warp() {
-        return (await this.request('GET', '/v1/warp')).data
-    }
-
-    async warpScan(group) {
-        return (await this.request('POST', `/v1/warp/${encodeURIComponent(group)}/scan`, {})).data
-    }
-
-    async warpScanState(group) {
-        return (await this.request('GET', `/v1/warp/${encodeURIComponent(group)}/scan`)).data
-    }
-
     /** Что за роутер: версия splify2 и имя (без токена). */
     async info() {
         if (!this.base) return null
