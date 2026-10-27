@@ -449,9 +449,6 @@ function registerIpc() {
     ipcMain.handle('api:devices', wrap(() => router.devices()))
     ipcMain.handle('api:revoke', wrap((id) => router.revoke(id)))
     ipcMain.handle('api:info', wrap(() => router.info()))
-    ipcMain.handle('warp:state', wrap(() => router.warp()))
-    ipcMain.handle('warp:scan', wrap((group) => router.warpScan(group)))
-    ipcMain.handle('warp:scan-state', wrap((group) => router.warpScanState(group)))
 
     ipcMain.handle('settings:get', wrap(() => settings.get()))
     ipcMain.handle('settings:set', wrap((patch) => settings.set(patch)))

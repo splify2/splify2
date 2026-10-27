@@ -8,7 +8,7 @@ import './desktop.css'
 import './motion.css'
 import './settings/settings.css'
 import './wizard/wizard.css'
-import './warpbox/warpbox.css'
+import './recheck/recheck.css'
 import { StrictMode, useCallback, useEffect, useState } from 'react'
 import { createRoot } from 'react-dom/client'
 import Console, { type ExtraSection } from '@/components/Console'
@@ -17,7 +17,6 @@ import TitleBar from './TitleBar'
 import Connect from './Connect'
 import Settings from './settings/Settings'
 import Wizard from './wizard/Wizard'
-import { warpSection } from './warpbox/WarpBox'
 import { recheckSection } from './recheck/ReCheck'
 import { desk, lastBase, resetMemory, type ApiState } from './desk'
 import { useSettings } from './hooks'
@@ -45,7 +44,7 @@ dark.addEventListener('change', syncTheme)
 document.documentElement.dataset.platform = desk.platform
 
 /** Разделы, которых нет под LuCI, — только в приложении. */
-const EXTRA: ExtraSection[] = [warpSection, recheckSection]
+const EXTRA: ExtraSection[] = [recheckSection]
 
 /** Панель держит состояние и в модулях, не только в дереве: после смены роутера её надёжнее
  *  перезапустить целиком, чем размонтировать. */

@@ -79,7 +79,7 @@ export default function RuleTarget({ spec, index, live, onSpec }: {
     /* Свои туннели: устройства роутера, кроме заведённых ядром и служебных частей, и выходы
      * своих туннелей ядра (awg, xsteer). */
     const steerDevs = new Set(Object.entries(outs).filter(([, o]) => isPart(o) || isTunnelKind(o.kind)).flatMap(([n, o]) => [n, ...devList(o)]))
-    /* Туннели WARP — «<выход>.<n>» и устройство MASQUE: их ведёт модуль, а не человек. */
+    /* Туннели WARP — «<выход>.<n>» и устройство MASQUE: их ведёт плагин, а не человек. */
     const warpDev = (d: string) => warps.some(([n]) => d.startsWith(`${n}.`) || d.startsWith(`${n}-`))
     const devBadge = (kind: string): ConfBadge[] => {
         const p = devProto(kind)
@@ -134,11 +134,6 @@ export default function RuleTarget({ spec, index, live, onSpec }: {
         const on = t.own.picks.includes(key)
         const picks = on ? t.own.picks.filter((x) => x !== key) : t.own.mode === 'manual' ? [key] : [...t.own.picks, key]
         put({ ...t, direct: false, block: false, own: { ...t.own, picks } })
-    }
-
-    function toggleWarp(name: string) {
-        const warp = t.warp.includes(name) ? t.warp.filter((x) => x !== name) : [...t.warp, name]
-        put({ ...t, direct: false, block: false, warp })
     }
 
     const setMode = (sec: 'subs' | 'own', mode: Mode) => {
@@ -204,16 +199,6 @@ export default function RuleTarget({ spec, index, live, onSpec }: {
                         </Part>
                     )}
 
-                    {warps.length > 0 && (
-                        <Part title={S.ruleTarget.warp}>
-                            <Grid>
-                                {warps.map(([n, o]) => (
-                                    <WarpPill key={n} name={n} o={o} live={live} chosen={t.warp.includes(n)} onClick={() => toggleWarp(n)} />
-                                ))}
-                            </Grid>
-                        </Part>
-                    )}
-
                     <PluginTargets spec={spec} index={index} live={live} onSpec={onSpec} />
 
                     {own.length > 0 && (
@@ -250,10 +235,10 @@ function ofKind(o: { kind?: string; protocol?: string }, kind: string): boolean 
 
 /** Разделы «Куда» от плагинов (слот `outputKind`, поле `ruleTarget`): выходы своего вида пилюлями, как
  *  свои туннели; выбор пилюли — выход правила. Пилюлю можно нарисовать самому (`ruleTarget.pill`).
- *  WARP, вшитый в панель, плагинным видом пока не заменён (следующий этап) и здесь не дублируется. */
+ *  WARP — плагин warpbox-ui (splify2-extended-plugins): вид `warp` приходит этим же слотом. */
 export function PluginTargets({ spec, index, live, onSpec }: { spec: Spec; index: number; live: Live; onSpec: (next: Spec) => void }) {
     useRegistry()
-    const kinds = registry.list<OutputKindSlot>('outputKind').filter((r) => r.value.ruleTarget && r.value.kind !== 'warp')
+    const kinds = registry.list<OutputKindSlot>('outputKind').filter((r) => r.value.ruleTarget)
     const doc = useMemo(() => (kinds.length ? (encodeSpec(spec) as { outputs?: Record<string, OutputV2> }).outputs ?? {} : {}), [spec, kinds.length])
     if (!kinds.length) return null
     const choose = (name: string) =>
@@ -329,7 +314,7 @@ function Grid({ children }: { children: ReactNode }) {
     return <div className="grid grid-cols-[repeat(auto-fill,minmax(180px,1fr))] gap-2">{children}</div>
 }
 
-/** Пилюля без замера — своё устройство или WARP. */
+/** Пилюля без замера — своё устройство. */
 function Pill({ title, badges, note, chosen, rank, on, onClick }: {
     title: string
     badges: ConfBadge[]
@@ -367,17 +352,6 @@ function Rank({ n }: { n: number }) {
             {n}
         </span>
     )
-}
-
-function WarpPill({ name, o, live, chosen, onClick }: { name: string; o: Output; live: Live; chosen: boolean; onClick: () => void }) {
-    const x = (o.extra || {}) as { count?: number; transport?: string }
-    const st = live.status?.outputs?.[name]
-    const w = (st?.group as { warp?: { members?: { ok?: boolean }[] } } | undefined)?.warp
-    const total = w?.members?.length ?? x.count ?? 1
-    const ok = w?.members?.filter((m) => m.ok).length
-    const badges = [protoBadge(x.transport === 'masque' ? 'masque' : 'awg')]
-    const note = total ? S.ruleTarget.izN(ok ?? total, total) : undefined
-    return <Pill title={name} badges={badges} note={note} chosen={chosen} on={st ? !!st.up : undefined} onClick={onClick} />
 }
 
 /** Пилюли одной подписки: «Авто» и по пилюле на конфигурацию, с проверкой задержки. */

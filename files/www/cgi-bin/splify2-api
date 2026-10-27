@@ -35,18 +35,8 @@ const ACC = RUN + '/access';
 const JOBS = RUN + '/jobs';
 const FAILS = RUN + '/fails.json';
 
-// WarpBox. Спека — тот же файл, что ведёт splify2 (fast.sh, m-spec.sh); конфиги туннелей модуль
-// steer-warpbox кладёт рядом со спекой, в {etc}/warp/<выход>-<n>.conf, а состояние подбора — в
-// каталог состояния ядра (на OpenWrt /var/lib/steer). Бинарники ядра и его модулей лежат вместе.
-const SPEC = '/etc/steer/spec.json';
-const SPEC_YAML = '/etc/steer/spec.yaml';
-const WARP_ETC = '/etc/steer/warp';
-const STEER_STATE = '/var/lib/steer';
+// Бинарник ядра (подписка на события).
 const STEER_BIN = '/usr/sbin/steer';
-const WARP_MODULE = '/usr/sbin/steer-warpbox';
-// Подбор точек идёт около минуты. Метка «идёт» старше этого срока — след оборванного процесса
-// (перезапуск роутера чистит /tmp сам, а убитый вручную процесс метку не снимет).
-const SCAN_TTL = 300;
 
 // Час, а не минуты: каждое обновление переписывает файл устройства во флеше. Час — 24 записи в
 // сутки на устройство, а не сотня.
@@ -494,152 +484,6 @@ function plugin_route(id, name, async) {
 	call(me, 'plugin_call', { id, method: name, params: body }, async);
 }
 
-// ── WarpBox ─────────────────────────────────────────────────────────────────
-
-// Имя выхода уходит в путь файла и в командную строку, поэтому для подбора годятся только
-// безопасные знаки; длина — как у ядра (у туннелей «<имя>.<n>», имя не длиннее 27).
-function warp_name_ok(n) {
-	return type(n) == 'string' && match(n, /^[A-Za-z0-9_-]{1,27}$/) != null;
-}
-
-// Спека JSON-ом: spec.json как есть, spec.yaml (ядро 2.1) — переводом самого ядра
-// (`steer spec convert --json`, тот же разбор, что у splify2: lib/splify2/spec.sh).
-function read_spec() {
-	if (fs.access(SPEC)) return read_json(SPEC);
-	if (!fs.access(SPEC_YAML)) return null;
-	let p = fs.popen(`${STEER_BIN} spec convert --json --spec ${SPEC_YAML} 2>/dev/null`, 'r');
-	if (!p) return null;
-	let s = p.read('all');
-	p.close();
-	try { return json(s); } catch (e) { return null; }
-}
-
-// Выходы kind: warp из спеки. Нет спеки или ядро не переводит spec.yaml в JSON — пусто:
-// страница покажет «выходов нет», а не ошибку.
-function warp_outputs() {
-	let spec = read_spec();
-	let out = {};
-	if (type(spec?.outputs) != 'object') return out;
-	for (let name, o in spec.outputs)
-		if (type(o) == 'object' && o.kind == 'warp') out[name] = o;
-	return out;
-}
-
-// Ядро AmneziaWG с обфускацией, обычный WireGuard или ничего. Модуль может быть установлен, но
-// ещё не загружен (устройство поднимет сам steer), поэтому смотрим и загруженные, и лежащие на
-// диске.
-function warp_kernel() {
-	let rel = trim(fs.readfile('/proc/sys/kernel/osrelease') ?? '');
-	for (let k in [{ mod: 'amneziawg', id: 'awg' }, { mod: 'wireguard', id: 'wg' }]) {
-		let mod = k.mod, id = k.id;
-		if (fs.stat(`/sys/module/${mod}`)) return id;
-		for (let d in fs.lsdir(`/lib/modules/${rel}`) ?? [])
-			if (d == mod + '.ko' || d == mod + '.ko.gz') return id;
-	}
-	return null;
-}
-
-// Точка входа члена из его conf. Читается ТОЛЬКО строка Endpoint: в файле закрытый ключ, и
-// наружу он не выходит ни при какой ошибке разбора.
-function warp_endpoint(conf) {
-	let f = fs.open(conf, 'r');
-	if (!f) return null;
-	let ep = null, line;
-	while ((line = f.read('line')) != null) {
-		let m = match(line, /^[ \t]*Endpoint[ \t]*=[ \t]*([^ \t\r\n]+)/i);
-		if (m) { ep = m[1]; break; }
-	}
-	f.close();
-	return ep;
-}
-
-function warp_group(name, o) {
-	let count = +(o.count ?? 3);
-	if (count < 1 || count != int(count)) count = 0;
-	let members = [];
-	for (let n = 1; n <= count; n++) {
-		let conf = `${WARP_ETC}/${name}-${n}.conf`;
-		push(members, {
-			name: `${name}.${n}`,
-			endpoint: warp_endpoint(conf),
-			conf: fs.access(conf) == true,
-			reg: fs.access(`${WARP_ETC}/${name}-${n}.reg`) == true,
-		});
-	}
-	// Номер маски обфускации, которую модуль запомнил как рабочую для группы.
-	let mask = fs.readfile(`${STEER_STATE}/warp-${name}/mask`);
-	mask = mask != null && match(trim(mask), /^[0-9]+$/) ? +trim(mask) : null;
-	return {
-		name, count: length(members), transport: o.transport ?? 'awg', pick: o.pick ?? 'latency',
-		countries: o.countries ?? [],
-		// Спека без ключа исключает российские точки — это умолчание ядра, не пустой список.
-		exclude_countries: o.exclude_countries ?? ['RU'],
-		members, mask,
-	};
-}
-
-function scan_paths(g) {
-	return { run: `${RUN}/warp-scan-${g}.run`, out: `${RUN}/warp-scan-${g}.json`, log: `${RUN}/warp-scan-${g}.log` };
-}
-
-function scan_running(g) {
-	let st = fs.stat(scan_paths(g).run);
-	return st != null && time() - st.mtime < SCAN_TTL;
-}
-
-// Состояние подбора: идёт ли, когда закончился последний и что он нашёл. Подбор, закончившийся
-// ничем (ядро не ответило, процесс убит), отдаёт ok:false с последней строкой журнала, а не
-// молчит: клиенту надо показать причину.
-function scan_state(g) {
-	let p = scan_paths(g);
-	let st = fs.stat(p.out), result = null;
-	if (st) {
-		result = read_json(p.out);
-		if (type(result) != 'object') {
-			let lines = split(trim(fs.readfile(p.log) ?? ''), '\n');
-			result = { ok: false, error: lines[length(lines) - 1] || 'подбор не вернул ответа' };
-		}
-	}
-	return { running: scan_running(g), at: st?.mtime ?? null, result };
-}
-
-function warp_info() {
-	let groups = [], scans = {};
-	let outs = warp_outputs();
-	for (let name in sort(keys(outs))) {
-		push(groups, warp_group(name, outs[name]));
-		if (warp_name_ok(name)) scans[name] = scan_state(name);
-	}
-	return {
-		module: fs.access(WARP_MODULE, 'x') == true, kernel: warp_kernel(), groups, scans,
-	};
-}
-
-// Группа для подбора: имя безопасное И такой выход kind: warp есть в спеке.
-function warp_target(g) {
-	if (!warp_name_ok(g)) fail(400, 'bad_group', 'Недопустимое имя группы');
-	if (!warp_outputs()[g]) fail(404, 'no_group', 'Выхода kind: warp с таким именем нет в спеке');
-	return g;
-}
-
-// Подбор — минута и больше, а uhttpd обрывает CGI через 60 с: запуск отдельным процессом в
-// своём сеансе (как задание), ответ клиенту сразу, итог — файлом, который читает GET. Файл
-// пишется под временным именем и переименовывается: читатель никогда не увидит половину.
-// `timeout` на роутере нет (это отдельный пакет), поэтому от зависшего подбора страхует возраст
-// метки (SCAN_TTL): по его истечении можно запускать новый.
-function scan_start(g) {
-	if (!fs.access(WARP_MODULE, 'x')) fail(409, 'no_module', 'Модуль steer-warpbox не установлен');
-	if (scan_running(g)) reply(200, { running: true });
-	let p = scan_paths(g);
-	mkdirs(RUN);
-	fs.writefile(p.run, `${time()}\n`);
-	fs.unlink(p.out);
-	// Имя группы проверено warp_target (только [A-Za-z0-9_-]) — в оболочку попадает как есть.
-	system(`setsid sh -c '${STEER_BIN} warp-scan ${g} >${p.out}.tmp 2>${p.log}; ` +
-		`mv ${p.out}.tmp ${p.out}; rm -f ${p.run}' </dev/null >/dev/null 2>&1 &`);
-	reply(200, { started: true });
-}
-
 // ── Разбор запроса ──────────────────────────────────────────────────────────
 
 if (ARGV[0] == '--job')
@@ -714,18 +558,6 @@ else if ((m = match(path, /^\/v1\/jobs\/([^\/]+)$/))) {
 else if ((m = match(path, /^\/v1\/plugin\/([a-z0-9][a-z0-9-]*)\/([a-z][a-z0-9_]*)$/))) {
 	if (method != 'GET' && method != 'POST') fail(405, 'bad_verb', 'Нужен GET или POST');
 	plugin_route(m[1], m[2], match(getenv('QUERY_STRING') ?? '', /(^|&)async=1(&|$)/) != null);
-}
-else if (path == '/v1/warp') {
-	only('GET');
-	authorize();
-	reply(200, warp_info());
-}
-else if ((m = match(path, /^\/v1\/warp\/([^\/]+)\/scan$/))) {
-	if (method != 'GET' && method != 'POST') fail(405, 'bad_verb', 'Нужен GET или POST');
-	authorize();
-	let g = warp_target(m[1]);
-	if (method == 'POST') scan_start(g);
-	reply(200, scan_state(g));
 }
 else
 	fail(404, 'no_route', 'Нет такого адреса');

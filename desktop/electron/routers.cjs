@@ -127,9 +127,6 @@ class Routers extends EventEmitter {
     devices() { return this.need().devices() }
     revoke(id) { return this.need().revoke(id) }
     info() { return this.active ? this.active.info() : Promise.resolve(null) }
-    warp() { return this.need().warp() }
-    warpScan(g) { return this.need().warpScan(g) }
-    warpScanState(g) { return this.need().warpScanState(g) }
 
     need() {
         const r = this.active

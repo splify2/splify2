@@ -83,45 +83,6 @@ export interface RouterInventory {
     steer: string | null
 }
 
-/** Точка входа WARP из подбора (`steer warp-scan`). AWG: class (0 — годна, 1 — колония занята,
- *  2 — без HTTPS), потери, колония. MASQUE: только ok и rtt либо error. */
-interface WarpPoint {
-    ip: string
-    port: number
-    class?: number
-    loss?: number
-    rtt?: number
-    colo?: string
-    cc?: string
-    seen?: string
-    warp?: boolean
-    ok?: boolean
-    error?: string
-}
-
-export interface WarpScan {
-    running: boolean
-    at: number
-    result: { ok?: boolean; transport?: string; points: WarpPoint[]; torn?: number; filtered?: number; error?: string } | null
-}
-
-/** Ответ шлюза GET /v1/warp. */
-export interface WarpState {
-    module: boolean
-    kernel: 'awg' | 'wg' | null
-    groups: {
-        name: string
-        count?: number
-        transport?: string
-        pick?: string
-        countries?: string[]
-        exclude_countries?: string[]
-        members: { name: string; endpoint: string | null; conf: boolean; reg: boolean }[]
-        mask?: number | null
-    }[]
-    scans: Record<string, WarpScan>
-}
-
 type Off = () => void
 type DeepPartial<T> = { [K in keyof T]?: T[K] extends object ? DeepPartial<T[K]> : T[K] }
 
@@ -160,11 +121,6 @@ interface Desk {
     monitor: {
         state(): Promise<MonitorState>
         onState(cb: (s: MonitorState) => void): Off
-    }
-    warp: {
-        state(): Promise<WarpState>
-        scan(group: string): Promise<{ started?: boolean; running?: boolean }>
-        scanState(group: string): Promise<WarpScan>
     }
     wizard: {
         discover(): Promise<FoundRouter[]>

@@ -514,7 +514,6 @@ export const ru = {
         neSkopirovan: "Не удалось скопировать. Выделите адрес вручную.",
         podklyucheniya: "Подключения",
 
-        warpTunneley: (ok: unknown, total: unknown) => `туннелей работает: ${ok} из ${total}`,
         yadroNeOtvechaet: "Ядро не отвечает",
         obnovitePodstranitsu: "Обновите страницу или проверьте, что splify2 установлен",
         estPolomki: "Есть поломки",
@@ -1099,7 +1098,6 @@ export const ru = {
         svoyVyhod: "Свой выход",
         seychasVyhod: (p0: string) => `Сейчас — выход «${p0}»`,
         podpiski: "Подписки",
-        warp: "WARP",
         svoiTunneli: "Свои туннели",
         samyyBystryy: "Самый быстрый",
         pervyyZhivoy: "Первый живой",
@@ -1108,7 +1106,6 @@ export const ru = {
         avto: "Авто",
         lyubayaRabochaya: "любая рабочая",
         tunnel: "туннель",
-        izN: (ok: number, n: number) => `${ok} из ${n}`,
     },
     setup: {
         zagolovok: "Настроим splify2",
@@ -1124,8 +1121,6 @@ export const ru = {
         gotovo: "Готово",
         podpiska: "Подписка VPN",
         podpiskaNote: "Ссылка от сервиса VPN",
-        warpNote: "Бесплатно, Cloudflare",
-        warpNetModulya: "Нужен модуль steer-warpbox",
         svoyTunnel: "Свой туннель",
         svoyNote: "WireGuard или AmneziaWG на роутере",
         svoyNet: "Туннелей на роутере нет",

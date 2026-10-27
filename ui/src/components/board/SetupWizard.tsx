@@ -7,20 +7,26 @@ import ListPills from '@/components/board/ListPills'
 import { rpc } from '@/lib/rpc'
 import { notify } from '@/lib/notify'
 import { pending, usePending } from '@/lib/pending'
-import { customServices, toAllowDomainsServices, toCatalog, wantedFirst, type Channel, type Output, type ServiceEntry, type Spec } from '@/lib/model'
+import { customServices, toAllowDomainsServices, toCatalog, wantedFirst, type Channel, type ServiceEntry, type Spec } from '@/lib/model'
 import { pathFor, srsProbe } from '@/lib/rulefiles'
 import { applyTarget, EMPTY_TARGET, type Target } from '@/lib/ruleout'
 import { subProtos } from '@/lib/subnodes'
 import { isSubSource } from '@/lib/validate'
 import { PRESETS } from '@/lib/dnspresets'
 import { S } from '@/copy'
+import { PluginGuard, SlotView } from '@/plugins/boundary'
+import { registry, useRegistry, type Reg } from '@/plugins/registry'
+import type { Slots } from '@/plugins/api'
 
 /** Мастер первоначальной настройки splify2 (владелец): через что пустить трафик, что пустить, каким
  *  DNS спрашивать — и первое правило готово. Показывается на главной, пока на роутере нет ни одного
  *  правила и мастер не пройден (отметка — в памяти интерфейса на роутере, `ui_set`). Пишет спеку
  *  тем же путём, что и правка правила: выход — lib/ruleout, применение — общее (pending). */
 
-type Via = 'sub' | 'warp' | 'own'
+/** Ветка «через что»: `sub`, `own` или `<владелец>:<id>` ветки плагина (слот `setupVia`, например WARP). */
+type Via = string
+type ViaSlot = Parameters<Slots['setupVia']>[0]
+const plugKey = (r: Reg<ViaSlot>) => `${r.owner}:${r.id}`
 
 /** Готовые серверы DNS, которые мастер предлагает сразу; остальные — на вкладке DNS. */
 const DNS_PICK = ['cloudflare', 'google', 'quad9-doh', 'adguard-doh', 'yandex', 'comss']
@@ -61,18 +67,24 @@ export default function SetupWizard({ onDone, railHost }: {
     const [services, setServices] = useState<ServiceEntry[]>([])
     const [local, setLocal] = useState<Record<string, { count: number; mtime: number }>>({})
     const [devices, setDevices] = useState<{ name: string; up: boolean; kind: string; owner?: string }[]>([])
-    const [warpOk, setWarpOk] = useState<boolean | null>(null)
+    /* Ветки плагинов: доступна ли каждая — спрашивается у плагина (строка — почему нет). */
+    useRegistry()
+    const plugVias = registry.list<ViaSlot>('setupVia')
+    const [viaOk, setViaOk] = useState<Record<string, true | string>>({})
+    /** Выходы, которые выбранная ветка плагина завела и отдала мастеру (`done`). */
+    const [plugOuts, setPlugOuts] = useState<string[]>([])
+    useEffect(() => {
+        let alive = true
+        for (const r of plugVias)
+            r.value.available().then((v) => { if (alive) setViaOk((m) => ({ ...m, [plugKey(r)]: v })) }, () => { if (alive) setViaOk((m) => ({ ...m, [plugKey(r)]: true })) })
+        return () => { alive = false }
+        // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [plugVias.map(plugKey).join()])
     useEffect(() => {
         rpc.manifest().then((m) => setServices(wantedFirst(toCatalog(m).services)))
             .catch(() => rpc.allowDomains().then((a) => setServices(wantedFirst(toAllowDomainsServices(a)))).catch(() => setServices([])))
         rpc.localLists().then((d) => setLocal(d.files || {})).catch(() => setLocal({}))
         rpc.devices().then((d) => setDevices((d.devices || []).filter((x) => x.owner !== 'steer'))).catch(() => setDevices([]))
-        /* Модуль WarpBox перечнем модулей роутера может быть не назван (прежний бэкенд) — тогда WARP
-         * не запрещается: не знаем — не значит «нет». */
-        rpc.steerModules().then((m) => {
-            const w = m.modules.find((x) => x.name === 'warpbox' || x.name === 'steer-warpbox')
-            setWarpOk(w ? w.installed : null)
-        }).catch(() => setWarpOk(null))
     }, [])
     const all = useMemo(() => [...services, ...customServices(local)], [services, local])
     const shown = all.filter((sv) => {
@@ -122,11 +134,9 @@ export default function SetupWizard({ onDone, railHost }: {
             if (via === 'sub' && sub) {
                 const protos = await subProtos(sub.path)
                 t.subs = { mode: 'order', picks: (protos.length ? protos : ['vless' as const]).map((proto) => ({ sub: sub.path, proto })) }
-            } else if (via === 'warp') {
-                let name = 'warp'
-                for (let k = 2; sp.outputs[name]; k++) name = `warp${k}`
-                sp.outputs = { ...sp.outputs, [name]: { name, kind: 'warp' as Output['kind'] } as Output }
-                t.warp = [name]
+            } else if (plugVias.some((r) => plugKey(r) === via) && plugOuts.length) {
+                /* Выходы плагин уже завёл в черновике панели (spec): правило ведёт в них. */
+                t.warp = plugOuts
             } else if (via === 'own' && dev) {
                 t.own = { mode: 'manual', picks: [`dev:${dev}`] }
             }
@@ -166,7 +176,7 @@ export default function SetupWizard({ onDone, railHost }: {
         }
     }
 
-    const canNext = step === 1 ? (via === 'sub' ? !!url.trim() : via === 'warp' ? warpOk !== false : via === 'own' ? !!dev : false)
+    const canNext = step === 1 ? (via === 'sub' ? !!url.trim() : via === 'own' ? !!dev : plugOuts.length > 0)
         : step === 2 ? picked.length > 0 : true
     const titles = [S.setup.zagolovok, S.setup.cherezChto, S.setup.chtoPustit, S.setup.kakSprashivat, S.setup.vseGotovo]
 
@@ -222,7 +232,14 @@ export default function SetupWizard({ onDone, railHost }: {
                         <>
                             <div className="grid gap-3 sm:grid-cols-3">
                                 <Choice on={via === 'sub'} icon={<Link2 className="h-5 w-5" />} title={S.setup.podpiska} note={S.setup.podpiskaNote} onClick={() => setVia('sub')} />
-                                <Choice on={via === 'warp'} icon={<Cloud className="h-5 w-5" />} title="WARP" note={warpOk === false ? S.setup.warpNetModulya : S.setup.warpNote} off={warpOk === false} onClick={() => setVia('warp')} />
+                                {plugVias.map((r) => {
+                                    const ok = viaOk[plugKey(r)]
+                                    return (
+                                        <Choice key={plugKey(r)} on={via === plugKey(r)} icon={<Cloud className="h-5 w-5" />} title={r.value.label}
+                                            note={typeof ok === 'string' ? ok : r.value.caption ?? ''} off={typeof ok === 'string'}
+                                            onClick={() => { setPlugOuts([]); setVia(plugKey(r)) }} />
+                                    )
+                                })}
                                 <Choice on={via === 'own'} icon={<Network className="h-5 w-5" />} title={S.setup.svoyTunnel} note={devices.length ? S.setup.svoyNote : S.setup.svoyNet} off={!devices.length} onClick={() => setVia('own')} />
                             </div>
                             {via === 'sub' && (
@@ -235,6 +252,11 @@ export default function SetupWizard({ onDone, railHost }: {
                                     autoFocus
                                 />
                             )}
+                            {plugVias.filter((r) => plugKey(r) === via).map((r) => (
+                                <PluginGuard key={plugKey(r)} name={r.owner}>
+                                    <SlotView render={() => r.value.render(setPlugOuts)} />
+                                </PluginGuard>
+                            ))}
                             {via === 'own' && devices.length > 0 && (
                                 <div className="flex flex-wrap gap-2">
                                     {devices.map((d) => (
@@ -283,7 +305,7 @@ export default function SetupWizard({ onDone, railHost }: {
 
                     {step === 4 && (
                         <div className="space-y-2 text-sm">
-                            <Row k={S.setup.cherezChto} v={via === 'sub' ? S.setup.podpiska : via === 'warp' ? 'WARP' : dev} />
+                            <Row k={S.setup.cherezChto} v={via === 'sub' ? S.setup.podpiska : via === 'own' ? dev : plugVias.find((r) => plugKey(r) === via)?.value.label ?? ''} />
                             <Row k={S.setup.chtoPustit} v={all.filter((sv) => picked.includes(sv.id)).map((sv) => sv.name).join(', ')} />
                             <Row k="DNS" v={dns ? PRESET_TITLE.get(dns) ?? dns : S.dns.dnsProvaydera} />
                             <p className="pt-1 text-xs text-muted-foreground">{S.setup.potomMozhno}</p>
