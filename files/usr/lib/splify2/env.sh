@@ -71,7 +71,14 @@ OPENWRT_RELEASE="${OPENWRT_RELEASE:-/etc/openwrt_release}"
 . "${I18N_SH:-${ENV_SH%/*}/i18n.sh}"
 # Refusal with a text that is already final (the words of the steer core, of a package manager): `fail TEXT`.
 # Our own refusals carry a code and are translated: `fail_code CODE "English {name}" name value ...` (i18n.sh).
-fail() { json_init; json_add_boolean ok 0; json_add_string error "$1"; json_dump; exit 0; }
+# Отказ ядра steer (его слова): `fail ТЕКСТ [КОД [ARGS_JSON]]` — с кодом ядра ответ несёт code «steer.КОД» и args, текст
+# переводится по словарю (i18n.sh, «Отказы ядра steer»); без кода — дословно.
+fail() {
+    s2_core_load "${3:-}"    # до json_init: json_load сбрасывает документ
+    json_init; json_add_boolean ok 0
+    if [ -n "${2:-}" ]; then s2_core_fields "$2" "$1"; else json_add_string error "$1"; fi
+    json_dump; exit 0
+}
 fail_code() { s2_fail_doc "$@"; exit 0; }
 
 # Единственный способ скачать: сначала во временный файл, потом переименовать. Иначе

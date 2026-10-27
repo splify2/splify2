@@ -23,6 +23,8 @@ for a in "$@"; do [ "$a" = --json ] || args="$args $a"; done
 echo "$act$args" >> "$PLUG/manager.log"
 
 if [ -f "$PLUG/fail.$act" ]; then cat "$PLUG/fail.$act" >&2; exit 1; fi
+#   failraw.<действие>   — готовый JSON отказа (с code и args), как печатает менеджер ядра: в stdout, код 1
+if [ -f "$PLUG/failraw.$act" ]; then cat "$PLUG/failraw.$act"; exit 1; fi
 if [ -f "$PLUG/failjson.$act" ]; then
     python3 -c 'import json,sys; print(json.dumps({"ok": False, "error": sys.stdin.read().strip()}, ensure_ascii=False))' < "$PLUG/failjson.$act"
     exit 1

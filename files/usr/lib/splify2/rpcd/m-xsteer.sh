@@ -34,11 +34,12 @@ case "$2" in
             esac
             # Ссылка уходит движку СТАНДАРТНЫМ ВВОДОМ, а не аргументом: аргументы видны в списке
             # процессов всякому, кто есть на роутере, а в ссылке лежит приватный ключ.
-            conf="$(printf '%s\n' "$link" | "$STEER" xsteer-link - 2>&1)"
+            conf="$(printf '%s\n' "$link" | STEER_ERR_JSON=1 "$STEER" xsteer-link - 2>&1)"
             case "$conf" in
                 '[Interface]'*) json_init; json_add_boolean ok 1
                                 json_add_string conf "$conf"; json_dump ;;
-                *) fail_code xs.link_rejected "The link was not accepted: {reason}" reason "$conf" ;;
+                *) s2_core_split "$conf" && fail "$S2_CORE_TEXT" "$S2_CORE_CODE" "$S2_CORE_ARGS"
+               fail_code xs.link_rejected "The link was not accepted: {reason}" reason "$conf" ;;
             esac
             exit 0
         fi
@@ -52,10 +53,11 @@ case "$2" in
         # интерфейса файла нет, и ссылку отдать неоткуда.
         conf="$XS_RUN/$iface.conf"
         [ -f "$conf" ] || fail_code xs.iface_off "The interface {iface} is off, so there is nothing to print a link from: it is built from the same setting that brings the tunnel up. Turn the interface on." iface "$iface"
-        link="$("$STEER" xsteer-link "$conf" --name "$iface" 2>&1)"
+        link="$(STEER_ERR_JSON=1 "$STEER" xsteer-link "$conf" --name "$iface" 2>&1)"
         case "$link" in
             xs://*) json_init; json_add_boolean ok 1; json_add_string link "$link"; json_dump ;;
-            *) fail_code xs.core_no_link "The core did not print a link: {reason}" reason "$link" ;;
+            *) s2_core_split "$link" && fail "$S2_CORE_TEXT" "$S2_CORE_CODE" "$S2_CORE_ARGS"
+               fail_code xs.core_no_link "The core did not print a link: {reason}" reason "$link" ;;
         esac
         ;;
 
@@ -84,10 +86,11 @@ case "$2" in
             fail_code xs.not_xsteer_create "The interface {iface} is not xsteer. Create it in the network settings and choose the xsteer protocol." iface "$iface"
         # Ссылка уходит движку СТАНДАРТНЫМ ВВОДОМ, а не аргументом: аргументы видны в списке
         # процессов всякому, кто есть на роутере, а в ссылке лежит приватный ключ.
-        conf="$(printf '%s\n' "$link" | "$STEER" xsteer-link - 2>&1)"
+        conf="$(printf '%s\n' "$link" | STEER_ERR_JSON=1 "$STEER" xsteer-link - 2>&1)"
         case "$conf" in
             '[Interface]'*) ;;
-            *) fail_code xs.link_rejected "The link was not accepted: {reason}" reason "$conf" ;;
+            *) s2_core_split "$conf" && fail "$S2_CORE_TEXT" "$S2_CORE_CODE" "$S2_CORE_ARGS"
+               fail_code xs.link_rejected "The link was not accepted: {reason}" reason "$conf" ;;
         esac
         priv=$(printf '%s\n' "$conf" | sed -n 's/^PrivateKey = //p')
         addr=$(printf '%s\n' "$conf" | sed -n 's/^Address = //p')

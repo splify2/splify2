@@ -44,10 +44,10 @@ nodes_ask() {  # INSECURE(1|0) КОМАНДА ПУТЬ [АРГУМЕНТЫ...]
     _na_i="$1"; shift
     case "$_na_i:$1" in
         1:vless-nodes|1:vless-probe|1:proxy-nodes|1:proxy-probe) ;;
-        *) "$STEER" "$@" 2>&1; return ;;
+        *) STEER_ERR_JSON=1 "$STEER" "$@" 2>&1; return ;;
     esac
     _na_c="$1"; _na_p="$2"; shift 2
-    "$STEER" "$_na_c" "$_na_p" --insecure "$@" 2>&1
+    STEER_ERR_JSON=1 "$STEER" "$_na_c" "$_na_p" --insecure "$@" 2>&1
 }
 
 # Достать JSON из вывода движка, к которому подмешаны его же человеческие строки.
@@ -788,6 +788,7 @@ case "$2" in
         # держать вторую модель узла в shell, а имена узлов приходят из подписки и
         # содержат что угодно, включая кавычки.
         raw="$(nodes_ask "${_vn_ins:-0}" "$_vn_cmd" "$output" --spec "$SPEC")"
+        s2_core_split "$raw" && fail "$S2_CORE_TEXT" "$S2_CORE_CODE" "$S2_CORE_ARGS"    # отказ ядра с кодом
         out="$(json_tail "$raw")"
         [ -n "$out" ] || fail "${raw:-$(s2_t core.no_answer "The core did not respond")}"
         printf '%s\n' "$out"
@@ -826,6 +827,7 @@ case "$2" in
         # Интерфейс спрашивает по одному и заполняет таблицу постепенно.
         [ -n "$node" ] || node=-1
         raw="$(nodes_ask "${_vp_ins:-0}" "$_vp_cmd" "$output" --node "$node" --timeout 6 --spec "$SPEC")"
+        s2_core_split "$raw" && fail "$S2_CORE_TEXT" "$S2_CORE_CODE" "$S2_CORE_ARGS"    # отказ ядра с кодом
         out="$(json_tail "$raw")"
         [ -n "$out" ] || fail "${raw:-$(s2_t core.no_answer "The core did not respond")}"
         printf '%s\n' "$out"

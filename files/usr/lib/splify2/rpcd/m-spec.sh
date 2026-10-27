@@ -861,7 +861,9 @@ spec_err_split() {  # ТЕКСТ [keep]
 
 # Отказ спеки: {ok:false, error[, line, col]}.
 spec_refuse() {  # СЛОВА
-    json_init; json_add_boolean ok 0; json_add_string error "$1"
+    s2_core_load "${SPEC_EARGS:-}"    # до json_init: json_load сбрасывает документ
+    json_init; json_add_boolean ok 0
+    if [ -n "${SPEC_ECODE:-}" ]; then s2_core_fields "$SPEC_ECODE" "$1"; else json_add_string error "$1"; fi
     if [ -n "$SPEC_ERR_LINE" ]; then json_add_int line "$SPEC_ERR_LINE"; json_add_int col "$SPEC_ERR_COL"; fi
     json_dump
     exit 0
@@ -869,6 +871,7 @@ spec_refuse() {  # СЛОВА
 
 # Текст спеки в JSON-файл. Код 1 — ядро не разобрало: слова в SPEC_ERR (+ SPEC_ERR_LINE/COL).
 spec_text_to_json() {  # ТЕКСТ ФАЙЛ_JSON
+    SPEC_ECODE=""; SPEC_EARGS=""
     _st_t="$2.txt"
     printf '%s' "$1" > "$_st_t" || { rm -f "$_st_t"; SPEC_ERR="$(s2_t spec.not_written "Cannot write the spec: no space left")"; return 1; }
     _st_c="$(sed -n '/[^[:space:]]/{s/^[[:space:]]*\(.\).*/\1/p;q}' "$_st_t")"
@@ -876,10 +879,13 @@ spec_text_to_json() {  # ТЕКСТ ФАЙЛ_JSON
         mv "$_st_t" "$2" || { rm -f "$_st_t" "$2"; SPEC_ERR="$(s2_t spec.not_written "Cannot write the spec: no space left")"; return 1; }
         return 0
     fi
-    _st_e="$("$STEER" spec convert --json --spec - < "$_st_t" 2>&1 > "$2")"; _st_rc=$?
+    _st_e="$(STEER_ERR_JSON=1 "$STEER" spec convert --json --spec - < "$_st_t" 2>&1 > "$2")"; _st_rc=$?
     rm -f "$_st_t"
     if [ "$_st_rc" != 0 ] || [ ! -s "$2" ]; then
         rm -f "$2"
+        SPEC_ECODE=""; SPEC_EARGS=""
+        if s2_core_split "$_st_e"; then SPEC_ECODE="$S2_CORE_CODE"; SPEC_EARGS="$S2_CORE_ARGS"; fi
+        _st_e="$S2_CORE_TEXT"
         spec_err_split "${_st_e:-$(s2_t spec.core_cannot_parse "The core could not parse the spec")}" keep
         SPEC_ERR="$SPEC_ERR_MSG"
         return 1
@@ -944,7 +950,9 @@ case "$2" in
             # человека искать испорченный файл, которого никогда не было на диске. Проверено:
             # при недоступном списке ответ был ровно таким, без единого слова о загрузке.
             spec_err_split "$err"; err="$SPEC_ERR_MSG"
-            fail "${hook_warn:+$hook_warn; }${err:-$(s2_t spec.core_rejected "The core rejected the spec")}"
+            engine_core_load
+            S2_CORE_PREFIX="${hook_warn:+$hook_warn; }"
+            fail "${hook_warn:+$hook_warn; }${err:-$(s2_t spec.core_rejected "The core rejected the spec")}" "$ENGINE_ECODE" "$ENGINE_EARGS"
         fi
         # СНИМОК ПРИМЕНЁННОГО — ДО ПЕРВОЙ ПРАВКИ. Пока снимка нет (свежая установка, ни разу не
         # нажатое «Применить»), applied_get отдаёт саму спеку, и любая записанная правка выглядела
@@ -999,13 +1007,16 @@ case "$2" in
         err="$(engine_check "$chk")"; rc=$?
         rm -f "$chk"
         spec_err_split "$err"; err="$SPEC_ERR_MSG"
+        engine_core_load
+        s2_core_load "$ENGINE_EARGS"      # до json_init: json_load сбрасывает документ
         json_init
         if [ "$rc" = 0 ]; then
             json_add_boolean ok 1
             [ -n "$err" ] && json_add_string warn "$err"
         else
             json_add_boolean ok 0
-            json_add_string error "${err:-the core rejected the spec}"
+            if [ -n "$ENGINE_ECODE" ]; then s2_core_fields "$ENGINE_ECODE" "${err:-the core rejected the spec}"
+            else json_add_string error "${err:-the core rejected the spec}"; fi
         fi
         json_dump
         ;;
