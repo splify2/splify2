@@ -37,12 +37,12 @@ install_files() {  # ФАЙЛ… [-- аргументы хоста]
 }
 
 splify2_install() {
-    json_load "$input" 2>/dev/null || s2_fail "неразбираемый запрос"
+    json_load "$input" 2>/dev/null || s2_fail_code req.unparsable "Unparsable request"
     json_get_var ver version
     case "$ver" in
-        ''|*[!0-9.]*) s2_fail "в версии допустимы только цифры и точки" ;;
+        ''|*[!0-9.]*) s2_fail_code release.bad_version "A version may contain only digits and dots" ;;
     esac
-    pkg_info || s2_fail "менеджер пакетов не ответил"
+    pkg_info || s2_fail_code pkg.manager_silent "The package manager did not answer"
     # Пакет называется splify2 (до переименования — luci-app-splify2): выпуски до переименования лежат под прежним именем
     # файла, поэтому при отказе спрашивается и оно. Пакет один и noarch: интерфейс — собранный бандл и shell-скрипты.
     name=''
@@ -52,7 +52,7 @@ splify2_install() {
         last_note="$FETCH_NOTE"
     done
     if [ -z "$name" ]; then
-        s2_fail "не скачалось: splify2-${ver}-1_${PKG_NOARCH} (нет такой версии?)${last_note:+ — $last_note}"
+        s2_fail_code updater.download_noarch "Download failed: splify2-{ver}-1_{arch} (no such version?){note}" ver "${ver}" arch "${PKG_NOARCH}" note "${last_note:+ — $last_note}"
     fi
     via="$FETCH_VIA"
     # Перезапуск rpcd — обязательная часть установки интерфейса (службой хоста): список методов ubus и ACL читаются им при
@@ -79,18 +79,18 @@ splify2_install() {
 }
 
 steer_install() {
-    json_load "$input" 2>/dev/null || s2_fail "неразбираемый запрос"
+    json_load "$input" 2>/dev/null || s2_fail_code req.unparsable "Unparsable request"
     json_get_var ver version
     want="$(jsonfilter -s "$input" -e '@.modules' 2>/dev/null)"
     # Ядро ведёт коннектор (podkop, forkop): пакеты ядра там — его, а не наши.
     eng="$("$SPLIFY2_HOST" engine 2>/dev/null)"
     busy="$(jsonfilter -s "$eng" -e '@.busy' 2>/dev/null)"
-    [ -z "$busy" ] || s2_fail "ядро занято: $busy"
-    case "$ver" in ''|*[!0-9.]*) s2_fail "в версии допустимы только цифры и точки" ;; esac
-    pkg_info || s2_fail "менеджер пакетов не ответил"
+    [ -z "$busy" ] || s2_fail_code core.busy "The core is busy: {by}" by "$busy"
+    case "$ver" in ''|*[!0-9.]*) s2_fail_code release.bad_version "A version may contain only digits and dots" ;; esac
+    pkg_info || s2_fail_code pkg.manager_silent "The package manager did not answer"
     [ "$(printf '%s\n%s\n' "$ver" "$STEER_MIN" | sort -V | head -n 1)" = "$STEER_MIN" ] ||
-        s2_fail "интерфейс работает с ядром не старше $STEER_MIN"
-    [ -n "$PKG_ARCH" ] || s2_fail "не определилась архитектура"
+        s2_fail_code updater.steer_min "The interface works with a core no older than {min}" min "$STEER_MIN"
+    [ -n "$PKG_ARCH" ] || s2_fail_code updater.no_arch "The architecture was not detected"
     # Какие плагины довести: просимые и нужные спеке. Имя неизвестного — отказ до скачивания.
     if [ -n "$want" ]; then mr="$("$SPLIFY2_HOST" engine modules --want "$want")"; else mr="$("$SPLIFY2_HOST" engine modules)"; fi
     [ "$(jsonfilter -s "$mr" -e '@.ok' 2>/dev/null)" = true ] || s2_fail "$(jsonfilter -s "$mr" -e '@.error' 2>/dev/null)"
@@ -99,7 +99,7 @@ steer_install() {
 
     name="steer-core-${ver}-1_${PKG_ARCH}.${PKG_EXT}"
     if ! fetch_asset steer "$ver" "$name"; then
-        s2_fail "не скачалось: $name (нет такой версии для $PKG_ARCH?)${FETCH_NOTE:+ — $FETCH_NOTE}"
+        s2_fail_code updater.download "Download failed: {name} (no such version for {arch}?){note}" name "$name" arch "$PKG_ARCH" note "${FETCH_NOTE:+ — $FETCH_NOTE}"
     fi
     via="$FETCH_VIA"
     # Место на флеше проверяет служба установки до менеджера пакетов.
@@ -127,7 +127,7 @@ steer_install() {
 
 # Итог проверки: что стоит и что вышло. Ходит в сеть (перечень выпусков с запасными источниками).
 update_check() {
-    pkg_info || s2_fail "менеджер пакетов не ответил"
+    pkg_info || s2_fail_code pkg.manager_silent "The package manager did not answer"
     channel="$("$SPLIFY2_HOST" settings get channel 2>/dev/null)"
     : > "$STATUS.new"
     json_init
@@ -146,7 +146,7 @@ update_check() {
             [ -n "$PRE" ] && json_add_string prerelease "$PRE"
         else
             latest=''
-            json_add_string why "перечень выпусков не получен"
+            json_add_string why "$(s2_t updater.no_list "The release list was not received")"
         fi
         json_close_object
     done
@@ -157,7 +157,7 @@ update_check() {
 # Последний итог; «есть новее» пересчитывается по тому, что стоит сейчас (после установки отметка сама гаснет).
 update_status() {
     [ -s "$STATUS" ] || { echo '{"ok":true,"checked_at":0}'; return; }
-    pkg_info || s2_fail "менеджер пакетов не ответил"
+    pkg_info || s2_fail_code pkg.manager_silent "The package manager did not answer"
     json_init
     json_add_boolean ok 1
     json_add_int checked_at "$(jsonfilter -i "$STATUS" -e '@.checked_at' 2>/dev/null)"
@@ -176,5 +176,5 @@ update_status() {
 
 case "$METHOD" in
     steer_versions|splify2_versions|steer_install|splify2_install|update_check|update_status) "$METHOD" ;;
-    *) echo "нет такого метода: $METHOD" >&2; exit 2 ;;
+    *) echo "no such method: $METHOD" >&2; exit 2 ;;
 esac

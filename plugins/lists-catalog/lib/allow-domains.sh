@@ -385,7 +385,7 @@ ad_out_of() {  # ВИД
 
 # Как назвать вид человеку. Сообщения об отказе иначе говорили бы «нет prefixes».
 ad_kind_ru() {  # ВИД
-    [ "$1" = domains ] && printf 'доменов' || printf 'подсетей'
+    [ "$1" = domains ] && s2_t lists.kind_domains "domains" || s2_t lists.kind_prefixes "prefixes"
 }
 
 # ВСЯ ТАБЛИЦА РАЗОМ — по строке «сервис|виды через пробел|название».

@@ -17,6 +17,6 @@ printf '%s' "$list" | jsonfilter -e '@.subs[*]' 2>/dev/null | while IFS= read -r
     last="$(num_or "$(cat "$d/done" 2>/dev/null)" 0)"
     [ $(( $(now) - last )) -ge $((iv * 60)) ] || continue
     sh "$STEER_PLUGIN_DIR/bin/check-job" "$n" "$path" 0
-    logger -t splify2-node-check "подписка $n: перебор узлов завершён"
+    logger -t splify2-node-check "subscription $n: node search finished"
 done
 exit 0

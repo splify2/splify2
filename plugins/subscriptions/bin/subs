@@ -11,13 +11,13 @@
 METHOD="${1:-}"
 read -r input 2>/dev/null || true
 [ -n "$input" ] || input='{}'
-json_load "$input" 2>/dev/null || s2_fail "неразбираемый запрос"
+json_load "$input" 2>/dev/null || s2_fail_code req.unparsable "Unparsable request"
 name=''; minutes=''; title=''
 json_get_var name name
 json_get_var minutes minutes
 json_get_var title title
 [ -n "$name" ] || name=main
-sub_name_ok "$name" || s2_fail "имя подписки: латиница, цифры, подчёркивание"
+sub_name_ok "$name" || s2_fail_code sub.bad_name "A subscription name may contain Latin letters, digits and underscores"
 
 # Ответ службы хоста — как есть: отказ службы уже объект {"ok":false,"error":…}.
 pass() { _p="$("$SPLIFY2_HOST" "$@")"; printf '%s\n' "$_p"; exit 0; }
@@ -29,19 +29,19 @@ sub_auto() {
         # интерфейсе: метод зовут и мимо него.
         case "$minutes" in
             ''|0) minutes=0 ;;
-            *[!0-9]*) s2_fail "интервал задаётся числом минут" ;;
+            *[!0-9]*) s2_fail_code subs.interval_number "The interval is given as a number of minutes" ;;
             *)
                 lo="$(min_interval)"; hi="$(max_interval)"
-                [ "$minutes" -ge "$lo" ] || s2_fail "реже, чем раз в $lo мин, нельзя: это наименьший интервал"
-                [ "$minutes" -le "$hi" ] || s2_fail "дольше $hi мин интервал не бывает"
+                [ "$minutes" -ge "$lo" ] || s2_fail_code subs.interval_min "Less often than once in {min} min is not possible: it is the smallest interval" min "$lo"
+                [ "$minutes" -le "$hi" ] || s2_fail_code subs.interval_max "An interval is never longer than {max} min" max "$hi"
                 ;;
         esac
-        info="$("$SPLIFY2_HOST" sub info "$name")" || s2_fail "подписки «$name» нет"
+        info="$("$SPLIFY2_HOST" sub info "$name")" || s2_fail_code sub.not_exists "There is no subscription \"{name}\"" name "$name"
         kind="$(jsonfilter -s "$info" -e '@.kind' 2>/dev/null)"
         if [ "$minutes" != 0 ]; then
-            [ "$kind" = url ] || s2_fail "узлы заданы ссылками — обновлять нечем"
+            [ "$kind" = url ] || s2_fail_code sub.links_only "The nodes are given as links: there is nothing to update"
         fi
-        sched_set "$name" "$minutes" || s2_fail "не удалось записать интервал"
+        sched_set "$name" "$minutes" || s2_fail_code subs.interval_not_saved "Cannot save the interval"
         # Отметка попытки — от ЭТОГО момента: человек только что задал интервал, и первое обновление наступает через
         # него, а не немедленно из-за давней отметки.
         if [ "$minutes" = 0 ]; then rm -f "$STAMPS/$name"; else stamp_put "$name"; fi
@@ -74,5 +74,5 @@ subs_schedule() {
 # Имена методов определены здесь же функциями, поэтому диспетчер — вызов по имени из списка объявленных.
 case "$METHOD" in
     sub_auto|sub_quota|sub_rename|subs_schedule) "$METHOD" ;;
-    *) echo "нет такого метода: $METHOD" >&2; exit 2 ;;
+    *) echo "no such method: $METHOD" >&2; exit 2 ;;
 esac

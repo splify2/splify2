@@ -4,7 +4,7 @@
 . "${STEER_PLUGIN_DIR:?программа запускается хостом splify2 (нет STEER_PLUGIN_DIR)}/lib/base.sh"
 
 input="$(cat)"
-json_load "$input" 2>/dev/null || { echo '{"ok":false,"error":"неразбираемый запрос"}'; exit 0; }
+json_load "$input" 2>/dev/null || s2_fail_code req.unparsable "Unparsable request"
 json_select ctx 2>/dev/null && json_select subs 2>/dev/null || { echo '{"ok":true,"fields":{}}'; exit 0; }
 json_get_keys idx
 rows=""

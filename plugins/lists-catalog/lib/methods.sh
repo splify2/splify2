@@ -58,16 +58,16 @@ case "$METHOD" in
         if [ ! -s "$CATALOG_FILE" ]; then
             mkdir -p "$(dirname "$CATALOG_FILE")"
             fetch_file "$(catalog_url)" "$CATALOG_FILE" ||
-                s2_fail "манифест не скачался${FETCH_NOTE:+: $FETCH_NOTE}"
+                s2_fail_code lists.manifest_failed "The manifest was not downloaded{why}" why "${FETCH_NOTE:+: $FETCH_NOTE}"
         fi
         cat "$CATALOG_FILE"
         ;;
 
     list_fetch)
         read -r input
-        json_load "$input" 2>/dev/null || s2_fail "неразбираемый запрос"
+        json_load "$input" 2>/dev/null || s2_fail_code req.unparsable "Unparsable request"
         json_get_var id id
-        [ -n "$id" ] || s2_fail "не указан список"
+        [ -n "$id" ] || s2_fail_code lists.none_given "No list given"
         json_get_var kind kind
 
         # ВТОРОЙ ИЗДАТЕЛЬ — по приставке в id: «itdog:telegram».
@@ -99,22 +99,22 @@ case "$METHOD" in
                 # Имя сервиса становится частью пути на диске, поэтому проверяется до всего
                 # остального — тем же рубежом, что имена своих списков в list_put.
                 case "$svc" in
-                    ''|*[!A-Za-z0-9_-]*) s2_fail "имя сервиса: латиница, цифры, дефис и подчёркивание" ;;
+                    ''|*[!A-Za-z0-9_-]*) s2_fail_code lists.bad_service "A service name may contain Latin letters, digits, hyphens and underscores" ;;
                 esac
                 case "$kind" in
                     domains|prefixes) ;;
-                    *) s2_fail "вид списка: domains (домены) или prefixes (подсети)" ;;
+                    *) s2_fail_code lists.bad_kind "The list kind is domains or prefixes" ;;
                 esac
                 # «Такого сервиса у издателя нет» и «скачать не вышло» — разные ответы:
                 # первый значит, что спрашивать нечего, и повтор ничего не изменит.
                 kinds="$(ad_kinds "$svc")"
-                [ -n "$kinds" ] || s2_fail "у издателя $AD_REPO нет списка $svc"
+                [ -n "$kinds" ] || s2_fail_code lists.publisher_none "The publisher {repo} has no list {svc}" repo "$AD_REPO" svc "$svc"
                 case " $kinds " in
                     *" $kind "*) ;;
-                    *) s2_fail "издатель не публикует $(ad_kind_ru "$kind") сервиса $svc" ;;
+                    *) s2_fail_code lists.publisher_no_kind "The publisher does not publish {what} of the service {svc}" what "$(ad_kind_ru "$kind")" svc "$svc" ;;
                 esac
                 ad_tag_resolve
-                AD_TMP="$(mktemp -d "$RUN_DIR/srs.XXXXXX")" || s2_fail "не удалось завести временный каталог — кончилось место?"
+                AD_TMP="$(mktemp -d "$RUN_DIR/srs.XXXXXX")" || s2_fail_code tmp.dir_failed_space "Cannot create a temporary directory: no space left"
                 ad_get "$svc"
                 ad_rc=$?
                 if [ "$ad_rc" != 0 ]; then
@@ -123,9 +123,9 @@ case "$METHOD" in
                     # выразим», то есть с загрузкой всё в порядке и повторять её незачем;
                     # код 1 значит «приехало не то», и вот его повторять как раз стоит.
                     case "$ad_rc" in
-                        1) s2_fail "набор $svc не скачался${FETCH_NOTE:+: $FETCH_NOTE}" ;;
-                        2) s2_fail "такой список нам пока не подходит: $AD_NOTE" ;;
-                        *) s2_fail "скачался испорченный набор $svc: $AD_NOTE" ;;
+                        1) s2_fail_code lists.set_failed_svc "The set {svc} was not downloaded{why}" svc "$svc" why "${FETCH_NOTE:+: $FETCH_NOTE}" ;;
+                        2) s2_fail_code lists.unsuitable "This list does not suit us yet: {note}" note "$AD_NOTE" ;;
+                        *) s2_fail_code lists.corrupt_svc "A corrupted set {svc} was downloaded: {note}" svc "$svc" note "$AD_NOTE" ;;
                     esac
                 fi
                 # КЛАДЁМ ОБА ВИДА, а не только запрошенный: набор один, и подсети из него
@@ -135,7 +135,7 @@ case "$METHOD" in
                 for k in $kinds; do
                     src="$(ad_out_of "$k")" || continue
                     dest="$(local_path "$(ad_rel "$svc" "$k")")" ||
-                        s2_fail "недопустимый путь списка: $(ad_rel "$svc" "$k")"
+                        s2_fail_code lists.bad_path_of "Invalid list path: {path}" path "$(ad_rel "$svc" "$k")"
                     mkdir -p "$(dirname "$dest")"
                     # Перенос рядом с целью, потом переименование — как в list_put: mv
                     # атомарен только внутри одной ФС, а разбор лежит в /tmp (tmpfs), тогда
@@ -143,7 +143,7 @@ case "$METHOD" in
                     # оставил бы ровно тот обрубок, от которого mv и должен спасать.
                     mv "$src" "$dest.new.$$" && mv "$dest.new.$$" "$dest" || {
                         rm -f "$dest.new.$$"; rm -rf "$AD_TMP"
-                        s2_fail "список $svc не записался — кончилось место?"; }
+                        s2_fail_code lists.svc_not_saved "The list {svc} was not saved: no space left" svc "$svc"; }
                     # Сужение — рядом с подсетями (см. ad_meta_install): по нему интерфейс
                     # ставит каналу протокол и порты.
                     [ "$k" = prefixes ] && ad_meta_install "$dest"
@@ -152,10 +152,10 @@ case "$METHOD" in
                     ad_stamp_put "$svc" "$k" "$AD_TAG"
                 done
                 rm -rf "$AD_TMP"
-                dest="$(local_path "$(ad_rel "$svc" "$kind")")" || s2_fail "недопустимый путь списка"
+                dest="$(local_path "$(ad_rel "$svc" "$kind")")" || s2_fail_code lists.bad_path "Invalid list path"
                 # Вида в наборе может не оказаться, хотя издатель его объявляет: истину
                 # говорит движок, а таблица сервисов — только подсказка.
-                [ -s "$dest" ] || s2_fail "в наборе $svc нет $(ad_kind_ru "$kind")"
+                [ -s "$dest" ] || s2_fail_code lists.set_no_kind_svc "The set {svc} has no {what}" svc "$svc" what "$(ad_kind_ru "$kind")"
                 json_init
                 json_add_boolean ok 1
                 json_add_int count "$(grep -c . "$dest")"
@@ -173,11 +173,11 @@ case "$METHOD" in
                 ;;
         esac
 
-        [ -s "$CATALOG_FILE" ] || s2_fail "манифест не загружен"
+        [ -s "$CATALOG_FILE" ] || s2_fail_code lists.no_manifest "The manifest is not loaded"
         base="$(jsonfilter -i "$CATALOG_FILE" -e '@.base_url')"
         file="$(manifest_file "$id" "$kind")"
-        [ -n "$file" ] || s2_fail "списка $id нет в манифесте"
-        dest="$(local_path "$file")" || s2_fail "издатель прислал недопустимый путь списка: $file"
+        [ -n "$file" ] || s2_fail_code lists.not_in_manifest "The list {id} is not in the manifest" id "$id"
+        dest="$(local_path "$file")" || s2_fail_code lists.publisher_bad_path "The publisher sent an invalid list path: {path}" path "$file"
         mkdir -p "$(dirname "$dest")"
 
         # НАБОР SING-BOX, НАЗВАННЫЙ САМИМ КАТАЛОГОМ. У записи есть своя ссылка и
@@ -191,9 +191,9 @@ case "$METHOD" in
         srs_url="$(manifest_field "$id" "$kind" format)"
         if [ "$srs_url" = srs ]; then
             srs_url="$(manifest_field "$id" "$kind" url)"
-            [ -n "$srs_url" ] || s2_fail "у списка $id в каталоге нет ссылки на набор"
+            [ -n "$srs_url" ] || s2_fail_code lists.no_set_link "The list {id} has no set link in the catalog" id "$id"
             . "$AD_SH"
-            AD_TMP="$(mktemp -d "$RUN_DIR/srs.XXXXXX")" || s2_fail "не удалось завести временный каталог — кончилось место?"
+            AD_TMP="$(mktemp -d "$RUN_DIR/srs.XXXXXX")" || s2_fail_code tmp.dir_failed_space "Cannot create a temporary directory: no space left"
             ad_get_url "$srs_url" set
             ad_rc=$?
             if [ "$ad_rc" = 2 ]; then
@@ -203,9 +203,9 @@ case "$METHOD" in
                 sfile="$(manifest_file_by_url "$srs_url" prefixes)"
                 [ -n "$sfile" ] || sfile="$(manifest_file_by_url "$srs_url" domains)"
                 sdest="$(local_path "$(ad_srs_rel "$sfile")")" ||
-                    { rm -rf "$AD_TMP"; s2_fail "издатель прислал недопустимый путь списка: $sfile"; }
+                    { rm -rf "$AD_TMP"; s2_fail_code lists.publisher_bad_path "The publisher sent an invalid list path: {path}" path "$sfile"; }
                 ad_srs_put "$AD_SRS" "$sdest" ||
-                    { rm -rf "$AD_TMP"; s2_fail "список не записался — кончилось место?"; }
+                    { rm -rf "$AD_TMP"; s2_fail_code lists.not_saved_space "The list was not saved: no space left"; }
                 rm -rf "$AD_TMP"
                 json_init
                 json_add_boolean ok 1
@@ -219,8 +219,8 @@ case "$METHOD" in
             if [ "$ad_rc" != 0 ]; then
                 rm -rf "$AD_TMP"
                 case "$ad_rc" in
-                    1) s2_fail "набор не скачался${FETCH_NOTE:+: $FETCH_NOTE}" ;;
-                    *) s2_fail "скачался испорченный набор: $AD_NOTE" ;;
+                    1) s2_fail_code lists.set_failed "The set was not downloaded{why}" why "${FETCH_NOTE:+: $FETCH_NOTE}" ;;
+                    *) s2_fail_code lists.corrupt "A corrupted set was downloaded: {note}" note "$AD_NOTE" ;;
                 esac
             fi
             # КЛАДЁМ ОБЕ ПОЛОВИНЫ, если каталог назвал обе: набор один и уже разобран, а
@@ -231,17 +231,17 @@ case "$METHOD" in
                 [ -n "$kfile" ] || continue
                 ksrc="$(ad_out_of "$k")" || continue
                 kdest="$(local_path "$kfile")" ||
-                    s2_fail "издатель прислал недопустимый путь списка: $kfile"
+                    s2_fail_code lists.publisher_bad_path "The publisher sent an invalid list path: {path}" path "$kfile"
                 mkdir -p "$(dirname "$kdest")"
                 cp "$ksrc" "$kdest.new.$$" && mv "$kdest.new.$$" "$kdest" || {
                     rm -f "$kdest.new.$$"; rm -rf "$AD_TMP"
-                    s2_fail "список не записался — кончилось место?"; }
+                    s2_fail_code lists.not_saved_space "The list was not saved: no space left"; }
                 [ "$k" = prefixes ] && ad_meta_install "$kdest"
             done
             # Запрошенной половины в наборе может не оказаться вовсе (у youtube нет
             # подсетей). Молчать нельзя: человек нажал «Загрузить» и вправе узнать, что
             # получил не то, за чем шёл.
-            [ -s "$dest" ] || { rm -rf "$AD_TMP"; s2_fail "в наборе нет $(ad_kind_ru "$kind")"; }
+            [ -s "$dest" ] || { rm -rf "$AD_TMP"; s2_fail_code lists.set_no_kind "The set has no {what}" what "$(ad_kind_ru "$kind")"; }
             rm -rf "$AD_TMP"
             json_init
             json_add_boolean ok 1
@@ -254,8 +254,8 @@ case "$METHOD" in
             exit 0
         fi
 
-        [ -n "$base" ] || s2_fail "в манифесте нет base_url"
-        fetch_file "$base/$file" "$dest" || s2_fail "список не скачался${FETCH_NOTE:+: $FETCH_NOTE}"
+        [ -n "$base" ] || s2_fail_code lists.no_base_url "The manifest has no base_url"
+        fetch_file "$base/$file" "$dest" || s2_fail_code lists.download_failed "The list was not downloaded{why}" why "${FETCH_NOTE:+: $FETCH_NOTE}"
         json_init
         json_add_boolean ok 1
         json_add_int count "$(grep -c . "$dest")"
@@ -409,11 +409,11 @@ AD_EOF
         # Скрипт умеет только syslog: его log() печатает в stdout лишь под терминалом, а
         # здесь терминала нет. Поэтому ему передаётся REPORT — файл, куда он дублирует те
         # же строки. Отправлять человека в журнал за ответом на нажатие кнопки нельзя.
-        [ -x "$UPDATE_LISTS" ] || s2_fail "обновлятор списков не найден"
+        [ -x "$UPDATE_LISTS" ] || s2_fail_code lists.no_updater "The list updater was not found"
         # mktemp, а не имя с PID и `: >`: имя предсказуемо, а отказ перенаправления у
         # специальной встроенной роняет весь метод без JSON, когда /tmp полон (тот же класс,
         # что I-085/I-102).
-        rep="$(mktemp "$RUN_DIR/update.XXXXXX")" || s2_fail "не удалось завести файл отчёта — кончилось место?"
+        rep="$(mktemp "$RUN_DIR/update.XXXXXX")" || s2_fail_code lists.report_file "Cannot create the report file: no space left"
         REPORT="$rep" "$UPDATE_LISTS" >/dev/null 2>&1
         lu_rc=$?
         lu_changed="$(grep -c ': обновлён' "$rep" 2>/dev/null)"
@@ -449,7 +449,7 @@ AD_EOF
         # резиновый, а cgi-io означал бы второй путь загрузки со своими правами и своей
         # проверкой формата. Один вход — одна проверка.
         read -r input
-        json_load "$input" 2>/dev/null || s2_fail "неразбираемый запрос"
+        json_load "$input" 2>/dev/null || s2_fail_code req.unparsable "Unparsable request"
         json_get_var name name
         json_get_var kind kind
         json_get_var text text
@@ -468,13 +468,13 @@ AD_EOF
         # Имя — часть пути на диске, поэтому проверяется до всего остального. Без этого
         # «../../etc/passwd» было бы законным именем списка.
         case "$name" in
-            ''|*[!A-Za-z0-9_-]*) s2_fail "имя списка: латиница, цифры, дефис и подчёркивание" ;;
+            ''|*[!A-Za-z0-9_-]*) s2_fail_code lists.bad_name "A list name may contain Latin letters, digits, hyphens and underscores" ;;
         esac
         case "$kind" in
             domains|prefixes) ;;
-            *) s2_fail "вид списка: domains (домены) или prefixes (подсети)" ;;
+            *) s2_fail_code lists.bad_kind "The list kind is domains or prefixes" ;;
         esac
-        raw="$(mktemp "$RUN_DIR/put.XXXXXX")" || s2_fail "не удалось завести временный файл — кончилось место?"
+        raw="$(mktemp "$RUN_DIR/put.XXXXXX")" || s2_fail_code tmp.file_failed_space "Cannot create a temporary file: no space left"
         rm -f "$raw.clean" "$raw.stat"
         # Отказ на любом шаге ниже (`fail` завершает процесс) не оставляет временных файлов в /tmp: их
         # было до пяти на каждую неудачную попытку, а /tmp — оперативная память роутера.
@@ -482,17 +482,17 @@ AD_EOF
         if [ -n "$url" ]; then
             case "$url" in
                 http://*|https://*) ;;
-                *) s2_fail "ссылка должна начинаться с http:// или https://" ;;
+                *) s2_fail_code fetch.bad_url "The link must start with http:// or https://" ;;
             esac
-            fetch_file "$url" "$raw" || s2_fail "не скачалось: $url${FETCH_NOTE:+ ($FETCH_NOTE)}"
+            fetch_file "$url" "$raw" || s2_fail_code lists.url_failed "The download failed: {url}{why}" url "$url" why "${FETCH_NOTE:+ ($FETCH_NOTE)}"
         else
-            [ -n "$text" ] || s2_fail "пустой список"
+            [ -n "$text" ] || s2_fail_code lists.empty "The list is empty"
             printf '%s\n' "$text" > "$raw"
         fi
         sz="$(wc -c 2>/dev/null < "$raw" || echo 0)"
         if [ "$sz" -gt "$LIST_MAX_BYTES" ]; then
             rm -f "$raw"
-            s2_fail "список больше $((LIST_MAX_BYTES / 1024)) КБ — столько на роутер не кладём"
+            s2_fail_code lists.too_big "The list is larger than {kb} KB: that much is not put on the router" kb "$((LIST_MAX_BYTES / 1024))"
         fi
         sanitize_list "$kind" "$raw" "$raw.clean" "$raw.stat"
         rm -f "$raw"
@@ -500,7 +500,7 @@ AD_EOF
         rm -f "$raw.stat"
         if [ "${kept:-0}" -eq 0 ]; then
             rm -f "$raw.clean"
-            s2_fail "не разобрано ни одной строки: для $kind ждём $([ "$kind" = prefixes ] && echo 'подсети вида 10.0.0.0/8' || echo 'имена вида example.org')"
+            s2_fail_code lists.no_lines "No line was understood: for {kind} {expected} is expected" kind "$kind" expected "$([ "$kind" = prefixes ] && s2_t lists.expect_prefixes "subnets like 10.0.0.0/8" || s2_t lists.expect_names "names like example.org")"
         fi
         # Доменные — в подкаталог, адресные — рядом: ровно та же раскладка, что у
         # издателя. Вид списка обязан читаться из пути, иначе `mine.lst` доменный и
@@ -521,11 +521,11 @@ AD_EOF
             add="$(wc -c 2>/dev/null < "$raw.clean" || echo 0)"
             if [ "$((have + add))" -gt "$LIST_MAX_BYTES" ]; then
                 rm -f "$raw.clean"
-                s2_fail "список «$name» дорос бы до $(( (have + add) / 1024 )) КБ, а предел $((LIST_MAX_BYTES / 1024)) КБ — столько на роутер не кладём"
+                s2_fail_code lists.would_grow "The list \"{name}\" would grow to {size} KB, and the limit is {kb} KB: that much is not put on the router" name "$name" size "$(( (have + add) / 1024 ))" kb "$((LIST_MAX_BYTES / 1024))"
             fi
         fi
         case "$append" in
-            1|true) cat "$raw.clean" >> "$dest" || { rm -f "$raw.clean"; s2_fail "не дописалось — кончилось место?"; } ;;
+            1|true) cat "$raw.clean" >> "$dest" || { rm -f "$raw.clean"; s2_fail_code lists.append_failed "Cannot append: no space left"; } ;;
             # Замена через mv, а не через «> файл»: оборванная запись поверх рабочего
             # списка оставила бы канал маршрутизировать половину.
             #
@@ -535,7 +535,7 @@ AD_EOF
             # Поэтому сначала переносим рядом с целью, и только потом переименовываем.
             *)      mv "$raw.clean" "$dest.new.$$" &&
                     mv "$dest.new.$$" "$dest" ||
-                    { rm -f "$raw.clean" "$dest.new.$$"; s2_fail "не записалось — кончилось место?"; } ;;
+                    { rm -f "$raw.clean" "$dest.new.$$"; s2_fail_code lists.write_failed "Cannot write: no space left"; } ;;
         esac
         rm -f "$raw.clean"
         # Происхождение запоминается на ПЕРВОЙ порции, а не на каждой: порции — это один и
@@ -582,21 +582,21 @@ AD_EOF
         # Набор sing-box (.srs) раскладывает ядро (`steer srs-read`) — в нём двоичные данные.
         # `q` — поиск по записям (без учёта регистра), ответ — до PEEK_LINES строк и число всех.
         read -r input
-        json_load "$input" 2>/dev/null || s2_fail "неразбираемый запрос"
+        json_load "$input" 2>/dev/null || s2_fail_code req.unparsable "Unparsable request"
         json_get_var path path
         json_get_var q q
         case "$path" in
             "$LISTS_DIR"/*) ;;
-            *) s2_fail "список не из каталога списков" ;;
+            *) s2_fail_code lists.not_in_dir "The list is not from the lists directory" ;;
         esac
-        case "$path" in *..*|*[!A-Za-z0-9_./:-]*) s2_fail "недопустимый путь списка" ;; esac
-        [ -f "$path" ] || s2_fail "этого списка на роутере нет — он скачается при сохранении правила"
+        case "$path" in *..*|*[!A-Za-z0-9_./:-]*) s2_fail_code lists.bad_path "Invalid list path" ;; esac
+        [ -f "$path" ] || s2_fail_code lists.not_on_router "This list is not on the router: it is downloaded when the rule is saved"
         pk_tmp=""
         case "$path" in
             *.srs)
-                pk_tmp="$(mktemp -d "$RUN_DIR/peek.XXXXXX")" || s2_fail "не удалось завести временный каталог — кончилось место?"
+                pk_tmp="$(mktemp -d "$RUN_DIR/peek.XXXXXX")" || s2_fail_code tmp.dir_failed_space "Cannot create a temporary directory: no space left"
                 "$STEER_BIN" srs-read "$path" --out "$pk_tmp/d" --prefixes-out "$pk_tmp/p" --meta-out "$pk_tmp/m" 2>/dev/null ||
-                    { rm -rf "$pk_tmp"; s2_fail "набор не читается"; }
+                    { rm -rf "$pk_tmp"; s2_fail_code lists.set_unreadable "The set cannot be read"; }
                 cat "$pk_tmp/d" "$pk_tmp/p" 2>/dev/null > "$pk_tmp/all"
                 pk_src="$pk_tmp/all" ;;
             *) pk_src="$path" ;;
@@ -624,7 +624,7 @@ AD_EOF
         # (`steer srs-read`), и каждая непустая половина ложится своим списком, как у list_put;
         # половина, которой в наборе больше нет, у списка с этим именем убирается.
         read -r input
-        json_load "$input" 2>/dev/null || s2_fail "неразбираемый запрос"
+        json_load "$input" 2>/dev/null || s2_fail_code req.unparsable "Unparsable request"
         json_get_var name name
         json_get_var url url
         json_get_var data data
@@ -632,32 +632,32 @@ AD_EOF
         json_get_var final final
         json_get_var filename filename
         case "$name" in
-            ''|*[!A-Za-z0-9_-]*) s2_fail "имя списка: латиница, цифры, дефис и подчёркивание" ;;
+            ''|*[!A-Za-z0-9_-]*) s2_fail_code lists.bad_name "A list name may contain Latin letters, digits, hyphens and underscores" ;;
         esac
         sp_dir="$RUN_DIR/srsup"
-        mkdir -p "$sp_dir" || s2_fail "не удалось завести временный каталог — кончилось место?"
+        mkdir -p "$sp_dir" || s2_fail_code tmp.dir_failed_space "Cannot create a temporary directory: no space left"
         sp_part="$sp_dir/$name.b64"; sp_bin="$sp_dir/$name.srs"; sp_out="$sp_dir/$name.out"
         if [ -n "$url" ]; then
             case "$url" in
                 http://*|https://*) ;;
-                *) s2_fail "ссылка должна начинаться с http:// или https://" ;;
+                *) s2_fail_code fetch.bad_url "The link must start with http:// or https://" ;;
             esac
-            fetch_file "$url" "$sp_bin" || s2_fail "не скачалось: $url${FETCH_NOTE:+ ($FETCH_NOTE)}"
+            fetch_file "$url" "$sp_bin" || s2_fail_code lists.url_failed "The download failed: {url}{why}" url "$url" why "${FETCH_NOTE:+ ($FETCH_NOTE)}"
             sp_source=url
         else
             case "$append" in 1|true) ;; *) : > "$sp_part" ;; esac
-            printf '%s' "$data" >> "$sp_part" || s2_fail "не дописалось — кончилось место?"
+            printf '%s' "$data" >> "$sp_part" || s2_fail_code lists.append_failed "Cannot append: no space left"
             # base64 — четыре знака на три байта: предел по итоговому файлу, как у list_put.
             if [ "$(wc -c < "$sp_part")" -gt $((LIST_MAX_BYTES * 4 / 3 + 4)) ]; then
                 rm -f "$sp_part"
-                s2_fail "набор больше $((LIST_MAX_BYTES / 1024)) КБ — столько на роутер не кладём"
+                s2_fail_code lists.set_too_big "The set is larger than {kb} KB: that much is not put on the router" kb "$((LIST_MAX_BYTES / 1024))"
             fi
             case "$final" in
                 1|true) ;;
                 *) json_init; json_add_boolean ok 1; json_dump; exit 0 ;;
             esac
             ucode -e 'import * as fs from "fs"; let b = b64dec(trim(fs.readfile(ARGV[0]) ?? "")); if (b == null) exit(1); fs.writefile(ARGV[1], b);' \
-                "$sp_part" "$sp_bin" || { rm -f "$sp_part" "$sp_bin"; s2_fail "файл набора пришёл испорченным"; }
+                "$sp_part" "$sp_bin" || { rm -f "$sp_part" "$sp_bin"; s2_fail_code lists.set_corrupt_file "The set file arrived corrupted"; }
             rm -f "$sp_part"
             sp_source=file
         fi
@@ -666,12 +666,12 @@ AD_EOF
                 --meta-out "$sp_out/meta" 2>"$sp_out/err"; then
             sp_why="$(head -1 "$sp_out/err" 2>/dev/null | sed -e 's/^steer: //' -e 's/^srs: //')"
             rm -rf "$sp_out" "$sp_bin"
-            s2_fail "набор не читается${sp_why:+: $sp_why}"
+            s2_fail_code lists.set_unreadable_why "The set cannot be read{why}" why "${sp_why:+: $sp_why}"
         fi
         rm -f "$sp_bin"
         if [ ! -s "$sp_out/domains" ] && [ ! -s "$sp_out/prefixes" ]; then
             rm -rf "$sp_out"
-            s2_fail "в наборе нет ни доменов, ни подсетей"
+            s2_fail_code lists.set_empty "The set has neither domains nor prefixes"
         fi
         filename="$(printf '%s' "$filename" | tr -d '\r\n\t"\\/' | head -c 64)"
         json_init
@@ -681,7 +681,7 @@ AD_EOF
             if [ -s "$sp_out/$sp_k" ]; then
                 mkdir -p "$(dirname "$sp_dest")"
                 mv "$sp_out/$sp_k" "$sp_dest.new.$$" && mv "$sp_dest.new.$$" "$sp_dest" ||
-                    { rm -rf "$sp_out" "$sp_dest.new.$$"; s2_fail "не записалось — кончилось место?"; }
+                    { rm -rf "$sp_out" "$sp_dest.new.$$"; s2_fail_code lists.write_failed "Cannot write: no space left"; }
                 custom_meta_put "$name" "$sp_k" "$sp_source" "$([ "$sp_source" = url ] && printf '%s' "$url")" "$filename"
                 json_add_int "$sp_k" "$(grep -c . "$sp_dest")"
             else
@@ -695,7 +695,7 @@ AD_EOF
 
     list_remove)
         read -r input
-        json_load "$input" 2>/dev/null || s2_fail "неразбираемый запрос"
+        json_load "$input" 2>/dev/null || s2_fail_code req.unparsable "Unparsable request"
         json_get_var id id
         json_get_var kind kind
         json_get_var name name
@@ -703,7 +703,7 @@ AD_EOF
         # не может, поэтому прежний код удалить его не мог вовсе.
         if [ -n "$name" ]; then
             case "$name" in
-                *[!A-Za-z0-9_-]*) s2_fail "имя списка: латиница, цифры, дефис и подчёркивание" ;;
+                *[!A-Za-z0-9_-]*) s2_fail_code lists.bad_name "A list name may contain Latin letters, digits, hyphens and underscores" ;;
             esac
             dest="$(custom_path "$name" "${kind:-}")"
             # Вид могли не указать — тогда ищем оба, но удаляем ровно один: имя внутри
@@ -712,9 +712,9 @@ AD_EOF
                 dest="$(custom_path "$name" domains)"
                 [ -f "$dest" ] || dest="$(custom_path "$name" prefixes)"
             fi
-            [ -f "$dest" ] || s2_fail "своего списка $name нет"
+            [ -f "$dest" ] || s2_fail_code lists.own_none "There is no own list {name}" name "$name"
             if "$SPLIFY2_HOST" spec uses "$dest"; then
-                s2_fail "список используется каналом — сначала снимите галочку"
+                s2_fail_code lists.in_use "The list is used by a channel: first clear its checkbox"
             fi
             # Вместе со списком снимается и запись о его происхождении: оставленная, она
             # переехала бы на СЛЕДУЮЩИЙ список того же имени и рассказала бы про него
@@ -723,7 +723,7 @@ AD_EOF
             json_init; json_add_boolean ok 1; json_dump
             exit 0
         fi
-        [ -n "$id" ] || s2_fail "не указан список"
+        [ -n "$id" ] || s2_fail_code lists.none_given "No list given"
 
         # ВТОРОЙ ИЗДАТЕЛЬ — по той же приставке, что понимает list_fetch («itdog:telegram»).
         #
@@ -746,7 +746,7 @@ AD_EOF
                 if [ "${id%%:*}" = "$AD_ID" ]; then
                 svc="${id#*:}"
                 case "$svc" in
-                    ''|*[!A-Za-z0-9_-]*) s2_fail "имя сервиса: латиница, цифры, дефис и подчёркивание" ;;
+                    ''|*[!A-Za-z0-9_-]*) s2_fail_code lists.bad_service "A service name may contain Latin letters, digits, hyphens and underscores" ;;
                 esac
                 # ВИД ОБЯЗАТЕЛЕН, КОГДА НА ДИСКЕ ЛЕЖАТ ОБА. У этого издателя один набор даёт
                 # два наших списка, и list_fetch кладёт оба сразу — то есть «оба на диске» тут
@@ -760,19 +760,19 @@ AD_EOF
                         for k in domains prefixes; do
                             d="$(local_path "$(ad_rel "$svc" "$k")")" || continue
                             [ -f "$d" ] || continue
-                            [ -n "$kind" ] && s2_fail "у сервиса $svc на диске оба списка — укажите вид: domains или prefixes"
+                            [ -n "$kind" ] && s2_fail_code lists.both_kinds "The service {svc} has both lists on disk: specify the kind, domains or prefixes" svc "$svc"
                             kind="$k"
                         done
-                        [ -n "$kind" ] || s2_fail "списков сервиса $svc на роутере нет"
+                        [ -n "$kind" ] || s2_fail_code lists.svc_none "The router has no lists of the service {svc}" svc "$svc"
                         ;;
                 esac
-                dest="$(local_path "$(ad_rel "$svc" "$kind")")" || s2_fail "недопустимый путь списка"
-                [ -f "$dest" ] || s2_fail "$(ad_kind_ru "$kind") сервиса $svc на роутере нет"
+                dest="$(local_path "$(ad_rel "$svc" "$kind")")" || s2_fail_code lists.bad_path "Invalid list path"
+                [ -f "$dest" ] || s2_fail_code lists.svc_kind_none "The router has no {what} of the service {svc}" what "$(ad_kind_ru "$kind")" svc "$svc"
                 # Проверка «занят каналом» — ПРО СПЕКУ, а не про издателя, и второму издателю
                 # нужна ровно так же: движок читает список при сборке правил и падает на
                 # отсутствующем.
                 if "$SPLIFY2_HOST" spec uses "$dest"; then
-                    s2_fail "список используется каналом — сначала снимите галочку"
+                    s2_fail_code lists.in_use "The list is used by a channel: first clear its checkbox"
                 fi
                 rm -f "$dest"
                 # ОТМЕТКА ВЕРСИИ УХОДИТ ВМЕСТЕ С ФАЙЛОМ. Она говорит «лежащий файл набит этим
@@ -789,8 +789,8 @@ AD_EOF
         esac
 
         file="$(manifest_file "$id" "$kind")"
-        [ -n "$file" ] || s2_fail "списка $id нет в манифесте"
-        dest="$(local_path "$file")" || s2_fail "издатель прислал недопустимый путь списка: $file"
+        [ -n "$file" ] || s2_fail_code lists.not_in_manifest "The list {id} is not in the manifest" id "$id"
+        dest="$(local_path "$file")" || s2_fail_code lists.publisher_bad_path "The publisher sent an invalid list path: {path}" path "$file"
         # Канал, указывающий на файл, после удаления не скомпилируется: движок читает
         # список при сборке правил и падает на отсутствующем. Поэтому удаление
         # ОТКАЗЫВАЕТСЯ, пока список кем-то используется, вместо того чтобы оставить
@@ -809,7 +809,7 @@ AD_EOF
         fi
         if "$SPLIFY2_HOST" spec uses "$dest" ||
             { [ -n "$sdest" ] && "$SPLIFY2_HOST" spec uses "\"$sdest\""; }; then
-            s2_fail "список используется каналом — сначала снимите галочку"
+            s2_fail_code lists.in_use "The list is used by a channel: first clear its checkbox"
         fi
         rm -f "$dest" ${sdest:+"$sdest"}
         json_init; json_add_boolean ok 1; json_dump
@@ -873,20 +873,20 @@ AD_EOF
         # Читаются только СВОИ списки. Список издателя правке не подлежит: он приезжает по
         # расписанию, и всякая правка была бы стёрта следующим обновлением молча.
         read -r input
-        json_load "$input" 2>/dev/null || s2_fail "неразбираемый запрос"
+        json_load "$input" 2>/dev/null || s2_fail_code req.unparsable "Unparsable request"
         json_get_var name name
         json_get_var kind kind
         json_get_var offset offset
         case "$name" in
-            ''|*[!A-Za-z0-9_-]*) s2_fail "имя списка: латиница, цифры, дефис и подчёркивание" ;;
+            ''|*[!A-Za-z0-9_-]*) s2_fail_code lists.bad_name "A list name may contain Latin letters, digits, hyphens and underscores" ;;
         esac
         case "$kind" in
             domains|prefixes) ;;
-            *) s2_fail "вид списка: domains (домены) или prefixes (подсети)" ;;
+            *) s2_fail_code lists.bad_kind "The list kind is domains or prefixes" ;;
         esac
         case "${offset:-0}" in ''|*[!0-9]*) offset=0 ;; esac
         src="$(custom_path "$name" "$kind")"
-        [ -f "$src" ] || s2_fail "своего списка $name нет"
+        [ -f "$src" ] || s2_fail_code lists.own_none "There is no own list {name}" name "$name"
         total="$(wc -c 2>/dev/null < "$src" || echo 0)"
         # Нарезка ровно та же, что у архива настроек, вместе с заплаткой: подстановка команды
         # съедает ЗАВЕРШАЮЩИЕ переводы строки, а кусок обязан приехать байт в байт — иначе на
@@ -1004,7 +1004,7 @@ AD_EOF
         # перечень перечитывается при первом же обращении: файл кэша убирается, и метод `lists` скачает его заново.
         if [ "$METHOD" = lists_source_set ]; then
             read -r input
-            json_load "$input" 2>/dev/null || s2_fail "неразбираемый запрос"
+            json_load "$input" 2>/dev/null || s2_fail_code req.unparsable "Unparsable request"
             json_get_var url url
             case "${url:-}" in
                 # Пусто — вернуться к своему каталогу. Это отдельный и нужный ответ: человек, попробовавший чужой,
@@ -1014,13 +1014,13 @@ AD_EOF
                     # Пробелы и кавычки в ссылке — это не ссылка, а способ передать в скачивание что-то ещё.
                     case "$url" in
                         *[\ \'\"\`\$]*|*'
-'*) s2_fail "в ссылке недопустимые знаки" ;;
+'*) s2_fail_code lists.url_chars "The link has invalid characters" ;;
                     esac ;;
-                *) s2_fail "ссылка каталога начинается с https:// (или http://)" ;;
+                *) s2_fail_code lists.catalog_url "The catalog link starts with https:// (or http://)" ;;
             esac
             # Проверку по схеме и запись делает хост: значение, не прошедшее схему, он откажет своими словами.
             _ls_r="$("$SPLIFY2_HOST" settings set manifest_url "${url:-}")" ||
-                { json_load "$_ls_r" 2>/dev/null && json_get_var _ls_e error; s2_fail "${_ls_e:-настройка не записалась}"; }
+                { json_load "$_ls_r" 2>/dev/null && json_get_var _ls_e error; s2_fail "${_ls_e:-$(s2_t lists.setting_not_saved "The setting was not saved")}"; }
             # Кэш перечня — от прежнего каталога, и оставить его значило бы показать человеку старые списки под
             # именем нового источника.
             rm -f "$CATALOG_FILE" 2>/dev/null
@@ -1046,19 +1046,19 @@ AD_EOF
         # нечего, и знать это надо до выбора, а не после.
         if [ "$METHOD" = fetch_mode_set ]; then
             read -r input
-            json_load "$input" 2>/dev/null || s2_fail "неразбираемый запрос"
+            json_load "$input" 2>/dev/null || s2_fail_code req.unparsable "Unparsable request"
             json_get_var mode mode
             case "$mode" in
                 always|off) ;;
-                *) s2_fail "режим бывает always или off" ;;
+                *) s2_fail_code fetch.bad_mode "The mode is always or off" ;;
             esac
             _fm_r="$("$SPLIFY2_HOST" fetch-mode set "$mode")" ||
-                { json_load "$_fm_r" 2>/dev/null && json_get_var _fm_e error; s2_fail "${_fm_e:-режим не записался}"; }
+                { json_load "$_fm_r" 2>/dev/null && json_get_var _fm_e error; s2_fail "${_fm_e:-$(s2_t lists.mode_not_saved "The mode was not saved")}"; }
             json_init; json_add_boolean ok 1; json_add_string mode "$mode"; json_dump
         else
             "$SPLIFY2_HOST" fetch-mode get
         fi
         ;;
 
-    *) s2_fail "неизвестный метод" ;;
+    *) s2_fail_code req.unknown_method "Unknown method" ;;
 esac

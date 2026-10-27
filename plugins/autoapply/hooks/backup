@@ -3,8 +3,8 @@
 # export, check (ничего не меняет), restore.
 . "${STEER_PLUGIN_DIR:?программа запускается хостом splify2 (нет STEER_PLUGIN_DIR)}/lib/base.sh"
 input="$(cat)"
-json_load "$input" 2>/dev/null || { echo '{"ok":false,"error":"неразбираемый запрос"}'; exit 0; }
-json_select ctx 2>/dev/null || { echo '{"ok":false,"error":"нет контекста"}'; exit 0; }
+json_load "$input" 2>/dev/null || s2_fail_code req.unparsable "Unparsable request"
+json_select ctx 2>/dev/null || s2_fail_code req.no_context "There is no context"
 json_get_var op op
 case "$op" in
 export)
@@ -23,10 +23,10 @@ check|restore)
         json_get_var text "$key"
         case "$key" in
             settings) settings_text="$text" ;;
-            *) s2_fail "раздел «$key» не понят" ;;
+            *) s2_fail_code backup.bad_section "The section \"{name}\" is not understood" name "$key" ;;
         esac
     done
-    [ -z "$settings_text" ] || json_load "$settings_text" 2>/dev/null || s2_fail "настройки плагина в архиве не разбираются"
+    [ -z "$settings_text" ] || json_load "$settings_text" 2>/dev/null || s2_fail_code backup.settings_unparsable "The plugin settings in the archive cannot be parsed"
     [ "$op" = check ] && { echo '{"ok":true}'; exit 0; }
     warns=""
     if [ -n "$settings_text" ]; then
@@ -36,7 +36,7 @@ check|restore)
             json_get_var sv "$sk"
             "$SPLIFY2_HOST" settings set "$sk" "$sv" >/dev/null 2>&1 ||
                 warns="${warns:+$warns
-}настройка $sk не записалась"
+}$(s2_t backup.setting_not_saved "Setting {key} was not saved" key "$sk")"
         done
     fi
     json_init

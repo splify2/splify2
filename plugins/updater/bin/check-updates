@@ -4,10 +4,10 @@
 . "${STEER_PLUGIN_DIR:?программа запускается хостом splify2 (нет STEER_PLUGIN_DIR)}/lib/base.sh"
 [ "$("$SPLIFY2_HOST" settings get check 2>/dev/null)" = true ] || exit 0
 out="$(printf '{}\n' | sh "$STEER_PLUGIN_DIR/bin/updater" update_check)"
-[ "$(jsonfilter -s "$out" -e '@.ok' 2>/dev/null)" = true ] || { logger -t splify2-updater "проверка выпусков не удалась"; exit 0; }
+[ "$(jsonfilter -s "$out" -e '@.ok' 2>/dev/null)" = true ] || { logger -t splify2-updater "checking the releases failed"; exit 0; }
 for prod in steer splify2; do
     cur="$(jsonfilter -s "$out" -e "@.$prod.current" 2>/dev/null)"
     latest="$(jsonfilter -s "$out" -e "@.$prod.latest" 2>/dev/null)"
-    ver_gt "$latest" "$cur" && logger -t splify2-updater "$prod: вышла $latest, стоит $cur"
+    ver_gt "$latest" "$cur" && logger -t splify2-updater "$prod: $latest is out, $cur is installed"
 done
 exit 0

@@ -10,7 +10,7 @@
 METHOD="${1:?нет метода}"
 read -r input 2>/dev/null || true
 [ -n "$input" ] || input='{}'
-json_load "$input" 2>/dev/null || s2_fail "неразбираемый запрос"
+json_load "$input" 2>/dev/null || s2_fail_code req.unparsable "Unparsable request"
 output=''; fresh=''; sub=''; insecure=''
 json_get_var output output; json_get_var fresh fresh; json_get_var sub sub; json_get_var insecure insecure
 case "$insecure" in 1|true) insecure=1 ;; *) insecure=0 ;; esac
@@ -21,7 +21,7 @@ esac
 
 # Выход не в сети и нечем мерить — не то же, что «выход молчит»: человеку нужно знать, что поставить.
 outbound_geo() {
-    output_ok "$output" || s2_fail "недопустимое имя выхода"
+    output_ok "$output" || s2_fail_code req.bad_output "Invalid output name"
     f="$GEO_CACHE/geo-$output"
     at=0; cc=''; ip=''; id=''; ms=''
     if [ -s "$f" ]; then
@@ -82,18 +82,18 @@ outbound_geo() {
         [ -n "$cc" ] && json_add_string cc "$cc"
         [ "$(num_or "$ms" 0)" -gt 0 ] && json_add_int ms "$ms"
         [ "$at" -gt 0 ] && json_add_int at "$at"
-        json_add_string why "через выход не ответили — выход не поднят, нет curl или молчит адрес проверки"
+        json_add_string why "$(s2_t nodes.no_answer "No answer through the output: it is not up, curl is missing or the check address is silent")"
     fi
     json_dump
 }
 
 # Перебор узлов подписки в фоне. Один перебор на подписку: идёт — второй не стартует.
 nodes_check() {
-    subname_ok "$sub" || s2_fail "не указана подписка"
+    subname_ok "$sub" || s2_fail_code sub.none_given "No subscription given"
     row="$(sub_row "$sub")"
-    [ -n "$row" ] || s2_fail "подписки «$sub» нет"
+    [ -n "$row" ] || s2_fail_code sub.not_exists "There is no subscription \"{name}\"" name "$sub"
     path="$(jsonfilter -s "$row" -e '@.path' 2>/dev/null)"
-    [ "$(jsonfilter -s "$row" -e '@.present' 2>/dev/null)" = true ] || s2_fail "подписка ещё не скачана"
+    [ "$(jsonfilter -s "$row" -e '@.present' 2>/dev/null)" = true ] || s2_fail_code sub.not_downloaded "The subscription has not been downloaded yet"
     d="$CHECK_DIR/$sub"
     if [ -e "$d/pid" ] && kill -0 "$(cat "$d/pid" 2>/dev/null)" 2>/dev/null; then
         echo '{"ok":true,"started":false,"running":true}'; return
@@ -105,7 +105,7 @@ nodes_check() {
 
 # Ход и итог: считается из файлов задания.
 nodes_result() {
-    subname_ok "$sub" || s2_fail "не указана подписка"
+    subname_ok "$sub" || s2_fail_code sub.none_given "No subscription given"
     d="$CHECK_DIR/$sub"
     [ -s "$d/started" ] || { echo '{"ok":true,"state":"none"}'; return; }
     running=0
@@ -172,7 +172,7 @@ nodes_best() {
 EOT
 )"
     [ "$(jsonfilter -s "$out" -e '@.state' 2>/dev/null)" = done ] || [ "$(jsonfilter -s "$out" -e '@.state' 2>/dev/null)" = running ] ||
-        s2_fail "перебор узлов не запускали"
+        s2_fail_code nodes.not_started "The node search has not been started"
     b="$(jsonfilter -s "$out" -e '@.best' 2>/dev/null)"
     if [ -z "$b" ]; then echo '{"ok":true,"found":false}'; return; fi
     json_init
@@ -187,7 +187,7 @@ EOT
 }
 
 nodes_cancel() {
-    subname_ok "$sub" || s2_fail "не указана подписка"
+    subname_ok "$sub" || s2_fail_code sub.none_given "No subscription given"
     d="$CHECK_DIR/$sub"
     if [ -e "$d/pid" ] && kill -0 "$(cat "$d/pid" 2>/dev/null)" 2>/dev/null; then
         : > "$d/stop"; echo '{"ok":true,"cancelled":true}'
@@ -196,5 +196,5 @@ nodes_cancel() {
 
 case "$METHOD" in
     outbound_geo|nodes_check|nodes_result|nodes_best|nodes_cancel) "$METHOD" ;;
-    *) echo "нет такого метода: $METHOD" >&2; exit 2 ;;
+    *) echo "no such method: $METHOD" >&2; exit 2 ;;
 esac
