@@ -105,14 +105,30 @@ plugin_fail() {  # КОД КЛЮЧ ТЕКСТ [ИМЯ ЗНАЧЕНИЕ]...
     return 1
 }
 
-# То же с готовым текстом (слова менеджера плагинов ядра): перевода у него нет.
-plugin_fail_raw() {  # КОД ТЕКСТ
+# То же с готовым текстом (слова менеджера плагинов ядра). Ядро назвало причину кодом (КОД_ЯДРА, ARGS_JSON его ответа) —
+# текст переводится по словарю «steer.КОД», в ответе msg = steer.КОД и args; нет кода — текст ядра дословно.
+plugin_fail_raw() {  # ВИД ТЕКСТ [КОД_ЯДРА [ARGS_JSON]]
+    s2_core_load "${4:-}"    # до json_init: json_load сбрасывает документ
     json_init
     json_add_boolean ok 0
-    json_add_string error "$2"
-    json_add_string code "$1"
+    if [ -n "${3:-}" ]; then
+        s2_core_fields "$3" "$2" "$1"
+    else
+        json_add_string error "$2"
+        json_add_string code "$1"
+    fi
     json_dump
     return 1
+}
+
+# Код и подстановки отказа менеджера (поля code и args его ответа в PLUGIN_OUT): PLUGIN_ECODE, PLUGIN_EARGS; пусто — слова нет.
+# Не в подоболочке: переменные нужны вызывающему.
+plugin_manager_core() {
+    PLUGIN_ECODE=""; PLUGIN_EARGS=""
+    if _pmc_obj="$(plugin_json_obj "$PLUGIN_OUT")"; then
+        PLUGIN_ECODE="$(jsonfilter -s "$_pmc_obj" -e '@.code' 2>/dev/null)"
+        PLUGIN_EARGS="$(jsonfilter -s "$_pmc_obj" -e '@.args' 2>/dev/null)"
+    fi
 }
 
 # Если $1 — объект JSON (по виду и по разбору), печатает его без внешних пробелов. Иначе возвращает 1.
@@ -239,7 +255,8 @@ plugin_manager_fail() {
     _pf="$(plugin_manager_error)"
     _pf_code=failed
     case "$_pf" in busy|busy:*|*" busy"*) _pf_code=busy ;; esac
-    plugin_fail_raw "$_pf_code" "$_pf"
+    plugin_manager_core
+    plugin_fail_raw "$_pf_code" "$_pf" "$PLUGIN_ECODE" "$PLUGIN_EARGS"
 }
 
 # ---- состояние: файлы менеджера ---------------------------------------------------------------
@@ -461,7 +478,7 @@ plugin_last_line() {  # ФАЙЛ
 # Состояние задания: PJ_STATE (running|done|failed), PJ_RC, PJ_RESULT (сырой JSON, пусто — нет),
 # PJ_ERROR, PJ_PROGRESS. Возврат 1 — такого задания нет.
 plugin_job_state() {  # НОМЕР
-    PJ_STATE=""; PJ_RC=""; PJ_RESULT=""; PJ_ERROR=""; PJ_PROGRESS=""
+    PJ_STATE=""; PJ_RC=""; PJ_RESULT=""; PJ_ERROR=""; PJ_PROGRESS=""; PJ_ECODE=""; PJ_EARGS=""
     case "$1" in ''|*[!0-9a-f]*) return 1 ;; esac
     [ "${#1}" -le 32 ] || return 1
     _pjs="$PLUGIN_JOBS/$1"
@@ -478,6 +495,8 @@ plugin_job_state() {  # НОМЕР
             _pjs_msg=""
             if _pjs_obj="$(plugin_json_obj "$_pjs_out")"; then
                 _pjs_msg="$(jsonfilter -s "$_pjs_obj" -e '@.error' 2>/dev/null)"
+                PJ_ECODE="$(jsonfilter -s "$_pjs_obj" -e '@.code' 2>/dev/null)"
+                PJ_EARGS="$(jsonfilter -s "$_pjs_obj" -e '@.args' 2>/dev/null)"
             fi
             [ -n "$_pjs_msg" ] || _pjs_msg="$(cat "$_pjs/err" 2>/dev/null)"
             [ -n "$_pjs_msg" ] || { case "$_pjs_out" in '{'*|'['*) ;; *) _pjs_msg="$_pjs_out" ;; esac; }

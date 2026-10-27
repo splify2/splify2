@@ -45,7 +45,7 @@ req() { python3 -c 'import json,sys; print(json.dumps({"spec": sys.argv[1]}))' "
 cat > "$T/bin/jsonfilter" <<'EOF'
 #!/bin/sh
 # Выражения плагинов (манифест, state.json, ответы хуков) — общая заглушка tests/stub/jsonfilter.
-[ -n "${JSONFILTER_PLUGIN:-}" ] && case "$*" in *plugins\[*|*@.splify2*|*@.compat*|*@.rpc*|*@.ui.*|*@.ok*|*@.error*|*@.warn*|*@.plan*|*@.section*|*@.message*) exec sh "$JSONFILTER_PLUGIN" "$@" ;; esac
+[ -n "${JSONFILTER_PLUGIN:-}" ] && case "$*" in *plugins\[*|*@.splify2*|*@.compat*|*@.rpc*|*@.ui.*|*@.ok*|*@.error*|*@.warn*|*@.plan*|*@.section*|*@.message*|*@.args*|*@.code*) exec sh "$JSONFILTER_PLUGIN" "$@" ;; esac
 python3 -c 'import json,sys
 d = json.load(open(sys.argv[1], encoding="utf-8"))
 k = sys.argv[2][2:]
@@ -98,10 +98,12 @@ DNSVIA='{"version":2,"outputs":{"direct":{"kind":"direct"},"wg0":{"kind":"interf
 out="$(rpcd spec_set "$(req "$DNSVIA")")"
 check "сервер DNS через существующий выход проходит разбор" "true" "$(printf '%s' "$out" | jget ok)"
 DNSGONE='{"version":2,"outputs":{"direct":{"kind":"direct"},"wg0":{"kind":"interface","device":"wg0"}},"dns":{"upstreams":{"cf":{"url":"https://cloudflare-dns.com/dns-query","ips":["1.1.1.1"],"out":"wg1"}}}}'
-out="$(rpcd spec_set "$(req "$DNSGONE")")"
+out="$(JSONFILTER_PLUGIN="$ROOT/tests/stub/jsonfilter" rpcd spec_set "$(req "$DNSGONE")")"
 check "выход сервера DNS убран — отказ ядра" "false" "$(printf '%s' "$out" | jget ok)"
 check "и его слова называют сервер и выход" "yes" \
       "$(printf '%s' "$out" | jget error | grep -q 'dns.upstreams.cf.out: выхода «wg1» нет в outputs' && echo yes || echo no)"
+check "  и код ядра с приставкой steer., подстановки — по порядку" "steer.spec.output_missing_direct;dns.upstreams.cf.out;wg1" \
+      "$(printf '%s' "$out" | jget code);$(printf '%s' "$out" | python3 -c 'import json,sys; a=json.load(sys.stdin)["args"]; print(a["1"]+";"+a["2"])')"
 check "прежняя спека при отказе цела (DNS через wg1)" "$(want_spec "$DNSVIA")" "$(disk_spec)"
 
 NOMOD='{"version":2,"outputs":{"direct":{"kind":"direct"},"nl":{"kind":"tunnel","protocol":"hysteria2","subscription":"'"$T"'/etc/sub.txt"}}}'

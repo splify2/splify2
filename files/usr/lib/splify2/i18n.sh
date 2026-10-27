@@ -101,3 +101,96 @@ s2_fail_doc() {
     s2_fail_fields "$@"
     json_dump
 }
+
+# ---- Отказы ядра steer -----------------------------------------------------------------------------------------------
+#
+# Отказ ядра приходит как {"error":"<русский текст>","code":"spec.unknown_kind","args":{"1":"outputs.a",…}} (steer docs/errors.md).
+# Каркас переводит его так же, как свои тексты: словарь ключом «steer.<код ядра>» (lang-ru, lang-en), подстановки {1}, {id}… из
+# args; перед переводом — приставки {in}: {path}: (место в спеке: путь выхода и путь ключа; строка и столбец идут отдельно).
+# В ответе код — «steer.<код ядра>», args — как у ядра. Нет кода, перевода или словаря — текст ядра дословно.
+
+# Разобрать args ядра в переменные S2_CA_N, S2_CA_K_<i>, S2_CA_V_<i>. Зовут ДО json_init: json_load сбрасывает строящийся документ.
+s2_core_load() {  # ARGS_JSON
+    S2_CA_N=0
+    [ -n "${1:-}" ] || return 0
+    json_load "$1" 2>/dev/null || return 0
+    _s2c_ks=""
+    json_get_keys _s2c_ks 2>/dev/null
+    for _s2c_k in $_s2c_ks; do
+        _s2c_v=""
+        json_get_var _s2c_v "$_s2c_k" 2>/dev/null
+        S2_CA_N=$((S2_CA_N + 1))
+        eval "S2_CA_K_$S2_CA_N=\$_s2c_k; S2_CA_V_$S2_CA_N=\$_s2c_v"
+    done
+}
+
+# Значение подстановки по имени (после s2_core_load); пусто — нет.
+s2_core_arg() {  # ИМЯ
+    _s2a_i=0
+    while [ "$_s2a_i" -lt "${S2_CA_N:-0}" ]; do
+        _s2a_i=$((_s2a_i + 1))
+        eval "_s2a_k=\$S2_CA_K_$_s2a_i"
+        [ "$_s2a_k" = "$1" ] || continue
+        eval "printf '%s' \"\$S2_CA_V_$_s2a_i\""
+        return 0
+    done
+    return 1
+}
+
+# Текст отказа ядра на языке каркаса: s2_core_text КОД ТЕКСТ_ЯДРА. Нет перевода — ТЕКСТ_ЯДРА без изменений.
+s2_core_text() {
+    _s2x_t="$(s2_lookup "steer.$1")" || { printf '%s' "$2"; return 0; }
+    set --  # чистые позиционные: пары имя-значение
+    _s2x_i=0
+    while [ "$_s2x_i" -lt "${S2_CA_N:-0}" ]; do
+        _s2x_i=$((_s2x_i + 1))
+        eval "set -- \"\$@\" \"\$S2_CA_K_$_s2x_i\" \"\$S2_CA_V_$_s2x_i\""
+    done
+    _s2x_t="$(s2_subst "$_s2x_t" "$@")"
+    _s2x_p=""
+    for _s2x_n in in path; do
+        _s2x_v="$(s2_core_arg "$_s2x_n")" && [ -n "$_s2x_v" ] && _s2x_p="$_s2x_p$_s2x_v: "
+    done
+    printf '%s%s' "$_s2x_p" "$_s2x_t"
+}
+
+# Поля отказа ядра в строящийся документ: error (по-русски/по-английски), code «steer.КОД», args (с третьим словом — вид отказа плагинной части:
+# code — оно, msg — «steer.КОД»). Перед json_init — s2_core_load.
+# S2_CORE_PREFIX — слова, которые идут перед переводом (предупреждения хуков).
+s2_core_fields() {  # КОД ТЕКСТ_ЯДРА [ВИД_ОТКАЗА]
+    _s2y_c="$1"; _s2y_d="$2"
+    if s2_lookup "steer.$_s2y_c" >/dev/null; then
+        _s2y_x="${S2_CORE_PREFIX:-}$(s2_core_text "$_s2y_c" "$_s2y_d")"
+    else
+        _s2y_x="$_s2y_d"
+    fi
+    json_add_string error "$_s2y_x"
+    if [ -n "${3:-}" ]; then
+        # Ответ плагинной части: code — вид отказа ($3), msg — код текста.
+        json_add_string code "$3"
+        json_add_string msg "steer.$_s2y_c"
+    else
+        json_add_string code "steer.$_s2y_c"
+    fi
+    json_add_object args
+    _s2y_i=0
+    while [ "$_s2y_i" -lt "${S2_CA_N:-0}" ]; do
+        _s2y_i=$((_s2y_i + 1))
+        eval "json_add_string \"\$S2_CA_K_$_s2y_i\" \"\$S2_CA_V_$_s2y_i\""
+    done
+    json_close_object
+}
+
+# Отделить от вывода команды ядра (stdout и stderr вместе) строку отказа JSON, которую ядро печатает при STEER_ERR_JSON=1.
+# После вызова: S2_CORE_TEXT — вывод без этой строки, S2_CORE_CODE и S2_CORE_ARGS — код и подстановки ('' — кода нет).
+# Код возврата 0, если код есть.
+s2_core_split() {  # ВЫВОД
+    S2_CORE_TEXT="$1"; S2_CORE_CODE=""; S2_CORE_ARGS=""
+    case "$1" in *'{"ok":false,"error":"'*) ;; *) return 1 ;; esac
+    _s2k_j="$(printf '%s\n' "$1" | sed -n '/^{"ok":false,"error":"/h;${x;p}')"
+    [ -n "$_s2k_j" ] || return 1
+    S2_CORE_TEXT="$(printf '%s\n' "$1" | sed '/^{"ok":false,"error":"/d')"
+    S2_CORE_CODE="$(jsonfilter -s "$_s2k_j" -e '@.code' 2>/dev/null)"
+    S2_CORE_ARGS="$(jsonfilter -s "$_s2k_j" -e '@.args' 2>/dev/null)"
+    [ -n "$S2_CORE_CODE" ]
+}

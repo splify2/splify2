@@ -90,21 +90,44 @@ sub_names() {
 # на роутере без запущенного движка сохранение не должно становиться невозможным.
 # Ответ демона — одна строка JSON: code (код dry-run) и stderr (причина); error/message — отказ
 # самого демона, тогда проверка не состоялась, и падаем обратно на прямой dry-run.
+ENGINE_ERRF="${ENGINE_ERRF:-${TMPDIR:-/tmp}/.s2-engine-err.$$}"
 engine_check() {
-    local spec="$1" sock="${STEER_SOCK:-/etc/steer/steer.sock}" resp code msg
+    local spec="$1" sock="${STEER_SOCK:-/etc/steer/steer.sock}" resp code msg ec ea
+    rm -f "$ENGINE_ERRF"
     if [ -e "$sock" ]; then
         if resp="$("$STEER" ctl check <"$spec" 2>/dev/null)" && [ -n "$resp" ] \
             && [ -z "$(printf '%s' "$resp" | jsonfilter -q -e '@.error' 2>/dev/null)" ]; then
             code="$(printf '%s' "$resp" | jsonfilter -q -e '@.code' 2>/dev/null)"
             if [ -n "$code" ]; then
                 [ "$code" = 0 ] && return 0
+                # Код и подстановки отказа ядра (ecode, args) — в побочный файл: функцию зовут в $(...), переменные не доехали бы.
+                ec="$(printf '%s' "$resp" | jsonfilter -q -e '@.ecode' 2>/dev/null)"
+                if [ -n "$ec" ]; then
+                    ea="$(printf '%s' "$resp" | jsonfilter -q -e '@.args' 2>/dev/null)"
+                    printf '%s\n%s\n' "$ec" "$ea" > "$ENGINE_ERRF" 2>/dev/null
+                fi
                 printf '%s' "$resp" | jsonfilter -q -e '@.stderr' 2>/dev/null
                 return 1
             fi
         fi
     fi
-    msg="$("$STEER" apply --dry-run --spec "$spec" 2>&1 >/dev/null)" || { printf '%s' "$msg"; return 1; }
+    msg="$(STEER_ERR_JSON=1 "$STEER" apply --dry-run --spec "$spec" 2>&1 >/dev/null)" || {
+        if s2_core_split "$msg"; then
+            printf '%s\n%s\n' "$S2_CORE_CODE" "$S2_CORE_ARGS" > "$ENGINE_ERRF" 2>/dev/null
+        fi
+        printf '%s' "$S2_CORE_TEXT"
+        return 1
+    }
     return 0
+}
+
+# Код и подстановки отказа последней engine_check — в ENGINE_ECODE и ENGINE_EARGS (пусто — у отказа слова нет). Файл забирается.
+engine_core_load() {
+    ENGINE_ECODE=""; ENGINE_EARGS=""
+    [ -s "$ENGINE_ERRF" ] || return 0
+    ENGINE_ECODE="$(sed -n '1p' "$ENGINE_ERRF")"
+    ENGINE_EARGS="$(sed -n '2p' "$ENGINE_ERRF")"
+    rm -f "$ENGINE_ERRF"
 }
 
 # ЧТЕНИЕ СПЕКИ ИЗ ОБОЛОЧКИ. Интерфейс пишет спеку v2 (JSON с `"version": 2`), но до первого

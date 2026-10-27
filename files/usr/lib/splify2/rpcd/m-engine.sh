@@ -279,7 +279,8 @@ EOF
                 plugin_sync; plugin_sync_reload
                 json_init; json_add_boolean ok 1; json_dump
             else
-                fail "$(plugin_manager_error)"
+                plugin_manager_core
+                fail "$(plugin_manager_error)" "$PLUGIN_ECODE" "$PLUGIN_EARGS"
             fi
             exit 0
         fi
@@ -291,7 +292,8 @@ EOF
             json_add_string installed "$m $(plugin_version_of "$m")"
             json_dump
         else
-            fail "$(plugin_manager_error)"
+            plugin_manager_core
+            fail "$(plugin_manager_error)" "$PLUGIN_ECODE" "$PLUGIN_EARGS"
         fi
         ;;
 

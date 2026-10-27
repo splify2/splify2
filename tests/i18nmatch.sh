@@ -8,7 +8,11 @@
 #   4. plugin_fail: code — вид отказа (интерфейс выбирает по нему), msg — код текста.
 #   5. Программа плагина (lib.sh): s2_fail_code и s2_t говорят то же самое.
 #   6. Словари lang-ru и lang-en покрывают ровно те коды, что есть в коде, подстановки совпадают, английский текст вызова
-#      равен словарю lang-en (иначе английский каркас разошёлся бы со словарём).
+#      равен словарю lang-en (иначе английский каркас разошёлся бы со словарём). Ключи steer.* (отказы ядра) в коде не
+#      стоят: у них только пары языков и подстановки.
+#   7. Отказы ядра steer: код и args доходят до ответа с приставкой steer., текст переводится по словарю; приставки
+#      места {in}: {path}: ; без кода или без перевода — текст ядра дословно (spec_check, spec_set, менеджер плагинов,
+#      xsteer_link).
 #
 # Запуск: sh tests/i18nmatch.sh (нужен python3).
 set -u
@@ -144,6 +148,52 @@ check "s2_t печатает текст, не отказывая" "пустой 
 check "s2_fail — готовый текст без code" "готовый текст;НЕТ ПОЛЯ" "$(prog sh "$T/prog.sh" raw | pj 'd["error"]');$(prog sh "$T/prog.sh" raw | pj 'd["code"]')"
 check "программа плагина: код возврата 0 при отказе" "0" "$(prog sh "$T/prog.sh" fail >/dev/null; echo $?)"
 
+# ---- 7. отказы ядра steer: код и args доходят, текст переводится -------------------------------------------------
+# Заглушка ядра: apply --dry-run отказывает кодом спеки, xsteer-link — кодом ссылки, plugin — готовым JSON менеджера.
+mkdir -p "$T/mgr" "$T/etc"
+cat > "$T/bin/steer" <<'EOS'
+#!/bin/sh
+case "$1" in
+    apply)
+        if [ -n "${CORE_NOCODE:-}" ]; then echo 'steer: spec.json:4:11: outputs.a: слова без кода' >&2; exit 2; fi
+        echo 'steer: spec.json:4:11: outputs.a: неизвестный kind «bogus» (есть direct, block, interface, tunnel, awg, group)' >&2
+        [ -n "${STEER_ERR_JSON:-}" ] && echo '{"ok":false,"error":"spec.json:4:11: outputs.a: неизвестный kind «bogus» (есть direct, block, interface, tunnel, awg, group)","code":"spec.unknown_kind","args":{"1":"outputs.a","2":"bogus","3":"","at":"spec.json:4:11","line":"4","col":"11"}}' >&2
+        exit 2 ;;
+    xsteer-link)
+        echo 'steer: xs://: ссылка не разбирается' >&2
+        [ -n "${STEER_ERR_JSON:-}" ] && echo '{"ok":false,"error":"xs://: ссылка не разбирается","code":"xslink.rejected","args":{"why":"bad xs link"}}' >&2
+        exit 2 ;;
+    plugin) shift; PLUG="$T_MGR" exec sh "$T_STUB" "$@" ;;
+esac
+exit 0
+EOS
+chmod +x "$T/bin/steer"
+core() {  # [ПЕРЕМЕННЫЕ] МЕТОД ВХОД — метод rpcd с заглушкой ядра
+    _c_vars=""
+    while [ $# -gt 2 ]; do _c_vars="$_c_vars $1"; shift; done
+    printf '%s\n' "$2" | envs env SPEC="$T/etc/spec.json" SPEC_VIEW="$T/etc/spec-view.json" APPLIED="$T/etc/spec.applied.json" STEER="$T/bin/steer" T_MGR="$T/mgr" T_STUB="$ROOT/tests/stub/steer-plugin" $_c_vars sh "$SCRIPT" call "$1"
+}
+SPECIN='{"spec":"{\"version\":2}"}'
+out="$(core S2_LANG=ru spec_check "$SPECIN")"
+check "spec_check: русский текст по коду ядра" "outputs.a: неизвестный kind «bogus» (есть direct, block, interface, tunnel, awg, group)" "$(printf '%s' "$out" | pj 'd["error"]')"
+check "  code с приставкой steer." "steer.spec.unknown_kind" "$(printf '%s' "$out" | pj 'd["code"]')"
+check "  args ядра (в том числе место) дошли" "outputs.a;bogus;4;11" "$(printf '%s' "$out" | pj 'd["args"]["1"]');$(printf '%s' "$out" | pj 'd["args"]["2"]');$(printf '%s' "$out" | pj 'd["args"]["line"]');$(printf '%s' "$out" | pj 'd["args"]["col"]')"
+out="$(core spec_check "$SPECIN")"
+check "spec_check: английский текст по коду ядра" 'outputs.a: unknown kind "bogus" (known: direct, block, interface, tunnel, awg, group)' "$(printf '%s' "$out" | pj 'd["error"]')"
+out="$(core S2_LANG=ru CORE_NOCODE=1 spec_check "$SPECIN")"
+check "spec_check: у отказа нет кода — слова ядра дословно, code нет" "outputs.a: слова без кода;НЕТ ПОЛЯ" "$(printf '%s' "$out" | pj 'd["error"]');$(printf '%s' "$out" | pj 'd["code"]')"
+# Менеджер плагинов: code и args ядра идут в msg и args, code — вид отказа.
+printf '%s\n' '{"ok":false,"error":"плагина vless нет ни в одном репозитории","code":"plugin.not_in_any_repo","args":{"id":"vless"}}' > "$T/mgr/failraw.list"
+out="$(core S2_LANG=en plugins_list '{}' 2>/dev/null)"
+check "plugins_list: английский текст по коду менеджера" "The plugin vless is in no repository" "$(printf '%s' "$out" | pj 'd["error"]')"
+check "  code — вид отказа, msg — код ядра, args" "failed;steer.plugin.not_in_any_repo;vless" "$(printf '%s' "$out" | pj 'd["code"]');$(printf '%s' "$out" | pj 'd["msg"]');$(printf '%s' "$out" | pj 'd["args"]["id"]')"
+out="$(core S2_LANG=ru plugins_list '{}' 2>/dev/null)"
+check "plugins_list: русский текст по коду менеджера" "плагина vless нет ни в одном репозитории" "$(printf '%s' "$out" | pj 'd["error"]')"
+
+out="$(core S2_LANG=en xsteer_link '{"link":"xs://x"}')"
+check "xsteer_link: отказ ядра с кодом — code steer.xslink.rejected, текст по словарю" "steer.xslink.rejected;bad xs link;bad xs link" \
+    "$(printf '%s' "$out" | pj 'd["code"]');$(printf '%s' "$out" | pj 'd["error"]');$(printf '%s' "$out" | pj 'd["args"]["why"]')"
+
 # ---- 6. словари против кода -------------------------------------------------------------------------------
 python3 - "$ROOT" <<'PY' > "$T/dict.out"
 import glob, json, os, re, sys
@@ -163,17 +213,19 @@ for f in files:
 sub = lambda s: sorted(re.findall(r"\{(\w+)\}", s))
 print("missing-en", sorted(k for k in used if k not in en))
 print("missing-ru", sorted(k for k in used if k not in ru))
-print("unused", sorted(k for k in set(en) | set(ru) if k not in used))
+print("unused", sorted(k for k in set(en) | set(ru) if k not in used and not k.startswith("steer.")))
 print("keys-differ", sorted(set(en) ^ set(ru)))
 print("default-differs", sorted(k for k, ds in used.items() if k in en and any(d != en[k] for d in ds)))
 print("placeholders", sorted(k for k in en if k in ru and sub(en[k]) != sub(ru[k])))
 print("empty", sorted(k for d in (en, ru) for k, v in d.items() if not isinstance(v, str) or not v))
 print("code-count", len(used) > 300)
+print("steer-count", len([k for k in en if k.startswith("steer.")]) > 300)
 PY
 for k in missing-en missing-ru unused keys-differ default-differs placeholders empty; do
     check "словари: $k" "[]" "$(sed -n "s/^$k //p" "$T/dict.out")"
 done
 check "словари: кодов в коде больше трёхсот" "True" "$(sed -n 's/^code-count //p' "$T/dict.out")"
+check "словари: отказов ядра (steer.*) больше трёхсот" "True" "$(sed -n 's/^steer-count //p' "$T/dict.out")"
 
 echo
 if [ "$fails" -ne 0 ]; then echo "ЕСТЬ ПРОВАЛЫ: $fails"; exit 1; fi

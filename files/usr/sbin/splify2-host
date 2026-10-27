@@ -139,7 +139,8 @@ cmd_spec() {  # get [ФАЙЛ] | uses ПУТЬ | check ФАЙЛ
         check)
             [ -f "${2:-}" ] || fail_code spec.no_file "There is no spec file"
             if _s_err="$(engine_check "$2")"; then ok_json; fi
-            fail "${_s_err:-$(s2_t spec.core_rejected_short "The core rejected the spec")}" ;;
+            engine_core_load
+            fail "${_s_err:-$(s2_t spec.core_rejected_short "The core rejected the spec")}" "$ENGINE_ECODE" "$ENGINE_EARGS" ;;
         *) usage ;;
     esac
 }
@@ -684,6 +685,9 @@ state_import() {  # КАТАЛОГ
         fi
         if ! _i_err="$(engine_check "$_i_tmp")"; then
             rm -f "$_i_tmp"
+            # Причина — словами каркаса, если у отказа ядра есть код.
+            engine_core_load
+            if [ -n "$ENGINE_ECODE" ]; then s2_core_load "$ENGINE_EARGS"; _i_err="$(s2_core_text "$ENGINE_ECODE" "$_i_err")"; fi
             fail "${_i_hook:+$_i_hook; }$(s2_t state.core_rejected_archive "{reason}. The subscriptions and keys from the archive have already been restored." reason "${_i_err:-$(s2_t state.core_rejected_arch_spec "The core rejected the spec from the archive")}")"
         fi
         [ -n "$_i_hook" ] && _i_warn="$_i_warn$_i_hook; "

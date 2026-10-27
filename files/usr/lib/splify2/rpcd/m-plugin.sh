@@ -166,12 +166,13 @@ case "$2" in
             plugin_fail no_job plugin.no_job "No such job"
             exit 0
         fi
+        s2_core_load "$PJ_EARGS"    # до json_init: json_load сбрасывает документ
         json_init
         case "$PJ_STATE" in
             failed)
                 json_add_boolean ok 0
-                json_add_string error "$PJ_ERROR"
-                json_add_string code failed
+                if [ -n "$PJ_ECODE" ]; then s2_core_fields "$PJ_ECODE" "$PJ_ERROR" failed
+                else json_add_string error "$PJ_ERROR"; json_add_string code failed; fi
                 ;;
             *) json_add_boolean ok 1 ;;
         esac
