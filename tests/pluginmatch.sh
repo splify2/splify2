@@ -50,7 +50,7 @@ chmod +x "$T/bin/steer" "$T/bin/initd-rpcd"
 PLUG="$T/plug"
 PATH="$T/bin:$PATH"
 envs() {
-    env SANDBOX="$T" PATH="$T/bin:$PATH" \
+    env SANDBOX="$T" PATH="$T/bin:$PATH" S2_LANG=ru S2_DICT_EXTRA="$ROOT/plugins/lang-ru/i18n/backend" \
         JSHN_SH="$ROOT/tests/stub/jshn.sh" RPCD_LIB="$ROOT/files/usr/lib/splify2/rpcd" \
         FAST_SH="$ROOT/files/usr/lib/splify2/fast.sh" FETCH_SH="$ROOT/files/usr/lib/splify2/fetch.sh" \
         SPLIFY2_LOCK_DIR="$T/lock" \
@@ -554,9 +554,9 @@ check "  всё в согласии — перечитки нет" "1" "$(reload
 rm -f "$PLUG/rpcd/splify2.p.recheck"
 rm -f "$T/rpcd-initd.log"
 out="$(envs sh "$ROOT/files/usr/sbin/splify2-plugin-sync" --no-reload)"
-check "splify2-plugin-sync --no-reload: приводит, не перечитывает" "изменено;yes;0" \
+check "splify2-plugin-sync --no-reload: приводит, не перечитывает" "changed;yes;0" \
     "$out;$([ -L "$PLUG/rpcd/splify2.p.recheck" ] && echo yes || echo no);$(reload_count)"
-check "  повторно — без изменений" "без изменений" "$(envs sh "$ROOT/files/usr/sbin/splify2-plugin-sync")"
+check "  повторно — без изменений" "unchanged" "$(envs sh "$ROOT/files/usr/sbin/splify2-plugin-sync")"
 
 # ---- интерфейсы плагинов: ссылка на ui/ ----------------------------------------------------------------------------------
 plug_reset

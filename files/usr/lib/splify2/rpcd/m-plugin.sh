@@ -42,7 +42,7 @@ plugin_job_after() {
 plugin_need_id() {
     read -r input
     PL_ID="$(plugin_in id)"
-    plugin_id_ok "$PL_ID" || { plugin_fail bad_request "Недопустимое имя плагина"; return 1; }
+    plugin_id_ok "$PL_ID" || { plugin_fail bad_request plugin.bad_name "Invalid plugin name"; return 1; }
     return 0
 }
 
@@ -131,7 +131,7 @@ case "$2" in
         read -r input
         _pq="$(plugin_in query)"
         # Слово уходит менеджеру одним аргументом; начинаться с «-» оно не может — его приняли бы за флаг.
-        case "$_pq" in -*) plugin_fail bad_request "Запрос не может начинаться с дефиса"; exit 0 ;; esac
+        case "$_pq" in -*) plugin_fail bad_request plugin.query_dash "The query cannot start with a hyphen"; exit 0 ;; esac
         if [ -n "$_pq" ]; then plugin_manager search "$_pq"; else plugin_manager search; fi ||
             { plugin_manager_fail; exit 0; }
         plugin_ok_raw plugins "$(plugin_json_array "$PLUGIN_OUT" plugins)"
@@ -147,7 +147,7 @@ case "$2" in
         read -r input
         PL_ID="$(plugin_in id)"
         if [ -n "$PL_ID" ]; then
-            plugin_id_ok "$PL_ID" || { plugin_fail bad_request "Недопустимое имя плагина"; exit 0; }
+            plugin_id_ok "$PL_ID" || { plugin_fail bad_request plugin.bad_name "Invalid plugin name"; exit 0; }
             plugin_manager status "$PL_ID" || { plugin_manager_fail; exit 0; }
         else
             plugin_manager status || { plugin_manager_fail; exit 0; }
@@ -163,7 +163,7 @@ case "$2" in
         read -r input
         _pj_id="$(plugin_in id)"
         if ! plugin_job_state "$_pj_id"; then
-            plugin_fail no_job "Такого задания нет"
+            plugin_fail no_job plugin.no_job "No such job"
             exit 0
         fi
         json_init
@@ -191,9 +191,9 @@ case "$2" in
         plugin_need_id || exit 0
         PL_VER="$(plugin_in version)"
         if [ -n "$PL_VER" ] && ! plugin_ver_ok "$PL_VER"; then
-            plugin_fail bad_request "Недопустимая версия: $PL_VER"; exit 0
+            plugin_fail bad_request plugin.bad_version "Invalid version: {version}" version "$PL_VER"; exit 0
         fi
-        plugin_job_new || { plugin_fail failed "Не удалось завести задание"; exit 0; }
+        plugin_job_new || { plugin_fail failed plugin.job_failed "Cannot start the job"; exit 0; }
         PL_ACTION=install
         if [ -n "$PL_VER" ]; then plugin_job_start "$STEER" plugin install "$PL_ID" "$PL_VER" --json
         else plugin_job_start "$STEER" plugin install "$PL_ID" --json; fi
@@ -205,9 +205,9 @@ case "$2" in
         read -r input
         PL_ID="$(plugin_in id)"
         if [ -n "$PL_ID" ] && ! plugin_id_ok "$PL_ID"; then
-            plugin_fail bad_request "Недопустимое имя плагина"; exit 0
+            plugin_fail bad_request plugin.bad_name "Invalid plugin name"; exit 0
         fi
-        plugin_job_new || { plugin_fail failed "Не удалось завести задание"; exit 0; }
+        plugin_job_new || { plugin_fail failed plugin.job_failed "Cannot start the job"; exit 0; }
         PL_ACTION=update
         if [ -n "$PL_ID" ]; then plugin_job_start "$STEER" plugin update "$PL_ID" --json
         else plugin_job_start "$STEER" plugin update --json; fi
@@ -242,7 +242,7 @@ case "$2" in
         case "$(plugin_in enabled)" in
             true)  _au=on ;;
             false) _au=off ;;
-            *) plugin_fail bad_request "Нужно поле enabled: true или false"; exit 0 ;;
+            *) plugin_fail bad_request plugin.need_enabled "The enabled field must be true or false"; exit 0 ;;
         esac
         if plugin_manager autoupdate "$PL_ID" "$_au"; then
             plugin_ok_raw id "\"$PL_ID\"" enabled "$([ "$_au" = on ] && echo true || echo false)"
@@ -255,7 +255,7 @@ case "$2" in
         # Номер ключа репозитория — его человек видит до того, как принять ключ.
         read -r input
         _rk="$(plugin_in key)"
-        _rk_id="$(plugin_key_id "$_rk")" || { plugin_fail bad_request "Ключ не распознан"; exit 0; }
+        _rk_id="$(plugin_key_id "$_rk")" || { plugin_fail bad_request repo.key_unknown "The key is not recognized"; exit 0; }
         plugin_ok_raw key_id "\"$_rk_id\""
         ;;
 
@@ -268,18 +268,18 @@ case "$2" in
         _ra_key="$(plugin_in key)"
         case "$_ra_url" in
             https://?*|http://?*) ;;
-            *) plugin_fail bad_request "Нужен адрес репозитория, начинающийся с https://"; exit 0 ;;
+            *) plugin_fail bad_request repo.need_https "The repository address must start with https://"; exit 0 ;;
         esac
         case "$_ra_url" in *[[:space:]]*)
-            plugin_fail bad_request "В адресе репозитория недопустимые знаки"; exit 0 ;;
+            plugin_fail bad_request repo.bad_url "The repository address has invalid characters"; exit 0 ;;
         esac
-        _ra_id="$(plugin_key_id "$_ra_key")" || { plugin_fail bad_request "Ключ не распознан"; exit 0; }
+        _ra_id="$(plugin_key_id "$_ra_key")" || { plugin_fail bad_request repo.key_unknown "The key is not recognized"; exit 0; }
         _ra_want="$(plugin_in key_id)"
         if [ -n "$_ra_want" ] && [ "$_ra_want" != "$_ra_id" ]; then
-            plugin_fail bad_request "Номер ключа $_ra_want не совпадает с ключом ($_ra_id)"; exit 0
+            plugin_fail bad_request repo.key_mismatch "The key number {want} does not match the key ({id})" want "$_ra_want" id "$_ra_id"; exit 0
         fi
         # Ключ — файлом на stdin менеджера: конвейер запустил бы plugin_manager в подоболочке, и его итог пропал бы.
-        _ra_f="$(mktemp 2>/dev/null)" || { plugin_fail failed "Не удалось завести временный файл"; exit 0; }
+        _ra_f="$(mktemp 2>/dev/null)" || { plugin_fail failed tmp.file_failed "Cannot create a temporary file"; exit 0; }
         printf '%s\n' "$_ra_key" > "$_ra_f"
         plugin_manager repo add "$_ra_url" "$_ra_id" < "$_ra_f"
         _ra_rc=$?
@@ -295,7 +295,7 @@ case "$2" in
         read -r input
         _rd="$(plugin_in name)"
         case "$_rd" in
-            ''|*[!A-Za-z0-9._-]*) plugin_fail bad_request "Недопустимое имя репозитория"; exit 0 ;;
+            ''|*[!A-Za-z0-9._-]*) plugin_fail bad_request repo.bad_name "Invalid repository name"; exit 0 ;;
         esac
         if plugin_manager repo del "$_rd"; then
             plugin_ok_raw name "\"$_rd\""
@@ -321,14 +321,14 @@ case "$2" in
         # JSON Schema of kind-keys.schema.json); the values live in conf/<id>/settings.json - the file the
         # plugin itself reads. Answer: {ok, id, schema, values}.
         plugin_need_id || exit 0
-        [ -n "$(plugin_state_of "$PL_ID")" ] || { plugin_fail not_installed "Plugin $PL_ID is not installed"; exit 0; }
+        [ -n "$(plugin_state_of "$PL_ID")" ] || { plugin_fail not_installed plugin.not_installed "Plugin {id} is not installed" id "$PL_ID"; exit 0; }
         _pg_man="$PLUGIN_ROOT/$PL_ID/plugin.json"
         _pg_rel="$(jsonfilter -s "$(cat "$_pg_man" 2>/dev/null)" -e '@.splify2.settings.schema' 2>/dev/null)"
         case "$_pg_rel" in
-            ''|/*|*..*|*[!A-Za-z0-9._/-]*) plugin_fail no_settings "Plugin $PL_ID has no settings"; exit 0 ;;
+            ''|/*|*..*|*[!A-Za-z0-9._/-]*) plugin_fail no_settings plugin.no_settings "Plugin {id} has no settings" id "$PL_ID"; exit 0 ;;
         esac
         _pg_sch="$(plugin_json_obj "$(cat "$PLUGIN_ROOT/$PL_ID/$_pg_rel" 2>/dev/null)")" ||
-            { plugin_fail failed "The settings schema of $PL_ID is unreadable"; exit 0; }
+            { plugin_fail failed plugin.schema_unreadable "The settings schema of {id} cannot be read" id "$PL_ID"; exit 0; }
         _pg_val="$(plugin_json_obj "$(cat "$PLUGIN_CONF_DIR/$PL_ID/settings.json" 2>/dev/null)")" || _pg_val="{}"
         plugin_ok_raw id "\"$PL_ID\"" schema "$_pg_sch" values "$_pg_val"
         ;;
@@ -338,16 +338,16 @@ case "$2" in
         # against the schema is the form's work and the plugin's own (it reads the file), here only the shape.
         read -r input
         PL_ID="$(plugin_in id)"
-        plugin_id_ok "$PL_ID" || { plugin_fail bad_request "Invalid plugin name"; exit 0; }
-        [ -n "$(plugin_state_of "$PL_ID")" ] || { plugin_fail not_installed "Plugin $PL_ID is not installed"; exit 0; }
-        _pv="$(plugin_json_obj "$(plugin_in values)")" || { plugin_fail bad_request "values must be an object"; exit 0; }
-        [ "$(printf '%s' "$_pv" | wc -c)" -le 262144 ] || { plugin_fail bad_request "The settings are larger than 256 KB"; exit 0; }
+        plugin_id_ok "$PL_ID" || { plugin_fail bad_request plugin.bad_name "Invalid plugin name"; exit 0; }
+        [ -n "$(plugin_state_of "$PL_ID")" ] || { plugin_fail not_installed plugin.not_installed "Plugin {id} is not installed" id "$PL_ID"; exit 0; }
+        _pv="$(plugin_json_obj "$(plugin_in values)")" || { plugin_fail bad_request plugin.values_object "The values must be an object"; exit 0; }
+        [ "$(printf '%s' "$_pv" | wc -c)" -le 262144 ] || { plugin_fail bad_request plugin.settings_big "The settings are larger than 256 KB"; exit 0; }
         mkdir -p "$PLUGIN_CONF_DIR/$PL_ID" 2>/dev/null
         _pv_f="$PLUGIN_CONF_DIR/$PL_ID/settings.json"
         printf '%s\n' "$_pv" > "$_pv_f.new.$$" 2>/dev/null && mv "$_pv_f.new.$$" "$_pv_f" ||
-            { rm -f "$_pv_f.new.$$"; plugin_fail failed "Cannot write the settings - disk full?"; exit 0; }
+            { rm -f "$_pv_f.new.$$"; plugin_fail failed plugin.settings_not_saved "The settings were not saved. Free up some space and try again."; exit 0; }
         plugin_ok_raw id "\"$PL_ID\""
         ;;
 
-    *) fail "неизвестный метод" ;;
+    *) fail_code req.unknown_method "Unknown method" ;;
 esac

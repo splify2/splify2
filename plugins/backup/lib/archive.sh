@@ -76,12 +76,12 @@ backup_ext_export() {
             if [ "$_bx_rok" != 0 ] && json_select sections 2>/dev/null; then
                 json_get_keys _bx_names
                 for _bx_n in $_bx_names; do
-                    case "$_bx_n" in ''|*[!A-Za-z0-9_]*) logger -t backup "плагин $_bx_id: имя раздела «$_bx_n» не годится"; continue ;; esac
+                    case "$_bx_n" in ''|*[!A-Za-z0-9_]*) logger -t backup "plugin $_bx_id: the section name '$_bx_n' is not valid"; continue ;; esac
                     [ "${#_bx_n}" -le 64 ] || continue
                     _bx_t=""
                     json_get_var _bx_t "$_bx_n"
                     if [ -n "$(printf '%s' "$_bx_t" | LC_ALL=C tr -d '\11\12\40-\377')" ]; then
-                        logger -t backup "плагин $_bx_id: раздел $_bx_n с управляющими знаками пропущен"; continue
+                        logger -t backup "plugin $_bx_id: section $_bx_n with control characters skipped"; continue
                     fi
                     printf '[plugin %s %s]\n' "$_bx_id" "$_bx_n"
                     printf '%s\n' "$_bx_t" | awk '{ print " " $0 }'
@@ -90,7 +90,7 @@ backup_ext_export() {
             fi
             json_select ..
         else
-            logger -t backup "плагин $_bx_id не отдал разделы архива"
+            logger -t backup "plugin $_bx_id gave no archive sections"
         fi
         json_select ..
     done
@@ -179,17 +179,17 @@ backup_ext_each() {  # КАТАЛОГ ОПЕРАЦИЯ
         case "$BK_ST" in
             ok)
                 if [ "$BK_OK" = 0 ]; then
-                    if [ "$2" = check ]; then BK_PLUG_FAIL="плагин $_be_id: ${BK_ERR:-архив не годится}"; return 1; fi
-                    BK_PLUG_WARN="${BK_PLUG_WARN}плагин $_be_id не принял свои настройки из архива${BK_ERR:+ ($BK_ERR)}; "
+                    if [ "$2" = check ]; then BK_PLUG_FAIL="$(s2_t backup.plugin_fail "Plugin {id}: {why}" id "$_be_id" why "${BK_ERR:-$(s2_t backup.archive_invalid "The archive is not valid")}")"; return 1; fi
+                    BK_PLUG_WARN="${BK_PLUG_WARN}$(s2_t backup.plugin_rejected "Plugin {id} did not accept its settings from the archive{why}; " id "$_be_id" why "${BK_ERR:+ ($BK_ERR)}")"
                 else
                     BK_PLUG_DONE=$((BK_PLUG_DONE + 1))
                 fi
                 BK_PLUG_WARN="$BK_PLUG_WARN$BK_WARN"
                 BK_PLUG_LISTS="$BK_PLUG_LISTS$BK_LISTS" ;;
             absent)
-                BK_PLUG_WARN="${BK_PLUG_WARN}раздел плагина $_be_id не восстановлен: плагин не стоит или не принимает разделы архива; " ;;
+                BK_PLUG_WARN="${BK_PLUG_WARN}$(s2_t backup.plugin_absent "The section of plugin {id} was not restored: the plugin is not installed or does not accept archive sections; " id "$_be_id")" ;;
             *)
-                BK_PLUG_WARN="${BK_PLUG_WARN}плагин $_be_id не принял свои настройки из архива; " ;;
+                BK_PLUG_WARN="${BK_PLUG_WARN}$(s2_t backup.plugin_rejected_short "Plugin {id} did not accept its settings from the archive; " id "$_be_id")" ;;
         esac
     done
     return 0
@@ -205,12 +205,12 @@ backup_build() {  # КАТАЛОГ_ВЫГРУЗКИ
     _bb_fmt="$BACKUP_FORMAT"
     [ -n "$_bb_ext" ] && _bb_fmt="$BACKUP_FORMAT_EXT"
     printf 'splify2-backup %s\n' "$_bb_fmt"
-    printf '# Настройки splify2: спека, подписки, ключи туннелей, данные плагинов и поля uci.\n'
-    printf '# Восстанавливается тем же интерфейсом. Зеркал категорий\n'
-    printf '# издателя здесь нет: роутер скачивает их сам, они одинаковы у всех.\n'
-    printf '# ВНИМАНИЕ: внутри ссылки vless:// и приватные ключи туннелей — то же, что\n'
-    printf '# пароль от всех подключений. Кто получил этот файл, тот получил доступ.\n'
-    printf '# Не выкладывайте его в чат поддержки и не храните в общей папке.\n'
+    printf '# %s\n' "$(s2_t backup.header_1 "splify2 settings: the spec, subscriptions, tunnel keys, plugin data and uci fields.")"
+    printf '# %s\n' "$(s2_t backup.header_2 "Restored by the same interface. Mirrors of the categories")"
+    printf '# %s\n' "$(s2_t backup.header_3 "of the publisher are not here: the router downloads them itself, they are the same for everyone.")"
+    printf '# %s\n' "$(s2_t backup.header_4 "WARNING: it holds vless:// links and private tunnel keys - the same as")"
+    printf '# %s\n' "$(s2_t backup.header_5 "the password of all connections. Whoever gets this file gets access.")"
+    printf '# %s\n' "$(s2_t backup.header_6 "Do not post it to a support chat or keep it in a shared folder.")"
     # awk 1, а не cat: файл без завершающего перевода строки склеил бы свою последнюю строку с заголовком следующего.
     [ -f "$1/spec" ] && { printf '[spec]\n'; awk 1 "$1/spec"; }
     [ -f "$1/sub" ] && { printf '[sub]\n'; awk 1 "$1/sub"; }
@@ -241,12 +241,31 @@ backup_build() {  # КАТАЛОГ_ВЫГРУЗКИ
 # версии, которой этот плагин не знает, и в обоих случаях молча восстановить половину хуже, чем не восстановить ничего.
 # Имена файлов в песочнице собираются ЗДЕСЬ из проверенных регулярным выражением частей — из присланного файла ни один
 # путь не берётся.
+# Разбор архива на разделы: при отказе печатает причину на языке каркаса (awk называет её кодом и подробностью через
+# табуляцию, слова подставляет оболочка).
 backup_split() {  # ФАЙЛ КАТАЛОГ
+    _bs_out="$(backup_split_awk "$@")"; _bs_rc=$?
+    [ "$_bs_rc" = 0 ] || {
+        _bs_tab="$(printf '\t')"
+        _bs_c="${_bs_out%%"$_bs_tab"*}"; _bs_a=""; [ "$_bs_c" = "$_bs_out" ] || _bs_a="${_bs_out#*"$_bs_tab"}"
+        case "$_bs_c" in
+            backup.not_settings) s2_t backup.not_settings "This is not a splify2 settings file" ;;
+            backup.version) s2_t backup.version "The file is version {file}, this plugin understands up to {max}" file "${_bs_a%%"$_bs_tab"*}" max "${_bs_a#*"$_bs_tab"}" ;;
+            backup.unknown_section) s2_t backup.unknown_section "Unknown section: {text}" text "$_bs_a" ;;
+            backup.dup_section) s2_t backup.dup_section "The section repeats: {text}" text "$_bs_a" ;;
+            backup.line_outside) s2_t backup.line_outside "A line outside any section: {text}" text "$_bs_a" ;;
+            backup.line_indent) s2_t backup.line_indent "A plugin section line without an indent: {text}" text "$_bs_a" ;;
+            *) printf '%s' "$_bs_out" ;;
+        esac
+    }
+    return "$_bs_rc"
+}
+backup_split_awk() {  # ФАЙЛ КАТАЛОГ
     awk -v dir="$2" -v ver="$BACKUP_FORMAT_EXT" '
     NR == 1 {
-        if ($0 !~ /^splify2-backup [0-9]+$/) { print "это не файл настроек splify2"; exit 1 }
+        if ($0 !~ /^splify2-backup [0-9]+$/) { print "backup.not_settings"; exit 1 }
         if ($2 + 0 < 1 || $2 + 0 > ver + 0) {
-            print "файл версии " $2 ", этот плагин понимает до " ver " включительно"
+            print "backup.version\t" $2 "\t" ver
             exit 1
         }
         next
@@ -288,19 +307,19 @@ backup_split() {  # ФАЙЛ КАТАЛОГ
             split(substr($0, 2, length($0) - 2), p, " ")
             cur = dir "/plug." p[2] "." p[3]; kind = "plugin"
         }
-        else { print "непонятный раздел: " substr($0, 1, 40); exit 1 }
-        if (seen[cur]++) { print "раздел повторяется: " substr($0, 1, 40); exit 1 }
+        else { print "backup.unknown_section\t" substr($0, 1, 40); exit 1 }
+        if (seen[cur]++) { print "backup.dup_section\t" substr($0, 1, 40); exit 1 }
         printf "" > cur
         next
     }
     {
         if (cur == "") {
             if ($0 ~ /^[ \t]*$/) next
-            print "строка вне раздела: " substr($0, 1, 40)
+            print "backup.line_outside\t" substr($0, 1, 40)
             exit 1
         }
         if (kind == "plugin") {
-            if (substr($0, 1, 1) != " ") { print "строка раздела плагина без отступа: " substr($0, 1, 40); exit 1 }
+            if (substr($0, 1, 1) != " ") { print "backup.line_indent\t" substr($0, 1, 40); exit 1 }
             print substr($0, 2) > cur
             next
         }
@@ -370,21 +389,21 @@ backup_get() {
         # Под umask 077: в архиве ПРИВАТНЫЕ КЛЮЧИ туннелей. Рабочий каталог плагина закрыт (0700, root), файл между
         # запросами кусков лежит ровно столько, сколько длится выгрузка.
         rm -f "$BACKUP_OUT"
-        E="$(mktemp -d "$RUN_DIR/export.XXXXXX")" || s2_fail "не удалось собрать архив"
+        E="$(mktemp -d "$RUN_DIR/export.XXXXXX")" || s2_fail_code backup.build_failed "Cannot build the archive"
         if ! "$SPLIFY2_HOST" state export "$E" >/dev/null; then
-            rm -rf "$E"; s2_fail "не удалось выгрузить настройки"
+            rm -rf "$E"; s2_fail_code backup.export_failed "Cannot export the settings"
         fi
         ( umask 077; backup_build "$E" > "$BACKUP_OUT" ) ||
-            { rm -rf "$E"; rm -f "$BACKUP_OUT"; s2_fail "не удалось собрать архив"; }
+            { rm -rf "$E"; rm -f "$BACKUP_OUT"; s2_fail_code backup.build_failed "Cannot build the archive"; }
         rm -rf "$E"
     fi
-    [ -s "$BACKUP_OUT" ] || s2_fail "архив не собран — запросите его с начала"
+    [ -s "$BACKUP_OUT" ] || s2_fail_code backup.not_built "The archive is not built: request it from the start"
     total="$(wc -c 2>/dev/null < "$BACKUP_OUT" || echo 0)"
     # Отказ на СОБСТВЕННОМ пределе восстановления, а не молчаливая отдача: экспорт, выдающий файл, который его же импорт
     # откажется принять, обнаруживается в тот день, когда бекап понадобился.
     if [ "$total" -gt "$BACKUP_MAX_BYTES" ]; then
         rm -f "$BACKUP_OUT"
-        s2_fail "настройки со своими списками не влезают в архив: $((total / 1024)) КБ при пределе $((BACKUP_MAX_BYTES / 1024)) КБ"
+        s2_fail_code backup.too_big_out "The settings with their own lists do not fit into the archive: {size} KB with a limit of {max} KB" size "$((total / 1024))" max "$((BACKUP_MAX_BYTES / 1024))"
     fi
     # Заплатка `printf X` и срезание её обратно: подстановка команды съедает ЗАВЕРШАЮЩИЕ переводы строки, а кусок обязан
     # приехать байт в байт — иначе на границе куска две строки настроек склеиваются в одну.
@@ -417,7 +436,7 @@ backup_put() {
     # Применения здесь нет и быть не должно: восстановленное человек видит как неприменённое и применяет сам (модель
     # «сохранено ≠ применено»).
     read -r input
-    json_load "$input" 2>/dev/null || s2_fail "неразбираемый запрос"
+    json_load "$input" 2>/dev/null || s2_fail_code req.unparsable "Unparsable request"
     text=''; append=''; final=''
     json_get_var text text
     json_get_var append append
@@ -430,24 +449,24 @@ backup_put() {
     # прислать двадцать кусков по пределу каждый.
     if [ "$((have + add))" -gt "$BACKUP_MAX_BYTES" ]; then
         rm -f "$BACKUP_IN"
-        s2_fail "архив больше $((BACKUP_MAX_BYTES / 1024)) КБ — столько настроек не бывает"
+        s2_fail_code backup.too_big_in "The archive is larger than {max} KB: settings are never that large" max "$((BACKUP_MAX_BYTES / 1024))"
     fi
     # Накопитель создаётся закрытым: присланный файл несёт чужие приватные ключи.
     [ -f "$BACKUP_IN" ] || ( umask 077; : > "$BACKUP_IN" )
-    printf '%s' "$text" >> "$BACKUP_IN" || { rm -f "$BACKUP_IN"; s2_fail "не записалось — кончилось место?"; }
+    printf '%s' "$text" >> "$BACKUP_IN" || { rm -f "$BACKUP_IN"; s2_fail_code lists.write_failed "Cannot write: no space left"; }
     case "$final" in
         1|true) ;;
         *)  json_init; json_add_boolean ok 1; json_add_int bytes "$((have + add))"; json_dump; exit 0 ;;
     esac
-    [ -s "$BACKUP_IN" ] || { rm -f "$BACKUP_IN"; s2_fail "пустой архив"; }
+    [ -s "$BACKUP_IN" ] || { rm -f "$BACKUP_IN"; s2_fail_code backup.empty "The archive is empty"; }
     # Управляющие байты — отдельной проверкой на весь файл и до разбора: перевод строки и табуляция законны, всё прочее
     # в текстовом файле означает либо двоичный мусор, либо попытку спрятать строку от построчного разборщика.
     if [ "$(LC_ALL=C tr -d '\11\12\40-\377' < "$BACKUP_IN" | wc -c)" != 0 ]; then
         rm -f "$BACKUP_IN"
-        s2_fail "в архиве двоичные данные — это не файл настроек"
+        s2_fail_code backup.binary "The archive holds binary data: this is not a settings file"
     fi
-    D="$(mktemp -d "$RUN_DIR/restore.XXXXXX")" || s2_fail "не удалось развернуть архив"
-    why="$(backup_split "$BACKUP_IN" "$D")" || backup_giveup "${why:-архив не разбирается}"
+    D="$(mktemp -d "$RUN_DIR/restore.XXXXXX")" || s2_fail_code backup.unpack_failed "Cannot unpack the archive"
+    why="$(backup_split "$BACKUP_IN" "$D")" || backup_giveup "${why:-$(s2_t backup.unparsable "The archive cannot be parsed")}"
     backup_legacy "$D"
     fw=0
     for f in "$D/spec" "$D/sub" "$D/options" "$D/select" "$D"/sub.* "$D"/xsteer.*; do
@@ -455,13 +474,13 @@ backup_put() {
     done
     plug=0
     for f in "$D"/plug.*; do [ -f "$f" ] && plug=1; done
-    [ "$fw$plug" != 00 ] || backup_giveup "в архиве нет ни настроек, ни списков"
+    [ "$fw$plug" != 00 ] || backup_giveup "$(s2_t state.archive_empty "The archive has neither settings nor lists")"
 
     # ---- проверка всего, ничего не записывая ----
     if [ "$fw" = 1 ]; then
         chk="$("$SPLIFY2_HOST" state check "$D")" || {
             json_load "$chk" 2>/dev/null; json_get_var why error
-            backup_giveup "${why:-архив не годится}"; }
+            backup_giveup "${why:-$(s2_t backup.archive_invalid "The archive is not valid")}"; }
     fi
     backup_ext_each "$D" check || backup_giveup "$BK_PLUG_FAIL"
 
@@ -479,7 +498,7 @@ backup_put() {
         json_load "$imp" 2>/dev/null
         if [ "$imp_rc" != 0 ]; then
             json_get_var why error
-            backup_giveup "${why:-настройки не восстановились}"
+            backup_giveup "${why:-$(s2_t backup.restore_failed "The settings were not restored")}"
         fi
         json_get_var spec_done spec; json_get_var sub_done sub; json_get_var subs_done subs
         json_get_var xsteer_done xsteer; json_get_var select_done select

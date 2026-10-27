@@ -11,7 +11,7 @@ METHOD="${1:-}"
 case "$METHOD" in
     lists|list_fetch|lists_update|list_put|list_remove|list_custom|list_get|list_peek|list_srs_put|local_lists|\
     allow_domains|fetch_mode|fetch_mode_set|lists_source|lists_source_set) ;;
-    *) echo "нет такого метода: $METHOD" >&2; exit 2 ;;
+    *) echo "no such method: $METHOD" >&2; exit 2 ;;
 esac
 lists_init
 . "$STEER_PLUGIN_DIR/lib/methods.sh"

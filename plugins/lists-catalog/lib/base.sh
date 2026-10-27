@@ -31,11 +31,11 @@ PEEK_LINES="${PEEK_LINES:-300}"
 # Каталог списков и программа ядра — ресурсы ядра, и называет их хост. Один вызов на программу.
 lists_init() {
     [ -n "${LISTS_DIR:-}" ] && return 0
-    _li="$("$SPLIFY2_HOST" paths)" || s2_fail "хост не назвал каталог списков"
-    json_load "$_li" 2>/dev/null || s2_fail "хост ответил не по форме"
+    _li="$("$SPLIFY2_HOST" paths)" || s2_fail_code host.no_lists_dir "The host did not name the lists directory"
+    json_load "$_li" 2>/dev/null || s2_fail_code host.bad_reply "The host gave an unexpected reply"
     json_get_var LISTS_DIR lists
     json_get_var STEER_BIN steer
-    [ -n "$LISTS_DIR" ] || s2_fail "хост не назвал каталог списков"
+    [ -n "$LISTS_DIR" ] || s2_fail_code host.no_lists_dir "The host did not name the lists directory"
 }
 
 # Скачать ссылку в файл с обходом закрытого издателя — службой хоста. Сначала во временный файл, потом переименование:

@@ -150,7 +150,7 @@ uci_file() {
 # Записать настройку на флеш. Отказ `uci commit` (кончилось место, испорченный файл) — отказ метода, а не
 # «ok»: иначе страница показывала бы сохранённое то, что после перезагрузки исчезнет.
 uci_commit() {
-    uci -q commit splify2 || fail "настройка не записалась — кончилось место на флеше?"
+    uci -q commit splify2 || fail_code disk.setting_not_saved "The setting was not saved. Free up some flash space and try again."
 }
 
 # Устройства выходов перечисленных видов. Имена спрашиваются у движка флагом --devices, а не
@@ -351,9 +351,10 @@ pkg_add_file() {  # ФАЙЛ... [!ИМЯ...] — одной транзакцие
                 *"unable to select packages"*)
                     pkg_world_heal "$PKG_OURS"
                     apk update >/dev/null 2>&1
-                    _pa_out="$(apk add --allow-untrusted --force-overwrite "$@" 2>&1)
-списки пакетов были пусты — обновил их (apk update) и повторил"
+                    _pa_out="$(apk add --allow-untrusted --force-overwrite "$@" 2>&1)"
                     _pa_rc=$?
+                    _pa_out="$_pa_out
+$(s2_t pkg.lists_refreshed "Package lists were empty: refreshed them ({cmd}) and retried" cmd "apk update")"
                     ;;
             esac
         fi
@@ -369,9 +370,10 @@ pkg_add_file() {  # ФАЙЛ... [!ИМЯ...] — одной транзакцие
         case "$_pa_out" in
             *"cannot find dependency"*|*"unresolved"*|*"incompatible with the architectures"*)
                 opkg update >/dev/null 2>&1
-                _pa_out="$(opkg install --force-overwrite "$@" 2>&1)
-списки пакетов были пусты — обновил их (opkg update) и повторил"
+                _pa_out="$(opkg install --force-overwrite "$@" 2>&1)"
                 _pa_rc=$?
+                    _pa_out="$_pa_out
+$(s2_t pkg.lists_refreshed "Package lists were empty: refreshed them ({cmd}) and retried" cmd "opkg update")"
                 ;;
         esac
     fi
@@ -400,7 +402,7 @@ flash_room_ok() {  # ФАЙЛ...
     _fr_free="$({ df -k /overlay 2>/dev/null || df -k / 2>/dev/null; } | awk 'NR == 2 { print $4 }')"
     case "$_fr_free" in ''|*[!0-9]*) return 0 ;; esac
     [ "$_fr_free" -ge "$_fr_need" ] && return 0
-    ROOM_ERR="Мало места на флеше: нужно около $(( (_fr_need + 1023) / 1024 )) МБ, свободно $(( _fr_free / 1024 )) МБ. Освободите место и повторите."
+    ROOM_ERR="$(s2_t disk.low_room "Not enough flash space: about {need} MB needed, {free} MB free. Free up some space and try again." need "$(( (_fr_need + 1023) / 1024 ))" free "$(( _fr_free / 1024 ))")"
     return 1
 }
 

@@ -93,7 +93,7 @@ PL="$T/p"
 
 # Окружение вызова объекта — как у стенда pluginmatch/rpcdmatch, но только то, что нужно этим методам.
 envs() {
-    env SANDBOX="$T" PATH="$T/bin:$PATH" JSHN_SH="$ROOT/tests/stub/jshn.sh" \
+    env SANDBOX="$T" PATH="$T/bin:$PATH" S2_LANG=ru S2_DICT_EXTRA="$ROOT/plugins/lang-ru/i18n/backend" JSHN_SH="$ROOT/tests/stub/jshn.sh" \
         RPCD_LIB="$LIBD/rpcd" FAST_SH="$LIBD/fast.sh" FETCH_SH="$LIBD/fetch.sh" \
         SPLIFY2_LOCK_DIR="$T/lock" STEER="$T/bin/steer" STEER_PLUGIN_STUB="$ROOT/tests/stub/steer-plugin" PLUG="$PL" \
         SPEC="$T/etc/spec.json" SPEC_VIEW="$T/spec.view.json" APPLIED="$T/etc/spec.applied.json" \
@@ -403,7 +403,7 @@ EOF
 out="$(rpc support_report)"
 txt="$(printf '%s' "$out" | pj 'd["text"]')"
 check "support_report: раздел плагина в отчёте" "yes;yes;yes" "$(printf '%s' "$txt" | grep -q -- '-- Проверка плагина --' && echo yes || echo no);$(printf '%s' "$txt" | grep -q 'строка один' && echo yes || echo no);$(printf '%s' "$txt" | grep -q 'строка два' && echo yes || echo no)"
-check "и текст про исключённое остался последним" "yes" "$(printf '%s' "$txt" | tail -n 3 | grep -q 'В отчёт намеренно не попали' && echo yes || echo no)"
+check "и текст про исключённое остался последним" "yes" "$(printf '%s' "$txt" | tail -n 3 | grep -q 'Left out of the report' && echo yes || echo no)"
 
 reset
 fixture_plugin obs '{'"$M"',"id":"obs","name":"x","permissions":["splify2.hooks"],"splify2":{"hooks":{"plugin_changed":{"prog":"h"}}}}'
@@ -458,7 +458,7 @@ sync_now
 check "второй плагин на то же новое имя отвергнут, называет занявшего" "yes" "$(has 'hello2: псевдоним «hello_say» уже занят плагином hello' "$PL/run/ext.reg")"
 rm -rf "$PL/lib/hello2"; set_state hello2 disabled 2>/dev/null || true
 sync_now
-check "синхронизация без перемен ничего не пишет: перечитка rpcd не просится" "без изменений" "$(envs sh "$SBIN/splify2-plugin-sync" --no-reload)"
+check "синхронизация без перемен ничего не пишет: перечитка rpcd не просится" "unchanged" "$(envs sh "$SBIN/splify2-plugin-sync" --no-reload)"
 
 echo "== методы: переопределения"
 reset
@@ -650,7 +650,7 @@ purge() {  # КЛЮЧИ
     mkdir -p "$T/etc/splify2" "$T/etc/steer"
     envs SPLIFY2_DIR="$T/etc/splify2" STEER_DIR="$T/etc/steer" CRONTAB="$T/etc/crontabs-purge" CRON_INITD="$T/bin/none" \
         INITD="$T/bin/none" FW_INITD="$T/bin/none" BOX_INITD="$T/bin/none" RECHECK_INITD="$T/bin/none" \
-        STATE_PATHS="$T/var/none" NFT_TABLES="" FW_ZONES="" FW_LEGACY_ZONES="" EXT_LIB_SH="$LIBD/ext.sh" \
+        STATE_PATHS="$T/var/none" NFT_TABLES="" FW_ZONES="" FW_LEGACY_ZONES="" EXT_LIB_SH="$LIBD/ext.sh" I18N_SH="$LIBD/i18n.sh" \
         sh "$SBIN/splify2-purge" "$@" 2>&1
 }
 out="$(purge)"

@@ -79,6 +79,8 @@ run protohandler sh "$ROOT/tests/protohandler.sh"
 run automatch sh "$ROOT/tests/automatch.sh"
 # Языковые плагины lang-ru и lang-en: словари каркаса и Andromeda, i18n_get, сборка с lint --official.
 run langmatch sh "$ROOT/tests/langmatch.sh"
+# Тексты бэкенда на языке каркаса: code и args, словари lang-ru и lang-en против кода, s2_fail_code и s2_t плагинов.
+run i18nmatch sh "$ROOT/tests/i18nmatch.sh"
 
 # Интерфейс. Пропускается вслух, а не молча: молчаливый пропуск читается как «прошло», и
 # ровно так стенд однажды и превратился в фикцию.

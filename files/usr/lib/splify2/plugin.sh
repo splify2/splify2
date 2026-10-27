@@ -43,6 +43,9 @@ SPLIFY2_LIB="${SPLIFY2_LIB:-$SPLIFY2_LIBDIR/lib.sh}"
 SPLIFY2_HOST="${SPLIFY2_HOST:-/usr/sbin/splify2-host}"
 PLUGIN_STATE_DIR="${PLUGIN_STATE_DIR:-${STEER_STATE_DIR:-/var/lib/steer}/plugin}"
 
+# Тексты для человека: s2_t, s2_fail_doc (i18n.sh); диспетчер плагинов подключает только этот файл.
+command -v s2_t >/dev/null 2>&1 || . "${I18N_SH:-$SPLIFY2_LIBDIR/i18n.sh}"
+
 # Расширения каркаса подключаются лениво: нужны plugin_sync, хукам и методам с псевдонимами.
 plugin_need_ext() { command -v ext_rebuild >/dev/null 2>&1 || . "$EXT_SH"; }
 
@@ -51,7 +54,8 @@ plugin_need_ext() { command -v ext_rebuild >/dev/null 2>&1 || . "$EXT_SH"; }
 # должно пережить перезагрузку и чего не должен читать чужой процесс.
 plugin_export_env() {  # ID
     export STEER_PLUGIN_ID="$1" STEER_PLUGIN_DIR="$PLUGIN_ROOT/$1" STEER_PLUGIN_CONF="$PLUGIN_CONF_DIR/$1" \
-           STEER_PLUGIN_STATE="$PLUGIN_STATE_DIR/$1" SPLIFY2_API=1 SPLIFY2_LIB SPLIFY2_HOST
+           STEER_PLUGIN_STATE="$PLUGIN_STATE_DIR/$1" SPLIFY2_API=1 SPLIFY2_LIB SPLIFY2_HOST \
+           PLUGIN_ROOT PLUGIN_STATE
     ( umask 077; mkdir -p "$STEER_PLUGIN_STATE" ) 2>/dev/null
     mkdir -p "$STEER_PLUGIN_CONF" 2>/dev/null
 }
@@ -84,10 +88,25 @@ plugin_method_ok() {  # ИМЯ
     [ "${#1}" -le 64 ]
 }
 
-# Ответ-отказ плагинной части: {ok:false, error, code}. code — машинное слово, по которому интерфейс
-# выбирает вид отказа: bad_request, not_installed, disabled, no_method, unavailable, timeout, failed,
-# busy. Печатает и возвращает 1: вызывающий решает, выходить ли ему.
-plugin_fail() {  # КОД ТЕКСТ
+# Ответ-отказ плагинной части: {ok:false, error, code, msg, args}. code — машинное слово вида отказа, по
+# которому интерфейс выбирает его вид: bad_request, not_installed, disabled, no_method, unavailable, timeout,
+# failed, busy. msg — код текста (ключ словаря i18n/backend/<язык>.json), args — подстановки {имя}; error —
+# текст на языке каркаса (i18n.sh). Печатает и возвращает 1: вызывающий решает, выходить ли ему.
+plugin_fail() {  # КОД КЛЮЧ ТЕКСТ [ИМЯ ЗНАЧЕНИЕ]...
+    _pf_k="$1"; _pf_m="$2"; _pf_d="$3"; shift 3
+    _pf_x="$(s2_t "$_pf_m" "$_pf_d" "$@")"
+    json_init
+    json_add_boolean ok 0
+    json_add_string error "$_pf_x"
+    json_add_string code "$_pf_k"
+    json_add_string msg "$_pf_m"
+    s2_args_add "$@"
+    json_dump
+    return 1
+}
+
+# То же с готовым текстом (слова менеджера плагинов ядра): перевода у него нет.
+plugin_fail_raw() {  # КОД ТЕКСТ
     json_init
     json_add_boolean ok 0
     json_add_string error "$2"
@@ -186,7 +205,7 @@ plugin_manager_error() {
     _pe=""
     # 126 и 127 — ядра или команды `plugin` нет: слова оболочки о ненайденном файле человеку не нужны.
     case "$PLUGIN_RC" in
-        126|127) printf '%s' "ядро не умеет плагины — обновите steer"; return 0 ;;
+        126|127) printf '%s' "$(s2_t plugin.core_cannot "The core does not support plugins. Update steer.")"; return 0 ;;
     esac
     if _pe_obj="$(plugin_json_obj "$PLUGIN_OUT")"; then
         _pe="$(jsonfilter -s "$_pe_obj" -e '@.error' 2>/dev/null)"
@@ -195,8 +214,8 @@ plugin_manager_error() {
     [ -n "$_pe" ] || { case "$PLUGIN_OUT" in '{'*|'['*) ;; *) _pe="$PLUGIN_OUT" ;; esac; }
     if [ -z "$_pe" ]; then
         case "$PLUGIN_RC" in
-            126|127) _pe="ядро не умеет плагины — обновите steer" ;;
-            *) _pe="менеджер плагинов не ответил (код $PLUGIN_RC)" ;;
+            126|127) _pe="$(s2_t plugin.core_cannot "The core does not support plugins. Update steer.")" ;;
+            *) _pe="$(s2_t plugin.manager_silent "The plugin manager did not answer (code {code})" code "$PLUGIN_RC")" ;;
         esac
     fi
     printf '%s' "$_pe"
@@ -210,7 +229,7 @@ plugin_manager_fail() {
     if plugin_core_old "$_pf_v"; then
         json_init
         json_add_boolean ok 0
-        json_add_string error "ядро $_pf_v не умеет плагины — нужно $PLUGIN_CORE_MIN или новее"
+        json_add_string error "$(s2_t plugin.core_too_old "The core {installed} does not support plugins: {need} or newer is required" installed "$_pf_v" need "$PLUGIN_CORE_MIN")"
         json_add_string code core_too_old
         json_add_string installed "$_pf_v"
         json_add_string need "$PLUGIN_CORE_MIN"
@@ -220,7 +239,7 @@ plugin_manager_fail() {
     _pf="$(plugin_manager_error)"
     _pf_code=failed
     case "$_pf" in busy|busy:*|*" busy"*) _pf_code=busy ;; esac
-    plugin_fail "$_pf_code" "$_pf"
+    plugin_fail_raw "$_pf_code" "$_pf"
 }
 
 # ---- состояние: файлы менеджера ---------------------------------------------------------------
@@ -463,8 +482,8 @@ plugin_job_state() {  # НОМЕР
             [ -n "$_pjs_msg" ] || _pjs_msg="$(cat "$_pjs/err" 2>/dev/null)"
             [ -n "$_pjs_msg" ] || { case "$_pjs_out" in '{'*|'['*) ;; *) _pjs_msg="$_pjs_out" ;; esac; }
             if [ -z "$_pjs_msg" ]; then
-                if [ "$PJ_RC" = 124 ]; then _pjs_msg="задание не уложилось в срок"
-                else _pjs_msg="задание не удалось (код $PJ_RC)"; fi
+                if [ "$PJ_RC" = 124 ]; then _pjs_msg="$(s2_t job.timeout "The job did not finish in time")"
+                else _pjs_msg="$(s2_t job.failed_code "The job failed (code {code})" code "$PJ_RC")"; fi
             fi
             PJ_ERROR="$_pjs_msg"
         fi
@@ -475,7 +494,7 @@ plugin_job_state() {  # НОМЕР
     _pjs_pid="$(cat "$_pjs/pid" 2>/dev/null)"
     if [ -n "$_pjs_pid" ] && ! kill -0 "$_pjs_pid" 2>/dev/null; then
         PJ_STATE=failed
-        PJ_ERROR="задание оборвано"
+        PJ_ERROR="$(s2_t job.aborted "The job was interrupted")"
         return 0
     fi
     PJ_STATE=running
@@ -530,24 +549,24 @@ plugin_method_info() {  # ID МЕТОД
 # приложения вне LuCI работает от root и пускает только того, у кого есть право на splify2.
 plugin_invoke() {  # ID МЕТОД [ВХОД_JSON]
     _pv_id="$1"; _pv_m="$2"; _pv_in="${3:-}"
-    plugin_id_ok "$_pv_id" || { plugin_fail bad_request "Недопустимое имя плагина"; return 1; }
-    plugin_method_ok "$_pv_m" || { plugin_fail no_method "У плагина $_pv_id нет такого действия: $_pv_m"; return 1; }
-    plugin_installed "$_pv_id" || { plugin_fail not_installed "Плагин $_pv_id не установлен"; return 1; }
+    plugin_id_ok "$_pv_id" || { plugin_fail bad_request plugin.bad_name "Invalid plugin name"; return 1; }
+    plugin_method_ok "$_pv_m" || { plugin_fail no_method plugin.no_method "Plugin {id} has no action {method}" id "$_pv_id" method "$_pv_m"; return 1; }
+    plugin_installed "$_pv_id" || { plugin_fail not_installed plugin.not_installed "Plugin {id} is not installed" id "$_pv_id"; return 1; }
     [ "$(plugin_state_of "$_pv_id")" = enabled ] ||
-        { plugin_fail disabled "Плагин $_pv_id выключен — включите его на вкладке «Плагины»"; return 1; }
+        { plugin_fail disabled plugin.disabled "Plugin {id} is off. Turn it on in the Plugins tab." id "$_pv_id"; return 1; }
     plugin_method_info "$_pv_id" "$_pv_m"
     case $? in
         0) ;;
-        1) plugin_fail no_method "У плагина $_pv_id нет такого действия: $_pv_m"; return 1 ;;
-        *) plugin_fail unavailable "У плагина $_pv_id нет методов для панели"; return 1 ;;
+        1) plugin_fail no_method plugin.no_method "Plugin {id} has no action {method}" id "$_pv_id" method "$_pv_m"; return 1 ;;
+        *) plugin_fail unavailable plugin.no_methods "Plugin {id} has no panel actions" id "$_pv_id"; return 1 ;;
     esac
     # prog — относительный путь внутри каталога плагина (схема манифеста): абсолютный и с «..»
     # отвергаются, чтобы манифест не мог вывести вызов за каталог плагина.
     case "$PLUGIN_PROG" in
-        ''|/*|..|../*|*/..|*/../*) plugin_fail unavailable "У плагина $_pv_id нет программы для панели"; return 1 ;;
+        ''|/*|..|../*|*/..|*/../*) plugin_fail unavailable plugin.no_program "Plugin {id} has no program for the panel" id "$_pv_id"; return 1 ;;
     esac
     _pv_prog="$PLUGIN_ROOT/$_pv_id/$PLUGIN_PROG"
-    [ -x "$_pv_prog" ] || { plugin_fail unavailable "У плагина $_pv_id нет программы для панели"; return 1; }
+    [ -x "$_pv_prog" ] || { plugin_fail unavailable plugin.no_program "Plugin {id} has no program for the panel" id "$_pv_id"; return 1; }
     _pv_to="$PLUGIN_MTIMEOUT"
     case "$_pv_to" in ''|*[!0-9]*|0) _pv_to="$PLUGIN_RPC_TIMEOUT" ;; esac
     _pv_job="$PLUGIN_MJOB"
@@ -557,7 +576,7 @@ plugin_invoke() {  # ID МЕТОД [ВХОД_JSON]
     plugin_export_env "$_pv_id"
 
     if [ "$_pv_job" = 1 ]; then
-        plugin_job_new || { plugin_fail failed "Не удалось завести задание"; return 1; }
+        plugin_job_new || { plugin_fail failed plugin.job_failed "Cannot start the job"; return 1; }
         printf '%s' "$_pv_body" > "$PJ_DIR/in"
         PJ_PROG="$_pv_prog"; PJ_METHOD="$_pv_m"; PJ_TO="$_pv_to"
         plugin_job_start plugin_job_rpc
@@ -565,7 +584,7 @@ plugin_invoke() {  # ID МЕТОД [ВХОД_JSON]
         return 0
     fi
 
-    _pv_tmp="$(mktemp -d 2>/dev/null)" || { plugin_fail failed "Не удалось завести временный каталог"; return 1; }
+    _pv_tmp="$(mktemp -d 2>/dev/null)" || { plugin_fail failed tmp.dir_failed "Cannot create a temporary directory"; return 1; }
     printf '%s' "$_pv_body" > "$_pv_tmp/in"
     ( cd "$STEER_PLUGIN_DIR" 2>/dev/null || true
       plugin_run_limited "$_pv_to" "$_pv_tmp/in" "$_pv_tmp/out" "$_pv_tmp/err" "$_pv_prog" "$_pv_m" )
@@ -597,10 +616,10 @@ plugin_answer() {  # ID КОД_ВОЗВРАТА STDOUT STDERR СРОК
                 printf '%s\n' "$_pa_obj"
                 return 0
             fi
-            plugin_fail failed "Плагин $1 ответил не по форме"
+            plugin_fail failed plugin.bad_reply "Plugin {id} gave an unexpected reply" id "$1"
             return 1 ;;
         124)
-            plugin_fail timeout "Плагин $1 не ответил за $5 с"
+            plugin_fail timeout plugin.timeout "Plugin {id} did not answer within {seconds} s" id "$1" seconds "$5"
             return 1 ;;
         *)
             _pa_msg="$4"
@@ -609,8 +628,8 @@ plugin_answer() {  # ID КОД_ВОЗВРАТА STDOUT STDERR СРОК
                     _pa_msg="$(jsonfilter -s "$_pa_obj" -e '@.error' 2>/dev/null)"
                 fi
             }
-            [ -n "$_pa_msg" ] || _pa_msg="Плагин $1 завершился с ошибкой (код $2)"
-            plugin_fail failed "$_pa_msg"
+            [ -n "$_pa_msg" ] || _pa_msg="$(s2_t plugin.exit_code "Plugin {id} stopped with an error (code {code})" id "$1" code "$2")"
+            plugin_fail_raw failed "$_pa_msg"
             return 1 ;;
     esac
 }

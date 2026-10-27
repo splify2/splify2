@@ -70,7 +70,7 @@ fetch_missing_lists() {  # ПУТЬ_К_СПЕКЕ
             # процесс роутера успевал создать его первым — тогда разбор набора лежал бы в его
             # каталоге и подменялся между проверкой и копированием.
             if AD_TMP="$(mktemp -d "$RUN_DIR/srs.XXXXXX" 2>/dev/null)"; then _ad_ready=1
-            else echo "не удалось завести временный каталог — кончилось место?"; _ad_ready=0; fi
+            else echo "$(s2_t tmp.dir_failed_space "Cannot create a temporary directory: no space left")"; _ad_ready=0; fi
         fi
         # НАБОР ФАЙЛОМ (`srs` списка) — из записи каталога, от которой он выведен (ad_srs_rel).
         # Набор, которого в каталоге нет, положен руками: скачать его неоткуда, и ядро само
@@ -91,12 +91,12 @@ fetch_missing_lists() {  # ПУТЬ_К_СПЕКЕ
             continue
         fi
 
-        [ -n "$_base" ] || { echo "список $_rel: манифест не загружен, скачать нечем"; continue; }
+        [ -n "$_base" ] || { echo "$(s2_t lists.fm_no_manifest "List {path}: the manifest is not loaded, there is nothing to download from" path "$_rel")"; continue; }
         mkdir -p "$(dirname "$_dest")"
         if fetch_file "$_base/$_rel" "$_dest"; then
-            [ -n "$FETCH_NOTE" ] && echo "список $_rel: $FETCH_NOTE"
+            [ -n "$FETCH_NOTE" ] && echo "$(s2_t lists.fm_note "List {path}: {note}" path "$_rel" note "$FETCH_NOTE")"
         else
-            echo "список $_rel не скачался — канал, который на него ссылается, не поднимется${FETCH_NOTE:+ ($FETCH_NOTE)}"
+            echo "$(s2_t lists.fm_failed "List {path} was not downloaded: the channel that uses it will not come up{why}" path "$_rel" why "${FETCH_NOTE:+ ($FETCH_NOTE)}")"
         fi
     done
     # Разбор убирается ЗДЕСЬ, после цикла: внутри него он ещё нужен второму виду того же
@@ -142,23 +142,23 @@ fetch_missing_catalog_srs() {  # ССЫЛКА ОТН_ПУТЬ ПУТЬ_НА_ДИ
     ad_get_url "$1" "$_fc_name"
     case "$?" in
         0) ;;
-        1) echo "набор $2 не скачался — канал, который на него ссылается, не поднимется${FETCH_NOTE:+ ($FETCH_NOTE)}"; return 0 ;;
-        2) echo "список $2 нам пока не подходит: $AD_NOTE"; return 0 ;;
-        *) echo "скачался испорченный набор $2: $AD_NOTE"; return 0 ;;
+        1) echo "$(s2_t lists.fm_set_failed "Set {name} was not downloaded: the channel that uses it will not come up{why}" name "$2" why "${FETCH_NOTE:+ ($FETCH_NOTE)}")"; return 0 ;;
+        2) echo "$(s2_t lists.fm_unsuitable "List {name} does not suit us yet: {note}" name "$2" note "$AD_NOTE")"; return 0 ;;
+        *) echo "$(s2_t lists.fm_corrupt "A corrupted set {name} was downloaded: {note}" name "$2" note "$AD_NOTE")"; return 0 ;;
     esac
     _fc_src="$(ad_out_of "$_fc_kind")" || {
         # Файл называется ОБЯЗАТЕЛЬНО: без него сообщение говорит «в наборе нет доменов» про
         # неизвестно какой набор, и человеку нечего искать — а искать надо правило, которое
         # на этот список ссылается.
-        echo "$2: в наборе нет $(ad_kind_ru "$_fc_kind") — канал, который на него ссылается, не поднимется"
+        echo "$(s2_t lists.fm_no_kind "{name}: the set has no {what}: the channel that uses it will not come up" name "$2" what "$(ad_kind_ru "$_fc_kind")")"
         return 0; }
     mkdir -p "$(dirname "$3")"
     cp "$_fc_src" "$3.new.$$" && mv "$3.new.$$" "$3" || {
         rm -f "$3.new.$$"
-        echo "список $2 не записался — кончилось место?"
+        echo "$(s2_t lists.fm_not_saved "List {name} was not saved: no space left" name "$2")"
         return 0; }
     [ "$_fc_kind" = prefixes ] && ad_meta_install "$3"
-    [ -n "$FETCH_NOTE" ] && echo "набор $2: $FETCH_NOTE"
+    [ -n "$FETCH_NOTE" ] && echo "$(s2_t lists.fm_set_note "Set {name}: {note}" name "$2" note "$FETCH_NOTE")"
     return 0
 }
 
@@ -174,17 +174,17 @@ fetch_missing_set() {  # ОТН_ПУТЬ ПУТЬ_НА_ДИСКЕ
     _fset_tmp="$AD_TMP/set.$$.srs"
     if ! fetch_file "$_fset_url" "$_fset_tmp"; then
         rm -f "$_fset_tmp"
-        echo "набор $1 не скачался — канал, который на него ссылается, не поднимется${FETCH_NOTE:+ ($FETCH_NOTE)}"
+        echo "$(s2_t lists.fm_set_failed "Set {name} was not downloaded: the channel that uses it will not come up{why}" name "$1" why "${FETCH_NOTE:+ ($FETCH_NOTE)}")"
         return 0
     fi
     if ! ad_srs_ok "$_fset_tmp"; then
         rm -f "$_fset_tmp"
-        echo "скачался испорченный набор $1: $AD_NOTE"
+        echo "$(s2_t lists.fm_corrupt "A corrupted set {name} was downloaded: {note}" name "$1" note "$AD_NOTE")"
         return 0
     fi
-    ad_srs_put "$_fset_tmp" "$2" || echo "набор $1 не записался — кончилось место?"
+    ad_srs_put "$_fset_tmp" "$2" || echo "$(s2_t lists.fm_set_not_saved "Set {name} was not saved: no space left" name "$1")"
     rm -f "$_fset_tmp"
-    [ -n "$FETCH_NOTE" ] && echo "набор $1: $FETCH_NOTE"
+    [ -n "$FETCH_NOTE" ] && echo "$(s2_t lists.fm_set_note "Set {name}: {note}" name "$1" note "$FETCH_NOTE")"
     return 0
 }
 
@@ -197,12 +197,12 @@ fetch_missing_srs() {  # «СЕРВИС ВИД» ОТН_ПУТЬ ПУТЬ_НА_�
         0) ;;
         # «Не скачалось» винит путь до издателя, «испорченный» — то, что приехало, а «пока не
         # подходит» не винит никого: набор понят, просто наш канал такого не выражает.
-        1) echo "набор $_fs_svc не скачался — канал, который на него ссылается, не поднимется${FETCH_NOTE:+ ($FETCH_NOTE)}"; return 0 ;;
-        2) echo "список $2 нам пока не подходит: $AD_NOTE"; return 0 ;;
-        *) echo "скачался испорченный набор $_fs_svc: $AD_NOTE"; return 0 ;;
+        1) echo "$(s2_t lists.fm_set_failed "Set {name} was not downloaded: the channel that uses it will not come up{why}" name "$_fs_svc" why "${FETCH_NOTE:+ ($FETCH_NOTE)}")"; return 0 ;;
+        2) echo "$(s2_t lists.fm_unsuitable "List {name} does not suit us yet: {note}" name "$2" note "$AD_NOTE")"; return 0 ;;
+        *) echo "$(s2_t lists.fm_corrupt "A corrupted set {name} was downloaded: {note}" name "$_fs_svc" note "$AD_NOTE")"; return 0 ;;
     esac
     _fs_src="$(ad_out_of "$_fs_kind")" || {
-        echo "в наборе $_fs_svc нет $(ad_kind_ru "$_fs_kind") — канал, который на него ссылается, не поднимется"
+        echo "$(s2_t lists.fm_set_no_kind "The set {name} has no {what}: the channel that uses it will not come up" name "$_fs_svc" what "$(ad_kind_ru "$_fs_kind")")"
         return 0; }
     mkdir -p "$(dirname "$3")"
     # КОПИЕЙ, а не переносом: разбор лежит в памяти прогона и нужен второму виду того же
@@ -211,11 +211,11 @@ fetch_missing_srs() {  # «СЕРВИС ВИД» ОТН_ПУТЬ ПУТЬ_НА_�
     # копирует, то есть обрыв оставил бы обрубок ровно там, где лежит рабочий список.
     cp "$_fs_src" "$3.new.$$" && mv "$3.new.$$" "$3" || {
         rm -f "$3.new.$$"
-        echo "список $2 не записался — кончилось место?"
+        echo "$(s2_t lists.fm_not_saved "List {name} was not saved: no space left" name "$2")"
         return 0; }
     [ "$_fs_kind" = prefixes ] && ad_meta_install "$3"
     ad_stamp_put "$_fs_svc" "$_fs_kind" "$AD_TAG"
-    [ -n "$FETCH_NOTE" ] && echo "набор $_fs_svc: $FETCH_NOTE"
+    [ -n "$FETCH_NOTE" ] && echo "$(s2_t lists.fm_set_note "Set {name}: {note}" name "$_fs_svc" note "$FETCH_NOTE")"
     return 0
 }
 

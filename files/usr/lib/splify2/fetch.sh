@@ -42,6 +42,8 @@ FETCH_GITLAB=${FETCH_GITLAB:-https://gitlab.com}
 FETCH_CODELOAD=${FETCH_CODELOAD:-https://codeload.github.com}
 FETCH_DIST_BRANCH=${FETCH_DIST_BRANCH:-dist}
 FETCH_CACHE=${FETCH_CACHE:-/tmp/splify2-fetch}
+# Тексты для человека (s2_t): файл подключают и отдельно от env.sh (стенд, программы).
+command -v s2_t >/dev/null 2>&1 || . "${I18N_SH:-${SPLIFY2_LIBDIR:-/usr/lib/splify2}/i18n.sh}"
 # Перечень выпусков splify2/releases — три адреса одного version.json, по порядку. Читает его
 # объект rpcd (m-engine.sh) ПЕРВЫМ, раньше api.github.com; адреса файлов из него качает
 # download_rel ниже.
@@ -211,12 +213,12 @@ fetch_github() {  # URL ФАЙЛ
     _cl_branch="${_cl_rest%% *}"; _cl_path="${_cl_rest#* }"
 
     if fetch_mirror_file "$_cl_repo" "$_cl_path" "$_cl_branch" "$2"; then
-        FETCH_NOTE="прямой адрес не отдал — взято с зеркала gitlab.com ($_cl_repo, ветка $_cl_branch)"
+        FETCH_NOTE="$(s2_t fetch.via_gitlab "The direct address did not answer: taken from the gitlab.com mirror ({repo}, branch {branch})" repo "$_cl_repo" branch "$_cl_branch")"
         return 0
     fi
 
     if fetch_api_file "$_cl_repo" "$_cl_path" "$_cl_branch" "$2"; then
-        FETCH_NOTE="прямой адрес не отдал — взято через api.github.com ($_cl_repo, ветка $_cl_branch)"
+        FETCH_NOTE="$(s2_t fetch.via_api "The direct address did not answer: taken through api.github.com ({repo}, branch {branch})" repo "$_cl_repo" branch "$_cl_branch")"
         return 0
     fi
 
@@ -225,7 +227,7 @@ fetch_github() {  # URL ФАЙЛ
     tar -xzOf "$_cl_tb" "${_cl_repo#*/}-$_cl_branch/$_cl_path" > "$2" 2>/dev/null || {
         rm -f "$2"; return 1; }
     [ -s "$2" ] || { rm -f "$2"; return 1; }
-    FETCH_NOTE="прямой адрес не отдал — взято архивом через codeload.github.com ($_cl_repo, ветка $_cl_branch)"
+    FETCH_NOTE="$(s2_t fetch.via_codeload "The direct address did not answer: taken as an archive through codeload.github.com ({repo}, branch {branch})" repo "$_cl_repo" branch "$_cl_branch")"
     return 0
 }
 
@@ -325,13 +327,13 @@ fetch_tunnel_on() {
 # Скачивание через туннель. Код 0 — файл на месте.
 fetch_via_tunnel() {  # URL ФАЙЛ
     if ! fetch_tunnel_on; then
-        FETCH_NOTE="скачивание через туннель выключено"
+        FETCH_NOTE="$(s2_t fetch.tunnel_off "Downloading through a tunnel is off")"
         return 1
     fi
     _vt_host="$(fetch_host "$1")"
     _vt_addrs="$(fetch_addrs4 "$_vt_host")"
     if [ -z "$_vt_addrs" ]; then
-        FETCH_NOTE="$_vt_host не разрешается в адрес IPv4 — повторить через туннель нечем"
+        FETCH_NOTE="$(s2_t fetch.no_ipv4 "{host} does not resolve to an IPv4 address: there is nothing to retry through a tunnel" host "$_vt_host")"
         return 1
     fi
     # Fake-IP из диапазона движка: сюда попадает адрес, выданный нашим же резолвером
@@ -340,13 +342,13 @@ fetch_via_tunnel() {  # URL ФАЙЛ
     for _vt_a in $_vt_addrs; do
         case "$_vt_a" in
             198.18.*|198.19.*)
-                FETCH_NOTE="$_vt_host разрешается в fake-IP $_vt_a — сначала уберите его домен из каналов"
+                FETCH_NOTE="$(s2_t fetch.fake_ip "{host} resolves to the fake IP {addr}: first remove its domain from the channels" host "$_vt_host" addr "$_vt_a")"
                 return 1 ;;
         esac
     done
 
     _vt_out="$(fetch_out)" || {
-        FETCH_NOTE="$_vt_host напрямую не ответил, а поднятого выхода со своей таблицей нет"
+        FETCH_NOTE="$(s2_t fetch.no_output "{host} did not answer directly and there is no running output with its own table" host "$_vt_host")"
         return 1
     }
     _vt_name="${_vt_out% *}"
@@ -355,7 +357,7 @@ fetch_via_tunnel() {  # URL ФАЙЛ
     for _vt_p in $(fetch_peers "$_vt_name"); do
         for _vt_a in $_vt_addrs; do
             [ "$_vt_a" = "$_vt_p" ] || continue
-            FETCH_NOTE="адрес издателя $_vt_a — это же адрес узла выхода $_vt_name: повтор через туннель ушёл бы в петлю"
+            FETCH_NOTE="$(s2_t fetch.loop "The publisher address {addr} is also the node address of output {name}: a retry through the tunnel would loop" addr "$_vt_a" name "$_vt_name")"
             return 1
         done
     done
@@ -377,7 +379,7 @@ fetch_via_tunnel() {  # URL ФАЙЛ
     # трафик устройств сети, а этого делать нельзя — тогда лучше не идти туннелем вовсе.
     if [ "$_vt_added" = 0 ]; then
         fetch_rules_flush
-        FETCH_NOTE="через туннель не выйдет: нужен полный iproute2 (пакет ip-full)"
+        FETCH_NOTE="$(s2_t fetch.need_ip_full "A tunnel retry is not possible: full iproute2 is needed (package ip-full)")"
         return 1
     fi
     fetch_get "$1" "$2" 4
@@ -385,10 +387,10 @@ fetch_via_tunnel() {  # URL ФАЙЛ
     fetch_rules_flush
     if [ "$_vt_rc" != 0 ] || [ ! -s "$2" ]; then
         rm -f "$2"
-        FETCH_NOTE="$_vt_host не ответил ни напрямую, ни через выход $_vt_name"
+        FETCH_NOTE="$(s2_t fetch.both_failed "{host} did not answer directly or through output {name}" host "$_vt_host" name "$_vt_name")"
         return 1
     fi
-    FETCH_NOTE="скачано через выход $_vt_name"
+    FETCH_NOTE="$(s2_t fetch.via_output "Downloaded through output {name}" name "$_vt_name")"
     return 0
 }
 
@@ -413,7 +415,7 @@ download() {  # URL ФАЙЛ [detours]
             return 0
         fi
         rm -f "$_dl_tmp"
-        fetch_tunnel_on || FETCH_NOTE="${FETCH_NOTE:+$FETCH_NOTE; }скачивание через туннель выключено"
+        fetch_tunnel_on || FETCH_NOTE="$(s2_t fetch.tunnel_off_more "{prefix}Downloading through a tunnel is off" prefix "${FETCH_NOTE:+$FETCH_NOTE; }")"
         return 1
     fi
 
@@ -458,7 +460,7 @@ download() {  # URL ФАЙЛ [detours]
     rm -f "$_dl_tmp"
     # Сказать, что туннель мог бы спасти, но выключен: иначе в журнале остаётся «не
     # скачалось» без единой подсказки, куда смотреть.
-    fetch_tunnel_on || FETCH_NOTE="${FETCH_NOTE:+$FETCH_NOTE; }скачивание через туннель выключено"
+    fetch_tunnel_on || FETCH_NOTE="$(s2_t fetch.tunnel_off_more "{prefix}Downloading through a tunnel is off" prefix "${FETCH_NOTE:+$FETCH_NOTE; }")"
     return 1
 }
 
@@ -506,18 +508,18 @@ download_rel() {  # ФАЙЛ SHA256 ЗАПАСНОЙ_URL [URL...]
         [ "$_dr_u" = "$_dr_fb" ] && _dr_mode=detours
         fetch_once "$_dr_u" "$_dr_f" || continue
         if fetch_sum_ok "$_dr_f" "$_dr_sum"; then
-            [ -z "$_dr_bad" ] || FETCH_NOTE="контрольная сумма не сошлась ($_dr_bad) — взято с $_dr_u"
+            [ -z "$_dr_bad" ] || FETCH_NOTE="$(s2_t fetch.sum_mismatch_from "The checksum did not match ({bad}): taken from {url}" bad "$_dr_bad" url "$_dr_u")"
             return 0
         fi
         rm -f "$_dr_f"
         _dr_bad="${_dr_bad:+$_dr_bad, }$_dr_u"
     done
     if ! download "$_dr_fb" "$_dr_f" $_dr_mode; then
-        [ -z "$_dr_bad" ] || FETCH_NOTE="контрольная сумма не сошлась ($_dr_bad)${FETCH_NOTE:+; $FETCH_NOTE}"
+        [ -z "$_dr_bad" ] || FETCH_NOTE="$(s2_t fetch.sum_mismatch "The checksum did not match ({bad}){more}" bad "$_dr_bad" more "${FETCH_NOTE:+; $FETCH_NOTE}")"
         return 1
     fi
     fetch_sum_ok "$_dr_f" "$_dr_sum" && return 0
     rm -f "$_dr_f"
-    FETCH_NOTE="контрольная сумма не сошлась ни на одном адресе — файл не тот, что в перечне выпусков"
+    FETCH_NOTE="$(s2_t fetch.sum_all "The checksum did not match at any address: the file is not the one in the release list")"
     return 1
 }

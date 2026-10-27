@@ -9,13 +9,13 @@
 METHOD="${1:?нет метода}"
 read -r input 2>/dev/null || true
 [ -n "$input" ] || input='{}'
-json_load "$input" 2>/dev/null || s2_fail "неразбираемый запрос"
+json_load "$input" 2>/dev/null || s2_fail_code req.unparsable "Unparsable request"
 group=''; limit=''
 json_get_var group group; json_get_var limit limit
-[ -z "$group" ] || name_ok "$group" || s2_fail "недопустимое имя группы"
+[ -z "$group" ] || name_ok "$group" || s2_fail_code group.bad_name "Invalid group name"
 
 group_check() {
-    groups="$(groups_of_spec)" || s2_fail "спеки нет"
+    groups="$(groups_of_spec)" || s2_fail_code spec.none "There is no spec"
     n=0
     while IFS= read -r line; do
         [ -n "$line" ] || continue
@@ -24,12 +24,12 @@ group_check() {
     done <<EOT
 $groups
 EOT
-    [ -z "$group" ] || [ "$n" -gt 0 ] || s2_fail "группы «$group» нет"
+    [ -z "$group" ] || [ "$n" -gt 0 ] || s2_fail_code group.none "There is no group \"{name}\"" name "$group"
     json_init; json_add_boolean ok 1; json_add_int checked "$n"; json_dump
 }
 
 group_status() {
-    groups="$(groups_of_spec)" || s2_fail "спеки нет"
+    groups="$(groups_of_spec)" || s2_fail_code spec.none "There is no spec"
     json_init
     json_add_boolean ok 1
     json_add_array groups
@@ -80,7 +80,7 @@ EOT
 }
 
 group_history() {
-    name_ok "$group" || s2_fail "не указана группа"
+    name_ok "$group" || s2_fail_code group.none_given "No group given"
     lim="$(num_or "$limit" 50)"
     json_init
     json_add_boolean ok 1
@@ -103,5 +103,5 @@ group_history() {
 
 case "$METHOD" in
     group_status|group_history|group_check) "$METHOD" ;;
-    *) echo "нет такого метода: $METHOD" >&2; exit 2 ;;
+    *) echo "no such method: $METHOD" >&2; exit 2 ;;
 esac

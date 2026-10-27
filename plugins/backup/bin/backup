@@ -9,5 +9,5 @@
 case "${1:-}" in
     get) backup_get ;;
     put) backup_put ;;
-    *) echo "нет такого метода: ${1:-}" >&2; exit 2 ;;
+    *) echo "no such method: ${1:-}" >&2; exit 2 ;;
 esac

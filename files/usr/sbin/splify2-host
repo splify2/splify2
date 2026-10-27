@@ -40,7 +40,8 @@ fi
 
 _sh_dir="${SPLIFY2_LIBDIR:-/usr/lib/splify2}"
 . "${JSHN_SH:-/usr/share/libubox/jshn.sh}"
-. "${ENV_SH:-$_sh_dir/env.sh}"
+ENV_SH="${ENV_SH:-$_sh_dir/env.sh}"
+. "$ENV_SH"
 . "${SPEC_SH:-${RPCD_LIB%/rpcd}/spec.sh}"
 . "$RPCD_LIB/common.sh"
 unset _sh_dir
@@ -48,10 +49,11 @@ unset _sh_dir
 # Отказ службы: объект JSON и код 1 (у метода rpcd `fail` отвечает кодом 0 — здесь вызывающий программа, и код
 # её ветвит).
 fail() { json_init; json_add_boolean ok 0; json_add_string error "$1"; json_dump; exit 1; }
+fail_code() { s2_fail_doc "$@"; exit 1; }
 ok_json() { json_init; json_add_boolean ok 1; json_dump; exit 0; }
 
 usage() {
-    echo "использование: splify2-host fetch|fetch-mode|paths|spec|apply|engine|settings|state|hook|sub|call|probe|release|pkg …" >&2
+    echo "usage: splify2-host fetch|fetch-mode|paths|spec|apply|engine|settings|state|hook|sub|call|probe|release|pkg ..." >&2
     exit 2
 }
 
@@ -66,10 +68,10 @@ cmd_fetch() {  # URL ФАЙЛ [--timeout СЕК]
             *) usage ;;
         esac
     done
-    case "$FETCH_TIMEOUT" in ''|*[!0-9]*) fail "срок скачивания — число секунд" ;; esac
+    case "$FETCH_TIMEOUT" in ''|*[!0-9]*) fail_code fetch.bad_timeout "The download timeout must be a number of seconds" ;; esac
     case "$_f_url" in
         http://*|https://*) ;;
-        *) fail "ссылка должна начинаться с http:// или https://" ;;
+        *) fail_code fetch.bad_url "The link must start with http:// or https://" ;;
     esac
     need_fetch
     FETCH_NOTE=""
@@ -80,7 +82,7 @@ cmd_fetch() {  # URL ФАЙЛ [--timeout СЕК]
         [ -n "$FETCH_NOTE" ] && json_add_string note "$FETCH_NOTE"
         json_dump; exit 0
     fi
-    json_init; json_add_boolean ok 0; json_add_string error "не скачалось"
+    json_init; json_add_boolean ok 0; s2_fail_fields fetch.failed "The download failed"
     # Причина отказа: что не вышло по каждому из путей.
     [ -n "$FETCH_NOTE" ] && json_add_string note "$FETCH_NOTE"
     json_dump; exit 1
@@ -98,8 +100,8 @@ cmd_fetch_mode() {  # [get | set always|off]
             json_add_string out "$(fetch_out | cut -d' ' -f1)"
             json_dump; exit 0 ;;
         set)
-            case "${2:-}" in always|off) ;; *) fail "режим бывает always или off" ;; esac
-            uci_file || fail "не удалось создать $UCI_SPLIFY2 — кончилось место?"
+            case "${2:-}" in always|off) ;; *) fail_code fetch.bad_mode "The mode is always or off" ;; esac
+            uci_file || fail_code disk.cannot_create "Cannot create {file}: no space left" file "$UCI_SPLIFY2"
             uci -q set splify2.main.fetch_via_tunnel="$2"
             uci_commit
             json_init; json_add_boolean ok 1; json_add_string mode "$2"; json_dump; exit 0 ;;
@@ -116,7 +118,7 @@ cmd_fetch_mode() {  # [get | set always|off]
 cmd_spec() {  # get [ФАЙЛ] | uses ПУТЬ | check ФАЙЛ
     case "${1:-}" in
         get)
-            spec_have || fail "спеки нет"
+            spec_have || fail_code spec.none "There is no spec"
             _s_v="$(spec_json)"
             # `--applied` — снимок спеки в момент последнего применения; снимка нет — применённым считается сама спека
             # (как у метода applied_get): «не применено» без снимка не бывает.
@@ -124,9 +126,9 @@ cmd_spec() {  # get [ФАЙЛ] | uses ПУТЬ | check ФАЙЛ
                 shift
                 [ -s "${APPLIED:-/etc/steer/spec.applied.json}" ] && _s_v="${APPLIED:-/etc/steer/spec.applied.json}"
             fi
-            [ -s "$_s_v" ] || fail "спеку не удалось прочитать"
+            [ -s "$_s_v" ] || fail_code spec.unreadable "The spec cannot be read"
             if [ -n "${2:-}" ]; then
-                cp "$_s_v" "$2" || fail "не удалось записать $2"
+                cp "$_s_v" "$2" || fail_code file.cannot_write "Cannot write {path}" path "$2"
                 ok_json
             fi
             cat "$_s_v"; exit 0 ;;
@@ -135,9 +137,9 @@ cmd_spec() {  # get [ФАЙЛ] | uses ПУТЬ | check ФАЙЛ
             spec_have || exit 1
             grep -qF -- "$2" "$(spec_json)" ;;
         check)
-            [ -f "${2:-}" ] || fail "нет файла спеки"
+            [ -f "${2:-}" ] || fail_code spec.no_file "There is no spec file"
             if _s_err="$(engine_check "$2")"; then ok_json; fi
-            fail "${_s_err:-ядро отвергло спеку}" ;;
+            fail "${_s_err:-$(s2_t spec.core_rejected_short "The core rejected the spec")}" ;;
         *) usage ;;
     esac
 }
@@ -151,7 +153,7 @@ cmd_spec() {  # get [ФАЙЛ] | uses ПУТЬ | check ФАЙЛ
 #       откатывать нечего, применит человек.
 cmd_apply() {
     _a_rpcd="${RPCD_BIN:-${RPCD_LIB%/rpcd}/../../libexec/rpcd/splify2}"
-    [ -r "$_a_rpcd" ] || fail "не найден обработчик применения"
+    [ -r "$_a_rpcd" ] || fail_code host.no_apply_handler "The apply handler was not found"
     _a_out="$(sh "$_a_rpcd" call apply </dev/null)"
     printf '%s\n' "$_a_out"
     [ "$(jsonfilter -s "$_a_out" -e '@.ok' 2>/dev/null)" = true ] && exit 0
@@ -182,20 +184,20 @@ cmd_engine() {
 # Схема настроек плагина — файл, названный в его манифесте (`splify2.settings.schema`); значения — conf/<id>/
 # settings.json. Плагин определяется по STEER_PLUGIN_ID и STEER_PLUGIN_DIR, которые выставил хост.
 settings_schema() {
-    [ -n "${STEER_PLUGIN_DIR:-}" ] && [ -n "${STEER_PLUGIN_CONF:-}" ] || fail "служба для программ плагина: нет STEER_PLUGIN_DIR"
+    [ -n "${STEER_PLUGIN_DIR:-}" ] && [ -n "${STEER_PLUGIN_CONF:-}" ] || fail_code host.no_plugin_dir "This service is for plugin programs: STEER_PLUGIN_DIR is not set"
     _st_rel="$(jsonfilter -i "$STEER_PLUGIN_DIR/plugin.json" -e '@.splify2.settings.schema' 2>/dev/null)"
-    case "$_st_rel" in ''|/*|*..*|*[!A-Za-z0-9._/-]*) fail "у плагина нет схемы настроек" ;; esac
+    case "$_st_rel" in ''|/*|*..*|*[!A-Za-z0-9._/-]*) fail_code settings.no_schema "The plugin has no settings schema" ;; esac
     SETTINGS_SCHEMA="$STEER_PLUGIN_DIR/$_st_rel"
-    [ -r "$SETTINGS_SCHEMA" ] || fail "схема настроек плагина не читается"
+    [ -r "$SETTINGS_SCHEMA" ] || fail_code settings.schema_unreadable "The settings schema of the plugin cannot be read"
     SETTINGS_FILE="$STEER_PLUGIN_CONF/settings.json"
 }
 
 cmd_settings() {  # get КЛЮЧ | set КЛЮЧ ЗНАЧЕНИЕ
     settings_schema
     _st_k="${2:-}"
-    case "$_st_k" in ''|*[!A-Za-z0-9_]*) fail "имя настройки: латиница, цифры, подчёркивание" ;; esac
+    case "$_st_k" in ''|*[!A-Za-z0-9_]*) fail_code settings.bad_key "A setting name may contain Latin letters, digits and underscores" ;; esac
     _st_def_ok="$(jsonfilter -i "$SETTINGS_SCHEMA" -e "@.properties.$_st_k.type" 2>/dev/null)"
-    [ -n "$_st_def_ok" ] || fail "в схеме нет настройки $_st_k"
+    [ -n "$_st_def_ok" ] || fail_code settings.not_in_schema "The schema has no setting {key}" key "$_st_k"
     case "${1:-}" in
         get)
             _st_v=""
@@ -218,23 +220,23 @@ settings_set() {  # КЛЮЧ ЗНАЧЕНИЕ
     if [ -n "$_ss_v" ]; then
         case "$_ss_t" in
             integer)
-                case "$_ss_v" in *[!0-9]*) fail "$_ss_k: ждём целое число" ;; esac
+                case "$_ss_v" in *[!0-9]*) fail_code settings.need_int "{key}: an integer is expected" key "$_ss_k" ;; esac
                 _ss_min="$(jsonfilter -i "$SETTINGS_SCHEMA" -e "@.properties.$_ss_k.minimum" 2>/dev/null)"
                 _ss_max="$(jsonfilter -i "$SETTINGS_SCHEMA" -e "@.properties.$_ss_k.maximum" 2>/dev/null)"
-                [ -z "$_ss_min" ] || [ "$_ss_v" -ge "$_ss_min" ] || fail "$_ss_k: не меньше $_ss_min"
-                [ -z "$_ss_max" ] || [ "$_ss_v" -le "$_ss_max" ] || fail "$_ss_k: не больше $_ss_max" ;;
+                [ -z "$_ss_min" ] || [ "$_ss_v" -ge "$_ss_min" ] || fail_code settings.min "{key}: not less than {min}" key "$_ss_k" min "$_ss_min"
+                [ -z "$_ss_max" ] || [ "$_ss_v" -le "$_ss_max" ] || fail_code settings.max "{key}: not more than {max}" key "$_ss_k" max "$_ss_max" ;;
             boolean)
-                case "$_ss_v" in true|false) ;; *) fail "$_ss_k: ждём true или false" ;; esac ;;
+                case "$_ss_v" in true|false) ;; *) fail_code settings.need_bool "{key}: true or false is expected" key "$_ss_k" ;; esac ;;
             string) ;;
-            *) fail "$_ss_k: службой записываются строки, числа и флаги" ;;
+            *) fail_code settings.bad_type "{key}: only strings, numbers and flags can be stored" key "$_ss_k" ;;
         esac
         _ss_enum="$(jsonfilter -i "$SETTINGS_SCHEMA" -e "@.properties.$_ss_k.enum[*]" 2>/dev/null)"
         if [ -n "$_ss_enum" ]; then
-            printf '%s\n' "$_ss_enum" | grep -qxF -- "$_ss_v" || fail "$_ss_k: значение не из списка допустимых"
+            printf '%s\n' "$_ss_enum" | grep -qxF -- "$_ss_v" || fail_code settings.not_in_enum "{key}: the value is not one of the allowed ones" key "$_ss_k"
         fi
         _ss_pat="$(jsonfilter -i "$SETTINGS_SCHEMA" -e "@.properties.$_ss_k.pattern" 2>/dev/null)"
         if [ -n "$_ss_pat" ]; then
-            printf '%s\n' "$_ss_v" | grep -Eq -- "$_ss_pat" || fail "$_ss_k: значение не подходит под шаблон"
+            printf '%s\n' "$_ss_v" | grep -Eq -- "$_ss_pat" || fail_code settings.bad_pattern "{key}: the value does not match the pattern" key "$_ss_k"
         fi
     fi
     # Переписываем файл: прежние члены, кроме этого ключа, и новый. Скаляры читает jshn (тип сохраняется), объекты и
@@ -284,7 +286,7 @@ settings_set() {  # КЛЮЧ ЗНАЧЕНИЕ
     fi
     mkdir -p "$STEER_PLUGIN_CONF" 2>/dev/null
     printf '%s\n' "$_ss_new" > "$SETTINGS_FILE.new.$$" && mv "$SETTINGS_FILE.new.$$" "$SETTINGS_FILE" ||
-        { rm -f "$SETTINGS_FILE.new.$$"; fail "настройка не записалась — кончилось место?"; }
+        { rm -f "$SETTINGS_FILE.new.$$"; fail_code disk.setting_not_saved_short "The setting was not saved: no space left"; }
     ok_json
 }
 
@@ -314,19 +316,19 @@ state_safe_path() {  # ПУТЬ
 # экранированные управляющие символы, набор символов в именах и пути, уходящие за каталоги настроек.
 state_check_spec() {  # ФАЙЛ
     _c_sz="$(wc -c 2>/dev/null < "$1" || echo 0)"
-    [ "$_c_sz" -le "$STATE_SPEC_MAX" ] || { echo "спека больше $((STATE_SPEC_MAX / 1024)) КБ"; return 1; }
+    [ "$_c_sz" -le "$STATE_SPEC_MAX" ] || { echo "$(s2_t state.spec_big "The spec is larger than {max} KB" max "$((STATE_SPEC_MAX / 1024))")"; return 1; }
     # Экранированный перевод строки внутри строки JSON — способ разложить одно значение на две строки там, где
     # строки читаются по одной (jsonfilter печатает по совпадению на строку). Интерфейс таких значений не пишет.
     if grep -q '\\[nrtu]' "$1"; then
-        echo "в спеке экранированные управляющие символы — так интерфейс не пишет"
+        echo "$(s2_t state.spec_escapes "The spec has escaped control characters: the interface does not write them")"
         return 1
     fi
-    json_load "$(cat "$1")" 2>/dev/null || { echo "спека не разбирается как JSON"; return 1; }
+    json_load "$(cat "$1")" 2>/dev/null || { echo "$(s2_t state.spec_not_json "The spec cannot be parsed as JSON")"; return 1; }
     # Переменные обнуляются ПЕРЕД каждым чтением: json_get_var на отсутствующем ключе оставляет прежнее значение.
     _c_lan=''
     json_get_var _c_lan lan_device
     if [ -n "$_c_lan" ] && ! backup_safe_word "$_c_lan"; then
-        echo "lan_device «$_c_lan»: имя устройства так не выглядит"
+        echo "$(s2_t state.lan_device "lan_device \"{name}\": this is not a device name" name "$_c_lan")"
         return 1
     fi
     # Множественная форма того же поля (splify2#16): проверять только одиночную значило бы оставить дыру.
@@ -336,7 +338,7 @@ state_check_spec() {  # ФАЙЛ
             _c_lan=''
             json_get_var _c_lan "$_c_i"
             if [ -n "$_c_lan" ] && ! backup_safe_word "$_c_lan"; then
-                echo "lan_devices «$_c_lan»: имя устройства так не выглядит"
+                echo "$(s2_t state.lan_devices "lan_devices \"{name}\": this is not a device name" name "$_c_lan")"
                 json_select ..
                 return 1
             fi
@@ -348,24 +350,24 @@ state_check_spec() {  # ФАЙЛ
         for _c_o in $_c_names; do
             # Проверка двойная: имена приезжают из json_get_keys одной строкой через пробел, поэтому имя С ПРОБЕЛОМ
             # приехало бы двумя годными на вид словами. Такого ключа в объекте нет — json_select не пройдёт.
-            backup_safe_word "$_c_o" || { echo "имя выхода «$_c_o» — только латиница, цифры, точка, двоеточие, дефис"; return 1; }
-            json_select "$_c_o" 2>/dev/null || { echo "имя выхода «$_c_o» не читается как ключ — пробел или кавычка внутри?"; return 1; }
+            backup_safe_word "$_c_o" || { echo "$(s2_t state.output_name "The output name \"{name}\" may contain only Latin letters, digits, dot, colon and hyphen" name "$_c_o")"; return 1; }
+            json_select "$_c_o" 2>/dev/null || { echo "$(s2_t state.output_key "The output name \"{name}\" cannot be read as a key: a space or a quote inside?" name "$_c_o")"; return 1; }
             _c_dev=''; _c_sf=''
             json_get_var _c_dev device
             if [ -n "$_c_dev" ] && ! backup_safe_word "$_c_dev"; then
-                echo "устройство «$_c_dev» у выхода $_c_o: так имя устройства не выглядит"
+                echo "$(s2_t state.output_device "Device \"{dev}\" of output {output}: this is not a device name" dev "$_c_dev" output "$_c_o")"
                 return 1
             fi
             # `sub_file` — прежняя спека v1, `subscription` — v2: проверяются оба ключа.
             json_get_var _c_sf sub_file
             if [ -n "$_c_sf" ] && ! state_safe_path "$_c_sf"; then
-                echo "файл подписки «$_c_sf» у выхода $_c_o лежит вне каталогов настроек"
+                echo "$(s2_t state.sub_file_outside "The subscription file \"{file}\" of output {output} lies outside the settings directories" file "$_c_sf" output "$_c_o")"
                 return 1
             fi
             _c_sf=''
             json_get_var _c_sf subscription
             if [ -n "$_c_sf" ] && ! state_safe_path "$_c_sf"; then
-                echo "файл подписки «$_c_sf» у выхода $_c_o лежит вне каталогов настроек"
+                echo "$(s2_t state.sub_file_outside "The subscription file \"{file}\" of output {output} lies outside the settings directories" file "$_c_sf" output "$_c_o")"
                 return 1
             fi
             # Файлы настройки туннелей и обхода (conf, strategy) читает ядро от root: только под каталогом
@@ -375,9 +377,9 @@ state_check_spec() {  # ФАЙЛ
                 json_get_var _c_sf "$_c_cf"
                 if [ -n "$_c_sf" ]; then
                     case "$_c_sf" in
-                        *..*|*[\ \"\'\`\$\;\|\&\<\>]*) echo "путь «$_c_sf» у выхода $_c_o недопустим"; return 1 ;;
+                        *..*|*[\ \"\'\`\$\;\|\&\<\>]*) echo "$(s2_t state.path_invalid "The path \"{file}\" of output {output} is not valid" file "$_c_sf" output "$_c_o")"; return 1 ;;
                         /etc/steer/*|"${SPEC%/*}"/*) ;;
-                        /*) echo "файл «$_c_sf» у выхода $_c_o лежит вне каталога настроек ядра steer"; return 1 ;;
+                        /*) echo "$(s2_t state.file_outside_core "The file \"{file}\" of output {output} lies outside the steer settings directory" file "$_c_sf" output "$_c_o")"; return 1 ;;
                     esac
                 fi
             done
@@ -387,40 +389,40 @@ state_check_spec() {  # ФАЙЛ
     fi
     # Каналы — массивом, поэтому через jsonfilter, а не через jshn: у него для массивов своя нумерация ключей.
     for _c_v in $(jsonfilter -i "$1" -e '@.channels[*].out' 2>/dev/null); do
-        backup_safe_word "$_c_v" || { echo "выход «$_c_v» в канале — только латиница, цифры, точка, двоеточие, дефис"; return 1; }
+        backup_safe_word "$_c_v" || { echo "$(s2_t state.channel_output "The output \"{name}\" in a channel may contain only Latin letters, digits, dot, colon and hyphen" name "$_c_v")"; return 1; }
     done
     # ИМЯ канала — ярлыком (см. backup_safe_label): оно не уезжает никуда, кроме экрана и сообщений ядра.
     for _c_v in $(jsonfilter -i "$1" -e '@.channels[*].name' 2>/dev/null); do
-        backup_safe_label "$_c_v" || { echo "имя канала «$_c_v»: кавычки, доллар и разделители команд в имени недопустимы"; return 1; }
+        backup_safe_label "$_c_v" || { echo "$(s2_t state.channel_name "The channel name \"{name}\": quotes, dollar signs and command separators are not allowed" name "$_c_v")"; return 1; }
     done
     # Оба написания списочных полей: короткое документировано контрактом v1 и ядром реализовано.
     for _c_p in $(jsonfilter -i "$1" \
         -e '@.channels[*].match.prefixes_files[*]' -e '@.channels[*].match.domains_files[*]' \
         -e '@.channels[*].match.prefixes_file'    -e '@.channels[*].match.domains_file' 2>/dev/null); do
-        state_safe_path "$_c_p" || { echo "список «$_c_p» лежит вне каталога списков"; return 1; }
+        state_safe_path "$_c_p" || { echo "$(s2_t state.list_outside "The list \"{path}\" lies outside the lists directory" path "$_c_p")"; return 1; }
     done
     # ---- спека v2: правила, списки, клиенты, DNS ----
     for _c_v in $(jsonfilter -i "$1" -e '@.rules[*].out' -e '@.outputs[*].members[*]' \
                -e '@.outputs[*].over' -e '@.dns.upstreams[*].out' 2>/dev/null); do
-        backup_safe_word "$_c_v" || { echo "имя выхода «$_c_v» в правиле или группе — только латиница, цифры, точка, двоеточие, дефис"; return 1; }
+        backup_safe_word "$_c_v" || { echo "$(s2_t state.rule_output "The output name \"{name}\" in a rule or group may contain only Latin letters, digits, dot, colon and hyphen" name "$_c_v")"; return 1; }
     done
     for _c_v in $(jsonfilter -i "$1" -e '@.lan.devices[*]' 2>/dev/null); do
-        backup_safe_word "$_c_v" || { echo "lan.devices «$_c_v»: имя устройства так не выглядит"; return 1; }
+        backup_safe_word "$_c_v" || { echo "$(s2_t state.lan_devices_dev "lan.devices \"{name}\": this is not a device name" name "$_c_v")"; return 1; }
     done
     for _c_v in $(jsonfilter -i "$1" -e '@.rules[*].name' 2>/dev/null); do
-        backup_safe_label "$_c_v" || { echo "имя правила «$_c_v»: кавычки, доллар и разделители команд в имени недопустимы"; return 1; }
+        backup_safe_label "$_c_v" || { echo "$(s2_t state.rule_name "The rule name \"{name}\": quotes, dollar signs and command separators are not allowed" name "$_c_v")"; return 1; }
     done
     for _c_p in $(jsonfilter -i "$1" -e '@.lists[*].prefixes_file[*]' -e '@.lists[*].domains_file[*]' \
                -e '@.lists[*].srs[*]' 2>/dev/null); do
-        state_safe_path "$_c_p" || { echo "список «$_c_p» лежит вне каталога списков"; return 1; }
+        state_safe_path "$_c_p" || { echo "$(s2_t state.list_outside "The list \"{path}\" lies outside the lists directory" path "$_c_p")"; return 1; }
     done
     # Адрес сервера DNS уезжает в запросы резолвера: без пробелов, кавычек и подстановок.
     for _c_v in $(jsonfilter -i "$1" -e '@.dns.upstreams[*].url' 2>/dev/null); do
         case "$_c_v" in
             https://*|tls://*|quic://*|h3://*|udp://*|tcp://*) ;;
-            *) echo "DNS «$_c_v»: ждём https://, tls://, quic://, h3://, udp:// или tcp://"; return 1 ;;
+            *) echo "$(s2_t state.dns_scheme "DNS \"{value}\": https://, tls://, quic://, h3://, udp:// or tcp:// is expected" value "$_c_v")"; return 1 ;;
         esac
-        case "$_c_v" in *[\ \"\'\`\$\;\|\&\<\>]*) echo "DNS «$_c_v»: недопустимые символы"; return 1 ;; esac
+        case "$_c_v" in *[\ \"\'\`\$\;\|\&\<\>]*) echo "$(s2_t state.dns_chars "DNS \"{value}\": invalid characters" value "$_c_v")"; return 1 ;; esac
     done
     return 0
 }
@@ -429,20 +431,20 @@ state_check_spec() {  # ФАЙЛ
 # здесь проверяется только то, что это вообще похоже на подписку.
 state_check_sub() {  # ФАЙЛ
     _c_sz="$(wc -c 2>/dev/null < "$1" || echo 0)"
-    [ "$_c_sz" -le "$STATE_SUB_MAX" ] || { echo "подписка больше $((STATE_SUB_MAX / 1024)) КБ"; return 1; }
+    [ "$_c_sz" -le "$STATE_SUB_MAX" ] || { echo "$(s2_t state.sub_big "The subscription is larger than {max} KB" max "$((STATE_SUB_MAX / 1024))")"; return 1; }
     _c_lines="$(grep -c "[^[:space:]]" "$1")"
-    [ "$_c_lines" -gt 0 ] || { echo "раздел подписки пуст"; return 1; }
+    [ "$_c_lines" -gt 0 ] || { echo "$(s2_t state.sub_empty "The subscription section is empty")"; return 1; }
     # Подписка в виде JSON (ядро кладёт её так при запросе с /json): объект или массив, форма проверяется.
     case "$(tr -d ' \t\r\n' < "$1" | cut -c1)" in
         '{'|'[')
             jsonfilter -i "$1" -e '@' >/dev/null 2>&1 && return 0
-            echo "подписка в виде JSON не разбирается"
+            echo "$(s2_t state.sub_json "The subscription as JSON cannot be parsed")"
             return 1 ;;
     esac
     # Схемы — те же, что принимает sub_set (SUB_LINK_RE в m-sub.sh), плюс прокси http(s):// «адрес:порт».
     [ "$(grep -cE '^((vless|hysteria2|hy2|trojan|ss|socks|socks4|socks4a|socks5|vmess)://.+|https?://([^/@ ]+@)?(\[[0-9A-Fa-f:]+\]|[^/:@ ]+):[0-9]+/?([?#].*)?)$' "$1")" = "$_c_lines" ] && return 0
     grep -qvE '^[A-Za-z0-9+/=]*$' "$1" || return 0
-    echo "подписка: ждём строки ссылок узлов (vless://, hysteria2://, trojan://, ss://, socks://, http://, vmess://) либо один блок base64"
+    echo "$(s2_t state.sub_format "Subscription: lines of node links (vless://, hysteria2://, trojan://, ss://, socks://, http://, vmess://) or one base64 block are expected")"
     return 1
 }
 
@@ -451,11 +453,11 @@ state_check_sub() {  # ФАЙЛ
 state_check_xsteer() {  # ФАЙЛ ИМЯ
     _c_sz="$(wc -c 2>/dev/null < "$1" || echo 0)"
     [ "$_c_sz" -le "$STATE_OPT_MAX" ] ||
-        { echo "настройка туннеля «$2» больше $((STATE_OPT_MAX / 1024)) КБ"; return 1; }
+        { echo "$(s2_t state.tunnel_big "The tunnel setting \"{name}\" is larger than {max} KB" name "$2" max "$((STATE_OPT_MAX / 1024))")"; return 1; }
     grep -qE '^[[:space:]]*PrivateKey[[:space:]]*=' "$1" ||
-        { echo "в настройке туннеля «$2» нет приватного ключа — восстанавливать нечего"; return 1; }
+        { echo "$(s2_t state.tunnel_no_key "The tunnel setting \"{name}\" has no private key: there is nothing to restore" name "$2")"; return 1; }
     if grep -qvE '^[[:space:]]*($|#|\[(Interface|Peer)\]$|[A-Za-z]+[[:space:]]*=[[:space:]]*[A-Za-z0-9+/=:,./_ -]+$)' "$1"; then
-        echo "настройка туннеля «$2»: ждём строки вида «Ключ = значение», как в файле WireGuard"
+        echo "$(s2_t state.tunnel_format "The tunnel setting \"{name}\": lines like \"Key = value\", as in a WireGuard file, are expected" name "$2")"
         return 1
     fi
     return 0
@@ -464,9 +466,9 @@ state_check_xsteer() {  # ФАЙЛ ИМЯ
 # Выбор у групп «вручную»: строки «группа член» — имена выходов спеки (буквы, цифры, `_ - .`, до 31 байта).
 state_check_select() {  # ФАЙЛ
     _c_sz="$(wc -c 2>/dev/null < "$1" || echo 0)"
-    [ "$_c_sz" -le "$STATE_OPT_MAX" ] || { echo "выбор у групп больше $((STATE_OPT_MAX / 1024)) КБ"; return 1; }
+    [ "$_c_sz" -le "$STATE_OPT_MAX" ] || { echo "$(s2_t state.select_big "The group choices are larger than {max} KB" max "$((STATE_OPT_MAX / 1024))")"; return 1; }
     if grep -v '^[[:space:]]*$' "$1" | grep -qvE '^[A-Za-z0-9_.-]{1,31} [A-Za-z0-9_.-]{1,31}$'; then
-        echo "выбор у групп: ждём строки «группа член» из имён выходов"
+        echo "$(s2_t state.select_format "Group choices: lines \"group member\" made of output names are expected")"
         return 1
     fi
     return 0
@@ -475,8 +477,8 @@ state_check_select() {  # ФАЙЛ
 # Ссылка: уезжает в uci и оттуда в командную строку загрузчика — пробелы, кавычки и подстановки не годятся. Одной
 # функцией на все ссылки, которые архив несёт.
 state_check_url() {  # КЛЮЧ ЗНАЧЕНИЕ
-    case "$2" in http://*|https://*) ;; *) echo "$1: нужна ссылка http:// или https://"; return 1 ;; esac
-    case "$2" in *[\ \"\'\`\$\|\<\>]*) echo "$1: недопустимые символы в ссылке"; return 1 ;; esac
+    case "$2" in http://*|https://*) ;; *) echo "$(s2_t state.need_http "{key}: an http:// or https:// link is required" key "$1")"; return 1 ;; esac
+    case "$2" in *[\ \"\'\`\$\|\<\>]*) echo "$(s2_t state.link_chars "{key}: invalid characters in the link" key "$1")"; return 1 ;; esac
     return 0
 }
 
@@ -484,7 +486,7 @@ state_check_url() {  # КЛЮЧ ЗНАЧЕНИЕ
 # выключателей проверяются ШИРЕ, чем их пишет интерфейс: читает их fetch_tunnel_on, а он понимает и 1/0, и yes/no.
 state_check_options() {  # ФАЙЛ
     _c_sz="$(wc -c 2>/dev/null < "$1" || echo 0)"
-    [ "$_c_sz" -le "$STATE_OPT_MAX" ] || { echo "раздел настроек больше $((STATE_OPT_MAX / 1024)) КБ"; return 1; }
+    [ "$_c_sz" -le "$STATE_OPT_MAX" ] || { echo "$(s2_t state.options_big "The settings section is larger than {max} KB" max "$((STATE_OPT_MAX / 1024))")"; return 1; }
     while IFS= read -r _c_ln; do
         [ -n "$_c_ln" ] || continue
         _c_k="${_c_ln%%=*}"; _c_v="${_c_ln#*=}"
@@ -492,25 +494,25 @@ state_check_options() {  # ФАЙЛ
             sub_url|geo_url)
                 state_check_url "$_c_k" "$_c_v" || return 1 ;;
             sub_kind)
-                case "$_c_v" in url|links|none) ;; *) echo "sub_kind: ждём url, links или none"; return 1 ;; esac ;;
+                case "$_c_v" in url|links|none) ;; *) echo "$(s2_t state.sub_kind "sub_kind: url, links or none is expected")"; return 1 ;; esac ;;
             fetch_via_tunnel)
                 case "$_c_v" in
                     0|1|on|off|yes|no|true|false|always|auto) ;;
-                    *) echo "$_c_k: ждём 1/0 (или yes/no, on/off, always)"; return 1 ;;
+                    *) echo "$(s2_t state.need_flag "{key}: 1/0 (or yes/no, on/off, always) is expected" key "$_c_k")"; return 1 ;;
                 esac ;;
             # Название подписки и память мастера — непрозрачный текст: проверять их содержимое нечем и незачем.
             sub_title|wizard) ;;
             # Поля ИМЕНОВАННОЙ подписки: «sub_<имя>.<поле>».
             sub_*.*)
                 _c_s="${_c_k%%.*}"; _c_f="${_c_k#*.}"
-                case "${_c_s#sub_}" in ''|*[!A-Za-z0-9_]*) echo "непонятная настройка: $_c_k"; return 1 ;; esac
+                case "${_c_s#sub_}" in ''|*[!A-Za-z0-9_]*) echo "$(s2_t state.unknown_option "Unknown setting: {key}" key "$_c_k")"; return 1 ;; esac
                 case "$_c_f" in
                     url)   state_check_url "$_c_k" "$_c_v" || return 1 ;;
-                    kind)  case "$_c_v" in url|links|none) ;; *) echo "$_c_k: ждём url, links или none"; return 1 ;; esac ;;
+                    kind)  case "$_c_v" in url|links|none) ;; *) echo "$(s2_t state.kind_values "{key}: url, links or none is expected" key "$_c_k")"; return 1 ;; esac ;;
                     title) ;;
-                    *) echo "непонятная настройка: $_c_k"; return 1 ;;
+                    *) echo "$(s2_t state.unknown_option "Unknown setting: {key}" key "$_c_k")"; return 1 ;;
                 esac ;;
-            *) echo "непонятная настройка: $_c_k"; return 1 ;;
+            *) echo "$(s2_t state.unknown_option "Unknown setting: {key}" key "$_c_k")"; return 1 ;;
         esac
     done < "$1"
     return 0
@@ -519,33 +521,33 @@ state_check_options() {  # ФАЙЛ
 # Все проверки каталога. Печатает причину и возвращает 1 на негодном.
 state_check_dir() {  # КАТАЛОГ
     _d="$1"
-    [ -d "$_d" ] || { echo "нет каталога настроек"; return 1; }
+    [ -d "$_d" ] || { echo "$(s2_t state.no_dir "There is no settings directory")"; return 1; }
     _why=""
     if [ -f "$_d/spec" ]; then
-        _why="$(state_check_spec "$_d/spec")" || { echo "спека из архива: ${_why:-не годится}"; return 1; }
+        _why="$(state_check_spec "$_d/spec")" || { echo "$(s2_t state.spec_from_archive "The spec from the archive: {why}" why "${_why:-$(s2_t state.not_valid "not valid")}")"; return 1; }
     fi
     if [ -f "$_d/sub" ]; then
-        _why="$(state_check_sub "$_d/sub")" || { echo "${_why:-подписка из архива не годится}"; return 1; }
+        _why="$(state_check_sub "$_d/sub")" || { echo "${_why:-$(s2_t state.sub_invalid "The subscription from the archive is not valid")}"; return 1; }
     fi
     if [ -f "$_d/options" ]; then
-        _why="$(state_check_options "$_d/options")" || { echo "${_why:-настройки из архива не годятся}"; return 1; }
+        _why="$(state_check_options "$_d/options")" || { echo "${_why:-$(s2_t state.options_invalid "The settings from the archive are not valid")}"; return 1; }
     fi
     if [ -f "$_d/select" ]; then
-        _why="$(state_check_select "$_d/select")" || { echo "${_why:-выбор у групп из архива не годится}"; return 1; }
+        _why="$(state_check_select "$_d/select")" || { echo "${_why:-$(s2_t state.select_invalid "The group choices from the archive are not valid")}"; return 1; }
     fi
     # Именованные подписки — ТЕМ ЖЕ проверщиком, что и первая: расхождение между «что принимает подписка main» и «что
     # принимает вторая» означало бы подписку, которую нельзя вернуть на свой же роутер.
     for _f in "$_d"/sub.*; do
         [ -f "$_f" ] || continue
         _nm="${_f##*/}"; _nm="${_nm#sub.}"
-        case "$_nm" in ''|*[!A-Za-z0-9_]*) echo "имя подписки «$_nm» не годится"; return 1 ;; esac
-        _why="$(state_check_sub "$_f")" || { echo "подписка «$_nm» из архива: ${_why:-не годится}"; return 1; }
+        case "$_nm" in ''|*[!A-Za-z0-9_]*) echo "$(s2_t state.sub_name "The subscription name \"{name}\" is not valid" name "$_nm")"; return 1 ;; esac
+        _why="$(state_check_sub "$_f")" || { echo "$(s2_t state.sub_from_archive "The subscription \"{name}\" from the archive: {why}" name "$_nm" why "${_why:-$(s2_t state.not_valid "not valid")}")"; return 1; }
     done
     for _f in "$_d"/xsteer.*; do
         [ -f "$_f" ] || continue
         _nm="${_f##*/}"; _nm="${_nm#xsteer.}"
-        case "$_nm" in .*|''|*[!A-Za-z0-9_.:@-]*) echo "имя туннеля «$_nm» не годится"; return 1 ;; esac
-        _why="$(state_check_xsteer "$_f" "$_nm")" || { echo "${_why:-настройка туннеля из архива не годится}"; return 1; }
+        case "$_nm" in .*|''|*[!A-Za-z0-9_.:@-]*) echo "$(s2_t state.tunnel_name "The tunnel name \"{name}\" is not valid" name "$_nm")"; return 1 ;; esac
+        _why="$(state_check_xsteer "$_f" "$_nm")" || { echo "${_why:-$(s2_t state.tunnel_invalid "The tunnel setting from the archive is not valid")}"; return 1; }
     done
     return 0
 }
@@ -560,10 +562,10 @@ state_any() {  # КАТАЛОГ
 # Выгрузка в каталог. Файлы закрыты (umask 077): внутри ссылки vless:// и приватные ключи туннелей.
 state_export() {  # КАТАЛОГ
     _x="$1"
-    mkdir -p "$_x" || fail "не удалось создать каталог выгрузки"
+    mkdir -p "$_x" || fail_code state.export_dir "Cannot create the export directory"
     umask 077
     if spec_have; then
-        cp "$(spec_json)" "$_x/spec" || fail "не удалось прочитать спеку"
+        cp "$(spec_json)" "$_x/spec" || fail_code spec.cannot_read "Cannot read the spec"
     fi
     [ -s "$SUB" ] && cp "$SUB" "$_x/sub"
     # Выбор у групп «вручную» — файл ядра рядом со спекой, строки «группа член». Едут только строки этого вида: файл
@@ -612,7 +614,7 @@ state_import() {  # КАТАЛОГ
     _i="$1"
     call_lock state
     _i_why="$(state_check_dir "$_i")" || fail "$_i_why"
-    state_any "$_i" || fail "в архиве нет ни настроек, ни списков"
+    state_any "$_i" || fail_code state.archive_empty "The archive has neither settings nor lists"
     _i_warn=''
     # ---- с этого места пишем на диск ----
     # Подписки и ключи ложатся ДО проверки спеки ядром, и это не небрежность: спека из архива ссылается на них путями, а
@@ -621,7 +623,7 @@ state_import() {  # КАТАЛОГ
     if [ -f "$_i/sub" ]; then
         mkdir -p "$(dirname "$SUB")"
         cp "$_i/sub" "$SUB.new.$$" && mv "$SUB.new.$$" "$SUB" ||
-            { rm -f "$SUB.new.$$"; fail "подписка не записалась — кончилось место?"; }
+            { rm -f "$SUB.new.$$"; fail_code state.sub_not_saved "The subscription was not saved: no space left"; }
         _i_sub=1
     fi
     _i_subs=0
@@ -631,7 +633,7 @@ state_import() {  # КАТАЛОГ
         mkdir -p "$SUBS_DIR"
         cp "$_i_f" "$SUBS_DIR/$_i_nm.txt.new.$$" && mv "$SUBS_DIR/$_i_nm.txt.new.$$" "$SUBS_DIR/$_i_nm.txt" &&
             _i_subs=$((_i_subs + 1)) ||
-            { rm -f "$SUBS_DIR/$_i_nm.txt.new.$$"; _i_warn="${_i_warn}подписка $_i_nm не записалась; "; }
+            { rm -f "$SUBS_DIR/$_i_nm.txt.new.$$"; _i_warn="${_i_warn}$(s2_t state.warn_sub "Subscription {name} was not saved; " name "$_i_nm")"; }
     done
     _i_xs=0
     for _i_f in "$_i"/xsteer.*; do
@@ -644,14 +646,14 @@ state_import() {  # КАТАЛОГ
             chmod 0600 "$XSTEER_DIR/$_i_nm.conf.new.$$"
             mv "$XSTEER_DIR/$_i_nm.conf.new.$$" "$XSTEER_DIR/$_i_nm.conf" &&
                 _i_xs=$((_i_xs + 1)) ||
-                { rm -f "$XSTEER_DIR/$_i_nm.conf.new.$$"; _i_warn="${_i_warn}ключи туннеля $_i_nm не записались; "; }
+                { rm -f "$XSTEER_DIR/$_i_nm.conf.new.$$"; _i_warn="${_i_warn}$(s2_t state.warn_tunnel "The keys of tunnel {name} were not saved; " name "$_i_nm")"; }
         else
-            _i_warn="${_i_warn}ключи туннеля $_i_nm не записались; "
+            _i_warn="${_i_warn}$(s2_t state.warn_tunnel "The keys of tunnel {name} were not saved; " name "$_i_nm")"
         fi
     done
     if [ -f "$_i/options" ]; then
         # Файл настроек создаётся здесь: `uci set` в несуществующий файл молча ничего не делает.
-        uci_file || fail "не удалось создать $UCI_SPLIFY2 — кончилось место?"
+        uci_file || fail_code disk.cannot_create "Cannot create {file}: no space left" file "$UCI_SPLIFY2"
         while IFS= read -r _i_ln; do
             [ -n "$_i_ln" ] || continue
             _i_k="${_i_ln%%=*}"
@@ -665,13 +667,13 @@ state_import() {  # КАТАЛОГ
                 *) uci -q set "splify2.main.$_i_k=${_i_ln#*=}" ;;
             esac
         done < "$_i/options"
-        uci -q commit splify2 || fail "настройка не записалась — кончилось место на флеше?"
+        uci -q commit splify2 || fail_code disk.setting_not_saved "The setting was not saved. Free up some flash space and try again."
     fi
     _i_spec=0
     if [ -f "$_i/spec" ]; then
         mkdir -p "$(dirname "$SPEC")"
         _i_tmp="$SPEC.new.$$"
-        cp "$_i/spec" "$_i_tmp" || { rm -f "$_i_tmp"; fail "спека не записалась — кончилось место?"; }
+        cp "$_i/spec" "$_i_tmp" || { rm -f "$_i_tmp"; fail_code state.spec_not_saved "The spec was not saved: no space left"; }
         # Хук pre_spec_set — как в spec_set: плагины могут довезти файлы, на которые ссылается спека (каталог списков
         # скачивает недостающие), переписать присланное или отказать.
         _i_hook=""
@@ -682,7 +684,7 @@ state_import() {  # КАТАЛОГ
         fi
         if ! _i_err="$(engine_check "$_i_tmp")"; then
             rm -f "$_i_tmp"
-            fail "${_i_hook:+$_i_hook; }${_i_err:-ядро отвергло спеку из архива}. Подписки и ключи из архива при этом уже восстановлены."
+            fail "${_i_hook:+$_i_hook; }$(s2_t state.core_rejected_archive "{reason}. The subscriptions and keys from the archive have already been restored." reason "${_i_err:-$(s2_t state.core_rejected_arch_spec "The core rejected the spec from the archive")}")"
         fi
         [ -n "$_i_hook" ] && _i_warn="$_i_warn$_i_hook; "
         # Снимок применённого — ДО подмены. Иначе восстановленное выглядело бы применённым: applied_get при отсутствии
@@ -692,7 +694,7 @@ state_import() {  # КАТАЛОГ
             else printf '{"version":2}\n' > "$APPLIED"
             fi
         fi
-        spec_put "$_i_tmp" || { rm -f "$_i_tmp"; fail "спека не записалась — кончилось место?"; }
+        spec_put "$_i_tmp" || { rm -f "$_i_tmp"; fail_code state.spec_not_saved "The spec was not saved: no space left"; }
         _i_spec=1
     fi
     # Выбор у групп «вручную» — после спеки: строки называют её группы. Ложится рядом со спекой, где его ищет ядро;
@@ -702,7 +704,7 @@ state_import() {  # КАТАЛОГ
         _i_sel="${SPEC%/*}/select"
         mkdir -p "${SPEC%/*}"
         grep -v '^[[:space:]]*$' "$_i/select" > "$_i_sel.new.$$" && mv "$_i_sel.new.$$" "$_i_sel" && _i_select=1 ||
-            { rm -f "$_i_sel.new.$$"; _i_warn="${_i_warn}выбор у групп не записался; "; }
+            { rm -f "$_i_sel.new.$$"; _i_warn="${_i_warn}$(s2_t state.warn_select "The group choices were not saved; ")"; }
     fi
     json_init
     json_add_boolean ok 1
@@ -722,7 +724,7 @@ cmd_state() {  # check|export|import КАТАЛОГ
     case "$1" in
         check)
             _s_why="$(state_check_dir "$2")" || fail "$_s_why"
-            state_any "$2" || fail "в архиве нет ни настроек, ни списков"
+            state_any "$2" || fail_code state.archive_empty "The archive has neither settings nor lists"
             ok_json ;;
         export) call_lock state; state_export "$2" ;;
         import) state_import "$2" ;;
@@ -752,7 +754,7 @@ cmd_hook() {  # ИМЯ --ctx ФАЙЛ [--plugin ID]
     _h_name="${1:-}"; shift
     case "$_h_name" in
         backup_sections) ;;
-        *) fail "хук $_h_name хост программам плагинов не раздаёт" ;;
+        *) fail_code host.hook_denied "The host does not give the hook {name} to plugin programs" name "$_h_name" ;;
     esac
     _h_ctx=""; _h_only=""
     while [ $# -gt 0 ]; do
@@ -762,8 +764,8 @@ cmd_hook() {  # ИМЯ --ctx ФАЙЛ [--plugin ID]
             *) usage ;;
         esac
     done
-    [ -f "$_h_ctx" ] || fail "нет файла контекста"
-    need_ext || fail "нет поддержки плагинов"
+    [ -f "$_h_ctx" ] || fail_code host.no_context "There is no context file"
+    need_ext || fail_code host.no_plugin_support "There is no plugin support"
     HOOK_RES=""
     EXT_ONLY_ID="$_h_only"
     ext_hook_each "$_h_name" "$(cat "$_h_ctx")" hook_cb </dev/null
@@ -782,22 +784,22 @@ cmd_sub() {  # list | info ИМЯ | refresh ИМЯ | quota ИМЯ | title ИМЯ
             # остаток. Код 0, если метод ответил объектом; отказ метода — в самом ответе (`ok:false`).
             [ "$1" = list ] || [ -n "${2:-}" ] || usage
             _su_rpcd="${RPCD_BIN:-${RPCD_LIB%/rpcd}/../../libexec/rpcd/splify2}"
-            [ -r "$_su_rpcd" ] || fail "не найден обработчик подписок"
+            [ -r "$_su_rpcd" ] || fail_code host.no_sub_handler "The subscription handler was not found"
             case "$1" in
                 list) _su_req='{}' ;;
-                *) case "$2" in *[!A-Za-z0-9_]*) fail "имя подписки: латиница, цифры, подчёркивание" ;; esac
+                *) case "$2" in *[!A-Za-z0-9_]*) fail_code sub.bad_name "A subscription name may contain Latin letters, digits and underscores" ;; esac
                    _su_req="{\"name\":\"$2\"}" ;;
             esac
             _su_out="$(printf '%s\n' "$_su_req" | sh "$_su_rpcd" call "sub_$1")"
             case "$_su_out" in '{'*) printf '%s\n' "$_su_out"; exit 0 ;; esac
-            fail "каркас не ответил" ;;
+            fail_code host.frame_no_answer "The frame did not answer" ;;
     esac
     [ -n "${2:-}" ] || usage
     . "${SUB_LIB_SH:-$RPCD_LIB/sub-lib.sh}"
     sub_use "$2"
     case " $(sub_names | tr '\n' ' ') " in
         *" $SUB_NAME "*) ;;
-        *) fail "подписки «$SUB_NAME» нет" ;;
+        *) fail_code sub.not_exists "There is no subscription \"{name}\"" name "$SUB_NAME" ;;
     esac
     case "$1" in
         quota)
@@ -810,22 +812,22 @@ cmd_sub() {  # list | info ИМЯ | refresh ИМЯ | quota ИМЯ | title ИМЯ
             if [ "$_q_kind" != url ] || [ -z "$_q_url" ]; then
                 # Спрашивать некого: узлы вставлены ссылками, а ссылка не панель. Отказом это не считается.
                 json_add_boolean asked 0
-                json_add_string why "узлы заданы ссылками — остаток брать негде: его сообщает панель подписки, а не ссылка"
+                json_add_string why "$(s2_t sub.quota_links "The nodes are given as links: there is nowhere to get the remaining traffic, it is reported by the subscription panel, not by a link")"
             elif sub_quota_ask "$_q_url"; then
                 json_add_boolean asked 1
             else
                 json_add_boolean asked 1
-                json_add_string why "панель не сообщила остаток трафика"
+                json_add_string why "$(s2_t sub.quota_none "The panel did not report the remaining traffic")"
             fi
             sub_userinfo_emit
             json_dump; exit 0 ;;
         title)
             _t_title="${3:-}"
-            [ "$(printf '%s' "$_t_title" | wc -c)" -le 200 ] || fail "название слишком длинное"
-            case "$_t_title" in *[[:cntrl:]]*) fail "в названии управляющие знаки" ;; esac
+            [ "$(printf '%s' "$_t_title" | wc -c)" -le 200 ] || fail_code sub.title_long "The title is too long"
+            case "$_t_title" in *[[:cntrl:]]*) fail_code sub.title_ctrl "The title has control characters" ;; esac
             call_lock state
-            uci_file || fail "не удалось создать $UCI_SPLIFY2 — кончилось место?"
-            sub_put "$SUB_NAME" title "$_t_title" || fail "не удалось записать название"
+            uci_file || fail_code disk.cannot_create "Cannot create {file}: no space left" file "$UCI_SPLIFY2"
+            sub_put "$SUB_NAME" title "$_t_title" || fail_code sub.title_not_saved "Cannot save the title"
             uci_commit
             sub_brand "$(sub_get "$SUB_NAME" url)" "$_t_title" own
             json_init; json_add_boolean ok 1; json_add_string name "$SUB_NAME"; json_add_string title "$SUB_BRAND_TITLE"
@@ -843,20 +845,20 @@ cmd_call() {  # МЕТОД < запрос
     case "${1:-}" in
         vless_nodes|hysteria2_nodes|proxy_nodes|vless_probe|hysteria2_probe|proxy_probe|outbound_probe) ;;
         '') usage ;;
-        *) fail "метод $1 хост программам плагинов не вызывает" ;;
+        *) fail_code host.method_denied "The host does not call the method {name} for plugin programs" name "$1" ;;
     esac
     _c_rpcd="${RPCD_BIN:-${RPCD_LIB%/rpcd}/../../libexec/rpcd/splify2}"
-    [ -r "$_c_rpcd" ] || fail "не найден обработчик методов"
+    [ -r "$_c_rpcd" ] || fail_code host.no_method_handler "The method handler was not found"
     _c_out="$(sh "$_c_rpcd" call "$1")"
     case "$_c_out" in '{'*) printf '%s\n' "$_c_out"; exit 0 ;; esac
-    fail "каркас не ответил"
+    fail_code host.frame_no_answer "The frame did not answer"
 }
 
 # Страна выхода, замеренная ЧЕРЕЗ САМ ВЫХОД (curl --interface), и признак устройства выхода: по нему плагин узнаёт, что
 # выход пересоздали и прежний замер уже не о нём. Кэш и сроки — у плагина node-check.
 cmd_probe() {  # geo|ident ВЫХОД
     [ -n "${2:-}" ] || usage
-    case "$2" in *[!a-zA-Z0-9_-]*) fail "недопустимое имя выхода" ;; esac
+    case "$2" in *[!a-zA-Z0-9_-]*) fail_code req.bad_output "Invalid output name" ;; esac
     . "${GEO_LIB_SH:-$RPCD_LIB/geo-lib.sh}"
     case "$1" in
         ident)
@@ -875,7 +877,7 @@ cmd_probe() {  # geo|ident ВЫХОД
                 json_dump; exit 0
             fi
             json_init; json_add_boolean ok 0
-            json_add_string error "через выход не ответили"
+            s2_fail_fields probe.no_answer "No answer through the output"
             json_add_string why "$GEO_WHY"
             [ "$GEO_WHY" = no_curl ] && json_add_boolean curl 0
             json_dump; exit 1 ;;
@@ -917,9 +919,9 @@ cmd_release() {  # versions steer|splify2 | fetch ПРОДУКТ ВЕРСИЯ И
             esac ;;
         fetch)
             [ $# -ge 5 ] || usage
-            case "$2" in steer|splify2) ;; *) fail "продукт бывает steer или splify2" ;; esac
-            case "$3" in ''|*[!0-9.]*) fail "в версии допустимы только цифры и точки" ;; esac
-            case "$4" in ''|*[!A-Za-z0-9._+-]*|.*) fail "недопустимое имя файла" ;; esac
+            case "$2" in steer|splify2) ;; *) fail_code release.bad_product "The product is steer or splify2" ;; esac
+            case "$3" in ''|*[!0-9.]*) fail_code release.bad_version "A version may contain only digits and dots" ;; esac
+            case "$4" in ''|*[!A-Za-z0-9._+-]*|.*) fail_code release.bad_file "Invalid file name" ;; esac
             FETCH_NOTE=""
             rm -f "$5"
             # Адреса и sha256 — из перечня выпусков (rel_asset), затем прежняя лестница download() по прямой ссылке: она
@@ -932,7 +934,7 @@ cmd_release() {  # versions steer|splify2 | fetch ПРОДУКТ ВЕРСИЯ И
                 json_dump; exit 0
             fi
             rm -f "$5"
-            json_init; json_add_boolean ok 0; json_add_string error "не скачалось"
+            json_init; json_add_boolean ok 0; s2_fail_fields fetch.failed "The download failed"
             [ -n "$FETCH_NOTE" ] && json_add_string note "$FETCH_NOTE"
             json_dump; exit 1 ;;
         *) usage ;;
@@ -971,9 +973,9 @@ cmd_pkg() {  # info | install ФАЙЛ… [--replace ИМЯ…] [--restart-rpcd]
             for _p_f in $_p_files; do
                 case "$_p_f" in
                     /tmp/*|"${STEER_PLUGIN_STATE:-/nonexistent}"/*) ;;
-                    *) fail "пакет можно ставить только из /tmp или из рабочего каталога плагина" ;;
+                    *) fail_code pkg.bad_dir "A package can be installed only from /tmp or from the working directory of the plugin" ;;
                 esac
-                [ -f "$_p_f" ] || fail "нет файла $_p_f"
+                [ -f "$_p_f" ] || fail_code file.missing "There is no file {path}" path "$_p_f"
             done
             # Место на флеше — до менеджера пакетов (flash_room_ok, common.sh).
             # shellcheck disable=SC2086
@@ -1005,7 +1007,7 @@ engine_modules() {  # [--want a,b]
     _m_want=""
     [ "${1:-}" = --want ] && _m_want="$(printf '%s' "${2:-}" | tr ',' ' ')"
     for _m_m in $_m_want; do
-        case " $STEER_MODULES " in *" $_m_m "*) ;; *) fail "неизвестный модуль: $_m_m" ;; esac
+        case " $STEER_MODULES " in *" $_m_m "*) ;; *) fail_code module.unknown "Unknown module: {name}" name "$_m_m" ;; esac
     done
     spec_mods
     _m_have=" $_m_want $SPEC_MODS "

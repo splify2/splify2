@@ -52,5 +52,5 @@ autoapply_cancel() {
 
 case "$METHOD" in
     autoapply_status|autoapply_now|autoapply_cancel) "$METHOD" ;;
-    *) echo "нет такого метода: $METHOD" >&2; exit 2 ;;
+    *) echo "no such method: $METHOD" >&2; exit 2 ;;
 esac

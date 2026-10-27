@@ -21,7 +21,7 @@ import { decodeSpec } from '@/lib/specv2'
 // выходы-интерфейсы без ключа и снимает снимок с УЖЕ вылеченного файла — ровно как m-spec.sh.
 
 const HEAL_OUT =
-    'splify2: выходам без ключа ipv6 записан ipv6: nat (у туннеля есть адрес IPv6): warp'
+    'splify2: outputs without an ipv6 key got ipv6: nat (the tunnel has an IPv6 address): warp'
 const RULE: Channel = { name: 'всё', out: 'direct', match: { any: true } }
 const DRAFT: Channel = { name: 'Новое', out: 'warp', match: {} }
 
@@ -474,7 +474,7 @@ describe('что человек читает в тосте', () => {
         // Текст строк живёт в m-spec.sh, а узнаёт их интерфейс: разойдутся — человек снова увидит
         // «записан ipv6: nat» в тосте. Сверяемся с самим исходником, а не с копией в тесте.
         const src = readFileSync(join(process.cwd(), '..', 'files/usr/lib/splify2/rpcd/m-spec.sh'), 'utf8')
-        const formats = [...src.matchAll(/printf '(splify2: выходам без ключа ipv6 записан [^']*)\\n'/g)].map((m) => m[1])
+        const formats = [...src.matchAll(/printf '(splify2: outputs without an ipv6 key got [^']*)\\n'/g)].map((m) => m[1])
         expect(formats).toHaveLength(2)
         for (const f of formats) {
             const line = f.replace('%s', 'warp wgv4')

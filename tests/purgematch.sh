@@ -45,6 +45,7 @@ check() {  # ОПИСАНИЕ ОЖИДАЕМОЕ ПОЛУЧЕННОЕ
 }
 
 mkdir -p "$T/bin"
+cp "$ROOT/tests/stub/jsonfilter" "$T/bin/jsonfilter"   # словарь языка читает jsonfilter (i18n.sh); настоящего на машине разработки нет
 
 # ---- заглушка uci ------------------------------------------------------------------
 # Плоское хранилище «ключ=значение», как в tests/rpcdmatch.sh, плюс две добавки, без которых
@@ -281,7 +282,7 @@ EOF
 
 rc=0
 run_purge() {  # КЛЮЧИ СКРИПТА
-    SANDBOX="$T" PATH="$T/bin:$PATH" \
+    SANDBOX="$T" PATH="$T/bin:$PATH" I18N_SH="$ROOT/files/usr/lib/splify2/i18n.sh" S2_LANG=ru S2_DICT_EXTRA="$ROOT/plugins/lang-ru/i18n/backend" \
     SPLIFY2_DIR="$T/etc/splify2" \
     STEER_DIR="$T/etc/steer" \
     UCI_SPLIFY2="$T/etc/config/splify2" \

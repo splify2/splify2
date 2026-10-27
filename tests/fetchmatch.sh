@@ -17,6 +17,7 @@ set -u
 
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 FETCH="$ROOT/files/usr/lib/splify2/fetch.sh"
+export I18N_SH="$ROOT/files/usr/lib/splify2/i18n.sh"   # fetch.sh берёт тексты из i18n.sh; без языка — английские, их и сверяет стенд
 T="$(mktemp -d /tmp/fetchmatch.XXXXXX)"
 trap 'rm -rf "$T"' EXIT INT TERM
 
@@ -242,7 +243,7 @@ check "адрес зеркала собран из того же владель�
       "https://gitlab.com/xyzmean/ru-bypass-ipsets/-/raw/main/lists/news.lst" \
       "$(grep -o 'https://gitlab.com[^ ]*' "$S/curl.log" | head -1)"
 check "зеркало названо человеку" "yes" \
-      "$(echo "$res" | grep -q 'NOTE1=.*зеркала gitlab.com' && echo yes || echo no)"
+      "$(echo "$res" | grep -q 'NOTE1=.*the gitlab.com mirror' && echo yes || echo no)"
 check "до хостов GitHub дело не дошло" "" \
       "$(grep -c 'api.github.com\|codeload' "$S/curl.log" | sed 's/^0$//')"
 check "заголовок сырого содержимого зеркалу не нужен" "" \
@@ -336,7 +337,7 @@ check "после скачивания правил не осталось" "0" "
 check "повтор шёл только по IPv4" "yes" \
       "$(grep 'githubusercontent' "$S/curl.log" | tail -1 | grep -q 'four=yes' && echo yes || echo no)"
 check "выход назван человеку" "yes" \
-      "$(echo "$res" | grep -q 'NOTE1=.*выход vl' && echo yes || echo no)"
+      "$(echo "$res" | grep -q 'NOTE1=.*output vl' && echo yes || echo no)"
 
 # ---- 7. отказы обхода через туннель ------------------------------------------------
 # Поднятого выхода нет: `up` снят, и таблицы у выхода нет.
@@ -350,7 +351,7 @@ EOF
 res="$(run "$RAW")"
 check "выход не поднят: отказ, а не молчание" "RC1=1" "$(echo "$res" | grep '^RC1=')"
 check "сказано, что поднятого выхода нет" "yes" \
-      "$(echo "$res" | grep -q 'NOTE1=.*поднятого выхода' && echo yes || echo no)"
+      "$(echo "$res" | grep -q 'NOTE1=.*no running output' && echo yes || echo no)"
 check "маршруты не тронуты" "" "$(grep -c . "$S/ip.log" | sed 's/^0$//')"
 cat > "$S/status.json" <<'EOF'
 {"schema":1,"outputs":{"direct":{"kind":"direct"},"vl":{"kind":"vless","device":"vl","up":true,"mark":"0x00100000","table":300}},"channels":[]}
@@ -365,7 +366,7 @@ printf 'Name:\traw.githubusercontent.com\nAddress: 198.51.100.7\n' > "$S/dns/raw
 res="$(run "$RAW")"
 check "адрес издателя совпал с узлом: повтора нет" "RC1=1" "$(echo "$res" | grep '^RC1=')"
 check "петля названа причиной" "yes" \
-      "$(echo "$res" | grep -q 'NOTE1=.*петл' && echo yes || echo no)"
+      "$(echo "$res" | grep -q 'NOTE1=.*would loop' && echo yes || echo no)"
 check "правил при этом не добавлено" "" "$(grep -c '^rule add' "$S/ip.log" | sed 's/^0$//')"
 
 # fake-IP: адрес выдан нашим же резолвером, обратного перевода для роутера нет.
@@ -377,7 +378,7 @@ printf 'Name:\traw.githubusercontent.com\nAddress: 198.18.0.5\n' > "$S/dns/raw.g
 res="$(run "$RAW")"
 check "fake-IP не уводится в туннель" "RC1=1" "$(echo "$res" | grep '^RC1=')"
 check "fake-IP назван причиной" "yes" \
-      "$(echo "$res" | grep -q 'NOTE1=.*fake-IP' && echo yes || echo no)"
+      "$(echo "$res" | grep -q 'NOTE1=.*the fake IP' && echo yes || echo no)"
 printf 'Name:\traw.githubusercontent.com\nAddress: 185.199.108.133\nName:\traw.githubusercontent.com\nAddress: 185.199.109.133\n' > "$S/dns/raw.githubusercontent.com"
 
 # Выключено через uci — обход не делается, и об этом сказано.
@@ -388,7 +389,7 @@ echo 0 > "$S/uci.splify2_main_fetch_via_tunnel"
 res="$(run "$RAW")"
 check "выключенный туннель не трогается" "RC1=1" "$(echo "$res" | grep '^RC1=')"
 check "выключение названо словами" "yes" \
-      "$(echo "$res" | grep -q 'NOTE1=.*туннель выключен' && echo yes || echo no)"
+      "$(echo "$res" | grep -q 'NOTE1=.*through a tunnel is off' && echo yes || echo no)"
 check "правил не добавлено" "" "$(grep -c '^rule add' "$S/ip.log" | sed 's/^0$//')"
 
 # ---- 7b. включённый переключатель: туннель первым ----------------------------------
@@ -404,7 +405,7 @@ check "always: запрос был ровно один и по IPv4" "1;yes" \
 check "always: обход по хостам GitHub не понадобился" "" \
       "$(grep -c 'api.github.com\|codeload' "$S/curl.log" | sed 's/^0$//')"
 check "включено: назван выход, через который пошло" "yes" \
-      "$(echo "$res" | grep -q 'NOTE1=.*через выход vl' && echo yes || echo no)"
+      "$(echo "$res" | grep -q 'NOTE1=.*through output vl' && echo yes || echo no)"
 check "always: правило снято" "0" "$(cat "$S/rules" 2>/dev/null || echo 0)"
 
 # Туннеля нет — режим не должен превращаться в отказ: прямой путь по-прежнему работает.
@@ -525,7 +526,7 @@ reset
 res="$(runrel "$REL" "$(sum "direct:$REL")" "$REL1" "$REL")"
 check "сумма первого не сошлась — взят второй адрес" "direct:$REL" "$(cat "$T/got" 2>/dev/null)"
 check "несовпадение суммы названо" "yes" \
-      "$(echo "$res" | grep -q 'NOTE=.*контрольная сумма' && echo yes || echo no)"
+      "$(echo "$res" | grep -q 'NOTE=.*checksum did not match' && echo yes || echo no)"
 
 reset
 printf 'githubusercontent.com\nreleases/download\n' > "$S/blocked-always"
@@ -544,7 +545,7 @@ printf 'releases/download\n' > "$S/blocked-always"
 res="$(runrel "$REL" "$(sum другое)" "$REL1" "$REL")"
 check "сумма не сошлась нигде — отказ" "RC=1" "$(echo "$res" | grep '^RC=')"
 check "и файла нет" "no" "$([ -e "$T/got" ] && echo yes || echo no)"
-check "причина названа" "yes" "$(echo "$res" | grep -q 'NOTE=.*контрольная сумма' && echo yes || echo no)"
+check "причина названа" "yes" "$(echo "$res" | grep -q 'NOTE=.*checksum did not match' && echo yes || echo no)"
 
 # Запасной адрес не из version.json (версии там нет) — его прямой заход обязателен.
 reset

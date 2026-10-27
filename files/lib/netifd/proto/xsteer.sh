@@ -69,7 +69,7 @@ xsteer_peer() {
 	config_get persistent_keepalive "$cfg" persistent_keepalive
 	config_get allowed_ips "$cfg" allowed_ips
 
-	[ -n "$public_key" ] || { echo "xsteer: пир $cfg без public_key — пропускаю" >&2; return 0; }
+	[ -n "$public_key" ] || { echo "xsteer: peer $cfg has no public_key - skipped" >&2; return 0; }
 
 	echo "" >> "$XSTEER_CONF"
 	echo "[Peer]" >> "$XSTEER_CONF"
@@ -117,9 +117,9 @@ proto_xsteer_setup() {
 	# `device_name` это касается так же: на странице протокола у поля нет ни datatype, ни
 	# предела длины.
 	if [ "${#dev}" -gt 15 ]; then
-		echo "xsteer: имя устройства \"$dev\" — ${#dev} символов, ядро Linux принимает не больше 15" \
-			"(IFNAMSIZ). Задайте короче в «Имя устройства» или переименуйте интерфейс" \
-			"(умолчание xs-<интерфейс> оставляет на имя 12 символов)." >&2
+		echo "xsteer: the device name \"$dev\" is ${#dev} characters long, the Linux kernel accepts at most 15" \
+			"(IFNAMSIZ). Set a shorter one in 'Device name' or rename the interface" \
+			"(the default xs-<interface> leaves 12 characters for the name)." >&2
 		proto_notify_error "$config" DEVICE_NAME_TOO_LONG
 		proto_block_restart "$config"
 		return 1
@@ -189,7 +189,7 @@ proto_xsteer_setup() {
 	# устройство, которого нет; в «Состоянии» интерфейс выглядит настроенным.
 	if ! ip link show dev "$dev" >/dev/null 2>&1; then
 		if ! ip tuntap add dev "$dev" mode tun multi_queue 2>"$XSTEER_RUN/$config.err"; then
-			echo "xsteer: устройство $dev не создалось: $(cat "$XSTEER_RUN/$config.err")" >&2
+			echo "xsteer: the device $dev was not created: $(cat "$XSTEER_RUN/$config.err")" >&2
 			rm -f "$XSTEER_CONF" "$XSTEER_RUN/$config.err"
 			proto_notify_error "$config" DEVICE_SETUP_FAILED
 			proto_block_restart "$config"
@@ -198,7 +198,7 @@ proto_xsteer_setup() {
 		rm -f "$XSTEER_RUN/$config.err"
 	fi
 	if ! ip link set dev "$dev" mtu "$start_mtu" up; then
-		echo "xsteer: устройство $dev не поднялось (mtu $start_mtu)" >&2
+		echo "xsteer: the device $dev did not come up (mtu $start_mtu)" >&2
 		rm -f "$XSTEER_CONF"
 		proto_notify_error "$config" DEVICE_SETUP_FAILED
 		proto_block_restart "$config"

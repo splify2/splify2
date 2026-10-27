@@ -94,7 +94,7 @@ case "$2" in
         # Движок печатает JSON сам. Если он не отвечает — честная ошибка, а не пустой
         # объект, который интерфейс покажет как «всё в порядке».
         out="$("$STEER" status --spec "$SPEC" 2>/dev/null)"
-        case "$out" in '{'*) printf '%s\n' "$out" ;; *) fail "ядро не ответило" ;; esac
+        case "$out" in '{'*) printf '%s\n' "$out" ;; *) fail_code core.no_answer "The core did not respond" ;; esac
         ;;
 
     spec_schema)
@@ -108,7 +108,7 @@ case "$2" in
             out="$(cat "${SCHEMA_FIXTURE:-/usr/share/splify2/spec-schema.json}" 2>/dev/null)"
             _ss_src=bundled
             [ -n "$out" ] && [ -n "$(jsonfilter -s "$out" -e '@.type' 2>/dev/null)" ] ||
-                fail "the core has no spec-schema command and no bundled schema is installed"
+                fail_code spec.no_schema "The core has no spec-schema command and no bundled schema is installed"
         fi
         printf '{"ok":true,"source":"%s","schema":%s}\n' "$_ss_src" "$out"
         ;;
@@ -122,7 +122,7 @@ case "$2" in
             _sy_err="$(mktemp 2>/dev/null)" || _sy_err=/dev/null
             _sy_out="$("$STEER" spec convert --spec "$_sy_src" 2>"$_sy_err")"; _sy_rc=$?
             [ "$_sy_err" = /dev/null ] || { _sy_e="$(cat "$_sy_err" 2>/dev/null)"; rm -f "$_sy_err"; }
-            [ "$_sy_rc" = 0 ] && [ -n "$_sy_out" ] || fail "${_sy_e:-the core cannot print the spec as YAML}"
+            [ "$_sy_rc" = 0 ] && [ -n "$_sy_out" ] || fail "${_sy_e:-$(s2_t spec.no_yaml "The core cannot print the spec as YAML")}"
         else
             _sy_out="version: 2"
         fi
@@ -147,7 +147,7 @@ case "$2" in
         # Через fast_diag — те же приговоры, что у круга опроса, плюс наш про спор за порт 53.
         . "${FAST_SH:-/usr/lib/splify2/fast.sh}"
         if out="$(fast_diag)"; then printf '%s\n' "$out"
-        else fail "ядро не умеет diag — обновите steer"
+        else fail_code core.no_diag "The core does not support diagnostics. Update steer."
         fi
         ;;
 
@@ -442,19 +442,19 @@ case "$2" in
             # обязан его отсеять; зашитое имя тут молча вернуло бы ловушку.
             _cn_why=''
             case "$_cn_ours" in
-                *" $n "*) _cn_why='это устройство вашего выхода: через него трафик уходит наружу, а не приходит от клиентов' ;;
+                *" $n "*) _cn_why="$(s2_t clientnet.own_output "This is the device of your output: traffic leaves through it rather than coming from clients")" ;;
             esac
             [ -n "$_cn_why" ] || case "$_cn_xs" in
-                *" $n "*) _cn_why='это ваш туннель xsteer (proto=xsteer в настройках сети) — он ведёт наружу' ;;
+                *" $n "*) _cn_why="$(s2_t clientnet.xsteer "This is your xsteer tunnel (proto=xsteer in the network settings): it leads outward")" ;;
             esac
             [ -n "$_cn_why" ] || case "$_cn_wgcli" in
-                *" $n "*) _cn_why='туннель WireGuard до провайдера: пиру разрешены все адреса (0.0.0.0/0), то есть наружу через него уходите вы' ;;
+                *" $n "*) _cn_why="$(s2_t clientnet.wireguard "A WireGuard tunnel to a provider: the peer is allowed all addresses (0.0.0.0/0), so you leave through it")" ;;
             esac
             if [ -z "$_cn_why" ] && [ -n "$_cn_wan" ] && [ "$n" = "$_cn_wan" ]; then
-                _cn_why='интерфейс ведёт наружу: оттуда приходит не ваша сеть, а весь мир по ту сторону роутера'
+                _cn_why="$(s2_t clientnet.wan "The interface leads outward: it brings the whole world beyond the router, not your network")"
             fi
             [ -n "$_cn_why" ] || case "$_cn_def" in
-                *" $n "*) _cn_why='через это устройство идёт маршрут по умолчанию — это выход в интернет, а не сеть клиентов' ;;
+                *" $n "*) _cn_why="$(s2_t clientnet.default_route "The default route goes through this device: it is the way to the internet, not a client network")" ;;
             esac
             json_add_object ""
             json_add_string name "$n"
@@ -589,12 +589,12 @@ case "$2" in
         # не ходит вовсе, и ping показал бы «нет ответа» у исправного туннеля — так и было у
         # hysteria2 и прокси. У обычного устройства меряем ping через него.
         read -r input
-        json_load "$input" 2>/dev/null || fail "неразбираемый запрос"
+        json_load "$input" 2>/dev/null || fail_code req.unparsable "Unparsable request"
         json_get_var output output
-        [ -n "$output" ] || fail "не указан выход"
+        [ -n "$output" ] || fail_code req.no_output "No output specified"
         # Состав имени — как у outbound_geo: ниже оно уходит в регулярное выражение sed и в
         # командную строку движка, и «a/b» ломало выражение, а «.*» брало первый попавшийся выход.
-        case "$output" in *[!a-zA-Z0-9_.-]*) fail "недопустимое имя выхода" ;; esac
+        case "$output" in *[!a-zA-Z0-9_.-]*) fail_code req.bad_output "Invalid output name" ;; esac
         # Вид выхода — у ядра (`outputs --kind`), по видам туннелей ядра до первого совпадения.
         # Команда пробы и поле задержки у каждого клиента свои: VLESS меряет ответ через туннель
         # (ttfb_ms), hysteria2 и прокси — рукопожатие с запросом (handshake_ms; ttfb_ms у них -1).
@@ -620,35 +620,35 @@ case "$2" in
             ms="$(printf '%s' "$out" | sed -n "s/.*\"ok\":true,\"handshake_ms\":\(-*[0-9]*\),\"ttfb_ms\":\(-*[0-9]*\).*/\1 \2/p" | head -1)"
             case "$_pf" in ttfb_ms) ms="${ms#* }" ;; *) ms="${ms% *}" ;; esac
             case "$ms" in
-                ''|*[!0-9]*) json_add_string code no_answer; json_add_string state 'нет ответа'; json_add_int ms -1 ;;
+                ''|*[!0-9]*) json_add_string code no_answer; json_add_string state "$(s2_t ping.no_answer "no answer")"; json_add_int ms -1 ;;
                 *) json_add_string code ok; json_add_string state ok; json_add_int ms "$ms" ;;
             esac
-            json_add_string how 'через туннель: ICMP по нему не ходит, меряет ядро steer'
+            json_add_string how "$(s2_t ping.how_tunnel "through the tunnel: ICMP does not pass through it, the steer core measures")"
         else
             dev="$("$STEER" status --spec "$SPEC" 2>/dev/null |
                    sed -n "s/.*\"$output\":{[^}]*\"device\":\"\([^\"]*\)\".*/\1/p" | head -1)"
             if [ -z "$dev" ]; then
-                json_add_string code no_device; json_add_string state 'нет устройства'; json_add_int ms -1
+                json_add_string code no_device; json_add_string state "$(s2_t ping.no_device "no device")"; json_add_int ms -1
             else
                 r="$(ping -c 1 -W 3 -I "$dev" 1.1.1.1 2>/dev/null | sed -n 's/.*time=\([0-9.]*\).*/\1/p' | head -1)"
                 case "$r" in
-                    '') json_add_string code no_answer; json_add_string state 'нет ответа'; json_add_int ms -1 ;;
+                    '') json_add_string code no_answer; json_add_string state "$(s2_t ping.no_answer "no answer")"; json_add_int ms -1 ;;
                     *)  json_add_string code ok; json_add_string state ok; json_add_int ms "${r%%.*}" ;;
                 esac
             fi
-            json_add_string how 'ping через устройство выхода'
+            json_add_string how "$(s2_t ping.how_device "ping through the output device")"
         fi
         json_dump
         ;;
 
     explain)
         read -r input
-        json_load "$input" 2>/dev/null || fail "неразбираемый запрос"
+        json_load "$input" 2>/dev/null || fail_code req.unparsable "Unparsable request"
         json_get_var address address
-        [ -n "$address" ] || fail "не указан адрес"
+        [ -n "$address" ] || fail_code req.no_address "No address specified"
         # Аргумент уходит ядру позиционным: с дефиса его разобрали бы как флаг. Ни адрес, ни имя с дефиса
         # не начинаются.
-        case "$address" in -*) fail "это не адрес и не имя" ;; esac
+        case "$address" in -*) fail_code req.bad_address "This is neither an address nor a name" ;; esac
         json_init
         json_add_string text "$("$STEER" explain "$address" --spec "$SPEC" 2>&1)"
         json_dump
@@ -756,7 +756,7 @@ case "$2" in
         # JSON с именами узлов из подписки здесь означал бы вторую модель узла в shell.
         _vn_cmd="${2%%_*}-nodes"
         read -r input
-        json_load "$input" 2>/dev/null || fail "неразбираемый запрос"
+        json_load "$input" 2>/dev/null || fail_code req.unparsable "Unparsable request"
         json_get_var output output
         json_get_var sub sub
         json_get_var _vn_ins insecure
@@ -771,8 +771,8 @@ case "$2" in
                 sub_use "$_vn_n"
                 [ "$SUB" = "$sub" ] && { _vn_ok=1; break; }
             done
-            [ "$_vn_ok" = 1 ] || fail "нет такой подписки: $sub"
-            [ -s "$sub" ] || fail "подписка ещё не скачана"
+            [ "$_vn_ok" = 1 ] || fail_code sub.not_found "No such subscription: {name}" name "$sub"
+            [ -s "$sub" ] || fail_code sub.not_downloaded "The subscription has not been downloaded yet"
             output="$sub"
         else
             # У выхода узлы с allowInsecure решает его собственный ключ insecure: флаг ядро с
@@ -781,15 +781,15 @@ case "$2" in
             # Имя выхода — только имя. Движок трактует аргумент с ведущей косой как ПУТЬ к файлу
             # подписки, и без этой проверки {"output":"/etc/passwd"} читал любой файл роутера,
             # а его строки уезжали в ответ примерами пропусков; аргумент с «--» уезжал флагом.
-            case "$output" in ''|*[!a-zA-Z0-9_.-]*) fail "недопустимое имя выхода" ;; esac
+            case "$output" in ''|*[!a-zA-Z0-9_.-]*) fail_code req.bad_output "Invalid output name" ;; esac
         fi
-        [ -n "$output" ] || fail "не указан выход"
+        [ -n "$output" ] || fail_code req.no_output "No output specified"
         # Движок печатает JSON сам — отдаём дословно. Разбирать его здесь значило бы
         # держать вторую модель узла в shell, а имена узлов приходят из подписки и
         # содержат что угодно, включая кавычки.
         raw="$(nodes_ask "${_vn_ins:-0}" "$_vn_cmd" "$output" --spec "$SPEC")"
         out="$(json_tail "$raw")"
-        [ -n "$out" ] || fail "${raw:-ядро не ответило}"
+        [ -n "$out" ] || fail "${raw:-$(s2_t core.no_answer "The core did not respond")}"
         printf '%s\n' "$out"
         ;;
 
@@ -798,7 +798,7 @@ case "$2" in
         # файлу), по имени выхода — внутри протокола выхода.
         _vp_cmd="${2%%_*}-probe"
         read -r input
-        json_load "$input" 2>/dev/null || fail "неразбираемый запрос"
+        json_load "$input" 2>/dev/null || fail_code req.unparsable "Unparsable request"
         json_get_var output output
         json_get_var node node
         json_get_var sub sub
@@ -812,22 +812,22 @@ case "$2" in
                 sub_use "$_vp_n"
                 [ "$SUB" = "$sub" ] && { _vp_ok=1; break; }
             done
-            [ "$_vp_ok" = 1 ] || fail "нет такой подписки: $sub"
-            [ -s "$sub" ] || fail "подписка ещё не скачана"
+            [ "$_vp_ok" = 1 ] || fail_code sub.not_found "No such subscription: {name}" name "$sub"
+            [ -s "$sub" ] || fail_code sub.not_downloaded "The subscription has not been downloaded yet"
             output="$sub"
         else
             _vp_ins=0
             # Тот же рубеж, что у vless_nodes выше: путь — только свой, имя — только имя.
-            case "$output" in ''|*[!a-zA-Z0-9_.-]*) fail "недопустимое имя выхода" ;; esac
+            case "$output" in ''|*[!a-zA-Z0-9_.-]*) fail_code req.bad_output "Invalid output name" ;; esac
         fi
-        [ -n "$output" ] || fail "не указан выход"
+        [ -n "$output" ] || fail_code req.no_output "No output specified"
         # По одному узлу за вызов: проверка упирается в таймаут, и «проверить все» на
         # подписке из двадцати шести узлов заняло бы дольше, чем живёт вызов ubus.
         # Интерфейс спрашивает по одному и заполняет таблицу постепенно.
         [ -n "$node" ] || node=-1
         raw="$(nodes_ask "${_vp_ins:-0}" "$_vp_cmd" "$output" --node "$node" --timeout 6 --spec "$SPEC")"
         out="$(json_tail "$raw")"
-        [ -n "$out" ] || fail "${raw:-ядро не ответило}"
+        [ -n "$out" ] || fail "${raw:-$(s2_t core.no_answer "The core did not respond")}"
         printf '%s\n' "$out"
         ;;
 
@@ -837,7 +837,7 @@ case "$2" in
         case "$2" in dns_log) _dl_cmd=dns-log ;; *) _dl_cmd=conns ;; esac
         raw="$("$STEER" "$_dl_cmd" --spec "$SPEC" 2>&1)"
         out="$(json_tail "$raw")"
-        [ -n "$out" ] || fail "${raw:-ядро не ответило}"
+        [ -n "$out" ] || fail "${raw:-$(s2_t core.no_answer "The core did not respond")}"
         printf '%s\n' "$out"
         ;;
 
@@ -847,20 +847,20 @@ case "$2" in
         # Ядро без этой команды отвечает не JSON — тогда `unsupported`: экран оставляет лампочки
         # серыми, а не красными (сервер не проверен — не то же, что не отвечает).
         read -r input
-        json_load "$input" 2>/dev/null || fail "неразбираемый запрос"
+        json_load "$input" 2>/dev/null || fail_code req.unparsable "Unparsable request"
         set --
         if json_is_a urls array; then
             json_select urls
             _i=1
             while json_is_a "$_i" string; do
                 json_get_var _u "$_i"
-                case "$_u" in ''|-*|*[!]A-Za-z0-9:/._=,%@?+[-]*) fail "недопустимый адрес сервера" ;; esac
+                case "$_u" in ''|-*|*[!]A-Za-z0-9:/._=,%@?+[-]*) fail_code dns.bad_server "Invalid server address" ;; esac
                 set -- "$@" "$_u"
                 _i=$((_i + 1))
             done
             json_select ..
         fi
-        [ "$#" -gt 0 ] || fail "нет серверов"
+        [ "$#" -gt 0 ] || fail_code dns.no_servers "No servers given"
         raw="$("$STEER" dns-probe --timeout 3000 "$@" 2>&1)"
         out="$(json_tail "$raw")"
         if [ -z "$out" ]; then
@@ -878,12 +878,12 @@ case "$2" in
         # раз перезапускали, какой модуль и его версия, причина последнего отказа. Помощника
         # без модуля демон описывает словами «нужен пакет steer-<имя>» — их и показывает экран.
         read -r input
-        json_load "$input" 2>/dev/null || fail "неразбираемый запрос"
+        json_load "$input" 2>/dev/null || fail_code req.unparsable "Unparsable request"
         json_get_var output output
-        case "$output" in ''|*[!a-zA-Z0-9_.-]*) fail "недопустимое имя выхода" ;; esac
+        case "$output" in ''|*[!a-zA-Z0-9_.-]*) fail_code req.bad_output "Invalid output name" ;; esac
         raw="$("$STEER" ctl helper "$output" 2>&1)"
         out="$(json_tail "$raw")"
-        [ -n "$out" ] || fail "${raw:-демон не ответил}"
+        [ -n "$out" ] || fail "${raw:-$(s2_t daemon.no_answer "The daemon did not respond")}"
         printf '%s\n' "$out"
         ;;
 
@@ -914,10 +914,10 @@ case "$2" in
         # Вторая реализация любого из них означала бы, что отчёт для поддержки описывает
         # роутер иначе, чем экраны, по которым его чинят, — а расходятся такие пары молча.
         SR_TEXT=""
-        sr_line "=== splify2: отчёт для поддержки ==="
+        sr_line "=== splify2: support report ==="
         # Время сборки: отчёт живёт в чате часами, и «когда это было снято» — первый вопрос
         # к нему. Без часового пояса: у роутера он бывает не выставлен вовсе.
-        sr_line "собран: $(date '+%Y-%m-%d %H:%M')"
+        sr_line "collected: $(date '+%Y-%m-%d %H:%M')"
 
         # ---- версии и устройство --------------------------------------------------------
         #
@@ -952,23 +952,23 @@ case "$2" in
         fi
 
         sr_line ""
-        sr_line "-- устройство --"
+        sr_line "-- device --"
         # Модель — из того же файла, откуда её берёт вся OpenWrt. Швом, потому что на машине
         # разработчика /tmp/sysinfo нет вовсе.
         _sr_model="$(sed -n '1{s/[[:space:]]*$//;p;}' "${SYSINFO_MODEL:-/tmp/sysinfo/model}" 2>/dev/null)"
-        sr_line "модель: ${_sr_model:-не сообщил}"
+        sr_line "model: ${_sr_model:-not reported}"
         # Версия прошивки — из файла описания системы, тем же способом, каким оттуда читается
         # архитектура (pkg_arch в группе движка). DISTRIB_DESCRIPTION предпочтительнее номера:
         # в нём есть и ревизия сборки, а поддержке важна именно она.
         _sr_os=""
         [ -f "$OPENWRT_RELEASE" ] && _sr_os="$( . "$OPENWRT_RELEASE" 2>/dev/null
             printf '%s' "${DISTRIB_DESCRIPTION:-${DISTRIB_RELEASE:-}}" )"
-        sr_line "прошивка: ${_sr_os:-не определилась}"
-        sr_line "архитектура пакетов: ${_sr_arch:-не определилась}"
-        sr_line "менеджер пакетов: $PM"
+        sr_line "firmware: ${_sr_os:-not detected}"
+        sr_line "package architecture: ${_sr_arch:-not detected}"
+        sr_line "package manager: $PM"
 
         sr_line ""
-        sr_line "-- версии --"
+        sr_line "-- versions --"
         # Интерфейс — НОМЕРОМ СБОРКИ, а не версией пакета, и это осознанно. Номер сборки
         # читает загрузчик страницы на каждой загрузке (build-id.txt), у выпуска он равен
         # версии пакета, а у сборки из main вдобавок несёт ревизию и метку dirty — то есть
@@ -978,19 +978,19 @@ case "$2" in
         # отчёте, который собирают как раз тогда, когда с сетью беда.
         _sr_ui="$(sed -n '1{s/[[:space:]]*$//;p;}' \
             "${BUILD_ID_FILE:-/www/luci-static/resources/splify2/build-id.txt}" 2>/dev/null)"
-        sr_line "интерфейс splify2: ${_sr_ui:-не определилась} (номер сборки; у выпуска равен версии пакета)"
+        sr_line "splify2 interface: ${_sr_ui:-not detected} (build number; equal to the package version in a release)"
         if [ "$_sr_eok" != 1 ]; then
             # Свой же метод не ответил — и выдать это за «движка нет» нельзя: диагноз
             # «маршрутизации нет вовсе» уводит помогающего чинить не то. Отчёт обязан
             # называть незнание незнанием, ровно как это делают методы, проксирующие движок.
-            sr_line "ядро steer: узнать не удалось — метод engine не ответил"
+            sr_line "steer core: unknown - the engine method did not answer"
         elif [ "$_sr_present" = 1 ]; then
-            sr_line "ядро steer: ${_sr_ever:-версия не определилась}, модуль VLESS $(sr_word "$_sr_vless" 'есть' 'нет')"
-            sr_line "служба ядра: $(sr_word "$_sr_run" 'работает' 'не работает'), автозапуск $(sr_word "$_sr_en" 'включён' 'снят')"
+            sr_line "steer core: ${_sr_ever:-version not detected}, VLESS module $(sr_word "$_sr_vless" 'present' 'absent')"
+            sr_line "core service: $(sr_word "$_sr_run" 'running' 'not running'), autostart $(sr_word "$_sr_en" 'on' 'off')"
         else
             # Отсутствие движка — самое важное, что может быть в отчёте: без него не работает
             # ничего, и половина обращений оказывается именно этим.
-            sr_line "ядро steer: НЕ УСТАНОВЛЕНО — маршрутизации нет вовсе"
+            sr_line "steer core: NOT INSTALLED - there is no routing at all"
         fi
 
         # ---- приговоры проверок ---------------------------------------------------------
@@ -1000,7 +1000,7 @@ case "$2" in
         # своими словами здесь нельзя (формулировки принадлежат движку и меняются вместе с
         # ним), а показывать человеку JSON — значит требовать от него читать наш формат.
         sr_line ""
-        sr_line "-- проверки ядра (steer diag) --"
+        sr_line "-- core checks (steer diag) --"
         # Тот же выбор спеки, что у метода diag и у круга опроса, и той же функцией: отчёт
         # для поддержки описывает РАБОТАЮЩИЙ роутер, а «apply не довёл набор до ядра» из-за
         # чужой неприменённой правки увело бы разбор в сторону на первом же шаге.
@@ -1018,12 +1018,12 @@ case "$2" in
                     json_get_var _sr_w what
                     json_get_var _sr_y why
                     case "$_sr_v" in
-                        fail) _sr_m="[ПРОВАЛ]" ;;
-                        warn) _sr_m="[ВНИМАНИЕ]" ;;
-                        note) _sr_m="[замечание]" ;;
-                        *)    _sr_m="[в порядке]" ;;
+                        fail) _sr_m="[FAIL]" ;;
+                        warn) _sr_m="[WARNING]" ;;
+                        note) _sr_m="[note]" ;;
+                        *)    _sr_m="[ok]" ;;
                     esac
-                    sr_line "$_sr_m ${_sr_id:-без имени}: ${_sr_w}${_sr_y:+ — $_sr_y}"
+                    sr_line "$_sr_m ${_sr_id:-unnamed}: ${_sr_w}${_sr_y:+ — $_sr_y}"
                     json_select ..
                 done
                 json_select ..
@@ -1031,14 +1031,14 @@ case "$2" in
             _sr_fail=""; _sr_warn=""
             json_get_var _sr_fail fail
             json_get_var _sr_warn warn
-            sr_line "итог: провалов ${_sr_fail:-0}, предупреждений ${_sr_warn:-0}"
+            sr_line "total: failures ${_sr_fail:-0}, warnings ${_sr_warn:-0}"
         else
-            sr_line "ядро не ответило на diag — оно старее проверок или не запускается"
+            sr_line "the core did not answer diag - it is older than the checks or does not start"
         fi
 
         # ---- выходы и наборы правил в ядре ----------------------------------------------
         sr_line ""
-        sr_line "-- выходы --"
+        sr_line "-- outputs --"
         _sr_s="$("$STEER" status --spec "$SPEC" 2>/dev/null)"
         _sr_s="$(json_tail "$_sr_s")"
         if [ -n "$_sr_s" ] && json_load "$_sr_s" 2>/dev/null; then
@@ -1053,17 +1053,17 @@ case "$2" in
                     if [ "$_sr_kind" = direct ]; then
                         # У «напрямую» нет ни устройства, ни подъёма — и писать про них
                         # «нет» значило бы показать поломку там, где её быть не может.
-                        sr_line "$_sr_o: direct (без туннеля)"
+                        sr_line "$_sr_o: direct (no tunnel)"
                     else
                         # Пустое `up` — это «движок не сказал», а не «не поднят»: так
                         # выглядит выход на движке постарше, и выдавать одно за другое
                         # нельзя — по этой строке человеку советуют, что чинить.
                         case "$_sr_up" in
-                            1|true) _sr_ups="поднят" ;;
-                            0|false) _sr_ups="НЕ ПОДНЯТ" ;;
-                            *) _sr_ups="состояния ядро не назвало" ;;
+                            1|true) _sr_ups="up" ;;
+                            0|false) _sr_ups="NOT UP" ;;
+                            *) _sr_ups="the core gave no state" ;;
                         esac
-                        sr_line "$_sr_o: ${_sr_kind:-вид не назван}, устройство ${_sr_dev:-не создано}, $_sr_ups"
+                        sr_line "$_sr_o: ${_sr_kind:-kind not named}, device ${_sr_dev:-not created}, $_sr_ups"
                         # Перебор узлов подписки — не отказ, и в отчёте это надо различать:
                         # «НЕ ПОДНЯТ» на выходе, который прямо сейчас ищет живой узел,
                         # уводит помогающего чинить исправное (I-100).
@@ -1072,9 +1072,9 @@ case "$2" in
                             json_get_var _sr_pst state
                             json_get_var _sr_ptot total
                             case "$_sr_pst" in
-                                probing) sr_line "    (идёт перебор узлов подписки, пригодных ${_sr_ptot:-?})" ;;
-                                failed) sr_line "    (ни один узел подписки не ответил, пригодных ${_sr_ptot:-0})" ;;
-                                no_such_node) sr_line "    (выбран номер узла, которого в подписке нет; узлов ${_sr_ptot:-0})" ;;
+                                probing) sr_line "    (trying the subscription nodes, usable ${_sr_ptot:-?})" ;;
+                                failed) sr_line "    (no subscription node answered, usable ${_sr_ptot:-0})" ;;
+                                no_such_node) sr_line "    (the chosen node number is not in the subscription; nodes ${_sr_ptot:-0})" ;;
                             esac
                             json_select ..
                         fi
@@ -1100,9 +1100,9 @@ case "$2" in
                 done
                 json_select ..
             fi
-            sr_line "наборов правил в ядре Linux: $_sr_sets (живых $_sr_livesets)"
+            sr_line "rule sets in the Linux kernel: $_sr_sets (live $_sr_livesets)"
         else
-            sr_line "ядро не ответило на status — состояния выходов нет"
+            sr_line "the core did not answer status - no output state"
         fi
 
         # ---- правила, как их завёл человек ----------------------------------------------
@@ -1112,7 +1112,7 @@ case "$2" in
         # без них строка «набор из трёх списков» человеку ни о чём не говорит. Это ровно та
         # граница, по которой имена узлов ПОДПИСКИ в отчёт не попадают: те пишет панель.
         sr_line ""
-        sr_line "-- правила (из спеки) --"
+        sr_line "-- rules (from the spec) --"
         _sr_spec="$(cat "$(spec_json)" 2>/dev/null)"
         _sr_rules=0
         # Спека v2: правила — `rules`, списки — `lists` (вид списка по ключам списка, на который
@@ -1126,25 +1126,25 @@ case "$2" in
                 _sr_ro="$(jsonfilter -i "$(spec_json)" -e "@.rules[$_sr_i].out" 2>/dev/null)"
                 _sr_ren="$(jsonfilter -i "$(spec_json)" -e "@.rules[$_sr_i].enabled" 2>/dev/null)"
                 _sr_to="$(jsonfilter -i "$(spec_json)" -e "@.rules[$_sr_i].to[*]" -e "@.rules[$_sr_i].to" 2>/dev/null)"
-                _sr_mkind="вид списка не назван"
+                _sr_mkind="list kind not named"
                 for _sr_l in $_sr_to; do
                     case "$_sr_l" in
-                        all) _sr_mkind="весь трафик"; break ;;
+                        all) _sr_mkind="all traffic"; break ;;
                         *[!A-Za-z0-9_.-]*|'') continue ;;
                     esac
                     if [ -n "$(jsonfilter -i "$(spec_json)" -e "@.lists['$_sr_l'].domains_file[*]" 2>/dev/null)" ]; then
-                        _sr_mkind="доменные списки"; break
+                        _sr_mkind="domain lists"; break
                     elif [ -n "$(jsonfilter -i "$(spec_json)" -e "@.lists['$_sr_l'].prefixes_file[*]" 2>/dev/null)" ]; then
-                        _sr_mkind="адресные списки"; break
+                        _sr_mkind="address lists"; break
                     elif [ "$(jsonfilter -i "$(spec_json)" -e "@.lists['$_sr_l'].all" 2>/dev/null)" = true ]; then
-                        _sr_mkind="весь трафик"; break
+                        _sr_mkind="all traffic"; break
                     fi
                 done
                 case "$_sr_ren" in
-                    0|false) _sr_rst=" [ВЫКЛЮЧЕНО]" ;;
+                    0|false) _sr_rst=" [OFF]" ;;
                     *) _sr_rst="" ;;
                 esac
-                sr_line "${_sr_rn:-без имени} -> ${_sr_ro:-выход не назван} ($_sr_mkind)$_sr_rst"
+                sr_line "${_sr_rn:-unnamed} -> ${_sr_ro:-output not named} ($_sr_mkind)$_sr_rst"
                 _sr_rules=$((_sr_rules + 1))
                 _sr_i=$((_sr_i + 1))
             done
@@ -1164,24 +1164,24 @@ case "$2" in
                     json_select ..
                 fi
                 case " $_sr_mk " in
-                    *" domains_files "*)  _sr_mkind="доменные списки" ;;
-                    *" prefixes_files "*) _sr_mkind="адресные списки" ;;
-                    *" any "*)            _sr_mkind="весь трафик" ;;
-                    *)                    _sr_mkind="вид списка не назван" ;;
+                    *" domains_files "*)  _sr_mkind="domain lists" ;;
+                    *" prefixes_files "*) _sr_mkind="address lists" ;;
+                    *" any "*)            _sr_mkind="all traffic" ;;
+                    *)                    _sr_mkind="list kind not named" ;;
                 esac
                 # Поля `enabled` нет — правило включено: спека, написанная до этого поля,
                 # обязана значить то же самое.
                 case "$_sr_ren" in
-                    0|false) _sr_rst=" [ВЫКЛЮЧЕНО]" ;;
+                    0|false) _sr_rst=" [OFF]" ;;
                     *) _sr_rst="" ;;
                 esac
-                sr_line "${_sr_rn:-без имени} -> ${_sr_ro:-выход не назван} ($_sr_mkind)$_sr_rst"
+                sr_line "${_sr_rn:-unnamed} -> ${_sr_ro:-output not named} ($_sr_mkind)$_sr_rst"
                 _sr_rules=$((_sr_rules + 1))
                 json_select ..
             done
             json_select ..
         fi
-        [ "$_sr_rules" = 0 ] && sr_line "правил нет — трафик никуда не уводится"
+        [ "$_sr_rules" = 0 ] && sr_line "no rules - no traffic is redirected"
 
         # ---- DNS ------------------------------------------------------------------------
         #
@@ -1189,7 +1189,7 @@ case "$2" in
         # кэш. Чужой https-dns-proxy и dnsmasq здесь не читаются — это настройка человека.
         sr_line ""
         sr_line "-- DNS --"
-        sr_line "резолвер доменов ядра (steer dnsd): держится всегда"
+        sr_line "domain resolver of the core (steer dnsd): always kept"
 
         # ---- подписки -------------------------------------------------------------------
         #
@@ -1199,7 +1199,7 @@ case "$2" in
         # пригодных, пропущенных и чужих узлов считает движок при чтении файла — то же
         # число, по которому интерфейс решает, не заглушка ли эта подписка.
         sr_line ""
-        sr_line "-- подписки --"
+        sr_line "-- subscriptions --"
         _sr_n=0
         for _sr_sub in $(sub_names); do
             sub_use "$_sr_sub"
@@ -1211,15 +1211,15 @@ case "$2" in
                     json_get_var _sr_us usable
                     json_get_var _sr_sk skipped
                     json_get_var _sr_fo foreign
-                    sr_line "подписка №$_sr_n: файл скачан, пригодных узлов: ${_sr_us:-0} (пропущено ${_sr_sk:-0}, чужих ${_sr_fo:-0})"
+                    sr_line "subscription #$_sr_n: file downloaded, usable nodes: ${_sr_us:-0} (skipped ${_sr_sk:-0}, foreign ${_sr_fo:-0})"
                 else
-                    sr_line "подписка №$_sr_n: файл скачан, но ядро не смогло перечислить узлы"
+                    sr_line "subscription #$_sr_n: file downloaded, but the core could not list the nodes"
                 fi
             else
-                sr_line "подписка №$_sr_n: файл не скачан — узлов нет"
+                sr_line "subscription #$_sr_n: file not downloaded - no nodes"
             fi
         done
-        [ "$_sr_n" = 0 ] && sr_line "подписок нет"
+        [ "$_sr_n" = 0 ] && sr_line "no subscriptions"
 
         # Последняя строка — человеку, а не нам: он вставляет текст в общий чат и вправе
         # знать, чего в нём нет, не читая наш исходник. Слово «vless» здесь намеренно не
@@ -1231,8 +1231,8 @@ case "$2" in
             ext_hook_each support_report '{}' ext_support_cb
         fi
         sr_line ""
-        sr_line "В отчёт намеренно не попали: ссылка подписки, ссылки и имена узлов, приватные"
-        sr_line "ключи туннелей и внешний адрес роутера — этот текст можно вставлять в общий чат."
+        sr_line "Left out of the report on purpose: the subscription link, node links and names, private"
+        sr_line "tunnel keys and the external address of the router - this text can be pasted into a public chat."
 
         json_init
         json_add_boolean ok 1
@@ -1240,5 +1240,5 @@ case "$2" in
         json_dump
         ;;
 
-    *) fail "неизвестный метод" ;;
+    *) fail_code req.unknown_method "Unknown method" ;;
 esac

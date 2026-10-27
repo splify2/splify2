@@ -110,15 +110,15 @@ case "$2" in
         pg_pkgs="${pg_pkgs# }"
         json_init
         if [ ! -x "$PURGE_BIN" ]; then
-            json_add_boolean ok 0; json_add_string error "нет команды удаления ($PURGE_BIN)"; json_dump; exit 0
+            fail_code purge.no_command "The removal command is missing: {path}" path "$PURGE_BIN"
         fi
         if [ "$pg_plan" = true ]; then
-            pg_out="$("$PURGE_BIN" $pg_flag 2>&1)"
+            pg_out="$(PURGE_MARK=1 "$PURGE_BIN" $pg_flag 2>&1)"
             json_add_boolean ok 1
             json_add_boolean plan 1
             json_add_boolean keep_config "$([ -n "$pg_flag" ] && echo 1 || echo 0)"
             json_add_array items
-            pg_items="$(printf '%s\n' "$pg_out" | sed -n 's/^splify2-purge: будет сделано: //p')"
+            pg_items="$(printf '%s\n' "$pg_out" | sed -n 's/^splify2-purge: @plan //p')"
             while IFS= read -r pg_l; do
                 [ -n "$pg_l" ] && json_add_string "" "$pg_l"
             done <<EOF
@@ -126,7 +126,7 @@ $pg_items
 EOF
             json_close_array
             json_add_array notes
-            pg_notes="$(printf '%s\n' "$pg_out" | grep '^splify2-purge: ' | grep -v -e 'будет сделано: ' -e 'ничего не удалено' -e 'чтобы удалить' -e 'пакеты этот скрипт' -e 'следов не найдено' | sed 's/^splify2-purge: //')"
+            pg_notes="$(printf '%s\n' "$pg_out" | grep '^splify2-purge: ' | grep -v -e '^splify2-purge: @plan ' -e '^splify2-purge: @hint ' | sed 's/^splify2-purge: //')"
             while IFS= read -r pg_l; do
                 [ -n "$pg_l" ] && json_add_string "" "$pg_l"
             done <<EOF
@@ -203,7 +203,7 @@ EOF
             en="$(engine_enabled)"; run="$(engine_running)"
             json_init
             json_add_boolean ok 0
-            json_add_string error "ядро занято: $BOX_BY"
+            s2_fail_fields core.busy "The core is busy: {by}" by "$BOX_BY"
             json_add_string busy "$BOX_BY"
             json_add_boolean enabled "$en"
             json_add_boolean running "$run"
@@ -267,13 +267,13 @@ EOF
         # сам (remove без --force), здесь отказ раньше и теми же словами, что у карточки.
         read -r input
         m="$(jsonfilter -s "$input" -e '@.module' 2>/dev/null)"
-        case " $STEER_MODULES " in *" $m "*) ;; *) fail "неизвестный модуль: $m" ;; esac
-        [ -n "$m" ] || fail "неизвестный модуль: $m"
-        box_busy && fail "ядро занято: $BOX_BY"
+        case " $STEER_MODULES " in *" $m "*) ;; *) fail_code module.unknown "Unknown module: {name}" name "$m" ;; esac
+        [ -n "$m" ] || fail_code module.unknown "Unknown module: {name}" name "$m"
+        box_busy && fail_code core.busy "The core is busy: {by}" by "$BOX_BY"
         if [ "$2" = steer_module_del ]; then
             spec_mods
             case " $SPEC_MODS " in
-                *" $m "*) fail "модуль нужен выходам: $(spec_mod_outs "$m")" ;;
+                *" $m "*) fail_code module.in_use "The module is used by outputs: {outputs}" outputs "$(spec_mod_outs "$m")" ;;
             esac
             if plugin_manager remove "$m"; then
                 plugin_sync; plugin_sync_reload
@@ -283,7 +283,7 @@ EOF
             fi
             exit 0
         fi
-        [ -n "$(pkg_version steer-core)" ] || fail "нет ядра steer-core"
+        [ -n "$(pkg_version steer-core)" ] || fail_code core.not_installed "The steer core is not installed"
         if plugin_manager install "$m"; then
             plugin_sync; plugin_sync_reload
             json_init
@@ -318,13 +318,13 @@ EOF
 
     prefs_set)
         read -r input
-        json_load "$input" 2>/dev/null || fail "unparsable request"
+        json_load "$input" 2>/dev/null || fail_code req.unparsable "Unparsable request"
         json_get_var _ps_if interface
         case "$_ps_if" in
-            ''|*[!a-z0-9-]*) fail "interface: a lowercase id is expected (basic, andromeda or an interface plugin)" ;;
+            ''|*[!a-z0-9-]*) fail_code prefs.bad_interface "The interface must be a lowercase id: basic, andromeda or an interface plugin" ;;
         esac
-        uci_file || fail "cannot create $UCI_SPLIFY2 - disk full?"
-        uci -q set splify2.main.interface="$_ps_if" || fail "cannot save the setting"
+        uci_file || fail_code disk.cannot_create "Cannot create {file}: no space left" file "$UCI_SPLIFY2"
+        uci -q set splify2.main.interface="$_ps_if" || fail_code prefs.not_saved "Cannot save the setting"
         uci_commit
         json_init; json_add_boolean ok 1; json_add_string interface "$_ps_if"; json_dump
         ;;
@@ -334,13 +334,13 @@ EOF
         # (flat "English text" -> translation, {name} substitutions, plural forms as an object). They are
         # returned as an array in plugin order; a later one overrides an earlier one in the browser.
         read -r input
-        json_load "$input" 2>/dev/null || fail "unparsable request"
+        json_load "$input" 2>/dev/null || fail_code req.unparsable "Unparsable request"
         json_get_var _il lang
         case "$_il" in
             [a-z][a-z]|[a-z][a-z][a-z]|[a-z][a-z]-[A-Za-z0-9]*|[a-z][a-z][a-z]-[A-Za-z0-9]*) ;;
-            *) fail "lang: a language code such as en or pt-BR is expected" ;;
+            *) fail_code i18n.bad_lang "Expected a language code such as en or pt-BR" ;;
         esac
-        case "$_il" in *[!A-Za-z0-9-]*) fail "lang: a language code such as en or pt-BR is expected" ;; esac
+        case "$_il" in *[!A-Za-z0-9-]*) fail_code i18n.bad_lang "Expected a language code such as en or pt-BR" ;; esac
         _il_out=""
         for _il_d in "${PLUGIN_ROOT:-/usr/lib/steer/plugins}"/*/i18n/core/"$_il".json; do
             [ -r "$_il_d" ] || continue
@@ -368,18 +368,18 @@ EOF
         #
         # Хранится как непрозрачная строка: разбирать её здесь нечем и незачем, а формат
         # принадлежит интерфейсу и будет меняться вместе с ним.
-        uci_file || fail "не удалось создать $UCI_SPLIFY2 — кончилось место?"
+        uci_file || fail_code disk.cannot_create "Cannot create {file}: no space left" file "$UCI_SPLIFY2"
         uci -q get splify2.main >/dev/null 2>&1 || uci -q set splify2.main=splify2
         if [ "$2" = ui_set ]; then
             read -r input
-            json_load "$input" 2>/dev/null || fail "неразбираемый запрос"
+            json_load "$input" 2>/dev/null || fail_code req.unparsable "Unparsable request"
             json_get_var state state
             # Память мастера — несколько отметок и имён, а не хранилище: без предела туда можно
             # положить сколько угодно в настройку роутера (I-329). Отказ называет число.
             _sz="$(printf '%s' "$state" | wc -c)"
             [ "$_sz" -le "$UI_STATE_MAX" ] ||
-                fail "память интерфейса больше $((UI_STATE_MAX / 1024)) КБ: $_sz байт"
-            uci -q set splify2.main.wizard="$state" || fail "не удалось записать память интерфейса"
+                fail_code ui.state_too_big "The interface memory is larger than {max} KB: {size} bytes" max "$((UI_STATE_MAX / 1024))" size "$_sz"
+            uci -q set splify2.main.wizard="$state" || fail_code ui.state_not_saved "Cannot save the interface memory"
             uci_commit
             json_init; json_add_boolean ok 1; json_dump
         else
@@ -389,5 +389,5 @@ EOF
         fi
         ;;
 
-    *) fail "неизвестный метод" ;;
+    *) fail_code req.unknown_method "Unknown method" ;;
 esac
