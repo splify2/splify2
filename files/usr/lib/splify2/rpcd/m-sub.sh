@@ -24,21 +24,21 @@ case "$2" in
         # есть: разбирать их здесь значило бы держать вторую реализацию разбора vless://
         # в shell, а у движка она уже есть и она же будет применена.
         read -r input
-        json_load "$input" 2>/dev/null || fail "неразбираемый запрос"
+        json_load "$input" 2>/dev/null || fail_code req.unparsable "Unparsable request"
         json_get_var url url
         json_get_var sub_name name
         json_get_var sub_title title
         json_get_var links links
-        [ -n "$url" ] || [ -n "$links" ] || fail "не указана ссылка"
+        [ -n "$url" ] || [ -n "$links" ] || fail_code sub.no_link "No link given"
         sub_use "$sub_name"
         mkdir -p "$(dirname "$SUB")"
         # Ссылки узлов отдельным полем (прокси http(s):// и любые другие): только ссылки, без
         # скачивания. Вместе с ними в `url` могут стоять ссылки узлов, но не адрес подписки —
         # подписка и ссылки руками — два разных источника, и одно из двух потерялось бы молча.
         if [ -n "$links" ]; then
-            case "$url" in https://*|http://*) fail "адрес подписки и ссылки узлов — разными подписками" ;; esac
+            case "$url" in https://*|http://*) fail_code sub.url_and_links "A subscription address and node links belong to different subscriptions" ;; esac
             sub_links_write "$url $links" "($SUB_LINK_RE)://.+|$SUB_HTTP_PROXY_RE" \
-                || fail "в тексте нет ссылок узлов: прокси http(s)://адрес:порт, vless://, trojan://, ss://, socks://, vmess://, hysteria2://"
+                || fail_code sub.no_links_proxy "No node links in the text: proxy http(s)://address:port, vless://, trojan://, ss://, socks://, vmess://, hysteria2://"
             kind=links
             url=''
         else
@@ -47,7 +47,7 @@ case "$2" in
                     # Одним вызовом движка: скачать, разобрать заголовки, посчитать пригодные
                     # узлы и, если их нет ни одного, перезапросить у панели другой формат. Здесь
                     # остаётся взять из ответа то, что нужно учёту.
-                    sub_fetch "$url" || fail "подписка не скачалась${SUB_ANSWER:+: $(sub_answer error)}"
+                    sub_fetch "$url" || fail_code sub.download_failed "The subscription was not downloaded{why}" why "${SUB_ANSWER:+: $(sub_answer error)}"
                     dev_warn="$(sub_answer warn)"
                     # Ссылка из ответа, а не та, что просили: движок мог перезапросить подписку с
                     # суффиксом /json, и обновлять в следующий раз надо по ТОЙ ссылке. Прежде это
@@ -62,10 +62,10 @@ case "$2" in
                     # steer-hysteria2), trojan/ss/socks/vmess — прокси (пакет steer-proxy). Файл
                     # подписки один, какому протоколу принадлежит узел, различает ядро.
                     sub_links_write "$url" "($SUB_LINK_RE)://.+" \
-                        || fail "в тексте нет ссылок узлов (vless://, hysteria2://, trojan://, ss://, socks://, vmess://)"
+                        || fail_code sub.no_links "No node links in the text (vless://, hysteria2://, trojan://, ss://, socks://, vmess://)"
                     kind=links
                     ;;
-                *) fail "нужна ссылка на подписку (http:// или https://) либо ссылки узлов (vless://, hysteria2://, trojan://, ss://, socks://, vmess://)" ;;
+                *) fail_code sub.need_link "A subscription link (http:// or https://) or node links (vless://, hysteria2://, trojan://, ss://, socks://, vmess://) are required" ;;
             esac
         fi
         # Новая подписка — новые узлы, значит помощника выхода надо перечитать. Иначе туннель
@@ -83,7 +83,7 @@ case "$2" in
         #
         # Для vless:// сохраняется ВИД, а не текст: показывать человеку обратно ссылку с
         # его же ключом незачем, а обновлять её нечем — обновляют подписку, не ссылку.
-        uci_file || fail "не удалось создать $UCI_SPLIFY2 — кончилось место?"
+        uci_file || fail_code disk.cannot_create "Cannot create {file}: no space left" file "$UCI_SPLIFY2"
         # if, а не `&& … || …`: там отказ записи ссылки запускал вторую ветку, и та стирала
         # прежнюю ссылку — подписку становилось нечем обновить (I-329).
         if [ "$kind" = url ]; then sub_put "$SUB_NAME" url "$url"
@@ -229,9 +229,9 @@ case "$2" in
         sub_use "$(jsonfilter -s "${input:-{\}}" -e '@.name' 2>/dev/null)"
         url="$(sub_get "$SUB_NAME" url)"
         [ "$(sub_kind_of "$SUB_NAME")" = url ] && [ -n "$url" ] ||
-            fail "узлы заданы ссылками — обновлять нечем"
+            fail_code sub.links_only "The nodes are given as links: there is nothing to update"
         before="$(md5sum < "$SUB" 2>/dev/null | cut -d' ' -f1)"
-        sub_fetch "$url" || fail "подписка не скачалась${SUB_ANSWER:+: $(sub_answer error)}"
+        sub_fetch "$url" || fail_code sub.download_failed "The subscription was not downloaded{why}" why "${SUB_ANSWER:+: $(sub_answer error)}"
         _u="$(sub_answer url)"
         [ -n "$_u" ] && [ "$_u" != "$url" ] && { sub_put "$SUB_NAME" url "$_u"; uci_commit; }
         after="$(md5sum < "$SUB" 2>/dev/null | cut -d' ' -f1)"
@@ -268,12 +268,12 @@ case "$2" in
         # выглядит настроенной, а трафик не идёт никуда. Поэтому отказ со словами, чем она
         # занята, а не молчаливое удаление.
         read -r input
-        json_load "$input" 2>/dev/null || fail "неразбираемый запрос"
+        json_load "$input" 2>/dev/null || fail_code req.unparsable "Unparsable request"
         json_get_var sub_name name
-        [ -n "$sub_name" ] || fail "не указано имя подписки"
+        [ -n "$sub_name" ] || fail_code sub.no_name "No subscription name given"
         sub_use "$sub_name"
         used="$(sub_used_by "$SUB")"
-        [ "${used:-0}" = 0 ] || fail "подписка занята выходами: $used"
+        [ "${used:-0}" = 0 ] || fail_code sub.in_use "The subscription is used by outputs: {outputs}" outputs "$used"
         rm -f "$SUB" "$SUB_INFO"
         if [ "$SUB_NAME" = main ]; then
             uci -q delete splify2.main.sub_url 2>/dev/null
@@ -290,5 +290,5 @@ case "$2" in
         json_dump
         ;;
 
-    *) fail "неизвестный метод" ;;
+    *) fail_code req.unknown_method "Unknown method" ;;
 esac

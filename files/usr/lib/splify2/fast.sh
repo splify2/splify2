@@ -310,7 +310,7 @@ fast_live() {
     fi
     case "$_st" in
         '{'*) ;;
-        *) printf '{"ok":false,"error":"ядро не ответило"}\n'; return 0 ;;
+        *) . "${I18N_SH:-${_spec_lib%/*}/i18n.sh}"; s2_fail_doc core.no_answer "The core did not respond"; return 0 ;;
     esac
 
     _dev="$(fast_devices)"
@@ -353,7 +353,7 @@ fast_spec_get() {
     # экран показал бы «выходов нет, правил нет» про роутер с настоящей настройкой. Отказ
     # (код 1) экран показывает как «не загрузилось» и ничего не пишет.
     if spec_is_yaml; then
-        echo "ядро не смогло прочитать spec.yaml" >&2
+        echo "the core could not read spec.yaml" >&2
         return 1
     fi
     printf '%s\n' "$SPEC_EMPTY"

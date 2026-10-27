@@ -9,7 +9,7 @@
 . "${EXT_SH:-${SPLIFY2_LIBDIR:-/usr/lib/splify2}/ext.sh}"
 . "${SPEC_SH:-${SPLIFY2_LIBDIR:-/usr/lib/splify2}/spec.sh}"
 
-[ $# -eq 2 ] || { echo "использование: splify2-task <плагин> <задача>" >&2; exit 2; }
-plugin_id_ok "$1" || { echo "недопустимое имя плагина" >&2; exit 2; }
+[ $# -eq 2 ] || { echo "usage: splify2-task <plugin> <task>" >&2; exit 2; }
+plugin_id_ok "$1" || { echo "invalid plugin name" >&2; exit 2; }
 ext_task_run "$1" "$2"
 exit 0

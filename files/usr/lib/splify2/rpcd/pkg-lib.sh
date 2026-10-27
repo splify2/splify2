@@ -244,7 +244,7 @@ gh_load_version() {  # ВЛАДЕЛЕЦ/РЕПОЗИТОРИЙ
     case "${_vv:-}" in ''|*[!0-9.]*) return 1 ;; esac
     GH_VERS="$_vv "
     GH_NAMES="|$_vv=$_vv|"
-    GH_NOTE="список релизов не отдали — версия взята из VERSION ветки ${FETCH_DIST_BRANCH:-dist}${FETCH_NOTE:+ ($FETCH_NOTE)}"
+    GH_NOTE="$(s2_t pkg.releases_missing "The release list was not available: the version is taken from VERSION of branch {branch}{note}" branch "${FETCH_DIST_BRANCH:-dist}" note "${FETCH_NOTE:+ ($FETCH_NOTE)}")"
     return 0
 }
 

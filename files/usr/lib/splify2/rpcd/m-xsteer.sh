@@ -24,13 +24,13 @@ case "$2" in
         # поэтому страница сети, умеющая разбирать файл в стиле wg своим кодом, ссылку разбирать
         # сама НЕ должна: она приводит её сюда и получает файл.
         read -r input
-        json_load "$input" 2>/dev/null || fail "неразбираемый запрос"
+        json_load "$input" 2>/dev/null || fail_code req.unparsable "Unparsable request"
         json_get_var iface iface
         json_get_var link link
         if [ -n "$link" ]; then
             case "$link" in
                 xs://*) ;;
-                *) fail "это не ссылка xs:// — она начинается с «xs://»" ;;
+                *) fail_code xs.not_link "This is not an xs:// link: it must start with xs://" ;;
             esac
             # Ссылка уходит движку СТАНДАРТНЫМ ВВОДОМ, а не аргументом: аргументы видны в списке
             # процессов всякому, кто есть на роутере, а в ссылке лежит приватный ключ.
@@ -38,25 +38,24 @@ case "$2" in
             case "$conf" in
                 '[Interface]'*) json_init; json_add_boolean ok 1
                                 json_add_string conf "$conf"; json_dump ;;
-                *) fail "ссылка не принята: $conf" ;;
+                *) fail_code xs.link_rejected "The link was not accepted: {reason}" reason "$conf" ;;
             esac
             exit 0
         fi
-        [ -n "$iface" ] || fail "нужно имя интерфейса или ссылка"
-        backup_safe_word "$iface" || fail "негодное имя интерфейса"
+        [ -n "$iface" ] || fail_code xs.need_iface_or_link "An interface name or a link is required"
+        backup_safe_word "$iface" || fail_code xs.bad_iface "Invalid interface name"
         [ "$(uci -q get "network.$iface.proto")" = xsteer ] || \
-            fail "интерфейс $iface не xsteer"
+            fail_code xs.not_xsteer "The interface {iface} is not xsteer" iface "$iface"
         # ИСТОЧНИК — ГОТОВЫЙ ФАЙЛ, собранный обработчиком протокола из uci. Собирать конфигурацию
         # здесь во второй раз нельзя: два места, превращающие uci в настройку, однажды разойдутся,
         # и разойдутся молча. Отсюда следствие, которое названо человеку прямо: у выключенного
         # интерфейса файла нет, и ссылку отдать неоткуда.
         conf="$XS_RUN/$iface.conf"
-        [ -f "$conf" ] || fail "интерфейс $iface выключен — ссылку печатать не из чего: она \
-собирается из той же настройки, которой поднят туннель. Включите интерфейс."
+        [ -f "$conf" ] || fail_code xs.iface_off "The interface {iface} is off, so there is nothing to print a link from: it is built from the same setting that brings the tunnel up. Turn the interface on." iface "$iface"
         link="$("$STEER" xsteer-link "$conf" --name "$iface" 2>&1)"
         case "$link" in
             xs://*) json_init; json_add_boolean ok 1; json_add_string link "$link"; json_dump ;;
-            *) fail "ядро не напечатало ссылку: $link" ;;
+            *) fail_code xs.core_no_link "The core did not print a link: {reason}" reason "$link" ;;
         esac
         ;;
 
@@ -74,21 +73,21 @@ case "$2" in
         # и надеяться, что она отвергает то же самое. Движок отвечает текстом конфигурации, и уже
         # из него берутся значения — по строкам, а не по позициям.
         read -r input
-        json_load "$input" 2>/dev/null || fail "неразбираемый запрос"
+        json_load "$input" 2>/dev/null || fail_code req.unparsable "Unparsable request"
         json_get_var iface iface
         json_get_var link link
-        [ -n "$iface" ] || fail "нужно имя интерфейса"
-        backup_safe_word "$iface" || fail "негодное имя интерфейса"
-        [ -n "$link" ] || fail "нужна ссылка xs://"
-        case "$link" in xs://*) ;; *) fail "это не ссылка xs:// — она начинается с «xs://»" ;; esac
+        [ -n "$iface" ] || fail_code xs.need_iface "An interface name is required"
+        backup_safe_word "$iface" || fail_code xs.bad_iface "Invalid interface name"
+        [ -n "$link" ] || fail_code xs.need_link "An xs:// link is required"
+        case "$link" in xs://*) ;; *) fail_code xs.not_link "This is not an xs:// link: it must start with xs://" ;; esac
         [ "$(uci -q get "network.$iface.proto")" = xsteer ] || \
-            fail "интерфейс $iface не xsteer — создайте его в настройках сети и выберите протокол xsteer"
+            fail_code xs.not_xsteer_create "The interface {iface} is not xsteer. Create it in the network settings and choose the xsteer protocol." iface "$iface"
         # Ссылка уходит движку СТАНДАРТНЫМ ВВОДОМ, а не аргументом: аргументы видны в списке
         # процессов всякому, кто есть на роутере, а в ссылке лежит приватный ключ.
         conf="$(printf '%s\n' "$link" | "$STEER" xsteer-link - 2>&1)"
         case "$conf" in
             '[Interface]'*) ;;
-            *) fail "ссылка не принята: $conf" ;;
+            *) fail_code xs.link_rejected "The link was not accepted: {reason}" reason "$conf" ;;
         esac
         priv=$(printf '%s\n' "$conf" | sed -n 's/^PrivateKey = //p')
         addr=$(printf '%s\n' "$conf" | sed -n 's/^Address = //p')
@@ -99,7 +98,7 @@ case "$2" in
         ep=$(printf '%s\n' "$conf" | sed -n 's/^Endpoint = //p')
         ka=$(printf '%s\n' "$conf" | sed -n 's/^PersistentKeepalive = //p')
         [ -n "$priv" ] && [ -n "$addr" ] && [ -n "$pub" ] && [ -n "$ep" ] || \
-            fail "ядро вернуло конфигурацию без обязательных полей — это ошибка ядра, не ссылки"
+            fail_code xs.core_incomplete "The core returned a configuration without required fields. This is a core error, not a link error."
         uci -q set "network.$iface.private_key=$priv"
         uci -q delete "network.$iface.addresses"
         uci -q add_list "network.$iface.addresses=$addr"
@@ -118,7 +117,7 @@ case "$2" in
             uci -q delete "network.$_p"
         done
         _sec=$(uci -q add network "xsteer_$iface")
-        [ -n "$_sec" ] || fail "не удалось создать секцию пира — кончилось место в overlay?"
+        [ -n "$_sec" ] || fail_code xs.peer_section "Cannot create the peer section: no space left"
         uci -q set "network.$_sec.public_key=$pub"
         uci -q set "network.$_sec.endpoint_host=${ep%:*}"
         uci -q set "network.$_sec.endpoint_port=${ep##*:}"
@@ -132,7 +131,7 @@ case "$2" in
             IFS="$_old_ifs"
         }
         [ -n "$ka" ] && uci -q set "network.$_sec.persistent_keepalive=$ka"
-        uci -q commit network || fail "не удалось записать настройку сети"
+        uci -q commit network || fail_code xs.network_not_saved "Cannot save the network settings"
         # Интерфейс поднимается заново СРАЗУ: человек вставил ссылку, чтобы туннель заработал, а не
         # чтобы получить запись в файле. ifup не ждёт результата, поэтому дальше интерфейс
         # рассказывает о себе сам — через xsteer_state.
@@ -144,5 +143,5 @@ case "$2" in
         json_dump
         ;;
 
-    *) fail "неизвестный метод" ;;
+    *) fail_code req.unknown_method "Unknown method" ;;
 esac

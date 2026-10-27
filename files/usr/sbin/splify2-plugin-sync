@@ -7,16 +7,16 @@
 #   splify2-plugin-sync              — привести и, если что-то изменилось, перечитать rpcd
 #   splify2-plugin-sync --no-reload  — только привести (postinst перечитывает rpcd сам, один раз)
 #
-# Печатает «изменено» или «без изменений».
+# Печатает changed или unchanged.
 
 . "${JSHN_SH:-/usr/share/libubox/jshn.sh}"
 . "${PLUGIN_SH:-/usr/lib/splify2/plugin.sh}"
 
 plugin_sync
 if [ "$PLUGIN_SYNC_CHANGED" = 1 ]; then
-    echo "изменено"
+    echo "changed"
     [ "${1:-}" = --no-reload ] || "${RPCD_INITD:-/etc/init.d/rpcd}" reload >/dev/null 2>&1
 else
-    echo "без изменений"
+    echo "unchanged"
 fi
 exit 0

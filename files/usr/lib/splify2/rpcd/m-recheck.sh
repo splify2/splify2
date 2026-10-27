@@ -54,15 +54,15 @@ case "$2" in
 
     recheck_set)
         read -r input
-        json_load "$input" 2>/dev/null || fail "неразбираемый запрос"
+        json_load "$input" 2>/dev/null || fail_code req.unparsable "Unparsable request"
         json_get_var enabled enabled
         json_get_var iface interface
         json_get_var persist persist
         json_get_var watch watch_active
         json_get_var bump epoch_bump
         json_get_var forget forget
-        case "${iface:-}" in *[!A-Za-z0-9._@-]*) fail "недопустимое имя устройства" ;; esac
-        [ "${#iface}" -le 15 ] || fail "недопустимое имя устройства"
+        case "${iface:-}" in *[!A-Za-z0-9._@-]*) fail_code device.bad_name "Invalid device name" ;; esac
+        [ "${#iface}" -le 15 ] || fail_code device.bad_name "Invalid device name"
         # Прежние значения — для полей, которых в запросе нет.
         [ -n "${enabled:-}" ] || enabled="$(recheck_get enabled 0)"
         json_get_type _t interface; [ -n "${_t:-}" ] || iface="$(recheck_get interface)"
@@ -82,14 +82,14 @@ case "$2" in
             _i=1
             while json_is_a "$_i" string; do
                 json_get_var _u "$_i"
-                case "$_u" in https://*) ;; *) fail "адрес проверки — только https://" ;; esac
-                case "$_u" in *[!A-Za-z0-9:/._~%?=\&+@!\$\'\(\)*,\;#-]*) fail "недопустимый адрес проверки" ;; esac
-                [ "${#_u}" -le 500 ] || fail "адрес проверки длиннее 500 знаков"
+                case "$_u" in https://*) ;; *) fail_code recheck.url_https "The check address must start with https://" ;; esac
+                case "$_u" in *[!A-Za-z0-9:/._~%?=\&+@!\$\'\(\)*,\;#-]*) fail_code recheck.url_bad "The check address is not valid" ;; esac
+                [ "${#_u}" -le 500 ] || fail_code recheck.url_long "The check address is longer than 500 characters"
                 set -- "$@" "$_u"
                 _i=$((_i + 1))
             done
             json_select ..
-            [ "$#" -le 4 ] || fail "адресов проверки — не больше 4: столько принимает движок"
+            [ "$#" -le 4 ] || fail_code recheck.url_count "At most 4 check addresses are accepted"
         else
             for _r in $(sed -n 's/^probe-resource=//p' "$RECHECK_CONF" 2>/dev/null | head -4); do set -- "$@" "$_r"; done
         fi
@@ -102,7 +102,7 @@ case "$2" in
             echo "state=$_new"
             for _u in "$@"; do echo "probe-resource=$_u"; done
             case "$watch" in 1|true) echo watch-active ;; esac
-        } > "$_tmp" && mv "$_tmp" "$RECHECK_CONF" || { rm -f "$_tmp"; fail "настройки не записались — кончилось место на флеше?"; }
+        } > "$_tmp" && mv "$_tmp" "$RECHECK_CONF" || { rm -f "$_tmp"; fail_code disk.settings_not_saved "The settings were not saved. Free up some flash space and try again."; }
         # Остановка — до переноса памяти: движок дописывает её при выходе.
         "$RECHECK_INIT" stop >/dev/null 2>&1
         case "${forget:-}" in 1|true) rm -f "$_state" "$_new" ;; esac
@@ -116,5 +116,5 @@ case "$2" in
         json_init; json_add_boolean ok 1; json_dump
         ;;
 
-    *) fail "неизвестный метод" ;;
+    *) fail_code req.unknown_method "Unknown method" ;;
 esac

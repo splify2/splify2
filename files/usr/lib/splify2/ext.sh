@@ -110,9 +110,13 @@ ext_emit() {  # ТИП ПОЛЕ...
     printf '%s\n' "$_ee" >> "$EXT_REG_TMP"
 }
 
-ext_err() {  # ПЛАГИН ТЕКСТ
-    ext_emit err "$1: $2"
-    ext_log "$1: $2"
+# Ошибка разбора блока splify2 плагина: в реестр и в журнал. Текст — на языке каркаса на момент сборки реестра
+# (s2_t: КОД ТЕКСТ [ИМЯ ЗНАЧЕНИЕ]...), раздел «Плагины» показывает его как есть.
+ext_err() {  # ПЛАГИН КОД ТЕКСТ [ИМЯ ЗНАЧЕНИЕ]...
+    _ee_id="$1"; shift
+    _ee_t="$(s2_t "$@")"
+    ext_emit err "$_ee_id: $_ee_t"
+    ext_log "$_ee_id: $_ee_t"
 }
 
 # Кто занял имя: список слов «имя=плагин».
@@ -134,7 +138,7 @@ ext_scan_plugin() {  # ID
     _sp_doc="$(cat "$_sp_f")"
     # Ось compat — jsonfilter: ключ с дефисом голым шагом пути jshn не читается.
     _sp_api="$(jsonfilter -s "$_sp_doc" -e "@.compat['splify2-api']" 2>/dev/null)"
-    json_load "$_sp_doc" 2>/dev/null || { ext_err "$_sp_id" "plugin.json не разбирается"; return 0; }
+    json_load "$_sp_doc" 2>/dev/null || { ext_err "$_sp_id" ext.json_unparsable "plugin.json cannot be parsed"; return 0; }
     json_select splify2 2>/dev/null || return 0
     json_select ..
     # Права и приоритет.
@@ -146,11 +150,11 @@ ext_scan_plugin() {  # ID
     fi
     json_select splify2
     if [ -z "$_sp_api" ]; then
-        ext_err "$_sp_id" "блок splify2 есть, а compat.splify2-api нет — блок не применён"
+        ext_err "$_sp_id" ext.no_compat "the splify2 block has no compat.splify2-api - block not applied"
         return 0
     fi
     if ! ext_api_ok "$_sp_api"; then
-        ext_err "$_sp_id" "нужен splify2-api $_sp_api, у хоста $EXT_API_VERSION — блок не применён"
+        ext_err "$_sp_id" ext.api_mismatch "needs splify2-api {need}, the host has {have} - block not applied" need "$_sp_api" have "$EXT_API_VERSION"
         return 0
     fi
     _sp_repo=""
@@ -165,18 +169,18 @@ ext_scan_plugin() {  # ID
     if json_select hooks 2>/dev/null; then
         json_get_keys _sp_hk
         for _sp_h in $_sp_hk; do
-            case "$EXT_HOOKS_KNOWN" in *" $_sp_h "*) ;; *) ext_err "$_sp_id" "неизвестный хук $_sp_h"; continue ;; esac
+            case "$EXT_HOOKS_KNOWN" in *" $_sp_h "*) ;; *) ext_err "$_sp_id" ext.unknown_hook "unknown hook {hook}" hook "$_sp_h"; continue ;; esac
             json_select "$_sp_h" 2>/dev/null || continue
             ext_jget _sp_prog prog; ext_jget _sp_mode mode; ext_jget _sp_to timeout_s; ext_jget _sp_crit critical
             json_select ..
             [ "$_sp_safe" = 1 ] && continue
-            case "$_sp_perms" in *" splify2.hooks "*) ;; *) ext_err "$_sp_id" "хук $_sp_h без права splify2.hooks — не подключён"; continue ;; esac
-            ext_prog_ok "$_sp_id" "$_sp_prog" || { ext_err "$_sp_id" "хук $_sp_h: программы $_sp_prog нет или она не исполняемая"; continue; }
+            case "$_sp_perms" in *" splify2.hooks "*) ;; *) ext_err "$_sp_id" ext.hook_no_perm "hook {hook} without the splify2.hooks permission - not connected" hook "$_sp_h"; continue ;; esac
+            ext_prog_ok "$_sp_id" "$_sp_prog" || { ext_err "$_sp_id" ext.hook_no_prog "hook {hook}: the program {program} is missing or not executable" hook "$_sp_h" program "$_sp_prog"; continue; }
             case "$_sp_mode" in
                 '') _sp_mode=observe ;;
-                transform) case "$_sp_h" in pre_spec_set|heal) ;; *) ext_err "$_sp_id" "режим transform есть только у pre_spec_set и heal ($_sp_h)"; continue ;; esac ;;
+                transform) case "$_sp_h" in pre_spec_set|heal) ;; *) ext_err "$_sp_id" ext.transform_only "the transform mode exists only for pre_spec_set and heal ({hook})" hook "$_sp_h"; continue ;; esac ;;
                 veto|warn|observe) ;;
-                *) ext_err "$_sp_id" "хук $_sp_h: неизвестный режим $_sp_mode"; continue ;;
+                *) ext_err "$_sp_id" ext.hook_bad_mode "hook {hook}: unknown mode {mode}" hook "$_sp_h" mode "$_sp_mode"; continue ;;
             esac
             case "$_sp_crit" in 1|true) _sp_crit=1 ;; *) _sp_crit=0 ;; esac
             ext_emit hook "$_sp_h" "$_sp_id" "$_sp_prog" "$_sp_mode" "$(ext_num "$_sp_to" "$EXT_HOOK_TIMEOUT")" "$_sp_crit"
@@ -193,19 +197,19 @@ ext_scan_plugin() {  # ID
             ext_jget _sp_prog prog; ext_jget _sp_oi only_if; ext_jget _sp_to timeout_s
             json_select ..
             [ "$_sp_safe" = 1 ] && continue
-            ext_name_ok "$(printf '%s' "$_sp_tn" | tr - _)" || { ext_err "$_sp_id" "задача без годного имени ($_sp_tn)"; continue; }
-            ext_prog_ok "$_sp_id" "$_sp_prog" || { ext_err "$_sp_id" "задача $_sp_tn: программы $_sp_prog нет или она не исполняемая"; continue; }
-            case "$_sp_oi" in ''|engine-enabled|spec-present) ;; *) ext_err "$_sp_id" "задача $_sp_tn: неизвестное only_if $_sp_oi"; continue ;; esac
+            ext_name_ok "$(printf '%s' "$_sp_tn" | tr - _)" || { ext_err "$_sp_id" ext.task_bad_name "task without a valid name ({task})" task "$_sp_tn"; continue; }
+            ext_prog_ok "$_sp_id" "$_sp_prog" || { ext_err "$_sp_id" ext.task_no_prog "task {task}: the program {program} is missing or not executable" task "$_sp_tn" program "$_sp_prog"; continue; }
+            case "$_sp_oi" in ''|engine-enabled|spec-present) ;; *) ext_err "$_sp_id" ext.task_only_if "task {task}: unknown only_if {only_if}" task "$_sp_tn" only_if "$_sp_oi"; continue ;; esac
             if [ -n "$_sp_ev" ]; then
-                case "$_sp_ev" in *[!0-9mhd]*|[!0-9]*|*[mhd]?*|*[0-9]) ext_err "$_sp_id" "задача $_sp_tn: every «$_sp_ev» не разобрать (число и m, h или d)"; continue ;; esac
+                case "$_sp_ev" in *[!0-9mhd]*|[!0-9]*|*[mhd]?*|*[0-9]) ext_err "$_sp_id" ext.task_every "task {task}: every '{every}' is not understood (a number and m, h or d)" task "$_sp_tn" every "$_sp_ev"; continue ;; esac
                 _sp_kind=every; _sp_sched="$_sp_ev"
             elif [ -n "$_sp_cr" ]; then
                 set -f; set -- $_sp_cr; set +f
-                [ $# -eq 5 ] || { ext_err "$_sp_id" "задача $_sp_tn: в cron должно быть пять полей"; continue; }
-                case "$_sp_cr" in *[!0-9M*/,\ -]*) ext_err "$_sp_id" "задача $_sp_tn: в cron недопустимые знаки"; continue ;; esac
+                [ $# -eq 5 ] || { ext_err "$_sp_id" ext.task_cron_fields "task {task}: cron must have five fields" task "$_sp_tn"; continue; }
+                case "$_sp_cr" in *[!0-9M*/,\ -]*) ext_err "$_sp_id" ext.task_cron_chars "task {task}: cron has invalid characters" task "$_sp_tn"; continue ;; esac
                 _sp_kind=cron; _sp_sched="$1 $2 $3 $4 $5"
             else
-                ext_err "$_sp_id" "задача $_sp_tn: нужны every или cron"; continue
+                ext_err "$_sp_id" ext.task_need_schedule "task {task}: every or cron is required" task "$_sp_tn"; continue
             fi
             [ "$_sp_ji" = random-minute ] || _sp_ji=none
             ext_emit task "$_sp_id" "$_sp_tn" "$_sp_kind" "$_sp_sched" "$_sp_ji" "${_sp_oi:--}" "$_sp_prog" "$(ext_num "$_sp_to" "$EXT_TASK_TIMEOUT")"
@@ -226,10 +230,10 @@ ext_scan_plugin() {  # ID
         json_select ..
         if [ "$_sp_safe" != 1 ] && [ -n "$_sp_prog" ]; then
             if ext_prog_ok "$_sp_id" "$_sp_prog"; then
-                case "$_sp_subs" in *[!a-z0-9,*-]*) ext_err "$_sp_id" "события: недопустимые знаки в subscribe" ;;
+                case "$_sp_subs" in *[!a-z0-9,*-]*) ext_err "$_sp_id" ext.events_chars "events: invalid characters in subscribe" ;;
                     *) ext_emit event "$_sp_id" "$_sp_prog" "${_sp_subs:-*}" "$(ext_num "$_sp_to" "$EXT_HOOK_TIMEOUT")" ;; esac
             else
-                ext_err "$_sp_id" "события: программы $_sp_prog нет или она не исполняемая"
+                ext_err "$_sp_id" ext.events_no_prog "events: the program {program} is missing or not executable" program "$_sp_prog"
             fi
         fi
     fi
@@ -261,18 +265,18 @@ ext_scan_plugin() {  # ID
     # Манифест перечитывается (jshn выше ушёл в глубину): права доступа методов плагина — для ACL новых имён.
     for _sp_a in $_sp_aliases; do
         _sp_name="${_sp_a%%=*}"; _sp_target="${_sp_a#*=}"
-        ext_name_ok "$_sp_name" && ext_name_ok "$_sp_target" || { ext_err "$_sp_id" "псевдоним «$_sp_name» → «$_sp_target»: имя не годится"; continue; }
+        ext_name_ok "$_sp_name" && ext_name_ok "$_sp_target" || { ext_err "$_sp_id" ext.alias_bad_name "alias '{name}' -> '{target}': the name is not valid" name "$_sp_name" target "$_sp_target"; continue; }
         _sp_kind="$(ext_method_kind "$_sp_name")"
         _sp_acc="$(jsonfilter -s "$_sp_doc" -e "@.rpc.methods.$_sp_target.access" 2>/dev/null)"
-        [ -n "$_sp_acc" ] || { ext_err "$_sp_id" "псевдоним «$_sp_name»: у плагина нет rpc-метода $_sp_target"; continue; }
+        [ -n "$_sp_acc" ] || { ext_err "$_sp_id" ext.alias_no_method "alias '{name}': the plugin has no rpc method {target}" name "$_sp_name" target "$_sp_target"; continue; }
         _sp_new=0; _sp_safe_ok=0
         case "$_sp_kind" in
-            final) ext_err "$_sp_id" "псевдоним «$_sp_name»: метод final — его имя занять нельзя"; continue ;;
-            fast) ext_err "$_sp_id" "псевдоним «$_sp_name»: метод быстрого пути — его имя занять нельзя"; continue ;;
-            frame) ext_err "$_sp_id" "псевдоним «$_sp_name»: имя занято каркасом — для замены обработчика есть methods.override"; continue ;;
+            final) ext_err "$_sp_id" ext.alias_final "alias '{name}': a final method - its name cannot be taken" name "$_sp_name"; continue ;;
+            fast) ext_err "$_sp_id" ext.alias_fast "alias '{name}': a fast-path method - its name cannot be taken" name "$_sp_name"; continue ;;
+            frame) ext_err "$_sp_id" ext.alias_frame "alias '{name}': the name is taken by the frame - use methods.override to replace a handler" name "$_sp_name"; continue ;;
             "moved "*)
                 if [ "$_sp_official" != 1 ] || [ "${_sp_kind#moved }" != "$_sp_id" ]; then
-                    ext_err "$_sp_id" "псевдоним «$_sp_name»: метод вынесен в плагин ${_sp_kind#moved }, брать его имя может только он и только из официального репозитория"
+                    ext_err "$_sp_id" ext.alias_moved "alias '{name}': the method moved to plugin {plugin}, only that plugin from the official repository may take its name" name "$_sp_name" plugin "${_sp_kind#moved }"
                     continue
                 fi
                 _sp_safe_ok=1 ;;
@@ -280,7 +284,7 @@ ext_scan_plugin() {  # ID
         esac
         [ "$_sp_safe" = 1 ] && [ "$_sp_safe_ok" != 1 ] && continue
         _sp_occ="$(ext_occupant "$_ext_taken" "$_sp_name")"
-        if [ -n "$_sp_occ" ]; then ext_err "$_sp_id" "псевдоним «$_sp_name» уже занят плагином $_sp_occ"; continue; fi
+        if [ -n "$_sp_occ" ]; then ext_err "$_sp_id" ext.alias_taken "alias '{name}' is already taken by plugin {occupant}" name "$_sp_name" occupant "$_sp_occ"; continue; fi
         _ext_taken="$_ext_taken $_sp_name=$_sp_id"
         ext_emit alias "$_sp_name" "$_sp_id" "$_sp_target" "$_sp_safe_ok" "$_sp_acc" "$_sp_new"
         ext_emit m "$_sp_name"
@@ -290,20 +294,20 @@ ext_scan_plugin() {  # ID
 $_sp_o
 EOF
         [ "$_sp_safe" = 1 ] && continue
-        case "$_sp_perms" in *" splify2.override "*) ;; *) ext_err "$_sp_id" "переопределение «$_sp_name» без права splify2.override"; continue ;; esac
+        case "$_sp_perms" in *" splify2.override "*) ;; *) ext_err "$_sp_id" ext.override_no_perm "override '{name}' without the splify2.override permission" name "$_sp_name"; continue ;; esac
         _sp_kind="$(ext_method_kind "$_sp_name")"
         case "$_sp_kind" in
             frame) ;;
-            final) ext_err "$_sp_id" "переопределение «$_sp_name»: метод final — его не заменить и не обернуть"; continue ;;
-            fast) ext_err "$_sp_id" "переопределение «$_sp_name»: метод быстрого пути — диспетчер отвечает на него до реестра, заменить его нельзя"; continue ;;
-            "moved "*) ext_err "$_sp_id" "переопределение «$_sp_name»: метод вынесен в плагин ${_sp_kind#moved } — для него есть псевдоним"; continue ;;
-            *) ext_err "$_sp_id" "переопределение «$_sp_name»: такого метода у каркаса нет"; continue ;;
+            final) ext_err "$_sp_id" ext.override_final "override '{name}': a final method - it cannot be replaced or wrapped" name "$_sp_name"; continue ;;
+            fast) ext_err "$_sp_id" ext.override_fast "override '{name}': a fast-path method - the dispatcher answers it before the registry, it cannot be replaced" name "$_sp_name"; continue ;;
+            "moved "*) ext_err "$_sp_id" ext.override_moved "override '{name}': the method moved to plugin {plugin} - use an alias" name "$_sp_name" plugin "${_sp_kind#moved }"; continue ;;
+            *) ext_err "$_sp_id" ext.override_unknown "override '{name}': the frame has no such method" name "$_sp_name"; continue ;;
         esac
-        case "$_sp_mode" in replace|wrap) ;; *) ext_err "$_sp_id" "переопределение «$_sp_name»: режим replace или wrap, а не «$_sp_mode»"; continue ;; esac
-        ext_prog_ok "$_sp_id" "$_sp_prog" || { ext_err "$_sp_id" "переопределение «$_sp_name»: программы $_sp_prog нет или она не исполняемая"; continue; }
+        case "$_sp_mode" in replace|wrap) ;; *) ext_err "$_sp_id" ext.override_mode "override '{name}': the mode is replace or wrap, not '{mode}'" name "$_sp_name" mode "$_sp_mode"; continue ;; esac
+        ext_prog_ok "$_sp_id" "$_sp_prog" || { ext_err "$_sp_id" ext.override_no_prog "override '{name}': the program {program} is missing or not executable" name "$_sp_name" program "$_sp_prog"; continue; }
         if [ "$_sp_mode" = replace ]; then
             _sp_occ="$(ext_occupant "$_ext_replaced" "$_sp_name")"
-            if [ -n "$_sp_occ" ]; then ext_err "$_sp_id" "обработчик «$_sp_name» уже заменил плагин $_sp_occ — второй replace не принят"; continue; fi
+            if [ -n "$_sp_occ" ]; then ext_err "$_sp_id" ext.override_taken "the handler '{name}' was already replaced by plugin {occupant} - a second replace is not accepted" name "$_sp_name" occupant "$_sp_occ"; continue; fi
             _ext_replaced="$_ext_replaced $_sp_name=$_sp_id"
         fi
         ext_emit override "$_sp_name" "$_sp_id" "$_sp_mode" "$_sp_prog" "$_sp_to" "$_sp_crit"
@@ -435,17 +439,17 @@ EXT_VETO=""; EXT_WARN=""
 ext_gate_cb() {  # ID КОД ФАЙЛ РЕЖИМ КРИТИЧЕСКИЙ
     _gc_id="$1"; _gc_rc="$2"; _gc_f="$3"; _gc_mode="$4"; _gc_crit="$5"
     _gc_bad=""
-    if [ "$_gc_rc" = 124 ]; then _gc_bad="не ответил за срок"
-    elif [ "$_gc_rc" != 0 ]; then _gc_bad="завершился с ошибкой (код $_gc_rc)"
-    elif ! ext_is_object "$_gc_f"; then _gc_bad="ответил не по форме"
+    if [ "$_gc_rc" = 124 ]; then _gc_bad="$(s2_t hook.reason_timeout "did not answer in time")"
+    elif [ "$_gc_rc" != 0 ]; then _gc_bad="$(s2_t hook.reason_exit "stopped with an error (code {code})" code "$_gc_rc")"
+    elif ! ext_is_object "$_gc_f"; then _gc_bad="$(s2_t hook.reason_form "gave an unexpected reply")"
     fi
     if [ -n "$_gc_bad" ]; then
-        ext_log "хук ${EXT_GATE_HOOK:-?} плагина $_gc_id $_gc_bad"
+        ext_log "hook ${EXT_GATE_HOOK:-?} of plugin $_gc_id $_gc_bad"
         if [ "$_gc_crit" = 1 ]; then
-            EXT_VETO="${EXT_VETO:-плагин $_gc_id ($EXT_GATE_HOOK) $_gc_bad}"
+            EXT_VETO="${EXT_VETO:-$(s2_t hook.veto "Plugin {id} ({hook}) {reason}" id "$_gc_id" hook "$EXT_GATE_HOOK" reason "$_gc_bad")}"
         else
             EXT_WARN="${EXT_WARN:+$EXT_WARN
-}плагин $_gc_id: хук $EXT_GATE_HOOK $_gc_bad"
+}$(s2_t hook.warn "Plugin {id}: hook {hook} {reason}" id "$_gc_id" hook "$EXT_GATE_HOOK" reason "$_gc_bad")"
         fi
         return 0
     fi
@@ -454,10 +458,10 @@ ext_gate_cb() {  # ID КОД ФАЙЛ РЕЖИМ КРИТИЧЕСКИЙ
     _gc_err="$(jsonfilter -s "$_gc_resp" -e '@.error' 2>/dev/null)"
     if [ "$_gc_ok" = false ]; then
         case "$_gc_mode" in
-            veto) [ -n "$EXT_VETO" ] || EXT_VETO="${_gc_err:-плагин $_gc_id отказал}" ;;
+            veto) [ -n "$EXT_VETO" ] || EXT_VETO="${_gc_err:-$(s2_t hook.refused "Plugin {id} refused" id "$_gc_id")}" ;;
             warn|transform) EXT_WARN="${EXT_WARN:+$EXT_WARN
-}${_gc_err:-плагин $_gc_id предупреждает}" ;;
-            *) ext_log "хук $EXT_GATE_HOOK плагина $_gc_id: ${_gc_err:-отказ} (observe — не учтено)" ;;
+}${_gc_err:-$(s2_t hook.warns "Plugin {id} warns" id "$_gc_id")}" ;;
+            *) ext_log "hook $EXT_GATE_HOOK of plugin $_gc_id: ${_gc_err:-refused} (observe - not counted)" ;;
         esac
         return 0
     fi
@@ -519,13 +523,13 @@ ext_heal_cb() {
 ext_invoke() {  # ID МЕТОД ВХОД_ФАЙЛ
     _iv_id="$1"; _iv_m="$2"; _iv_in="$3"
     plugin_installed "$_iv_id" && [ "$(plugin_state_of "$_iv_id")" = enabled ] ||
-        { plugin_fail disabled "Плагин $_iv_id выключен — включите его на вкладке «Плагины»"; return 0; }
+        { plugin_fail disabled plugin.disabled "Plugin {id} is off. Turn it on in the Plugins tab." id "$_iv_id"; return 0; }
     plugin_method_info "$_iv_id" "$_iv_m"
-    case $? in 0) ;; *) plugin_fail no_method "У плагина $_iv_id нет такого действия: $_iv_m"; return 0 ;; esac
+    case $? in 0) ;; *) plugin_fail no_method plugin.no_method "Plugin {id} has no action {method}" id "$_iv_id" method "$_iv_m"; return 0 ;; esac
     _iv_prog="$PLUGIN_PROG"; _iv_to="$PLUGIN_MTIMEOUT"; _iv_job="$PLUGIN_MJOB"
     case "$_iv_to" in ''|*[!0-9]*|0) _iv_to="$PLUGIN_RPC_TIMEOUT" ;; esac
     case "$_iv_job" in 1|true) plugin_invoke "$_iv_id" "$_iv_m" "$(cat "$_iv_in")"; return 0 ;; esac
-    ext_prog_ok "$_iv_id" "$_iv_prog" || { plugin_fail unavailable "У плагина $_iv_id нет программы для панели"; return 0; }
+    ext_prog_ok "$_iv_id" "$_iv_prog" || { plugin_fail unavailable plugin.no_program "Plugin {id} has no program for the panel" id "$_iv_id"; return 0; }
     ext_exec "$_iv_id" "$_iv_prog" "$_iv_to" "$_iv_m" "$_iv_in"
     ext_answer "$_iv_id" "$EXT_RC" "$EXT_OUT" "$EXT_ERRF" "$_iv_to"
     ext_clean
@@ -537,12 +541,12 @@ ext_answer() {  # ID КОД ВЫХОД ОШИБКИ СРОК
     case "$2" in
         0)
             if ext_is_object "$3"; then cat "$3"; return 0; fi
-            plugin_fail failed "Плагин $1 ответил не по форме" ;;
-        124) plugin_fail timeout "Плагин $1 не ответил за $5 с" ;;
+            plugin_fail failed plugin.bad_reply "Plugin {id} gave an unexpected reply" id "$1" ;;
+        124) plugin_fail timeout plugin.timeout "Plugin {id} did not answer within {seconds} s" id "$1" seconds "$5" ;;
         *)
             _an_m="$(tail -n 1 "$4" 2>/dev/null)"
-            [ -n "$_an_m" ] || _an_m="Плагин $1 завершился с ошибкой (код $2)"
-            plugin_fail failed "$_an_m" ;;
+            [ -n "$_an_m" ] || _an_m="$(s2_t plugin.exit_code "Plugin {id} stopped with an error (code {code})" id "$1" code "$2")"
+            plugin_fail_raw failed "$_an_m" ;;
     esac
     return 0
 }
@@ -550,7 +554,7 @@ ext_answer() {  # ID КОД ВЫХОД ОШИБКИ СРОК
 # Метод с реестровой записью: выполнить. Вызывается диспетчером, stdin — запрос.
 ext_dispatch() {  # МЕТОД
     _dp_m="$1"
-    _dp_in="$(mktemp 2>/dev/null)" || { plugin_fail failed "Не удалось завести временный файл"; return 0; }
+    _dp_in="$(mktemp 2>/dev/null)" || { plugin_fail failed tmp.file_failed "Cannot create a temporary file"; return 0; }
     cat > "$_dp_in"
     _dp_safe=0; ext_safe && _dp_safe=1
     _dp_alias=""; _dp_repl=""; _dp_wraps=""
@@ -572,7 +576,7 @@ ext_dispatch() {  # МЕТОД
         return 0
     fi
     # База ответа: обработчик каркаса или замена.
-    _dp_out="$(mktemp 2>/dev/null)" || { rm -f "$_dp_in"; plugin_fail failed "Не удалось завести временный файл"; return 0; }
+    _dp_out="$(mktemp 2>/dev/null)" || { rm -f "$_dp_in"; plugin_fail failed tmp.file_failed "Cannot create a temporary file"; return 0; }
     _dp_base=1
     if [ -n "$_dp_repl" ]; then
         IFS='|' read -r _dp_id _dp_prog _dp_to _dp_crit <<EOF
@@ -582,10 +586,10 @@ EOF
         if [ "$EXT_RC" = 0 ] && ext_is_object "$EXT_OUT"; then
             cat "$EXT_OUT" > "$_dp_out"; _dp_base=0
         else
-            ext_log "замена метода $_dp_m (плагин $_dp_id) не удалась (код $EXT_RC)"
+            ext_log "replacing the method $_dp_m (plugin $_dp_id) failed (code $EXT_RC)"
             if [ "$_dp_crit" = 1 ]; then
                 ext_clean; rm -f "$_dp_in" "$_dp_out"
-                plugin_fail failed "Плагин $_dp_id заменил метод $_dp_m и не ответил"; return 0
+                plugin_fail failed plugin.replace_silent "Plugin {id} replaced the method {method} and gave no answer" id "$_dp_id" method "$_dp_m"; return 0
             fi
         fi
         ext_clean
@@ -605,7 +609,7 @@ EOF
         if [ "$EXT_RC" = 0 ] && ext_is_object "$EXT_OUT"; then
             cat "$EXT_OUT" > "$_dp_out"
         else
-            ext_log "обёртка метода $_dp_m (плагин $_dp_id) не удалась (код $EXT_RC) — ответ каркаса без неё"
+            ext_log "wrapping the method $_dp_m (plugin $_dp_id) failed (code $EXT_RC) - the frame answer is used without it"
         fi
         ext_clean
     done
@@ -755,24 +759,24 @@ ext_only_if() {  # УСЛОВИЕ
 
 # Запуск задачи (из /usr/sbin/splify2-task по строке crontab): условие, замок, программа с пределом по времени.
 ext_task_run() {  # ID ИМЯ
-    ext_ready || { ext_log "задача $1/$2: реестра нет"; return 0; }
-    ext_safe && { ext_log "задача $1/$2: безопасный режим — пропущена"; return 0; }
+    ext_ready || { ext_log "task $1/$2: no registry"; return 0; }
+    ext_safe && { ext_log "task $1/$2: safe mode - skipped"; return 0; }
     _tr_found=0
     while IFS="$EXT_TAB" read -r _tr_t _tr_id _tr_name _tr_kind _tr_sched _tr_ji _tr_oi _tr_prog _tr_to; do
         [ "$_tr_t" = task ] && [ "$_tr_id" = "$1" ] && [ "$_tr_name" = "$2" ] || continue
         _tr_found=1; break
     done < "$EXT_REG"
-    [ "$_tr_found" = 1 ] || { ext_log "задача $1/$2: в реестре нет"; return 0; }
+    [ "$_tr_found" = 1 ] || { ext_log "task $1/$2: not in the registry"; return 0; }
     if [ "$_tr_oi" != - ] && ! ext_only_if "$_tr_oi"; then return 0; fi
     plugin_installed "$1" && [ "$(plugin_state_of "$1")" = enabled ] || return 0
-    ext_prog_ok "$1" "$_tr_prog" || { ext_log "задача $1/$2: программы нет"; return 0; }
+    ext_prog_ok "$1" "$_tr_prog" || { ext_log "task $1/$2: the program is missing"; return 0; }
     # Замок — каталог (mkdir атомарен и работает без flock); брошенный (процесса нет) снимается.
     _tr_lock="$EXT_TASK_LOCK_DIR/splify2-task-$1-$2.lock"
     mkdir -p "$EXT_TASK_LOCK_DIR" 2>/dev/null
     if ! mkdir "$_tr_lock" 2>/dev/null; then
         _tr_pid="$(cat "$_tr_lock/pid" 2>/dev/null)"
         if [ -n "$_tr_pid" ] && kill -0 "$_tr_pid" 2>/dev/null; then
-            ext_log "задача $1/$2: прошлый запуск ещё идёт"; return 0
+            ext_log "task $1/$2: the previous run is still going"; return 0
         fi
         rm -rf "$_tr_lock"; mkdir "$_tr_lock" 2>/dev/null || return 0
     fi
@@ -780,11 +784,11 @@ ext_task_run() {  # ID ИМЯ
     touch "${_tr_lock}.in" 2>/dev/null
     ext_exec "$1" "$_tr_prog" "$_tr_to" "$2" "${_tr_lock}.in" "SPLIFY2_TASK=$2"
     _tr_rc=$EXT_RC
-    [ -s "$EXT_ERRF" ] && ext_log "задача $1/$2: $(tail -n 1 "$EXT_ERRF")"
+    [ -s "$EXT_ERRF" ] && ext_log "task $1/$2: $(tail -n 1 "$EXT_ERRF")"
     ext_clean
     rm -rf "$_tr_lock" "${_tr_lock}.in"
-    if [ "$_tr_rc" = 124 ]; then ext_log "задача $1/$2: не уложилась в $_tr_to с"
-    elif [ "$_tr_rc" != 0 ]; then ext_log "задача $1/$2: код $_tr_rc"; fi
+    if [ "$_tr_rc" = 124 ]; then ext_log "task $1/$2: did not finish in $_tr_to s"
+    elif [ "$_tr_rc" != 0 ]; then ext_log "task $1/$2: code $_tr_rc"; fi
     return 0
 }
 
@@ -825,7 +829,7 @@ ext_event_dispatch() {  # СТРОКА_СОБЫТИЯ
         _ed_in="$(mktemp 2>/dev/null)" || continue
         printf '{"api":1,"event":%s}\n' "$_ed_line" > "$_ed_in"
         ext_exec "$_ed_id" "$_ed_prog" "$_ed_to" "" "$_ed_in" "SPLIFY2_EVENT=$_ed_ev" </dev/null
-        [ "$EXT_RC" = 0 ] || ext_log "событие $_ed_ev: плагин $_ed_id завершился с кодом $EXT_RC"
+        [ "$EXT_RC" = 0 ] || ext_log "event $_ed_ev: plugin $_ed_id ended with code $EXT_RC"
         rm -f "$_ed_in"
         ext_clean
     done < "$EXT_REG"
@@ -838,7 +842,7 @@ ext_event_dispatch() {  # СТРОКА_СОБЫТИЯ
 ext_support_cb() {  # ID КОД ФАЙЛ РЕЖИМ КРИТИЧЕСКИЙ
     if [ "$2" != 0 ] || ! ext_is_object "$3"; then
         sr_line ""
-        sr_line "-- плагин $1: раздел отчёта не получен --"
+        sr_line "-- plugin $1: no report section received --"
         return 0
     fi
     _sc_resp="$(cat "$3")"
@@ -846,7 +850,7 @@ ext_support_cb() {  # ID КОД ФАЙЛ РЕЖИМ КРИТИЧЕСКИЙ
     _sc_text="$(jsonfilter -s "$_sc_resp" -e '@.section.text' 2>/dev/null | tr -d '\000-\010\013-\037')"
     [ -n "$_sc_text" ] || return 0
     sr_line ""
-    sr_line "-- ${_sc_title:-плагин $1} --"
+    sr_line "-- ${_sc_title:-plugin $1} --"
     while IFS= read -r _sc_l; do sr_line "$_sc_l"; done <<EOF
 $_sc_text
 EOF
@@ -857,7 +861,7 @@ EOF
 # Печатает строки «плагин: текст» по одной; зовётся из splify2-purge.
 ext_purge_cb() {  # ID КОД ФАЙЛ РЕЖИМ КРИТИЧЕСКИЙ
     if [ "$2" != 0 ] || ! ext_is_object "$3"; then
-        printf '%s: хук purge не отработал — его следы остались\n' "$1"
+        printf '%s: %s\n' "$1" "$(s2_t purge.hook_failed "the purge hook did not finish, its traces remain")"
         return 0
     fi
     _pc_resp="$(cat "$3")"
@@ -869,7 +873,7 @@ EOF
     return 0
 }
 ext_purge() {  # DO(0|1) KEEP(0|1)
-    if ext_safe; then printf 'безопасный режим: хуки purge плагинов не вызваны\n'; return 0; fi
+    if ext_safe; then printf '%s\n' "$(s2_t purge.safe_mode "safe mode: the purge hooks of the plugins were not called")"; return 0; fi
     _pu_dry=true; [ "$1" = 1 ] && _pu_dry=false
     _pu_keep=false; [ "$2" = 1 ] && _pu_keep=true
     ext_hook_each purge "{\"dry_run\":$_pu_dry,\"keep_config\":$_pu_keep}" ext_purge_cb

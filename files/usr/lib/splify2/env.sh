@@ -68,7 +68,11 @@ PURGE_BIN="${PURGE_BIN:-/usr/sbin/splify2-purge}"
 PURGE_DELAY="${PURGE_DELAY:-2}"
 PURGE_LOG="${PURGE_LOG:-/tmp/splify2-purge.log}"
 OPENWRT_RELEASE="${OPENWRT_RELEASE:-/etc/openwrt_release}"
+. "${I18N_SH:-${ENV_SH%/*}/i18n.sh}"
+# Refusal with a text that is already final (the words of the steer core, of a package manager): `fail TEXT`.
+# Our own refusals carry a code and are translated: `fail_code CODE "English {name}" name value ...` (i18n.sh).
 fail() { json_init; json_add_boolean ok 0; json_add_string error "$1"; json_dump; exit 0; }
+fail_code() { s2_fail_doc "$@"; exit 0; }
 
 # Единственный способ скачать: сначала во временный файл, потом переименовать. Иначе
 # оборванная загрузка оставляет на месте рабочего списка обрубок, и канал начинает
@@ -318,7 +322,7 @@ call_lock() {  # ИМЯ
         _cl_n=$((_cl_n + 1))
         # Ждём минуту, а не весь срок вызова rpcd (120 с): ждавший сто секунд и начавший свою правку
         # был бы убит rpcd посреди записи, а отказ «повторите» уже не успел бы прозвучать.
-        [ "$_cl_n" -gt "${SPLIFY2_LOCK_WAIT:-60}" ] && fail "другая правка настроек ещё идёт — повторите через минуту"
+        [ "$_cl_n" -gt "${SPLIFY2_LOCK_WAIT:-60}" ] && fail_code lock.busy "Another change of the settings is still running. Try again in a minute."
         sleep 1
     done
     SPLIFY2_LOCK_HELD="${SPLIFY2_LOCK_HELD:-} $1"

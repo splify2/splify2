@@ -7,7 +7,7 @@
 
 _mv_plugin=""
 need_ext && _mv_plugin="$(ext_moved_plugin "$2")"
-[ -n "$_mv_plugin" ] || _mv_plugin="этого метода"
+[ -n "$_mv_plugin" ] || _mv_plugin="$(s2_t plugin.this_method "this method")"
 . "${PLUGIN_SH:-${SPLIFY2_LIBDIR:-/usr/lib/splify2}/plugin.sh}"
-plugin_fail not_installed "Нужен плагин $_mv_plugin — поставьте его на вкладке «Плагины»"
+plugin_fail not_installed plugin.needed "The {plugin} plugin is required. Install it on the Plugins tab." plugin "$_mv_plugin"
 exit 0
