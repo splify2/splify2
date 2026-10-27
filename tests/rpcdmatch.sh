@@ -4916,11 +4916,11 @@ check "heal: кроме вставок, ни один байт не измени
       "$(sed -E 's/"ipv6":"(nat|off)",//g' "$T/etc/spec.json" > "$T/spec.stripped"; sed -E 's/"ipv6":"(nat|off)",//g' "$T/spec.before" | cmp -s - "$T/spec.stripped" && echo yes || echo no)"
 # --- ответ apply: какой ключ и каким выходам ---
 check "heal: ответ apply называет nat и его выходы" "yes" \
-      "$(line_has "$txt" 'записан ipv6: nat' warp wgcfg amn amn_def pm.a)"
+      "$(line_has "$txt" 'got ipv6: nat' warp wgcfg amn amn_def pm.a)"
 check "heal: и в строке nat нет выходов, которым записан off" "nonono" \
-      "$(line_has "$txt" 'записан ipv6: nat' wgv4)$(line_has "$txt" 'записан ipv6: nat' pm.b)$(line_has "$txt" 'записан ipv6: nat' ll)"
+      "$(line_has "$txt" 'got ipv6: nat' wgv4)$(line_has "$txt" 'got ipv6: nat' pm.b)$(line_has "$txt" 'got ipv6: nat' ll)"
 check "heal: ответ apply называет off и его выходы" "yes" \
-      "$(line_has "$txt" 'записан ipv6: off' wgv4 wgdown ll amn4 pm.b)"
+      "$(line_has "$txt" 'got ipv6: off' wgv4 wgdown ll amn4 pm.b)"
 check "heal: apply применил уже исправленную спеку (снимок содержит ключи)" "nat off" \
       "$(python3 -c 'import json,sys; o=json.load(open(sys.argv[1]))["outputs"]; print(o["warp"].get("ipv6","-"), o["wgv4"].get("ipv6","-"))' "$T/etc/spec.applied.json")"
 # Интерфейс после apply перечитывает spec_get и applied_get и берёт то, что лежит на роутере
@@ -4946,7 +4946,7 @@ check "heal: обе строки самолечения начинаются т�
 sum1="$(cksum < "$T/etc/spec.json")"
 out="$(heal_apply apply)"
 check "heal: второй apply спеку не меняет (идемпотентно)" "$sum1" "$(cksum < "$T/etc/spec.json")"
-check "heal: и не сообщает о правке" "no" "$(printf '%s' "$out" | jget output | grep -q 'записан ipv6' && echo yes || echo no)"
+check "heal: и не сообщает о правке" "no" "$(printf '%s' "$out" | jget output | grep -q 'got ipv6' && echo yes || echo no)"
 check "heal: чужие устройства и после второго apply вне нашей зоны" "" "$(in_zone steer_zone wg_f wgnet wg_d wg_i pptp-vpn)"
 # v2 со словом «schema» где-то в тексте (выход так назван) — всё равно v2: лечится.
 heal_spec; heal_zones
