@@ -17,7 +17,7 @@ splify2 — тонкая обёртка на shell поверх ядра [steer]
 `steer_install`, `splify2_versions`, `splify2_install` (`updater`) — вид `moved` в `/usr/lib/splify2/methods.tsv` — вынесены из
 каркаса в плагины `backup`, `lists-catalog`, `subscriptions`, `node-check` и `updater`
 (`plugins/`, сборка — `plugins/build.sh`). Имена, входы и ответы **те же**: на объекте `splify2` они остались
-псевдонимами методов плагинов. Без плагина метод отвечает `{ok:false, code:"not_installed", error:"Нужен плагин …"}`.
+псевдонимами методов плагинов. Без плагина метод отвечает `{ok:false, code:"not_installed", msg:"plugin.needed", error:"…"}`.
 
 Точки расширения каркаса — [splify2-api](https://github.com/splify2/plugin-sdk/blob/main/docs/splify2-api.md):
 хуки `pre_spec_set`, `post_spec_set`, `pre_apply` (в ответ `apply` при отказе: `ok:false`, `veto:true`, `error`),
@@ -45,11 +45,19 @@ splify2 — тонкая обёртка на shell поверх ядра [steer]
 - **Ошибка** — единый объект у всех методов:
 
   ```json
-  { "ok": false, "error": "причина по-русски, для человека" }
+  { "ok": false, "error": "причина для человека", "code": "req.unknown_method", "args": {} }
   ```
 
+  `error` — текст на языке каркаса: каркас английский, перевод даёт языковой плагин (словарь
+  `i18n/backend/<язык>.json`), язык берётся из `luci.main.lang` (`auto` — английский). `code` — код текста
+  (ключ словаря), `args` — значения его подстановок `{имя}`; клиент с собственным переводом берёт их, а не `error`.
+  У отказов плагинной части (`plugin_*`, `plugins_*`, методы плагинов через хост) `code` — вид отказа
+  (`bad_request`, `not_installed`, `disabled`, `no_method`, `unavailable`, `timeout`, `failed`, `busy`,
+  `no_job`, `no_settings`, `core_too_old`), а код текста — в `msg`. Слова ядра steer и менеджера пакетов идут в `error`
+  дословно и без `code`. Подробно — plugin-sdk, `docs/splify2-api.md`, «Тексты для человека».
+
   Методы, проксирующие ядро, отвечают этим же объектом, когда ядро не выдало годного JSON —
-  например, `{"ok":false,"error":"ядро не ответило"}`.
+  например, `{"ok":false,"error":"The core did not respond","code":"core.no_answer","args":{}}` (текст — на языке каркаса).
 
   **Ненулевой код возврата ядра сам по себе ошибкой не является:** `diag` и `vless-probe`
   завершаются с `1`, когда нашли проблему, но JSON при этом валидный, и он возвращается как успех.
@@ -395,7 +403,7 @@ nftables `inet steer` и пакеты ядра остаются (команда 
 ### `status` (read)
 
 Применённое состояние ядра. Пропускает вывод `steer status` **дословно**. Если ядро не выдало
-объекта, начинающегося с `{`, отвечает `{"ok":false,"error":"ядро не ответило"}`. Состав полей —
+объекта, начинающегося с `{`, отвечает отказом `core.no_answer` («ядро не ответило»). Состав полей —
 контракт steer §2, включая `down_packets`/`down_bytes`, `at` и — у запомненного ответа — `cached`.
 Память здесь не спрашивается никогда: за ней ходят через `live` с `fast: true`.
 
@@ -465,7 +473,7 @@ nftables `inet steer` и пакеты ядра остаются (команда 
 - **Выход:** `{ "ok": true, "enabled": <bool>, "running": <bool> }` — состояние после операции, теми
   же полями, что у `engine`.
 - `engine_start` при коннекторе (поле `busy` у `engine`) службу steer не включает и не запускает:
-  `{ "ok": false, "error": "ядро занято: <кем>", "busy": "<кем>", "enabled": …, "running": … }`.
+  `{ "ok": false, "error": "ядро занято: <кем>" (`core.busy`), "busy": "<кем>", "enabled": …, "running": … }`.
 
 Остановленное ядро ночное обновление списков не поднимает: когда служба не работает и снята с
 автозапуска, оно только обновляет файлы списков и пишет в журнал «ядро выключено — списки обновлены,

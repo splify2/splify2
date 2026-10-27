@@ -110,7 +110,7 @@ case "$2" in
         pg_pkgs="${pg_pkgs# }"
         json_init
         if [ ! -x "$PURGE_BIN" ]; then
-            json_add_boolean ok 0; json_add_string error "$(s2_t purge.no_command "The removal command is missing: {path}" path "$PURGE_BIN")"; json_dump; exit 0
+            fail_code purge.no_command "The removal command is missing: {path}" path "$PURGE_BIN"
         fi
         if [ "$pg_plan" = true ]; then
             pg_out="$(PURGE_MARK=1 "$PURGE_BIN" $pg_flag 2>&1)"
@@ -203,7 +203,7 @@ EOF
             en="$(engine_enabled)"; run="$(engine_running)"
             json_init
             json_add_boolean ok 0
-            json_add_string error "$(s2_t core.busy "The core is busy: {by}" by "$BOX_BY")"
+            s2_fail_fields core.busy "The core is busy: {by}" by "$BOX_BY"
             json_add_string busy "$BOX_BY"
             json_add_boolean enabled "$en"
             json_add_boolean running "$run"

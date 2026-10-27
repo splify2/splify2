@@ -895,7 +895,7 @@ case "$2" in
             if [ -n "$cur" ] && [ "$cur" != "$rev" ]; then
                 json_init; json_add_boolean ok 0; json_add_boolean conflict 1
                 json_add_string rev "$cur"
-                json_add_string error "$(s2_t spec.changed "The spec on the router changed after it was opened")"
+                s2_fail_fields spec.changed "The spec on the router changed after it was opened"
                 json_dump
                 exit 0
             fi

@@ -150,7 +150,7 @@ import glob, json, os, re, sys
 root = sys.argv[1]
 ru = json.load(open(root + "/plugins/lang-ru/i18n/backend/ru.json"))
 en = json.load(open(root + "/plugins/lang-en/i18n/backend/en.json"))
-rx = re.compile(r'(?:s2_t|fail_code|s2_fail_code|s2_fail_doc|plugin_fail \S+|ext_err \S+) ([A-Za-z0-9_.-]+) "((?:[^"\\]|\\.)*)"')
+rx = re.compile(r'(?:s2_t|fail_code|s2_fail_code|s2_fail_doc|s2_fail_fields|plugin_fail \S+|ext_err \S+) ([A-Za-z0-9_.-]+) "((?:[^"\\]|\\.)*)"')
 used = {}
 files = [f for pat in ("files/**/*", "plugins/*/bin/*", "plugins/*/lib/*", "plugins/*/hooks/*")
          for f in glob.glob(root + "/" + pat, recursive=True) if os.path.isfile(f) and "/i18n/" not in f and not f.endswith(".json")]

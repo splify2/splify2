@@ -82,7 +82,7 @@ cmd_fetch() {  # URL ФАЙЛ [--timeout СЕК]
         [ -n "$FETCH_NOTE" ] && json_add_string note "$FETCH_NOTE"
         json_dump; exit 0
     fi
-    json_init; json_add_boolean ok 0; json_add_string error "$(s2_t fetch.failed "The download failed")"
+    json_init; json_add_boolean ok 0; s2_fail_fields fetch.failed "The download failed"
     # Причина отказа: что не вышло по каждому из путей.
     [ -n "$FETCH_NOTE" ] && json_add_string note "$FETCH_NOTE"
     json_dump; exit 1
@@ -877,7 +877,7 @@ cmd_probe() {  # geo|ident ВЫХОД
                 json_dump; exit 0
             fi
             json_init; json_add_boolean ok 0
-            json_add_string error "$(s2_t probe.no_answer "No answer through the output")"
+            s2_fail_fields probe.no_answer "No answer through the output"
             json_add_string why "$GEO_WHY"
             [ "$GEO_WHY" = no_curl ] && json_add_boolean curl 0
             json_dump; exit 1 ;;
@@ -934,7 +934,7 @@ cmd_release() {  # versions steer|splify2 | fetch ПРОДУКТ ВЕРСИЯ И
                 json_dump; exit 0
             fi
             rm -f "$5"
-            json_init; json_add_boolean ok 0; json_add_string error "$(s2_t fetch.failed "The download failed")"
+            json_init; json_add_boolean ok 0; s2_fail_fields fetch.failed "The download failed"
             [ -n "$FETCH_NOTE" ] && json_add_string note "$FETCH_NOTE"
             json_dump; exit 1 ;;
         *) usage ;;

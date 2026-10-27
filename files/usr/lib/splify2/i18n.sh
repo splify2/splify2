@@ -84,14 +84,20 @@ s2_args_add() {
     json_close_object
 }
 
-# The whole refusal document, nothing else is done: s2_fail_doc CODE DEFAULT [NAME VALUE]...
-s2_fail_doc() {
+# The fields of a refusal in the document being built (error, code, args), for replies that carry more fields:
+# s2_fail_fields CODE DEFAULT [NAME VALUE]...
+s2_fail_fields() {
     _s2f_c="$1"; _s2f_d="$2"; shift 2
     _s2f_x="$(s2_t "$_s2f_c" "$_s2f_d" "$@")"
-    json_init
-    json_add_boolean ok 0
     json_add_string error "$_s2f_x"
     json_add_string code "$_s2f_c"
     s2_args_add "$@"
+}
+
+# The whole refusal document, nothing else is done: s2_fail_doc CODE DEFAULT [NAME VALUE]...
+s2_fail_doc() {
+    json_init
+    json_add_boolean ok 0
+    s2_fail_fields "$@"
     json_dump
 }
