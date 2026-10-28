@@ -188,7 +188,9 @@ return baseclass.extend({
 					E('td', { 'class': 'td' }, repoBadge(p.repo)),
 					E('td', { 'class': 'td' }, [ busy ? busy : (p.state || ''), p.why ? E('div', { 'class': 'cbi-value-description' }, String(p.why)) : '' ]),
 					E('td', { 'class': 'td' }, au),
-					E('td', { 'class': 'td cbi-section-actions' }, busy ? '' : [
+					// E() does not flatten nested arrays: the disabled Remove and its reason are concatenated in, otherwise the cell
+					// shows "[object HTMLButtonElement],[object HTMLDivElement]".
+					E('td', { 'class': 'td cbi-section-actions' }, busy ? '' : [].concat(
 						E('button', { 'class': 'cbi-button', click: function() { settings(p); } }, T('Settings')), ' ',
 						enabled ? E('button', { 'class': 'cbi-button', click: act('plugin_disable', { id: p.id }, T('Disabled: {id}', { id: p.id })) }, T('Disable')) :
 							E('button', { 'class': 'cbi-button cbi-button-positive', click: act('plugin_enable', { id: p.id }, T('Enabled: {id}', { id: p.id })) }, T('Enable')), ' ',
@@ -196,7 +198,7 @@ return baseclass.extend({
 						needed.length ?
 							[ E('button', { 'class': 'cbi-button cbi-button-remove', disabled: 'disabled', title: reason }, T('Remove')),
 								E('div', { 'class': 'cbi-value-description', 'data-needed': p.id }, reason) ] :
-							E('button', { 'class': 'cbi-button cbi-button-remove', click: function() { remove(p); } }, T('Remove')) ])
+							E('button', { 'class': 'cbi-button cbi-button-remove', click: function() { remove(p); } }, T('Remove'))))
 				]);
 			})));
 		};
