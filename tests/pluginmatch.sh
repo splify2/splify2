@@ -487,6 +487,12 @@ check "plugin_call: тот же диспетчер, params доходят как
     "$(printf '%s' "$out" | pj 'd["ok"]');$(printf '%s' "$out" | pj 'd["in"]["z"]')"
 out="$(rpcd plugin_call '{"id":"recheck","method":"status"}')"
 check "  без params — пустой объект" "{}" "$(printf '%s' "$out" | pj 'd["in"]')"
+out="$(rpcd plugin_call '{"id":"recheck","method":"status","params":{"q":"a'"'"'b \\\" $(id) `x`","n":[1,2]}}')"
+check "  params с кавычками, \$(…) и обратными кавычками доходят как есть (разбор одним jsonfilter)" "a'b \\\" \$(id) \`x\`;[1, 2]" \
+    "$(printf '%s' "$out" | pj 'd["in"]["q"]');$(printf '%s' "$out" | pj 'd["in"]["n"]')"
+check "  params не объект — пустой объект" "{}" "$(rpcd plugin_call '{"id":"recheck","method":"status","params":[1]}' | pj 'd["in"]')"
+check "  id с кавычкой и подстановкой — отказ bad_request" "bad_request" \
+    "$(rpcd plugin_call '{"id":"x'"'"';touch /tmp/pwn;'"'"'","method":"status"}' | pj 'd["code"]')"
 check "  метод с job:true через plugin_call — тоже {job}" "yes" \
     "$(rpcd plugin_call '{"id":"recheck","method":"scan"}' | pj 'd["job"]' | grep -q . && echo yes || echo no)"
 

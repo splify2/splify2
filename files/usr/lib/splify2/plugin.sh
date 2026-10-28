@@ -689,7 +689,7 @@ plugin_method_info() {  # ID МЕТОД
 # есть, если это объект JSON. Метод с `job: true` отвечает `{job: "<номер>"}` сразу.
 # Права (read/write) здесь не проверяются: их проверяет rpcd по ACL группы плагина, а шлюз для
 # приложения вне LuCI работает от root и пускает только того, у кого есть право на splify2.
-plugin_invoke() {  # ID МЕТОД [ВХОД_JSON]
+plugin_invoke() {  # ID МЕТОД [ВХОД_JSON [parsed]]
     _pv_id="$1"; _pv_m="$2"; _pv_in="${3:-}"
     plugin_id_ok "$_pv_id" || { plugin_fail bad_request plugin.bad_name "Invalid plugin name"; return 1; }
     plugin_method_ok "$_pv_m" || { plugin_fail no_method plugin.no_method "Plugin {id} has no action {method}" id "$_pv_id" method "$_pv_m"; return 1; }
@@ -712,8 +712,13 @@ plugin_invoke() {  # ID МЕТОД [ВХОД_JSON]
     _pv_to="$PLUGIN_MTIMEOUT"
     case "$_pv_to" in ''|*[!0-9]*|0) _pv_to="$PLUGIN_RPC_TIMEOUT" ;; esac
     _pv_job="$PLUGIN_MJOB"
-    # Вход программы — объект JSON; пусто или не объект — пустой объект.
-    _pv_body="$(plugin_json_obj "$_pv_in")" || _pv_body='{}'
+    # Вход программы — объект JSON; пусто или не объект — пустой объект. Четвёртый аргумент `parsed` — вход уже
+    # вышел из разбора jsonfilter (plugin_call): форма проверяется без второго запуска.
+    if [ "${4:-}" = parsed ]; then
+        case "$_pv_in" in '{'*'}') _pv_body="$_pv_in" ;; *) _pv_body='{}' ;; esac
+    else
+        _pv_body="$(plugin_json_obj "$_pv_in")" || _pv_body='{}'
+    fi
 
     plugin_export_env "$_pv_id"
 

@@ -343,11 +343,12 @@ case "$2" in
         # Метод самого плагина через объект splify2 — для шлюза приложения вне LuCI (/v1/plugin/<id>/<метод>),
         # у которого нет сессии ubus: вход {id, method, params}. В LuCI те же методы идут объектом
         # splify2.p.<id> с ACL из манифеста; диспетчер один (plugin_invoke).
+        # Три поля — одним запуском jsonfilter (режим присваиваний: `export ИМЯ='значение'; `, кавычки экранирует
+        # он сам), а не тремя. params пришёл из разбора — это уже JSON, повторная проверка в plugin_invoke не нужна.
         read -r input
-        _pc_id="$(plugin_in id)"
-        _pc_m="$(plugin_in method)"
-        _pc_p="$(plugin_in params)"
-        plugin_invoke "$_pc_id" "$_pc_m" "$_pc_p"
+        PCID=""; PCM=""; PCP=""
+        eval "$(jsonfilter -s "$input" -e 'PCID=@.id' -e 'PCM=@.method' -e 'PCP=@.params' 2>/dev/null)"
+        plugin_invoke "$PCID" "$PCM" "$PCP" parsed
         ;;
 
     plugin_settings_get)

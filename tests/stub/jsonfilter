@@ -48,6 +48,20 @@ def walk(cur, parts):
 for expr in os.environ.get('EXPRS', '').splitlines():
     if not expr:
         continue
+    # Режим присваиваний настоящего jsonfilter: `-e 'ИМЯ=выражение'` печатает `export ИМЯ='значение'; ` (одинарная
+    # кавычка внутри — '\''); нет значения — ничего. Так один запуск отдаёт несколько полей для eval.
+    m = re.match(r"([A-Za-z_][A-Za-z0-9_]*)=(.*)$", expr)
+    if m:
+        name, sub = m.group(1), m.group(2)
+        norm = sub.replace('@.', '', 1)
+        parts = [x for x in norm.split('.') if x and x != '@']
+        cur = d
+        for x in parts:
+            cur = cur.get(x) if isinstance(cur, dict) else None
+        if cur is not None:
+            v = render(cur).replace("'", "'\\''")
+            sys.stdout.write("export %s='%s'; " % (name, v))
+        continue
     m = re.match(r"@\.(categories|domain_lists)\[@\.id='([^']*)'\]\.([a-z_]+)$", expr)
     if m:
         for e in d.get(m.group(1), []):

@@ -59,8 +59,8 @@ ms() { date +%s%N; }
 # Первый вызов приводит ссылки и реестр в согласие — дальше всё как на открытой странице.
 call plugins_list '{"lang":"ru"}'
 printf '%-16s %8s %8s  %s\n' метод мс процессы 'чаще всего'
-for m in prefs_get i18n_get plugins_list spec_get spec_schema engine applied_get status sub_list repos_list; do
-    case "$m" in plugins_list|i18n_get) in='{"lang":"ru"}' ;; *) in='{}' ;; esac
+for m in prefs_get i18n_get plugins_list spec_get spec_schema engine applied_get status sub_list repos_list plugin_call; do
+    case "$m" in plugins_list|i18n_get) in='{"lang":"ru"}' ;; plugin_call) in='{"id":"autoapply","method":"autoapply_status","params":{}}' ;; *) in='{}' ;; esac
     best=""
     i=0
     while [ "$i" -lt "$N" ]; do
