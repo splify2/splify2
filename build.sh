@@ -1,5 +1,6 @@
 #!/bin/sh
-# Собирает один noarch-пакет: бандл интерфейса, точка входа LuCI, rpcd-обёртка.
+# Собирает один noarch-пакет splify2: каркас на LuCI JS, бэкенд rpcd и семя плагинов «из коробки» (в том числе Andromeda — её
+# собирает репозиторий andromeda, см. ANDROMEDA_S2P ниже).
 #
 # Архитектуры тут нет и быть не должно — весь бинарный код живёт в steer. Поэтому
 # пакет один на все роутеры, а зависимость от движка объявлена явно.
@@ -25,13 +26,12 @@ case "$VERSION" in
 esac
 OUT=out
 PKG=build/pkg
-RES="$PKG/www/luci-static/resources/splify2"
 
-# Куда уезжает вывод двух самых длинных шагов — сборки интерфейса и упаковки (I-044, R-034).
+# Куда уезжает вывод самых длинных шагов — сборки плагинов семени и упаковки (I-044, R-034).
 #
 # ЗАЧЕМ ФАЙЛ, А НЕ ПРЯМОЙ ВЫВОД. На успехе печатать полтора экрана tsc и vite незачем: сборка
 # зовётся из релизного workflow, и шум там прячет то немногое, что стоит читать. А на провале
-# нужна ровно эта диагностика: без неё человек получал одну строку «сборка интерфейса
+# нужна ровно эта диагностика: без неё человек получал одну строку «сборка
 # провалилась» и запускал сборку во второй раз руками, чтобы узнать причину. Файл даёт оба
 # поведения разом.
 BUILD_LOG=build/build.log
@@ -62,109 +62,17 @@ done
     exit 1
 }
 
-# Третье ребро того же контракта, и до сих пор оно не проверялось ничем. Имена методов
-# заданы строками в ТРЁХ местах: блок `list)` в rpcd, ACL выше и вызовы в интерфейсе
-# (`declare<...>('local_lists')` в ui/src/lib/rpc.ts). Барьер выше сторожит ребро
-# rpcd → ACL, а переименование метода в скрипте оставляет в интерфейсе вызов, который
-# никуда не ведёт: ubus отвечает «Method not found», и отказ ровно того невидимого вида,
-# ради которого барьер выше и написан — сборка проходит, tsc проходит, страница
-# открывается и показывает «нет данных» там, где у вызова есть запасной путь.
-#
-# Направление одно: каждый вызов интерфейса обязан иметь метод. Обратное — метод, который
-# интерфейс не зовёт, — законно: у объекта есть вызовы из страницы протокола и из ssh.
-#
-# Переносы строк убираются до поиска: у половины вызовов тип занимает несколько строк
-# (`declare<{ ... }>(\n    'outbound_probe',`), и построчный grep их не видит вовсе.
-rpc=ui/src/lib/rpc.ts
-unknown=''
-for m in $(tr '\n' ' ' < "$rpc" | grep -oE ">\( *'[a-z0-9_]+'" | tr -d " >('" | sort -u); do
-    case " $methods " in
-        *" $m "*) ;;
-        *) unknown="$unknown $m" ;;
-    esac
-done
-[ -z "$unknown" ] || {
-    echo "интерфейс зовёт методы, которых нет в rpcd ($rpc):$unknown"
-    echo "ubus ответит «Method not found», а страница покажет «нет данных»"
-    exit 1
-}
+# Третье ребро контракта — вызовы интерфейса — переехало вместе с интерфейсом: Andromeda (репозиторий andromeda) сверяет свои
+# вызовы с таблицей методов splify2-api (`methods.tsv` в SDK), а не с исходником этого пакета.
 
 # Docker нужен только для упаковки, поэтому проверяется здесь, а не в шапке. Пока он
 # стоял первым, ни один барьер выше не запускался на машине без docker — то есть ровно
 # там, где правят rpcd и ACL, проверить их было нечем.
 command -v docker >/dev/null 2>&1 || { echo "нужен docker (сборка пакета в alpine)"; exit 1; }
 
-# Цвета в Tailwind называются БЕЗ приставки sp-: `bg-card`, `text-muted-foreground`,
-# `bg-success`. Приставка живёт только у CSS-переменных (--sp-card), из которых конфиг эти
-# цвета и собирает.
-#
-# Написать `bg-sp-card` — значит получить класс, которого нет: Tailwind его не сгенерирует,
-# браузер молча пропустит, и элемент останется без цвета. Ошибка не видна ничем, кроме глаз:
-# сборка проходит, tsc проходит, страница открывается. Так в интерфейсе прожили 219 таких
-# классов — зелёного кружка «Работает» не было вовсе, а карточки стояли без фона, и заметил
-# это человек, а не мы.
-bad="$(grep -rEo '\b(bg|text|border|ring|from|to|via|fill|stroke)-sp-[a-z-]*' ui/src 2>/dev/null | head -5)"
-[ -z "$bad" ] || {
-    echo "в классах есть приставка sp-, таких классов не существует:"
-    printf '%s\n' "$bad"
-    echo "цвета называются без неё: bg-card, text-muted-foreground, bg-success"
-    exit 1
-}
-
-# Размер и вес заголовка утилитой на самом h1–h4 НЕ ЗАДАТЬ, и это не стилистика.
-#
-# Сброс в ui/src/index.css объявляет у h1–h4 `font-size: inherit` и `font-weight: inherit`, и
-# написан он ВНЕ каскадных слоёв (почему — в комментарии к сбросам). Утилиты Tailwind живут в
-# @layer utilities, а неслоёные правила главнее любого слоя, поэтому `text-[26px] font-semibold`
-# на h1 не действует вовсе: получается 14 пикселей и вес 400. Специфичность не спасает —
-# проигрывает слой, а не селектор.
-#
-# Ошибка не видна ничем, кроме глаз: сборка проходит, tsc проходит, стенды на jsdom тоже —
-# jsdom не считает каскад из index.css. Поймано на снимке живого роутера, где вердикт
-# «Маршрутизация работает» оказался ростом с подпись в рельсе. Взамен есть три класса:
-# sp-verdict (26/600), sp-title (22/600), sp-sub (15/600).
-bad="$(grep -rEn --include='*.tsx' '<h[1-6][^>]*className="[^"]*(text-\[[0-9]|text-(xs|sm|base|lg|xl|2xl|3xl)|font-(medium|semibold|bold))' ui/src 2>/dev/null | head -5)"
-[ -z "$bad" ] || {
-    echo "у заголовка задан размер или вес утилитой — она не подействует:"
-    printf '%s\n' "$bad"
-    echo "используйте классы sp-verdict / sp-title / sp-sub (ui/src/index.css)"
-    exit 1
-}
-
-# Приписка к имени выпуска в интерфейсе — «26.9 Andromeda beta 1» — берётся из окружения
-# (SPLIFY_RELEASE_SUFFIX, см. ui/vite.config.ts) и версию пакета не трогает: та из VERSION.
-#
-# NODE СТАРШЕ 20 — ИЛИ ОБРАЗ. vite 8 и vitest 4 на node 18 не запускаются вовсе, и сборка
-# падает строкой про `styleText` из node:util — по ней не догадаться, что дело в версии
-# node. Docker для этого скрипта и так обязателен (проверка выше), поэтому машина со старым
-# node не остаётся без сборки: интерфейс собирается тем же образом, что и стенды
-# (tests/run.sh). Каталог монтируется КОРНЕМ дерева, а не ui/: сборка штампует номер в
-# бандлы и читает build-id рядом.
-ui_build() {
-    _ub_major="$(node -p 'process.versions.node.split(".")[0]' 2>/dev/null || echo 0)"
-    if [ "${_ub_major:-0}" -ge 20 ] 2>/dev/null; then
-        ( cd ui && npm run build )
-        return $?
-    fi
-    docker image inspect node:22-alpine >/dev/null 2>&1 || {
-        echo "нужен node >= 20 (найден $(node --version 2>/dev/null || echo 'нет node'))" >&2
-        echo "либо образ node:22-alpine: docker pull node:22-alpine" >&2
-        return 1
-    }
-    # -e без значения берёт переменную из окружения как есть: без него приписка к имени выпуска
-    # до сборки в контейнере не доходила и пропадала из интерфейса молча.
-    docker run --rm -e SPLIFY_RELEASE_SUFFIX -v "$PWD":/w -w /w/ui node:22-alpine npm run build
-}
-ui_build > "$BUILD_LOG" 2>&1 || {
-    echo "сборка интерфейса провалилась:"
-    cat "$BUILD_LOG"
-    exit 1
-}
-
 rm -rf "$PKG"
-mkdir -p "$RES" "$PKG/etc/init.d" "$PKG/usr/libexec/rpcd" "$PKG/usr/sbin" "$PKG/etc/splify2" \
+mkdir -p "$PKG/etc/init.d" "$PKG/usr/libexec/rpcd" "$PKG/usr/sbin" "$PKG/etc/splify2" \
          "$PKG/lib/netifd/proto" "$PKG/www/luci-static/resources/protocol"
-cp -r ui/dist/* "$RES/"
 cp -r luci/htdocs/luci-static/resources/view "$PKG/www/luci-static/resources/"
 cp -r luci/root/usr/share "$PKG/usr/"
 cp files/usr/libexec/rpcd/splify2 "$PKG/usr/libexec/rpcd/splify2"
@@ -179,6 +87,8 @@ cp files/usr/sbin/splify2-purge "$PKG/usr/sbin/splify2-purge"
 # (postinst и первое открытие вкладки «Плагины»); сам обработчик — один общий файл без расширения,
 # на него указывают ссылки rpcd (plugin-rpcd), поэтому он лежит рядом с библиотеками, а не в libexec.
 cp files/usr/sbin/splify2-plugin-sync "$PKG/usr/sbin/splify2-plugin-sync"
+# Семя плагинов «из коробки» (ниже кладётся в /usr/share/splify2/seed) и команда, которая ставит их через менеджер ядра.
+cp files/usr/sbin/splify2-seed "$PKG/usr/sbin/splify2-seed"
 # ReCheck — обход DPI на прямом трафике: служба запускает движок из отдельного пакета recheck,
 # если тот стоит и обход включён (/etc/splify2/recheck.conf); иначе ничего не делает.
 cp files/etc/init.d/splify2-recheck "$PKG/etc/init.d/splify2-recheck"
@@ -231,7 +141,7 @@ chmod 0755 "$PKG/usr/libexec/rpcd/splify2" \
            "$PKG/usr/sbin/splify2-purge"
 chmod 0644 "$PKG"/usr/lib/splify2/*.sh "$PKG"/usr/lib/splify2/rpcd/*.sh
 cp files/usr/lib/splify2/plugin-rpcd "$PKG/usr/lib/splify2/plugin-rpcd"
-chmod 0755 "$PKG/usr/lib/splify2/plugin-rpcd" "$PKG/usr/sbin/splify2-plugin-sync"
+chmod 0755 "$PKG/usr/lib/splify2/plugin-rpcd" "$PKG/usr/sbin/splify2-plugin-sync" "$PKG/usr/sbin/splify2-seed"
 # splify2-api (хуки, задачи, события, псевдонимы): таблица методов, запуск задач и раздача событий ядра.
 cp files/usr/lib/splify2/methods.tsv "$PKG/usr/lib/splify2/methods.tsv"
 chmod 0644 "$PKG/usr/lib/splify2/methods.tsv"
@@ -270,33 +180,36 @@ chmod 0755 "$PKG/lib/netifd/proto/xsteer.sh"
 cp luci/htdocs/luci-static/resources/protocol/xsteer.js \
    "$PKG/www/luci-static/resources/protocol/xsteer.js"
 
-# Идентификатор сборки: загрузчик читает его на каждой загрузке страницы и добавляет
-# к URL бандлов. Без него браузер держал бы старый интерфейс после обновления пакета —
-# ровно то, что в splify 1 переживало и обновления, и перезагрузки.
-# Номер СБОРКИ, а не версии. На выпуске они совпадают; сборка из main между выпусками несёт
-# тот же VERSION, что и прошлый выпуск, — и браузер, помнящий `?v=1.2.5`, брал бандл из кеша,
-# то есть после установки свежей сборки на роутере интерфейс оставался прежним (поймано на
-# роутере владельца: пакет заменён, build-id.txt тот же, страница старая). Поэтому вне тега
-# выпуска к версии приписывается ревизия, а к несохранённому дереву — «dirty»: у каждой
-# сборки свой адрес, и загрузчик (view/splify2/home.js) видит разницу через build-id.txt.
-# Версию пакета это не трогает — она из VERSION, как и раньше.
-BUILD_ID="$VERSION"
-if ! git describe --tags --exact-match >/dev/null 2>&1; then
-    _rev="$(git rev-parse --short HEAD 2>/dev/null || true)"
-    [ -n "$_rev" ] && BUILD_ID="$VERSION-$_rev"
-    [ -n "$(git status --porcelain 2>/dev/null)" ] && BUILD_ID="$BUILD_ID-dirty"
+# СЕМЯ ПЛАГИНОВ. Пакет несёт .s2p плагинов «из коробки» (решение владельца: после обновления 26.10.x человек ничего не
+# теряет, а Andromeda — теперь плагин, не часть пакета): плагины из plugins/ этого дерева и Andromeda из её репозитория.
+# Собираются инструментом SDK (`s2p lint --official`, `s2p build`) и ставятся командой splify2-seed в postinst.
+#
+#   S2P_KEY=ключ.sec          — подписать семя ключом официального репозитория (выпуск). Без ключа семя собирается
+#                               неподписанным, в него кладётся файл `unsigned`, и ставится оно с `--unsigned` — для разработки.
+#   ANDROMEDA_S2P=файл.s2p    — архив Andromeda (по умолчанию ../andromeda/out/andromeda-*-all.s2p, сборка репозитория
+#                               andromeda: `sh build.sh`). Без него пакет без панели Andromeda не собирается: человек
+#                               получил бы обновление, после которого привычной панели нет. Осознанно «только каркас» —
+#                               SPLIFY2_SEED_WITHOUT_ANDROMEDA=1.
+SEED_PKG="$PKG/usr/share/splify2/seed"
+SEED_BUILD=build/seed
+rm -rf "$SEED_BUILD"; mkdir -p "$SEED_PKG" "$SEED_BUILD"
+S2P_OUT_DIR="$PWD/$SEED_BUILD" sh plugins/build.sh > "$BUILD_LOG" 2>&1 \
+    || { echo "сборка плагинов семени провалилась:"; cat "$BUILD_LOG"; exit 1; }
+if [ -n "${ANDROMEDA_S2P:-}" ]; then
+    cp "$ANDROMEDA_S2P" "$SEED_BUILD/" || { echo "нет файла ANDROMEDA_S2P=$ANDROMEDA_S2P"; exit 1; }
+else
+    _an="$(ls -1 ../andromeda/out/andromeda-*-all.s2p 2>/dev/null | sort -V | tail -n 1)"
+    if [ -n "$_an" ]; then cp "$_an" "$SEED_BUILD/"
+    elif [ "${SPLIFY2_SEED_WITHOUT_ANDROMEDA:-}" != 1 ]; then
+        echo "нет архива Andromeda: соберите ../andromeda (sh build.sh) или задайте ANDROMEDA_S2P=файл.s2p"
+        echo "(только каркас, без панели: SPLIFY2_SEED_WITHOUT_ANDROMEDA=1)"
+        exit 1
+    fi
 fi
-# Приписка к имени выпуска («beta 1», SPLIFY_RELEASE_SUFFIX) тоже меняет страницу, поэтому входит в
-# адрес сборки — суммой, а не словами: на одном теге «beta 1» и «beta 2» иначе дали бы один и тот же
-# `?v=` и один build-id.txt, и браузер, видевший первую, второй не заметил бы (I-210). Знаки суммы
-# те же, что у ревизии, — sed ниже и загрузчик их принимают. VERSION остаётся числом.
-if [ -n "${SPLIFY_RELEASE_SUFFIX:-}" ]; then
-    BUILD_ID="$BUILD_ID-s$(printf '%s' "$SPLIFY_RELEASE_SUFFIX" | cksum | cut -d' ' -f1)"
-fi
-printf '%s\n' "$BUILD_ID" > "$RES/build-id.txt"
-# И номер сборки нужно проштамповать в сами бандлы: npm build оставляет заглушку ?v=0.0.0,
-# иначе один чанк оказывается доступен по двум URL и preact грузится дважды.
-sed -i -E "s/\?v=[0-9]+\.[0-9]+\.[0-9]+/?v=$BUILD_ID/g" "$RES"/splify-*.js
+cp "$SEED_BUILD"/*.s2p "$SEED_PKG/"
+[ -n "${S2P_KEY:-}" ] || : > "$SEED_PKG/unsigned"
+test -n "$(ls "$SEED_PKG"/*.s2p 2>/dev/null)" || { echo "в семени нет ни одного плагина"; exit 1; }
+chmod 0644 "$SEED_PKG"/*
 
 # ВНЕ каталога пакета: всё, что лежит внутри, попадает в пакет как файл, и такой
 # .post-install приезжает на роутер как /.post-install — где сталкивается с чужим,
@@ -350,6 +263,9 @@ rm -f /tmp/luci-indexcache.* 2>/dev/null
 rm -rf /tmp/luci-modulecache/ 2>/dev/null
 # Плагины: ссылки и ACL их объектов ubus (после обновления прошивки плагины на месте, ссылок нет).
 # До перечитки rpcd ниже — одной на всё.
+# Плагины «из коробки» (Andromeda, языки, логика) — из семени пакета, без сети: одно обновление, и привычная панель на месте.
+# Что не встало (ядра ещё нет), повторится по cron; снятое человеком не возвращается (/etc/splify2/seeded).
+[ -x /usr/sbin/splify2-seed ] && /usr/sbin/splify2-seed --no-reload 2>&1 | sed 's/^/splify2: плагин: /'
 [ -x /usr/sbin/splify2-plugin-sync ] && /usr/sbin/splify2-plugin-sync --no-reload >/dev/null 2>&1
 /etc/init.d/rpcd reload 2>/dev/null
 # Перечитка (SIGHUP) снимает объекты обработчиков и регистрирует их заново вызовом `list`; если
@@ -497,6 +413,8 @@ done
 test -s "$PKG/usr/share/splify2/spec-schema.json" || {
     echo "в пакете нет usr/share/splify2/spec-schema.json — у каркаса не будет схемы ключей на ядре без spec-schema"
     exit 1; }
+test -x "$PKG/usr/sbin/splify2-seed" || {
+    echo "в пакете нет usr/sbin/splify2-seed — плагины «из коробки» поставить будет нечем"; exit 1; }
 mkdir -p "$OUT"
 # `&&` после установки apk-tools, а не `;`. С точкой с запятой провал установки игнорировался
 # и проявлялся командой позже — как отсутствующий `apk mkpkg`, о чём говорилось «упаковка

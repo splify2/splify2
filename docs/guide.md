@@ -243,6 +243,6 @@ https-dns-proxy, интерфейсы с протоколом xsteer — ост�
 - [Ядро steer](https://github.com/splify2/steer) — маршрутизация, клиенты туннелей, резолвер
 - [Каталог списков](https://github.com/splify2/splify2-lists)
 - [docs/rpcd-api.md](rpcd-api.md) — методы бэкенда, вход и выход
-- [ui/README.md](../ui/README.md) — устройство интерфейса
+- [Andromeda](https://github.com/splify2/andromeda) — интерфейс splify2 (плагин `andromeda`) и приложение для компьютера
 - Вопросы и баги — [чат](https://t.me/ssplify); поддержать проект —
   [Cloudtips](https://pay.cloudtips.ru/p/fb925110)

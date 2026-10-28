@@ -36,8 +36,6 @@ jobs:
       - uses: actions/setup-node@v4
         with:
           node-version: '22'
-          cache: npm
-          cache-dependency-path: ui/package-lock.json
 
       - name: Проверить формат версии
         run: |
@@ -103,20 +101,25 @@ jobs:
             fi
           fi
 
-      - name: Установить зависимости интерфейса
-        working-directory: ui
-        run: npm ci
-
-      - name: Проверки интерфейса
-        working-directory: ui
+      - name: Взять SDK плагинов
         run: |
           set -eu
-          # Те же проверки, что и локально. check:cn сверяет свою реализацию tw-merge с
-          # настоящей, а check-dist ловит расхождение раскладки бандлов с тем, что ждёт
-          # build.sh, — в splify 1 один чанк, доступный по двум URL, стоил мёртвой вкладки.
-          npm run lint
-          npx tsc -b
-          npm run check:cn
+          # Плагины каркаса (plugins/) собираются инструментом s2p (lint --official, build), а стенды плагинов зовут
+          # его же и заглушки хоста splify2-api: SDK лежит соседним каталогом, как steer.
+          git clone -q --depth 1 https://github.com/splify2/plugin-sdk "$GITHUB_WORKSPACE/../plugin-sdk"
+          ( cd "$GITHUB_WORKSPACE/../plugin-sdk" && sh build.sh )
+          echo "PLUGIN_SDK=$GITHUB_WORKSPACE/../plugin-sdk" >> "$GITHUB_ENV"
+
+      - name: Взять Andromeda
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -eu
+          # Интерфейс — плагин andromeda из своего репозитория: пакет несёт его в семени (/usr/share/splify2/seed) и
+          # ставит при установке и обновлении. Берётся архив последнего выпуска плагина (`andromeda-<версия>-all.s2p`).
+          mkdir -p "$GITHUB_WORKSPACE/../andromeda/out"
+          gh release download --repo splify2/andromeda --pattern 'andromeda-*-all.s2p' \
+              --dir "$GITHUB_WORKSPACE/../andromeda/out"
 
       - name: Собрать ядро для стендов
         run: |

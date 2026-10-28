@@ -23,6 +23,9 @@ PLUGIN_DISPATCHER="${PLUGIN_DISPATCHER:-/usr/lib/splify2/plugin-rpcd}"
 # <каталог плагина>/ui (plugin-sdk/docs/s2p.md, «Раскладка»). Раздаётся ТОЛЬКО ui/, не весь плагин: рядом с
 # ним лежат программы и манифест.
 PLUGIN_UI_DIR="${PLUGIN_UI_DIR:-/www/luci-static/resources/splify2/plugins}"
+# Интерфейс плагина для страницы splify2 (splify2-api 1.1, `splify2.luci.interface`): каталог плагина luci/ раздаётся как
+# view/splify2/p-<id>/, и LuCI грузит вид как модуль view.splify2.p-<id>.<имя>.
+PLUGIN_VIEW_DIR="${PLUGIN_VIEW_DIR:-/www/luci-static/resources/view/splify2}"
 PLUGIN_JOBS="${PLUGIN_JOBS:-/tmp/splify2-plugin-jobs}"
 # Версия host API панели (plugin-sdk/docs/host-api.md). Её отдаёт plugins_list: плагин, которому
 # нужен host-api новее, не грузится, а раздел «Плагины» называет причину.
@@ -31,7 +34,7 @@ PLUGIN_HOST_API="${PLUGIN_HOST_API:-1.0.0}"
 PLUGIN_RPC_TIMEOUT=30
 # Версия splify2-api (plugin-sdk/docs/splify2-api.md): хуки, задачи, события, псевдонимы и переопределения. Её
 # отдаёт plugins_list рядом с host_api; плагин с compat.splify2-api другого major блок `splify2` не получает.
-PLUGIN_SPLIFY2_API="${PLUGIN_SPLIFY2_API:-1.0.0}"
+PLUGIN_SPLIFY2_API="${PLUGIN_SPLIFY2_API:-1.1.0}"
 # Каталог библиотек: рядом с plugin.sh лежат lib.sh, env.sh, ext.sh и methods.tsv. Стенды подставляют PLUGIN_SH,
 # и каталог выводится из него.
 SPLIFY2_LIBDIR="${SPLIFY2_LIBDIR:-${PLUGIN_SH:+${PLUGIN_SH%/*}}}"
@@ -322,6 +325,26 @@ plugin_quote_list() {  # ИМЕНА
     printf '%s' "$_pq"
 }
 
+# Плагины-интерфейсы: включённые, с `splify2.luci.interface` и каталогом luci/ с этим видом. По строке «id модуль»,
+# где модуль — имя вида для L.require (`view.splify2.p-<id>.<имя>`). Порядок — по id.
+plugin_interfaces() {
+    for _pi_d in "$PLUGIN_ROOT"/*/; do
+        [ -f "${_pi_d}plugin.json" ] || continue
+        _pi_id="${_pi_d%/}"; _pi_id="${_pi_id##*/}"
+        plugin_id_ok "$_pi_id" || continue
+        [ "$(plugin_state_of "$_pi_id")" = enabled ] || continue
+        _pi_rel="$(jsonfilter -i "${_pi_d}plugin.json" -e '@.splify2.luci.interface' 2>/dev/null)"
+        case "$_pi_rel" in
+            luci/*.js) ;;
+            *) continue ;;
+        esac
+        _pi_name="${_pi_rel#luci/}"; _pi_name="${_pi_name%.js}"
+        case "$_pi_name" in ''|*[!A-Za-z0-9_-]*) continue ;; esac
+        [ -f "${_pi_d}$_pi_rel" ] || continue
+        printf '%s view.splify2.p-%s.%s\n' "$_pi_id" "$_pi_id" "$_pi_name"
+    done
+}
+
 # Текст ACL группы плагина: права LuCI работают, как у любого luci-app-*. Новые имена на объекте splify2
 # (псевдонимы `methods.alias`, которых нет у каркаса) получают права тут же: статический ACL каркаса их не знает.
 plugin_acl_text() {  # ID
@@ -395,6 +418,22 @@ plugin_sync() {
             printf '%s\n' "$_ps_text" > "$_ps_acl.tmp" && mv -f "$_ps_acl.tmp" "$_ps_acl" &&
                 PLUGIN_SYNC_CHANGED=1
         fi
+    done
+    # Интерфейсы плагинов (splify2.luci.interface): ссылка view/splify2/p-<id> -> <каталог плагина>/luci. Вид LuCI грузится
+    # заново при каждом открытии страницы, перечитки rpcd ссылки не требуют.
+    _ps_viewwant=" "
+    for _ps_i in $(plugin_interfaces | cut -d' ' -f1); do
+        _ps_viewwant="$_ps_viewwant$_ps_i "
+        mkdir -p "$PLUGIN_VIEW_DIR" 2>/dev/null
+        [ "$(readlink "$PLUGIN_VIEW_DIR/p-$_ps_i" 2>/dev/null)" = "$PLUGIN_ROOT/$_ps_i/luci" ] ||
+            ln -sfn "$PLUGIN_ROOT/$_ps_i/luci" "$PLUGIN_VIEW_DIR/p-$_ps_i"
+    done
+    for _ps_v in "$PLUGIN_VIEW_DIR"/p-*; do
+        [ -L "$_ps_v" ] || continue
+        _ps_id="${_ps_v##*/p-}"
+        case "$_ps_viewwant" in *" $_ps_id "*) continue ;; esac
+        # Только наши: ссылка ведёт в каталог плагинов.
+        case "$(readlink "$_ps_v")" in "$PLUGIN_ROOT"/*) rm -f "$_ps_v" ;; esac
     done
     # Лишнее: объект плагина, которого нет среди нужных. Чужие файлы не трогаются — только имена
     # нашего вида (`splify2.p.*`, `splify2-p-*.json`).

@@ -24,20 +24,15 @@ jobs:
       - uses: actions/setup-node@v4
         with:
           node-version: '22'
-          cache: npm
-          cache-dependency-path: ui/package-lock.json
 
-      - name: Установить зависимости интерфейса
-        working-directory: ui
-        run: npm ci
-
-      - name: Проверки интерфейса
-        working-directory: ui
+      - name: Взять SDK плагинов
         run: |
           set -eu
-          npm run lint
-          npx tsc -b
-          npm run check:cn
+          # Плагины каркаса (plugins/) собираются инструментом s2p (lint --official, build), а стенды плагинов зовут
+          # его же и заглушки хоста splify2-api: SDK лежит соседним каталогом, как steer.
+          git clone -q --depth 1 https://github.com/splify2/plugin-sdk "$GITHUB_WORKSPACE/../plugin-sdk"
+          ( cd "$GITHUB_WORKSPACE/../plugin-sdk" && sh build.sh )
+          echo "PLUGIN_SDK=$GITHUB_WORKSPACE/../plugin-sdk" >> "$GITHUB_ENV"
 
       - name: Собрать ядро для стендов
         run: |

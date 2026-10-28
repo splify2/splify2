@@ -288,6 +288,7 @@ list)
     json_add_object spec_yaml; json_close_object
     json_add_object prefs_get; json_close_object
     json_add_object prefs_set; json_add_string interface; json_close_object
+    json_add_object paths; json_close_object
     json_add_object i18n_get; json_add_string lang; json_close_object
     json_add_object plugin_settings_get; json_add_string id; json_close_object
     json_add_object plugin_settings_set; json_add_string id; json_close_object
@@ -343,7 +344,7 @@ call)
         lists|list_fetch|lists_update|list_put|list_remove|list_custom|list_get|list_peek|list_srs_put|local_lists|allow_domains|fetch_mode|fetch_mode_set|\
         lists_source|lists_source_set|backup_get|backup_put|sub_quota|sub_auto|sub_rename|outbound_geo|steer_versions|splify2_versions|splify2_install|steer_install) _grp=moved ;;
         engine|engine_stop|engine_start|ui_get|ui_set|\
-        steer_modules|steer_module_add|steer_module_del|purge|prefs_get|prefs_set|i18n_get) _grp=engine ;;
+        steer_modules|steer_module_add|steer_module_del|purge|prefs_get|prefs_set|paths|i18n_get) _grp=engine ;;
         sub_set|sub_info|sub_list|sub_del|sub_refresh) _grp=sub ;;
         xsteer_link|xsteer_link_put) _grp=xsteer ;;
         recheck_info|recheck_set) _grp=recheck ;;

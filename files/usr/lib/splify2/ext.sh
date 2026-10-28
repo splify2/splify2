@@ -24,7 +24,7 @@
 #
 # Файл подключается точкой (ленивo: need_ext в env.sh) и при подключении ничего не печатает и не завершает.
 
-EXT_API_VERSION="${EXT_API_VERSION:-1.0.0}"
+EXT_API_VERSION="${EXT_API_VERSION:-1.1.0}"
 EXT_REG="${EXT_REG:-/var/run/splify2/ext.reg}"
 EXT_SAFE_FILE="${EXT_SAFE_FILE:-/etc/splify2/safe}"
 EXT_TASKS_JSON="${EXT_TASKS_JSON:-/etc/splify2/tasks.json}"
@@ -73,21 +73,31 @@ ext_moved_plugin() {  # ИМЯ_МЕТОДА
 
 ext_jget() { eval "$1="; json_get_var "$1" "$2"; }
 
-# Ось compat.splify2-api подходит этой версии API? Принимается ^1.x, ~1.x, =1.x, 1.x и >=1.x (и >=0.x).
+# Ось compat.splify2-api подходит этой версии API? Принимается ^1.x, ~1.x, =1.x, 1.x и >=1.x (и >=0.x). Правило версий:
+# minor добавляет, major ломает — плагин ^1.2 исполняется хостом 1.y при y >= 2 и не исполняется хостом 1.1.
 # Всё остальное — не подходит: major у хоста один, и выше него плагину ставиться нельзя.
 ext_api_ok() {  # ДИАПАЗОН
     _ao="$1"
     _ao="${_ao#"${_ao%%[![:space:]]*}"}"
+    _ah="${EXT_API_VERSION%%.*}"; _am="${EXT_API_VERSION#*.}"; _am="${_am%%.*}"
     case "$_ao" in
         '') return 1 ;;
         '>='*)
             _ao="${_ao#>=}"; _ao="${_ao#"${_ao%%[![:space:]]*}"}"
-            _ao="${_ao%%.*}"
-            case "$_ao" in ''|*[!0-9]*) return 1 ;; esac
-            [ "$_ao" -le "${EXT_API_VERSION%%.*}" ] ;;
-        '^'*|'~'*|'='*) _ao="${_ao#?}"; _ao="${_ao%%.*}"; [ "$_ao" = "${EXT_API_VERSION%%.*}" ] ;;
-        *) _ao="${_ao%%.*}"; [ "$_ao" = "${EXT_API_VERSION%%.*}" ] ;;
+            _ar="${_ao%%.*}"
+            case "$_ar" in ''|*[!0-9]*) return 1 ;; esac
+            [ "$_ar" -le "$_ah" ]; return $? ;;
+        '^'*|'~'*|'='*) _ao="${_ao#?}" ;;
     esac
+    _ar="${_ao%%.*}"
+    [ "$_ar" = "$_ah" ] || return 1
+    # minor, если он назван (^1 и ^1.0 — любой хост 1.x)
+    case "$_ao" in
+        *.*) _an="${_ao#*.}"; _an="${_an%%.*}"
+             case "$_an" in ''|*[!0-9]*) return 0 ;; esac
+             [ "$_an" -le "$_am" ]; return $? ;;
+    esac
+    return 0
 }
 
 # Относительный путь программы внутри каталога плагина: без «/» в начале и без «..», файл исполняемый.

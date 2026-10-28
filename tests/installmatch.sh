@@ -529,10 +529,7 @@ check "при коннекторе служба steer не включается"
 # Модули перечислены одинаково в установщике, бэкенде и интерфейсе.
 check "перечень модулей установщика = бэкенда" \
     "$(sed -n 's/^STEER_MODULES="\(.*\)"/\1/p' "$ROOT/files/usr/lib/splify2/rpcd/pkg-lib.sh")" "$STEER_MODULES"
-check "перечень модулей установщика = интерфейса" "$STEER_MODULES" \
-    "$(sed -n "s/^export const STEER_MODULES = \[\(.*\)\]/\1/p" "$ROOT/ui/src/lib/engine.ts" | tr -d "'," )"
-check "умолчание установщика = интерфейса" "$STEER_DEFAULT_MODULES" \
-    "$(sed -n "s/^export const DEFAULT_MODULES = \[\(.*\)\]/\1/p" "$ROOT/ui/src/lib/engine.ts" | tr -d "'," )"
+# Перечень модулей в интерфейсе (Andromeda, репозиторий andromeda) сверяет её собственный стенд tests/frame-sync.sh.
 
 # ---- установка файла пакета: пустые списки/индексы не валят установку ------------------
 # У 26.9 две зависимости (https-dns-proxy, ip-full), у 1.2.5 не было ни одной, поэтому

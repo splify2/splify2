@@ -1,0 +1,91 @@
+#!/bin/sh
+# Семя плагинов splify2: ставит плагины «из коробки» (Andromeda, языки, логика) из архивов, которые пакет несёт в
+# /usr/share/splify2/seed/ (`<id>-<версия>-all.s2p`), менеджером плагинов ядра: `steer plugin install --file`. Работает без
+# сети: так устроено и семя steer-core (plugin-sdk/docs/s2p.md, «Семя»). Позже плагин обновляется из сети обычным путём.
+#
+#   splify2-seed            — поставить недостающие, привести ссылки и перечитать rpcd
+#   splify2-seed --no-reload — то же без перечитки rpcd (postinst перечитывает его сам, один раз)
+#
+# Правила:
+#   - плагин ставится из семени ОДИН РАЗ. Идентификатор записывается в /etc/splify2/seeded (сохраняется при sysupgrade):
+#     снятый человеком плагин (Andromeda, язык) после обновления пакета не возвращается. Стоящий — не трогается:
+#     версию из сети семя не откатывает.
+#   - отказ одного плагина остальные не останавливает; не поставленный не записывается и повторится при следующем
+#     запуске (обновление пакета, `splify2-seed` руками). Код возврата 1 — что-то не встало.
+#   - то, что не встало, повторяется по cron раз в десять минут (строка `# splify2-seed`), пока не встанет; потом строка уходит.
+#   - архивы семени подписаны ключом официального репозитория, и менеджер проверяет подпись сам. Только в сборке без
+#     ключа (разработка) рядом лежит файл `unsigned`, и тогда ставится `--unsigned`.
+#   - Andromeda ставится последней: когда она встаёт, всё, чем она пользуется (подписки, списки, копия настроек,
+#     проверка узлов, обновление), уже на месте.
+#
+# Печатает по строке на плагин: `installed <id> <версия>`, `present <id>`, `skipped <id>` или `failed <id>: <слова>`.
+
+. "${JSHN_SH:-/usr/share/libubox/jshn.sh}"
+. "${PLUGIN_SH:-/usr/lib/splify2/plugin.sh}"
+
+SEED="${SPLIFY2_SEED:-/usr/share/splify2/seed}"
+SEEDED="${SPLIFY2_SEEDED:-/etc/splify2/seeded}"
+[ -d "$SEED" ] || { echo "no seed"; exit 0; }
+
+unsigned=""
+[ -f "$SEED/unsigned" ] && unsigned="--unsigned"
+
+# Порядок: все, кроме Andromeda, затем она.
+files=""
+for f in "$SEED"/*.s2p; do
+    [ -f "$f" ] || continue
+    case "${f##*/}" in andromeda-*) continue ;; esac
+    files="$files $f"
+done
+for f in "$SEED"/andromeda-*.s2p; do
+    [ -f "$f" ] && files="$files $f"
+done
+
+rc=0
+changed=0
+for f in $files; do
+    n="${f##*/}"
+    # <id>-<версия>-<арх>.s2p: id — всё до первого «-» и цифры версии (id содержит дефисы, версия начинается с цифры)
+    id="$(printf '%s' "${n%.s2p}" | sed -n 's/^\(.*[a-z0-9]\)-[0-9][0-9.]*.*$/\1/p')"
+    ver="$(printf '%s' "${n%.s2p}" | sed -n 's/^.*[a-z0-9]-\([0-9][0-9.]*\)-.*$/\1/p')"
+    plugin_id_ok "$id" || { echo "failed ${n}: bad file name"; rc=1; continue; }
+    if [ -n "$(plugin_state_of "$id")" ]; then
+        echo "present $id"
+        grep -qx "$id" "$SEEDED" 2>/dev/null || { mkdir -p "${SEEDED%/*}"; echo "$id" >> "$SEEDED"; }
+        continue
+    fi
+    if grep -qx "$id" "$SEEDED" 2>/dev/null; then
+        echo "skipped $id"
+        continue
+    fi
+    if plugin_manager install --file "$f" $unsigned; then
+        mkdir -p "${SEEDED%/*}"
+        echo "$id" >> "$SEEDED"
+        echo "installed $id ${ver:-?}"
+        changed=1
+    else
+        echo "failed $id: $(plugin_manager_error)"
+        rc=1
+    fi
+done
+
+if [ "$changed" = 1 ]; then
+    plugin_sync
+    [ "${1:-}" = --no-reload ] || plugin_sync_reload
+fi
+
+# Что не встало (ядра ещё нет, менеджер занят, нет места), повторяется раз в десять минут, пока не встанет, и строка
+# повтора снимается сама: постоянного опроса без нужды нет. Строка вне блока задач плагинов (`# splify2-plugins`).
+CRON="${SPLIFY2_CRON:-/etc/crontabs/root}"
+LINE='*/10 * * * * /usr/sbin/splify2-seed >/dev/null 2>&1 # splify2-seed'
+if [ "$rc" != 0 ]; then
+    grep -qF '# splify2-seed' "$CRON" 2>/dev/null || {
+        mkdir -p "${CRON%/*}"
+        printf '%s\n' "$LINE" >> "$CRON"
+        "${CRON_INITD:-/etc/init.d/cron}" restart >/dev/null 2>&1
+    }
+elif grep -qF '# splify2-seed' "$CRON" 2>/dev/null; then
+    sed -i '/# splify2-seed$/d' "$CRON"
+    "${CRON_INITD:-/etc/init.d/cron}" restart >/dev/null 2>&1
+fi
+exit $rc
