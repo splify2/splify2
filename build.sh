@@ -154,14 +154,6 @@ cp files/usr/sbin/splify2-events "$PKG/usr/sbin/splify2-events"
 cp files/etc/init.d/splify2-events "$PKG/etc/init.d/splify2-events"
 chmod 0755 "$PKG/usr/sbin/splify2-task" "$PKG/usr/sbin/splify2-events" "$PKG/etc/init.d/splify2-events"
 
-# API для приложений вне LuCI (SPLIFY2_API.md в хабе): шлюз CGI на ucode с токенами устройств. Версия
-# пакета вписывается на сборке — её отдаёт /v1/info, и клиенту не нужен отдельный вызов.
-mkdir -p "$PKG/www/cgi-bin"
-sed "s/@VERSION@/$VERSION/" files/www/cgi-bin/splify2-api > "$PKG/www/cgi-bin/splify2-api"
-chmod 0755 "$PKG/www/cgi-bin/splify2-api"
-grep -q "^const VERSION = '$VERSION';" "$PKG/www/cgi-bin/splify2-api" || {
-    echo "в www/cgi-bin/splify2-api не вписана версия — /v1/info назовёт заглушку"; exit 1; }
-
 # Протокол xsteer: обработчик netifd и страница LuCI.
 #
 # ПОЧЕМУ ЗДЕСЬ, А НЕ В steer. Клиент xsteer — часть ядра steer: с 2.0 это модуль steer-xsteer
@@ -328,6 +320,8 @@ nft delete table inet splify2_recheck >/dev/null 2>&1
 # бы о ссылки. Обновление (opkg — удаление и установка) вернёт их через post-install.
 for _l in /usr/libexec/rpcd/splify2.p.*; do [ -L "$_l" ] && rm -f "$_l"; done
 rm -f /usr/share/rpcd/acl.d/splify2-p-*.json
+# CGI плагинов (splify2.cgi) выставлял этот пакет; вернёт post-install вместе с объектами.
+for _c in /www/cgi-bin/*; do case "$(readlink "$_c" 2>/dev/null)" in /usr/lib/steer/plugins/*/cgi/*) rm -f "$_c" ;; esac; done
 exit 0
 EOF
 chmod +x build/scripts/pre-remove

@@ -669,14 +669,11 @@ seed_reset; : > "$PLUG/needs-unsigned"; rm -f "$SEED/unsigned"
 check "семя: без метки unsigned архив ставится без --unsigned, неподписанный менеджер отклоняет" "yes" \
     "$(seed --no-reload | grep -q '^failed lang-en' && echo yes || echo no)"
 
-# ---- шлюз приложения и упаковка (по тексту: ucode на машине стенда нет) --------------------------------------------------
-API="$ROOT/files/www/cgi-bin/splify2-api"
-check "шлюз: маршрут /v1/plugin/<id>/<метод> ведёт в plugin_call" "yes;yes" \
-    "$(grep -q 'v1\\/plugin\\/(\[a-z0-9\]\[a-z0-9-\]\*)\\/(\[a-z\]\[a-z0-9_\]\*)\$' "$API" && echo yes || echo no);$(grep -q "call(me, 'plugin_call'" "$API" && echo yes || echo no)"
-check "  отказы плагинной части — статусами HTTP (все слова code)" "yes" \
-    "$(for c in bad_request not_installed no_method disabled unavailable busy timeout failed; do grep -q "$c: [0-9]" "$API" || echo "нет $c"; done | grep -q . && echo no || echo yes)"
-check "  новый шлюзовой путь не ломает прежние: /v1/call, /v1/batch, /v1/jobs на месте" "3" \
-    "$(grep -c "path == '/v1/batch'\|v1\\\\/call\|v1\\\\/jobs" "$API")"
+# ---- шлюз приложения и упаковка ----------------------------------------------------------------------------------------
+# Шлюз Desktop API — плагин desktop-api (splify2-extended-plugins, стенд tests/desktopapimatch.sh), а не пакет: пакет без
+# плагина не открывает ничего в /www/cgi-bin, а хост выставляет CGI плагина (раздел «CGI плагина» выше).
+check "пакет не несёт шлюз: файла нет, build.sh его не кладёт, устройства не в keep.d пакета" "no;0;0" \
+    "$([ -e "$ROOT/files/www/cgi-bin/splify2-api" ] && echo yes || echo no);$(grep -c 'cgi-bin' "$ROOT/build.sh");$(grep -c 'splify2/api' "$ROOT/files/lib/upgrade/keep.d/splify2")"
 check "build.sh кладёт plugin-rpcd исполняемым и сверяет его наличие" "yes;yes" \
     "$(grep -q 'plugin-rpcd "\$PKG/usr/lib/splify2/plugin-rpcd"' "$ROOT/build.sh" && echo yes || echo no);$(grep -q 'test -x "\$PKG/usr/lib/splify2/plugin-rpcd"' "$ROOT/build.sh" && echo yes || echo no)"
 check "postinst приводит объекты плагинов до перечитки rpcd" "yes" \
