@@ -24,7 +24,7 @@
 #
 # Файл подключается точкой (ленивo: need_ext в env.sh) и при подключении ничего не печатает и не завершает.
 
-EXT_API_VERSION="${EXT_API_VERSION:-1.1.0}"
+EXT_API_VERSION="${EXT_API_VERSION:-1.2.0}"
 EXT_REG="${EXT_REG:-/var/run/splify2/ext.reg}"
 EXT_SAFE_FILE="${EXT_SAFE_FILE:-/etc/splify2/safe}"
 EXT_TASKS_JSON="${EXT_TASKS_JSON:-/etc/splify2/tasks.json}"

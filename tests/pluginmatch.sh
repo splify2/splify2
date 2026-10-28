@@ -673,7 +673,7 @@ check "семя: без метки unsigned архив ставится без -
 # Шлюз Desktop API — плагин desktop-api (splify2-extended-plugins, стенд tests/desktopapimatch.sh), а не пакет: пакет без
 # плагина не открывает ничего в /www/cgi-bin, а хост выставляет CGI плагина (раздел «CGI плагина» выше).
 check "пакет не несёт шлюз: файла нет, build.sh его не кладёт, устройства не в keep.d пакета" "no;0;0" \
-    "$([ -e "$ROOT/files/www/cgi-bin/splify2-api" ] && echo yes || echo no);$(grep -c 'cgi-bin' "$ROOT/build.sh");$(grep -c 'splify2/api' "$ROOT/files/lib/upgrade/keep.d/splify2")"
+    "$([ -e "$ROOT/files/www/cgi-bin/splify2-api" ] && echo yes || echo no);$(grep -c 'cgi-bin/splify2-api' "$ROOT/build.sh");$(grep -c 'splify2/api' "$ROOT/files/lib/upgrade/keep.d/splify2")"
 check "build.sh кладёт plugin-rpcd исполняемым и сверяет его наличие" "yes;yes" \
     "$(grep -q 'plugin-rpcd "\$PKG/usr/lib/splify2/plugin-rpcd"' "$ROOT/build.sh" && echo yes || echo no);$(grep -q 'test -x "\$PKG/usr/lib/splify2/plugin-rpcd"' "$ROOT/build.sh" && echo yes || echo no)"
 check "postinst приводит объекты плагинов до перечитки rpcd" "yes" \
