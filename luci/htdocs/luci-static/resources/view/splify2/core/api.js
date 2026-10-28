@@ -63,10 +63,26 @@ return baseclass.extend({
 			if (r == null) throw new Error('no answer from ' + name);
 			if (r.ok === false || (r.error && r.ok == null)) {
 				var e = new Error(r.error || 'failed');
-				e.code = r.code; e.reply = r; e.line = r.line; e.col = r.col;
+				e.code = r.code; e.args = r.args; e.msg = r.msg; e.reply = r; e.line = r.line; e.col = r.col;
 				throw e;
 			}
 			return r;
 		});
+	},
+
+	// A button that sends something: pressed again while its call is in flight, it does nothing (no double
+	// install, no second spec_set with the same rev). fn() returns a promise; the button is free again when it settles.
+	once: function(fn) {
+		var busy = false;
+		return function(ev) {
+			if (busy) return;
+			var btn = ev && ev.currentTarget || (ev && ev.target);
+			busy = true;
+			if (btn && btn.setAttribute) btn.setAttribute('disabled', 'disabled');
+			var done = function() { busy = false; if (btn && btn.removeAttribute) btn.removeAttribute('disabled'); };
+			var p;
+			try { p = fn.apply(this, arguments); } catch (e) { done(); throw e; }
+			Promise.resolve(p).then(done, done);
+		};
 	}
 });

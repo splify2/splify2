@@ -41,6 +41,8 @@ export class El {
   }
   remove() { if (this.parentNode) this.parentNode.removeChild(this) }
   setAttribute(k, v) { this.attrs[k] = v }
+  removeAttribute(k) { delete this.attrs[k] }
+  get lastChild() { return this.children.length ? this.children[this.children.length - 1] : null }
   getAttribute(k) { return this.attrs[k] }
   addEventListener(t, fn) { (this.listeners[t] ||= []).push(fn) }
   dispatchEvent(ev) {

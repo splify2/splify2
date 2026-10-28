@@ -19,6 +19,7 @@ return baseclass.extend({
 		var result = E('div', {});
 		var pend = E('div', {});
 		var rev = '';   // the revision the text in the editor was read at
+		var shown = null, shownGen = -1;   // the text as it came, and the spec of the store it came with
 
 		var show = function(ok, text) {
 			result.innerHTML = '';
@@ -44,19 +45,21 @@ return baseclass.extend({
 			pend.appendChild(p.length ?
 				E('p', {}, T('Differs from the applied spec in: {keys}', { keys: p.join(', ') })) :
 				E('p', {}, T('The saved spec is applied.')));
+			var g = store.gen;
 			return api.call('spec_yaml').then(function(r) {
 				area.value = r.yaml;
+				shown = r.yaml; shownGen = g;
 				rev = r.rev || '';
 			}, function(e) { show(false, e.message); });
 		};
 
 		var check = function() {
-			api.call('spec_check', { spec: area.value }).then(function(r) {
+			return api.call('spec_check', { spec: area.value }).then(function(r) {
 				show(true, r.warn ? T('The core accepts the spec, with warnings:') + '\n' + r.warn : T('The core accepts the spec.'));
 			}, refuse);
 		};
 		var save = function() {
-			store.saveText(area.value, rev).then(function(r) {
+			return store.saveText(area.value, rev).then(function(r) {
 				host.refresh();
 				return fill().then(function() {
 					show(true, (r.warn ? r.warn + '\n' : '') + T('Saved. Press Apply to put the changes into effect.'));
@@ -67,17 +70,22 @@ return baseclass.extend({
 			});
 		};
 		var reload = function() {
-			store.load().then(function() { result.innerHTML = ''; host.refresh(); return fill(); }, function(e) { show(false, e.message); });
+			return store.load().then(function() { result.innerHTML = ''; host.refresh(); return fill(); }, function(e) { show(false, e.message); });
 		};
 
 		fill();
-		return E('div', { 'class': 'cbi-section' }, [
+		var out = E('div', { 'class': 'cbi-section' }, [
 			E('p', {}, T('The spec in YAML. Edit it, then press Check or Save.')),
 			pend, area, result,
 			E('div', { 'class': 'cbi-page-actions' }, [
-				E('button', { 'class': 'cbi-button', click: check }, T('Check')), ' ',
-				E('button', { 'class': 'cbi-button cbi-button-save', click: save }, T('Save')), ' ',
-				E('button', { 'class': 'cbi-button cbi-button-reset', click: reload }, T('Reload')) ])
+				E('button', { 'class': 'cbi-button', click: api.once(check) }, T('Check')), ' ',
+				E('button', { 'class': 'cbi-button cbi-button-save', click: api.once(save) }, T('Save')), ' ',
+				E('button', { 'class': 'cbi-button cbi-button-reset', click: api.once(reload) }, T('Reload')) ])
 		]);
+		// Shown again after a form saved: the text follows the spec unless the person edited it here.
+		var dirty = function() { return shown !== null && area.value !== shown; };
+		out.splify2Show = function() { if (shownGen !== store.gen && !dirty()) fill(); };
+		out.splify2Dirty = dirty;
+		return out;
 	}
 });

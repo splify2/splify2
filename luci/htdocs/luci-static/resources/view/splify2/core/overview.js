@@ -28,15 +28,16 @@ return baseclass.extend({
 		var note = function(msg, kind) { ui.addNotification(null, E('p', msg), kind || 'info'); };
 
 		var act = function(method, okText) {
-			return function() {
-				api.call(method).then(function(r) {
+			return api.once(function() {
+				return api.call(method).then(function(r) {
 					note(okText + (r.output ? ' ' + r.output : ''));
 					draw();
 				}, function(e) {
 					note(E('div', {}, [ E('strong', {}, T('The action failed')), E('pre', {}, (e.reply && e.reply.output) || e.message) ]), 'danger');
 				});
-			};
+			});
 		};
+		var apply = api.once(function() { return host.apply(); });
 		var report = function() {
 			api.call('support_report').then(function(r) {
 				ui.showModal(T('Support report'), [
@@ -46,11 +47,14 @@ return baseclass.extend({
 			}, function(e) { note(e.message, 'danger'); });
 		};
 
+		var seq = 0;
 		var draw = function() {
+			var my = ++seq;
 			Promise.all([
 				api.call('engine').catch(function(e) { return { error: e.message }; }),
 				api.call('diag').catch(function(e) { return { error: e.message }; })
 			]).then(function(r) {
+				if (my !== seq) return;   // an older answer after a newer one
 				var eng = r[0], diag = r[1], spec = store.spec || {};
 				var rows = [];
 				if (eng.error) rows.push([ T('Core'), E('span', { 'class': 'label-danger' }, eng.error) ]);
@@ -73,7 +77,7 @@ return baseclass.extend({
 				out.appendChild(E('div', { 'class': 'cbi-section' }, [
 					E('h3', {}, T('Status')), kv(rows),
 					E('div', { 'class': 'cbi-page-actions' }, [
-						E('button', { 'class': 'cbi-button cbi-button-apply', click: function() { host.apply(); } }, T('Apply')), ' ',
+						E('button', { 'class': 'cbi-button cbi-button-apply', click: apply }, T('Apply')), ' ',
 						eng.running ? E('button', { 'class': 'cbi-button cbi-button-negative', click: act('engine_stop', T('Stopped.')) }, T('Stop')) :
 							E('button', { 'class': 'cbi-button cbi-button-positive', click: act('engine_start', T('Started.')) }, T('Start')), ' ',
 						E('button', { 'class': 'cbi-button', click: report }, T('Support report')) ]) ]));
@@ -82,7 +86,9 @@ return baseclass.extend({
 					diag.error ? E('p', {}, diag.error) : (checks.length ? E('table', { 'class': 'table' }, checks) : E('p', {}, T('No checks reported.'))) ]));
 			});
 		};
+		out.appendChild(E('p', { 'class': 'spinning' }, T('Loading...')));
 		draw();
+		out.splify2Show = draw;   // the state of the core is read again every time the tab opens
 		return out;
 	}
 });

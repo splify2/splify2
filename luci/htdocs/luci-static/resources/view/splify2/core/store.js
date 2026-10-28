@@ -23,13 +23,32 @@ function canon(v) {
 
 return baseclass.extend({
 	spec: null, rev: '', schema: null, schemaSource: '', devices: [], applied: null,
+	// gen grows every time the spec of the store is replaced (load, save): an open tab compares it with the
+	// gen it was drawn at. schemaP: the schema of the core is asked once per page (`steer spec-schema` is the
+	// slowest call of the frame) and again only after invalidateSchema() - a plugin or the core changed.
+	gen: 0, schemaP: null,
+
+	invalidateSchema: function() { this.schemaP = null; },
+
+	loadSchema: function() {
+		var self = this;
+		if (!this.schemaP) {
+			var p = this.schemaP = api.call('spec_schema').then(function(r) {
+				self.schema = r.schema;
+				self.schemaSource = r.source || 'core';
+				return self.schema;
+			});
+			p.catch(function() { if (self.schemaP === p) self.schemaP = null; });
+		}
+		return this.schemaP;
+	},
 
 	// Everything the forms need, in one go. Errors of the optional parts do not stop the frame.
 	load: function() {
 		var self = this;
 		return Promise.all([
 			api.call('spec_get'),
-			api.call('spec_schema'),
+			this.loadSchema(),
 			api.call('devices').catch(function() { return { devices: [] }; }),
 			api.call('applied_get').catch(function() { return null; })
 		]).then(function(r) {
@@ -37,10 +56,9 @@ return baseclass.extend({
 			self.rev = spec.rev || '';
 			delete spec.rev;
 			self.spec = spec;
-			self.schema = r[1].schema;
-			self.schemaSource = r[1].source || 'core';
 			self.devices = ((r[2] && r[2].devices) || []).map(function(d) { return d.name; });
 			self.applied = r[3] ? (function(a) { a = clone(a); delete a.rev; return a; })(r[3]) : null;
+			self.gen++;
 			return self;
 		});
 	},
@@ -71,6 +89,7 @@ return baseclass.extend({
 		return api.call('spec_set', { spec: JSON.stringify(spec), rev: this.rev }).then(function(r) {
 			self.spec = clone(spec);
 			if (r.rev) self.rev = r.rev;
+			self.gen++;
 			return r;
 		}, function(e) {
 			if (e.reply && e.reply.conflict) { e.conflict = true; if (e.reply.rev) e.currentRev = e.reply.rev; }

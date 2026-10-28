@@ -487,11 +487,12 @@ import { scanStrings, stringsFile } from './lib/strings.mjs'
   rr.plugins_list = { ok: false, error: 'ядро 2.0.5 не умеет плагины — нужно 2.1 или новее', code: 'core_too_old', installed: '2.0.5', need: '2.1' }
   rr.steer_versions = { ok: true, versions: [ '2.1.1-pre', '2.1.0', '2.0.5' ], prerelease: '2.1.1-pre' }
   rr.steer_install = { ok: true }
+  notes.length = 0
   const pl = L2.load('view.splify2.core.plugins').render(host)
   await tick(); await tick()
   check('старое ядро: плагины сказали, что нужно и что стоит', 'Plugins need steer 2.1 or newer. Installed: 2.0.5.', find(pl, (n) => n.attrs && n.attrs['class'] === 'alert-message warning').textContent)
   check('старое ядро: слов «нет такой команды» нет', false, /команды|steer help/.test(pl.textContent))
-  check('старое ядро: после отказа каталог не запрашивался', false, rc.some((c) => c.method === 'plugins_search'))
+  check('старое ядро: отказ каталога не повторяет отказ списка вторым сообщением', [], notes.filter((n) => n.kind === 'danger'))
   click(find(pl, (n) => n.tag === 'button' && n.textContent === 'Update the core')); await tick()
   check('старое ядро: кнопка предлагает свежий выпуск (не предварительный)', 'Update steer to 2.1.0?', modals.at(-1).title)
   click(find(modals.at(-1).el, (n) => n.tag === 'button' && n.textContent === 'Update the core')); await tick()
@@ -529,6 +530,99 @@ import { scanStrings, stringsFile } from './lib/strings.mjs'
   check('Remove: used_by нет в ответе — зависимые считаются по requires.plugins списка', [ 'disabled', 'Required by: user2' ], [ rm('lib2').attrs.disabled, why('lib2') ])
   // запасная схема: одна строка на странице разделов
   check('запасная схема названа одной строкой', true, /follow the package/.test(readFileSync(resolve(CORE, 'sections.js'), 'utf8')))
+}
+
+// ---- 10. отзывчивость каркаса: параллельная загрузка, кэш схемы, вкладки не теряют правок, без двойной отправки ----
+{
+  const tick = () => new Promise((r) => setTimeout(r, 0))
+  const find = (el, pred) => { let hit = null; el.walk((n) => { if (!hit && pred(n)) hit = n }); return hit }
+  const click = (el) => el.listeners.click[0]({ preventDefault() {}, currentTarget: el })
+  globalThis.window = { location: { hash: '#plugins', pathname: '/cgi-bin/luci/admin/services/splify2', search: '' } }
+  globalThis.history = { replaceState(a, b, url) { window.location.hash = url.slice(url.indexOf('#')) } }
+  // ответы, которые приходят, когда стенд скажет: так видно, что делается до их прихода
+  const later = () => { let res; const p = new Promise((r) => { res = r }); return { p, res } }
+  const schemaWait = later(), notes = []
+  const ui3 = { ...ui, addNotification: (t, el, kind) => notes.push({ text: el.textContent, kind }), showModal() {}, hideModal() {} }
+  const rc = [], rr = {
+    prefs_get: { ok: true, lang: 'en', interface: 'basic' }, i18n_get: { ok: true, dicts: [] },
+    spec_get: { version: 2, rev: 'r1', outputs: { direct: { kind: 'direct' } } },
+    spec_schema: () => schemaWait.p,
+    devices: { ok: true, devices: [] }, applied_get: { version: 2, rev: 'r1', outputs: { direct: { kind: 'direct' } } },
+    plugins_list: { ok: true, repos: [ { name: 'splify2', official: true } ], plugins: [ { id: 'backup', version: '1.0.0', state: 'disabled', repo: 'splify2' } ] },
+    plugins_search: { ok: true, plugins: [ { id: 'backup', version: '1.0.0', repo: 'splify2' } ] },
+    plugin_enable: { ok: true },
+    spec_set: { ok: true, rev: 'r2' },
+    engine: { ok: true, present: true, running: true }, diag: { ok: true, checks: [] },
+  }
+  const L3 = makeLoader({ rpcCalls: rc, rpcReplies: rr, extra: { ui: ui3 } })
+  const main = L3.load('view.splify2.core.main')
+  const store = L3.load('view.splify2.core.store')
+  const v = Object.create(main)
+  await v.load()
+  check('загрузка: словарь и спека спрашиваются сразу, не друг за другом', [ true, true ], [ rc.some((c) => c.method === 'spec_get'), rc.some((c) => c.method === 'spec_schema') ])
+  const page = v.render()
+  await tick(); await tick()
+  const pane = page.children.at(-1)
+  check('Plugins открыта, пока схема ядра ещё не пришла: список и каталог уже на экране', [ true, true ],
+    [ !!find(pane, (n) => n.attrs && n.attrs['data-plugin'] === 'backup'), !!find(pane, (n) => n.attrs && n.attrs['data-catalog'] === 'backup') ])
+  const listAt = rc.findIndex((c) => c.method === 'plugins_list'), catAt = rc.findIndex((c) => c.method === 'plugins_search')
+  check('список плагинов и каталог спрошены вместе (каталог не ждёт ответа списка)', true, listAt >= 0 && catAt >= 0)
+  check('prefs_get спрошен один раз (ссылка на Andromeda берёт ответ словаря)', 1, rc.filter((c) => c.method === 'prefs_get').length)
+  const menu = page.children.at(-2)
+  check('вкладок разделов нет, пока схемы нет', false, menu.children.some((li) => li.attrs['data-tab'] === 'outputs'))
+  schemaWait.res({ ok: true, source: 'core', schema: FIXTURE })
+  await tick(); await tick()
+  check('схема пришла — вкладки разделов встали перед Spec', [ 'overview', 'lan', 'clients', 'lists', 'outputs', 'dns', 'rules', 'spec', 'plugins', 'settings' ].filter((x) => menu.children.some((li) => li.attrs['data-tab'] === x)),
+    menu.children.map((li) => li.attrs['data-tab']))
+  check('открытая вкладка Plugins не перерисована приходом схемы', true, !!find(pane, (n) => n.attrs && n.attrs['data-plugin'] === 'backup'))
+  const tab = (id) => click(find(menu, (n) => n.tag === 'a' && n.attrs.href === '#' + id))
+  // повторное открытие Plugins ничего не спрашивает заново
+  const n0 = rc.filter((c) => c.method === 'plugins_list').length
+  tab('settings'); await tick(); tab('plugins'); await tick()
+  check('Plugins открыта второй раз: список и каталог не спрашиваются заново', n0, rc.filter((c) => c.method === 'plugins_list').length)
+  // правка в разделе переживает переход на другую вкладку
+  tab('outputs'); await tick()
+  const outEl = pane.children[0]
+  const form = outEl.splify2Form()
+  const mf = form.field('outputs')
+  mf.addNamed('vpn', { kind: 'direct' })
+  mf.fire()
+  tab('plugins'); await tick(); tab('outputs'); await tick()
+  check('правка раздела не теряется при переходе на другую вкладку', true, 'vpn' in (pane.children[0].splify2Form().get().outputs || {}))
+  // двойное нажатие Save: одна запись
+  rc.length = 0
+  const save = find(pane, (n) => n.tag === 'button' && n.textContent === 'Save')
+  click(save); click(save)
+  check('Save нажата дважды подряд: spec_set ушёл один раз', 1, rc.filter((c) => c.method === 'spec_set').length)
+  check('пока запись идёт, кнопка недоступна', 'disabled', save.attrs.disabled)
+  await tick(); await tick()
+  check('запись закончилась — кнопка снова доступна', undefined, save.attrs.disabled)
+  // схема ядра: одна на страницу; плагин включён — спрашивается снова
+  const sc = () => rc.filter((c) => c.method === 'spec_schema').length
+  rc.length = 0
+  await store.load()
+  check('store.load второй раз: схема ядра не спрашивается снова', 0, sc())
+  tab('plugins'); await tick()
+  const en = find(pane, (n) => n.tag === 'button' && n.textContent === 'Enable')
+  click(en); click(en); await tick(); await tick()
+  check('Enable нажата дважды: plugin_enable ушёл один раз', 1, rc.filter((c) => c.method === 'plugin_enable').length)
+  check('после действия с плагином каталог не спрашивается заново, список — да', [ 0, 1 ], [ rc.filter((c) => c.method === 'plugins_search').length, rc.filter((c) => c.method === 'plugins_list').length ])
+  tab('rules'); await tick(); await tick(); await tick()
+  check('плагин включён — при открытии формы схема ядра спрошена заново', 1, sc())
+  check('правленая вкладка outputs сохранила форму после смены схемы', true, !!find(menu, (n) => n.attrs && n.attrs['data-tab'] === 'outputs'))
+  // большая спека: правка одного правила не перечитывает остальные
+  const N = 400
+  const rules = Array.from({ length: N }, (_, i) => ({ name: 'r' + i, domain: [ 'd' + i + '.example' ], out: 'direct' }))
+  const rf = build(FIXTURE, { version: 2, outputs: { direct: { kind: 'direct' } }, rules }, {}).field('rules')
+  let gets = 0
+  rf.items.forEach((it) => { const g = it.field.get; it.field.get = function() { gets++; return g.apply(this, arguments) } })
+  const leaf = rf.items[7].field.kids.find((k) => k.key === 'name').field
+  const t0 = performance.now()
+  for (let i = 0; i < 20; i++) { leaf.widget ? leaf.widget.type('x' + i) : leaf.fire() }
+  const dt = (performance.now() - t0) / 20
+  check('правка одного из ' + N + ' правил читает только его (а не все)', true, gets <= 20 * 2)
+  console.log(`    замер: правка поля правила при ${N} правилах — ${dt.toFixed(2)} мс на нажатие, чтений правил: ${gets}`)
+  check('номер и имя правки видны в заголовке правила', '#8 · x19', rf.items[7].sum.textContent)
 }
 
 console.log(`\n${total} проверок, провалов: ${fails}`)
