@@ -139,6 +139,20 @@ return view.extend({
 
 		var current = (window.location.hash || '').replace(/^#/, '') || 'overview';
 
+		// The forms opened with the schema of the last page and the core answered with another one: the tabs follow
+		// it, the forms nobody edited are drawn again.
+		store.onSchema = function() {
+			if (res.pending || !res.ok) return;
+			Object.keys(views).forEach(function(id) {
+				var t = tabOf(id), el = views[id];
+				if (t && t.needSpec && !(el.splify2Dirty && el.splify2Dirty())) delete views[id];
+			});
+			drawSections();
+			if (!tabOf(current)) current = 'overview';
+			var t = tabOf(current);
+			if (t && t.needSpec && !views[current]) show(current);
+		};
+
 		addTab({ id: 'overview', title: T('Overview'), draw: function() { return overview.render(host); }, needSpec: true });
 		addTab(specTab = { id: 'spec', title: T('Spec'), draw: function() { return raw.render(host); }, needSpec: true });
 		addTab({ id: 'plugins', title: T('Plugins'), draw: function() { return plugins.render(host); } });

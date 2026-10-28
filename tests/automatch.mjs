@@ -645,5 +645,46 @@ import { scanStrings, stringsFile } from './lib/strings.mjs'
   }
 }
 
+// ---- 11. схема прошлой страницы: формы открываются сразу, ответ ядра сверяется в фоне ----
+{
+  const tick = () => new Promise((r) => setTimeout(r, 0))
+  const mem = {}
+  globalThis.window = { location: { hash: '#outputs', pathname: '/x', search: '' },
+    localStorage: { getItem: (k) => (k in mem ? mem[k] : null), setItem: (k, v) => { mem[k] = String(v) }, removeItem: (k) => { delete mem[k] } } }
+  globalThis.history = { replaceState() {} }
+  const later = () => { let res; const p = new Promise((r) => { res = r }); return { p, res } }
+  const page = async (schemaReply) => {
+    const rc = [], rr = {
+      prefs_get: { ok: true, lang: 'en' }, i18n_get: { ok: true, dicts: [] },
+      spec_get: { version: 2, rev: 'r1', outputs: { direct: { kind: 'direct' } } }, spec_schema: schemaReply,
+      devices: { ok: true, devices: [] }, applied_get: null, engine: { ok: true }, diag: { ok: true, checks: [] },
+    }
+    const L = makeLoader({ rpcCalls: rc, rpcReplies: rr, extra: { ui: { ...ui, addNotification() {} } } })
+    const v = Object.create(L.load('view.splify2.core.main'))
+    await v.load()
+    const el = v.render()
+    await tick(); await tick()
+    return { el, rc, store: L.load('view.splify2.core.store'), tabs: () => el.children.at(-2).children.map((li) => li.attrs['data-tab']), pane: el.children.at(-1) }
+  }
+  const w1 = later()
+  const p1 = await page(() => w1.p)
+  check('первая страница: схемы в браузере нет — формы ждут ответа ядра', false, p1.tabs().includes('outputs'))
+  w1.res({ ok: true, source: 'core', schema: FIXTURE }); await tick(); await tick()
+  check('первая страница: схема пришла и сохранена в браузере', [ true, true ], [ p1.tabs().includes('outputs'), !!mem['splify2.core.schema'] ])
+  const w2 = later()
+  const p2 = await page(() => w2.p)
+  check('вторая страница: формы открыты со схемой прошлой страницы, не дожидаясь ядра', [ true, true ],
+    [ p2.tabs().includes('outputs'), !!p2.pane.children[0] && !!p2.pane.children[0].splify2Form ])
+  check('вторая страница: ядро всё равно спрошено (сверка в фоне)', true, p2.rc.some((c) => c.method === 'spec_schema'))
+  const NEW = JSON.parse(JSON.stringify(FIXTURE)); delete NEW.properties.dns
+  const before = p2.pane.children[0]
+  w2.res({ ok: true, source: 'core', schema: NEW }); await tick(); await tick()
+  check('ядро ответило другой схемой — вкладки следуют ей, неправленая форма перерисована', [ false, true, true ],
+    [ p2.tabs().includes('dns'), p2.pane.children[0] !== before, p2.pane.children[0].splify2Form().ctx.schemaRoot === p2.store.schema ])
+  check('и в браузере теперь новая схема', false, 'dns' in JSON.parse(mem['splify2.core.schema']).schema.properties)
+  p2.store.invalidateSchema()
+  check('плагины изменились — схема прошлой страницы забыта', false, 'splify2.core.schema' in mem)
+}
+
 console.log(`\n${total} проверок, провалов: ${fails}`)
 process.exit(fails ? 1 : 0)

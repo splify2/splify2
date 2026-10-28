@@ -28,16 +28,49 @@ return baseclass.extend({
 	// slowest call of the frame) and again only after invalidateSchema() - a plugin or the core changed.
 	gen: 0, schemaP: null,
 
-	invalidateSchema: function() { this.schemaP = null; },
+	// The schema of the last page is kept in the browser (localStorage): the forms open with it at once, and the
+	// schema of the core is asked all the same, in the background. When it differs (the core or its plugins changed
+	// without this page knowing), the store takes it and calls onSchema(): the frame redraws the forms nobody edited.
+	// The backend gives no cheap mark of "this core with these plugins" to ask first, so the check is the answer itself.
+	cacheKey: 'splify2.core.schema',
+	onSchema: null,
+
+	readCache: function() {
+		try {
+			var t = window.localStorage.getItem(this.cacheKey);
+			var c = t ? JSON.parse(t) : null;
+			return c && c.schema && c.text ? c : null;
+		} catch (e) { return null; }
+	},
+	writeCache: function(text, r) {
+		try { window.localStorage.setItem(this.cacheKey, JSON.stringify({ text: text, schema: r.schema, source: r.source || 'core' })); }
+		catch (e) { /* private window, full storage: no cache */ }
+	},
+
+	invalidateSchema: function() {
+		this.schemaP = null;
+		try { window.localStorage.removeItem(this.cacheKey); } catch (e) { /* no storage */ }
+	},
 
 	loadSchema: function() {
 		var self = this;
-		if (!this.schemaP) {
-			var p = this.schemaP = api.call('spec_schema').then(function(r) {
-				self.schema = r.schema;
-				self.schemaSource = r.source || 'core';
-				return self.schema;
-			});
+		if (this.schemaP) return this.schemaP;
+		var cached = this.readCache();
+		var take = function(r) { self.schema = r.schema; self.schemaSource = r.source || 'core'; return self.schema; };
+		var fresh = api.call('spec_schema').then(function(r) {
+			var text = JSON.stringify({ schema: r.schema, source: r.source || 'core' });
+			self.writeCache(text, r);
+			if (cached && cached.text === text) return self.schema;
+			take(r);
+			if (cached && self.onSchema) self.onSchema();
+			return self.schema;
+		});
+		if (cached) {
+			take(cached);
+			this.schemaP = Promise.resolve(this.schema);
+			fresh.catch(function() { /* the cached schema stays */ });
+		} else {
+			var p = this.schemaP = fresh;
 			p.catch(function() { if (self.schemaP === p) self.schemaP = null; });
 		}
 		return this.schemaP;
