@@ -1962,8 +1962,11 @@ HTTP: `bad_request` — 400, `not_installed` и `no_method` — 404, `disabled`,
 - `prefs_get` — вход: нет; выход: `{ "ok": true, "interface": "andromeda", "interface_set": false, "andromeda": true,
   "interfaces": [{ "id": "andromeda", "view": "view.splify2.p-andromeda.home" }], "lang": "auto" }` (`interfaces` — установленные
   и включённые плагины-интерфейсы, `view` — модуль LuCI для `L.require`; `andromeda` — прежнее поле, `true`, когда в `interfaces`
-  есть Andromeda; `lang` — язык LuCI, `auto` — язык браузера).
-- `prefs_set` — вход: `{ "interface": "basic" }` (строчные буквы, цифры, дефис); выход: `{ "ok": true, "interface": "basic" }`.
+  есть Andromeda; `lang` — язык LuCI, `auto` — язык браузера; `ui_lang` — язык, выбранный в интерфейсе, `auto` — не выбран).
+- `prefs_set` — вход: `{ "interface": "basic", "ui_lang": "ru" }`, оба поля необязательны, но хотя бы одно нужно (иначе
+  `prefs.nothing`). `interface` — строчные буквы, цифры, дефис; `ui_lang` — код вида `en` или `pt-br`, `auto` снимает выбор
+  (иначе `prefs.bad_lang`). Выход: `{ "ok": true }` с переданными полями. Тексты отказов бэкенда идут на `ui_lang`, когда язык
+  LuCI — `auto` или не задан.
 
 ### `paths` (read)
 
@@ -2084,7 +2087,7 @@ HTTP: `bad_request` — 400, `not_installed` и `no_method` — 404, `disabled`,
 | `spec_check` | read | `{spec}` |
 | `spec_yaml` | read | — |
 | `prefs_get` | read | — |
-| `prefs_set` | write | `{interface}` |
+| `prefs_set` | write | `{interface?, ui_lang?}` |
 | `paths` | read | — |
 | `i18n_get` | read | `{lang}` |
 | `plugin_settings_get` | read | `{id}` |
