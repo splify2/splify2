@@ -154,6 +154,16 @@ cp files/usr/sbin/splify2-events "$PKG/usr/sbin/splify2-events"
 cp files/etc/init.d/splify2-events "$PKG/etc/init.d/splify2-events"
 chmod 0755 "$PKG/usr/sbin/splify2-task" "$PKG/usr/sbin/splify2-events" "$PKG/etc/init.d/splify2-events"
 
+# Официальные репозитории плагинов splify2 (plugin-sdk/docs/index.md, «Репозитории по умолчанию»): splify2-core-plugins
+# (плагины «из коробки», из него обновляется семя) и splify2-extended-plugins (recheck, tgws, warpbox-ui — по желанию).
+# Оба наши и подписаны ключами splify2 из steer-core (index, plugins), поэтому official; пометку «не официальный» (В6)
+# получают только репозитории, которые человек подключил сам. Репозиторий протоколов (splify2) кладёт steer-core.
+mkdir -p "$PKG/etc/steer/plugins/repos.d"
+for r in splify2-core-plugins splify2-extended-plugins; do
+    cp "files/etc/steer/plugins/repos.d/$r.json" "$PKG/etc/steer/plugins/repos.d/$r.json"
+    chmod 0644 "$PKG/etc/steer/plugins/repos.d/$r.json"
+done
+
 # API для приложений вне LuCI (SPLIFY2_API.md в хабе): шлюз CGI на ucode с токенами устройств. Версия
 # пакета вписывается на сборке — её отдаёт /v1/info, и клиенту не нужен отдельный вызов.
 mkdir -p "$PKG/www/cgi-bin"

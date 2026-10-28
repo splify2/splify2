@@ -155,6 +155,16 @@ for suffix in noarch.apk all.ipk; do
         "$(grep -c "^ *out/compat/luci-app-splify2-\${{ env.VERSION }}-1_$suffix\$" "$WF")"
 done
 
+# ---- официальные репозитории плагинов по умолчанию -------------------------------
+# splify2-core-plugins и splify2-extended-plugins подключает пакет: без файла repos.d каталог «Плагины» их не видит,
+# а семя не обновляется из сети. Оба официальные (подписаны ключами splify2 из steer-core).
+for r in splify2-core-plugins splify2-extended-plugins; do
+    check "пакет кладёт repos.d/$r.json" "1" "$(grep -c 'for r in splify2-core-plugins splify2-extended-plugins; do' build.sh)"
+    check "repos.d/$r.json: id, official, адрес Pages" "$r;True;https://splify2.github.io/$r/" \
+        "$(python3 -c 'import json,sys; d=json.load(open(sys.argv[1])); print("%s;%s;%s" % (d["id"], d["official"], d["url"]))' \
+            "files/etc/steer/plugins/repos.d/$r.json")"
+done
+
 # ---- установщик умеет оба менеджера --------------------------------------------
 # Раньше здесь стоял прямой отказ «нужен apk», то есть установка одной строкой на 23.05
 # не работала вовсе. Проверяется не текст, а наличие обеих веток и отсутствие отказа.
