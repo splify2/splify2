@@ -221,6 +221,16 @@ check "plugins_list: плагина без словаря в names нет (ин�
     "$(rpcd plugins_list '{"lang":"ru"}' | pj '"solo" in d["names"]' | sed 's/True/yes/;s/true/yes/;s/False/no/;s/false/no/')"
 check "plugins_list: недопустимый язык — не ломает ответ, en" "true;Export to a file" \
     "$(rpcd plugins_list '{"lang":"../x"}' | pj 'd["ok"]');$(rpcd plugins_list '{"lang":"../x"}' | pj 'd["names"]["backup"]["description"]')"
+# Названия — из кэша на язык (plugin_names_cached); словарь сменился — кэш не годен.
+sleep 1.1; rpcd plugins_list '{"lang":"ru"}' >/dev/null; rpcd plugins_list '{"lang":"ru"}' >/dev/null
+check "plugins_list: названия ложатся в кэш на язык; чужой путь в имени файла не попадает" "yes;no" \
+    "$([ -f "$PLUG/run/ext.reg.names.ru" ] && echo yes || echo no);$(ls "$PLUG/run" | grep -q '\.\.' && echo yes || echo no)"
+check "  из кэша — те же слова" "Архив настроек" "$(rpcd plugins_list '{"lang":"ru"}' | pj 'd["names"]["backup"]["name"]')"
+sleep 1.1
+printf '%s\n' '{"plugin.name":"Архив","plugin.description":"Выгрузка"}' > "$PLUG/lib/backup/i18n/ru.json"
+check "  словарь сменился — новые слова" "Архив;Выгрузка" \
+    "$(rpcd plugins_list '{"lang":"ru"}' | pj 'd["names"]["backup"]["name"]');$(rpcd plugins_list '{"lang":"ru"}' | pj 'd["names"]["backup"]["description"]')"
+check "  другой язык — свой кэш" "Export to a file" "$(rpcd plugins_list '{"lang":"en"}' | pj 'd["names"]["backup"]["description"]')"
 rm -f "$PLUG/fail.list"
 out="$(STEER_FIXTURE=/nonexistent/steer rpcd plugins_list)"
 check "ядро без менеджера плагинов — понятный отказ" "false;ядро не умеет плагины — обновите steer" \
@@ -549,6 +559,27 @@ check "  чужие файлы в тех же каталогах не трону
 check "  rpcd перечитан один раз" "1" "$(reload_count)"
 rpcd plugins_list >/dev/null; sleep 0.3
 check "  всё в согласии — перечитки нет" "1" "$(reload_count)"
+# Без перемен проход согласия не повторяется (plugin_sync_fresh): реестр не пересобирается. Метка ставится через
+# секунду после прошлого прохода — сравнение времени у оболочки бывает посекундным.
+rpcd plugins_list >/dev/null; sleep 1.1; touch "$PLUG/mark"
+rpcd plugins_list >/dev/null
+check "  без перемен: реестр не пересобирается при открытии вкладки" "no" \
+    "$([ "$PLUG/run/ext.reg" -nt "$PLUG/mark" ] && echo yes || echo no)"
+# Перемена мимо панели (менеджер руками) — state.json новее отметки: проход идёт заново.
+sleep 1.1; touch "$PLUG/mark"; touch "$PLUG/state.json"
+rpcd plugins_list >/dev/null
+check "  state.json изменился мимо панели — реестр пересобран" "yes" \
+    "$([ "$PLUG/run/ext.reg" -nt "$PLUG/mark" ] && echo yes || echo no)"
+# Ссылку убрали руками через секунду после прохода — каталог обработчиков новее отметки, ссылка возвращается.
+sleep 1.1; rm -f "$PLUG/rpcd/splify2.p.recheck"
+rpcd plugins_list >/dev/null
+check "  ссылку убрали после прохода — возвращается" "yes" "$([ -L "$PLUG/rpcd/splify2.p.recheck" ] && echo yes || echo no)"
+# Манифест плагина сменился (обновление руками) — новый метод попадает в ACL.
+sleep 1.1
+sed 's/"status":{"access":"read"}/"status":{"access":"read"},"fresh":{"access":"read"}/' "$PLUG/lib/recheck/plugin.json" > "$PLUG/m.tmp" &&
+    cat "$PLUG/m.tmp" > "$PLUG/lib/recheck/plugin.json"
+rpcd plugins_list >/dev/null
+check "  манифест сменился — ACL пересобран" "yes" "$(grep -q '"fresh"' "$PLUG/acl/splify2-p-recheck.json" && echo yes || echo no)"
 
 # splify2-plugin-sync: та же приводка командой (postinst).
 rm -f "$PLUG/rpcd/splify2.p.recheck"
@@ -726,6 +757,17 @@ check "i18n_get: языка нет ни у кого — пустой масси�
 check "i18n_get: язык с регионом" "true" "$(rpcd i18n_get '{"lang":"pt-BR"}' | pj 'd["ok"]')"
 check "i18n_get: код языка не по форме — отказ" "false;false;false" \
     "$(rpcd i18n_get '{"lang":"../x"}' | pj 'd["ok"]');$(rpcd i18n_get '{"lang":"r u"}' | pj 'd["ok"]');$(rpcd i18n_get '{}' | pj 'd["ok"]')"
+# Ответ i18n_get — из кэша на язык, пока проход согласия свеж; словарь или состав плагинов сменились — пересчёт.
+rpcd plugins_list >/dev/null; sleep 1.1; rpcd plugins_list >/dev/null
+rpcd i18n_get '{"lang":"ru"}' >/dev/null
+check "i18n_get: ответ ложится в кэш на язык" "yes;Добавить" \
+    "$([ -f "$PLUG/run/ext.reg.i18n.ru" ] && echo yes || echo no);$(rpcd i18n_get '{"lang":"ru"}' | pj 'd["dicts"][0]["dict"]["Add"]')"
+sleep 1.1
+printf '%s\n' '{"Add":"Прибавить"}' > "$PLUG/lib/lang-ru/i18n/core/ru.json"
+check "  словарь сменился — новые слова" "Прибавить" "$(rpcd i18n_get '{"lang":"ru"}' | pj 'd["dicts"][0]["dict"]["Add"]')"
+sleep 1.1; rpcd plugins_list >/dev/null; rpcd i18n_get '{"lang":"ru"}' >/dev/null
+rpcd plugin_disable '{"id":"lang-ru"}' >/dev/null
+check "  плагин выключили — его словаря нет" "0" "$(rpcd i18n_get '{"lang":"ru"}' | pj 'len(d["dicts"])')"
 
 echo
 if [ "$fails" -ne 0 ]; then
