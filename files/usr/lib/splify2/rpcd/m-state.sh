@@ -969,16 +969,13 @@ case "$2" in
 
         sr_line ""
         sr_line "-- versions --"
-        # Интерфейс — НОМЕРОМ СБОРКИ, а не версией пакета, и это осознанно. Номер сборки
-        # читает загрузчик страницы на каждой загрузке (build-id.txt), у выпуска он равен
-        # версии пакета, а у сборки из main вдобавок несёт ревизию и метку dirty — то есть
-        # отвечает на вопрос поддержки точнее («какой ровно бандл у человека в браузере»).
-        # Спрашивать вместо этого пакет значило бы либо копировать pkg_version, либо звать
-        # метод splify2_versions, который перед ответом идёт за перечнем релизов в сеть — в
-        # отчёте, который собирают как раз тогда, когда с сетью беда.
-        _sr_ui="$(sed -n '1{s/[[:space:]]*$//;p;}' \
-            "${BUILD_ID_FILE:-/www/luci-static/resources/splify2/build-id.txt}" 2>/dev/null)"
-        sr_line "splify2 interface: ${_sr_ui:-not detected} (build number; equal to the package version in a release)"
+        # Интерфейс — плагин (Andromeda и другие с `splify2.luci.interface`): имя и версия из менеджера плагинов, без
+        # сети. Страница без плагина-интерфейса открывает вид самого каркаса — так и пишется.
+        _sr_ui=""
+        for _sr_i in $(plugin_interfaces | cut -d' ' -f1); do
+            _sr_ui="${_sr_ui:+$_sr_ui, }$_sr_i $(plugin_version_of "$_sr_i")"
+        done
+        sr_line "splify2 interface plugins: ${_sr_ui:-none (the page opens the frame view)}"
         if [ "$_sr_eok" != 1 ]; then
             # Свой же метод не ответил — и выдать это за «движка нет» нельзя: диагноз
             # «маршрутизации нет вовсе» уводит помогающего чинить не то. Отчёт обязан

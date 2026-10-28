@@ -780,7 +780,7 @@ rpcd_run() {  # МЕТОД [JSON_ЗАПРОСА]  — вызов метода; �
         SYSNET_STATS="${SYSNET_STATS_FIXTURE:-$T/statnet}" \
         CONNTRACK="${CONNTRACK_FIXTURE:-$T/nf_conntrack}" \
         STEER="$T/bin/steer" \
-        SCHEMA_FIXTURE="$ROOT/files/usr/share/splify2/spec-schema.json" ANDROMEDA_MARK="$T/andromeda-build-id" \
+        SCHEMA_FIXTURE="$ROOT/files/usr/share/splify2/spec-schema.json" \
         SPEC="$T/etc/spec.json" SPEC_VIEW="$T/spec.view.json" \
         LISTS="$T/lists" \
         SUB="$T/etc/sub.txt" \
@@ -868,7 +868,7 @@ try: d = json.load(sys.stdin)
 except Exception: print("НЕ JSON"); raise SystemExit
 v = d
 for k in sys.argv[1].split("."):   # вложенное поле — через точку: game.gv
-    v = v.get(k) if isinstance(v, dict) else None
+    v = v.get(k) if isinstance(v, dict) else (v[int(k)] if isinstance(v, list) and k.isdigit() and int(k) < len(v) else None)
 print("" if v is None else json.dumps(v, ensure_ascii=False) if isinstance(v,(list,dict,bool)) else v)' "$1"
 }
 
@@ -933,6 +933,12 @@ PY
 }
 plug_fixture() {  # ID ВЕРСИЯ
     plug_manifest "$T/plug/fixtures/$1" "$1" "$2"
+}
+plug_iface() {  # ID ВЕРСИЯ [СОСТОЯНИЕ] — плагин-интерфейс (splify2.luci.interface, splify2-api 1.1)
+    plug_put "$1" "$2" "${3:-enabled}"
+    printf '{"schema":1,"id":"%s","version":"%s","name":"%s","compat":{"splify2-api":"^1.1"},"splify2":{"luci":{"interface":"luci/home.js"}}}\n' \
+        "$1" "$2" "$1" > "$T/plug/lib/$1/plugin.json"
+    mkdir -p "$T/plug/lib/$1/luci"; echo "return view.extend({});" > "$T/plug/lib/$1/luci/home.js"
 }
 plug_calls() { cat "$T/plug/manager.log" 2>/dev/null | tr '\n' '|' | sed 's/|$//'; }
 plug_reset
@@ -4139,9 +4145,8 @@ DISTRIB_RELEASE='24.10.0'
 DISTRIB_DESCRIPTION='OpenWrt 24.10.0 r28427-6df0e3d02a'
 EOF
 
-# Номер сборки интерфейса — тот же файл, который читает загрузчик страницы на каждой
-# загрузке (luci/.../view/splify2/home.js).
-printf '26.9-ab12cd\n' > "$T/etc/build-id.txt"
+# Интерфейс страницы — плагин (Andromeda): отчёт называет его и версию из менеджера плагинов.
+plug_reset; plug_iface andromeda 26.9.9
 
 # Спека: выход-туннель, выход-локация подписки и «напрямую», плюс два правила — адресное и
 # доменное. Из неё же заглушка движка собирает `status`, поэтому состояние выходов и
@@ -4188,7 +4193,7 @@ check "фикстура: приватный ключ туннеля лежит �
 SR_JSON='{"output":"nl","sub_file":"'"$T"'/etc/sub.txt","node":-1,"usable":3,"skipped":1,"foreign":0,
 "nodes":[{"name":"🇩🇪 Germania-login-pupkin","host":"203.0.113.9","uuid":"8f14e45f-ceea-467a-9fb2-1111deadbeef"}]}'
 
-out="$(BUILD_ID_FILE="$T/etc/build-id.txt" ZP_NFQWS_FIXTURE="$T/bin/nfqws" \
+out="$(ZP_NFQWS_FIXTURE="$T/bin/nfqws" \
        STEER_JSON="$SR_JSON" STEER_NOISE='steer[warn]: узел 2 не ответил' \
        rpcd support_report)"
 rep="$(printf '%s' "$out" | jget text)"
@@ -4204,7 +4209,7 @@ check "отчёт — один готовый к копированию текс
 check "модель роутера названа" "yes" "$(has 'Xiaomi AX3000T')"
 check "версия OpenWrt названа" "yes" "$(has '24.10.0')"
 check "архитектура пакетов названа" "yes" "$(has 'aarch64_cortex-a53')"
-check "версия пакета интерфейса названа" "yes" "$(has '26.9-ab12cd')"
+check "плагин-интерфейс и его версия названы" "yes" "$(has 'splify2 interface plugins: andromeda 26.9.9')"
 check "версия пакета ядра названа" "yes" "$(has '2.1.0')"
 check "наличие модуля VLESS названо словом, а не признаком" "yes" "$(has 'VLESS module')"
 check "состояние службы движка названо" "yes" "$(has 'autostart')"
@@ -4271,7 +4276,7 @@ print("yes" if "support_report" in d["read"]["ubus"]["splify2"] else "no")' \
 # единственного, что он мог показать помогающему.
 mv "$T/bin/steer" "$T/bin/steer.off"
 printf '{"schema":1,"outputs":{},"channels":[]}\n' > "$T/etc/spec.json"
-out="$(BUILD_ID_FILE="$T/etc/build-id.txt" rpcd support_report)"
+out="$(rpcd support_report)"
 rep="$(printf '%s' "$out" | jget text)"
 check "без движка отчёт всё равно собирается" "true" "$(printf '%s' "$out" | jget ok)"
 check "и говорит, что движка нет" "yes" "$(has 'steer core: NOT INSTALLED')"
@@ -4287,7 +4292,7 @@ mv "$T/bin/steer.off" "$T/bin/steer"
 # обращений («поставил, а интернета нет»).
 rm -f "$T/etc/sub.txt" "$T/etc/subs"/*.txt
 uci_set splify2.main.sub_url ''
-out="$(BUILD_ID_FILE="$T/etc/build-id.txt" rpcd support_report)"
+out="$(rpcd support_report)"
 rep="$(printf '%s' "$out" | jget text)"
 check "отсутствие подписки названо словами" "yes" "$(has 'no subscriptions')"
 
@@ -5329,20 +5334,37 @@ check "plugin_enable на ядре 2.0.5: тот же код" "core_too_old" "$(
 rm -f "$T/plug/fail.list" "$T/plug/fail.enable"
 plug_reset
 
-# prefs: что открывать главной страницей. Без выбора — Andromeda, если её сборка в пакете, иначе каркас.
-rm -f "$T/andromeda-build-id" "$T/etc/config/splify2"
+# prefs: что открывать главной страницей. Без выбора — Andromeda, если её плагин стоит и включён, иначе каркас.
+rm -f "$T/etc/config/splify2"
+plug_reset
 out="$(rpcd prefs_get)"
-check "prefs_get: Andromeda в пакете нет — basic по умолчанию" "basic;false;false" \
-      "$(printf '%s' "$out" | jget interface);$(printf '%s' "$out" | jget interface_set);$(printf '%s' "$out" | jget andromeda)"
-echo 26.10.4 > "$T/andromeda-build-id"
+check "prefs_get: плагина Andromeda нет — basic по умолчанию" "basic;false;false;0" \
+      "$(printf '%s' "$out" | jget interface);$(printf '%s' "$out" | jget interface_set);$(printf '%s' "$out" | jget andromeda);$(printf '%s' "$out" | jget interfaces | tr -dc '{' | wc -c | tr -d ' ')"
+plug_iface andromeda 26.11.0
 out="$(rpcd prefs_get)"
-check "prefs_get: сборка Andromeda в пакете — andromeda по умолчанию, выбор не сделан" "andromeda;false;true" \
+check "prefs_get: плагин Andromeda включён — andromeda по умолчанию, выбор не сделан" "andromeda;false;true" \
       "$(printf '%s' "$out" | jget interface);$(printf '%s' "$out" | jget interface_set);$(printf '%s' "$out" | jget andromeda)"
+check "prefs_get: interfaces называет вид плагина для L.require" "andromeda;view.splify2.p-andromeda.home" \
+      "$(printf '%s' "$out" | jget 'interfaces.0.id');$(printf '%s' "$out" | jget 'interfaces.0.view')"
+plug_iface andromeda 26.11.0 disabled
+check "prefs_get: плагин Andromeda отключён — basic" "basic;false" \
+      "$(rpcd prefs_get | jget interface);$(rpcd prefs_get | jget andromeda)"
+plug_iface andromeda 26.11.0
 check "prefs_set: basic записан" "true;basic" "$(rpcd prefs_set '{"interface":"basic"}' | jget ok);$(rpcd prefs_get | jget interface)"
 check "prefs_get: выбор помечен сделанным" "true" "$(rpcd prefs_get | jget interface_set)"
 check "prefs_set: id плагина-интерфейса принимается" "true" "$(rpcd prefs_set '{"interface":"my-ui"}' | jget ok)"
 check "prefs_set: заглавные и пробелы — отказ" "false;false" \
       "$(rpcd prefs_set '{"interface":"Basic View"}' | jget ok);$(rpcd prefs_set '{}' | jget ok)"
+
+# paths (splify2-api 1.1): каталоги, которые интерфейс иначе зашивал бы сам.
+out="$(rpcd paths)"
+check "paths: каталог списков, каталог спеки, каталог подписок и ядро — от швов хоста" "true;$T/lists;$T/etc;$T/etc/subs;$T/bin/steer" \
+      "$(printf '%s' "$out" | jget ok);$(printf '%s' "$out" | jget lists);$(printf '%s' "$out" | jget spec_dir);$(printf '%s' "$out" | jget subs_dir);$(printf '%s' "$out" | jget steer)"
+
+# Строки самолечения ipv6, которые узнаёт Andromeda (ui/tests/apply-refetch.test.ts держит их копией: интерфейс
+# не читает исходник бэкенда). Разошлись бы — человек увидел бы «записан ipv6: nat» в тосте.
+check "строки самолечения ipv6, которые узнаёт Andromeda, — в бэкенде дословно" "2" \
+      "$(grep -cF -e "splify2: outputs without an ipv6 key got ipv6: nat (the tunnel has an IPv6 address): %s" -e "splify2: outputs without an ipv6 key got ipv6: off (the tunnel has no IPv6 address, clients use IPv4): %s" "$ROOT/files/usr/lib/splify2/rpcd/m-spec.sh")"
 check "prefs_set: отказ не затронул выбранное" "my-ui" "$(rpcd prefs_get | jget interface)"
 printf 'luci.main.lang=ru\n' >> "$T/uci.store"
 check "prefs_get: язык LuCI" "ru" "$(rpcd prefs_get | jget lang)"

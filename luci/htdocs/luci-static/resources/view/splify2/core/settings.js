@@ -18,7 +18,12 @@ return baseclass.extend({
 		Promise.all([ api.call('prefs_get'), api.call('fetch_mode').catch(function() { return null; }) ]).then(function(r) {
 			var prefs = r[0], fetch = r[1];
 			var choices = [ [ 'basic', T('Basic (this page)') ] ];
-			if (prefs.andromeda || prefs.interface === 'andromeda') choices.unshift([ 'andromeda', T('Andromeda') ]);
+			// Every installed and enabled interface plugin (splify2.luci.interface), Andromeda first.
+			(prefs.interfaces || []).forEach(function(i) {
+				var c = [ i.id, i.id === 'andromeda' ? T('Andromeda') : i.id ];
+				if (i.id === 'andromeda') choices.unshift(c); else choices.push(c);
+			});
+			if (prefs.interface === 'andromeda' && !choices.some(function(c) { return c[0] === 'andromeda'; })) choices.unshift([ 'andromeda', T('Andromeda') ]);
 			if (!choices.some(function(c) { return c[0] === prefs.interface; })) choices.push([ prefs.interface, prefs.interface ]);
 			var sel = E('select', { 'class': 'cbi-input-select' }, choices.map(function(c) {
 				return E('option', { value: c[0], selected: c[0] === prefs.interface ? 'selected' : null }, c[1]);

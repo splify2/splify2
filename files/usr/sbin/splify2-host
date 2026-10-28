@@ -34,7 +34,9 @@
 
 # `paths` зовут на каждый вызов методов плагина, поэтому он отвечает до подключения библиотек каркаса.
 if [ "${1:-}" = paths ]; then
-    printf '{"ok":true,"lists":"%s","steer":"%s"}\n' "${LISTS:-/etc/steer/lists}" "${STEER:-/usr/sbin/steer}"
+    _sh_spec="${SPEC:-/etc/steer/spec.json}"
+    printf '{"ok":true,"lists":"%s","spec_dir":"%s","subs_dir":"%s","steer":"%s"}\n' "${LISTS:-/etc/steer/lists}" "${_sh_spec%/*}" \
+        "${SUBS_DIR:-/etc/steer/subs}" "${STEER:-/usr/sbin/steer}"
     exit 0
 fi
 
