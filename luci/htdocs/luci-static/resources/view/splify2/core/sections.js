@@ -57,6 +57,7 @@ return baseclass.extend({
 			def.keys.forEach(function(k) { if (store.spec[k] !== undefined) value[k] = store.clone(store.spec[k]); });
 			form = autoform.build(node, value, {
 				spec: store.spec, devices: store.devices, schemaRoot: store.schema, platform: schema.platformOf(store.schema),
+				lazy: true,   // the items of a list of hundreds of rules are built when opened
 				notify: function(m) { note(m, 'warning'); }
 			});
 			drawnGen = store.gen; dirty = false;

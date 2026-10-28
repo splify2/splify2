@@ -607,16 +607,28 @@ function arrayObjectField(key, node, value, path, ctx) {
 	var itemNode = node.items;
 	var items = [];
 	var list = E('div', { 'class': 'splify2-entries' });
+	// ctx.lazy: an item is built when it is opened (or validated); a closed one gives its data as it came, so a
+	// spec of hundreds of rules opens at once. Its fields enter ctx.form.fields when it is built.
+	var valueOf = function(it) { return it.ef ? it.ef.get() : JSON.parse(JSON.stringify(it.value)); };
 	var title = function(it, i) {
-		var cur = it.field.get();
+		var cur = valueOf(it);
 		it.sum.textContent = '#' + (i + 1) + (cur && cur.name ? ' · ' + cur.name : '');
 	};
 	var renumber = function() { items.forEach(title); };
 	var addItem = function(v, open) {
-		var ef = objectField('', itemNode, v, path + '.[]', ctx, true);
-		ctx.form.fields.push({ path: path + '.[]', node: itemNode, field: ef });
 		var sum = E('summary', {}, '');
-		var it = { field: ef, sum: sum };
+		var slot = E('div', {});
+		var it = { sum: sum, ef: null, value: isObj(v) ? v : {} };
+		var ensure = function() {
+			if (it.ef) return it.ef;
+			var ef = it.ef = objectField('', itemNode, it.value, path + '.[]', ctx, true);
+			ctx.form.fields.push({ path: path + '.[]', node: itemNode, field: ef });
+			slot.appendChild(ef.el);
+			// an edit inside one item renames only it: the others keep their numbers and names
+			ef.change(function() { title(it, items.indexOf(it)); f.fire(); });
+			return ef;
+		};
+		Object.defineProperty(it, 'field', { get: ensure, enumerable: true });
 		var move = function(d) { return function(ev) {
 			ev.preventDefault();
 			var i = items.indexOf(it), j = i + d;
@@ -632,16 +644,17 @@ function arrayObjectField(key, node, value, path, ctx) {
 			list.removeChild(wrap);
 			renumber(); f.fire();
 		} }, T('Remove'));
-		var wrap = E('details', { 'class': 'splify2-entry' }, [ sum, E('div', { 'class': 'splify2-entry-body' }, [ ef.el,
+		var wrap = E('details', { 'class': 'splify2-entry' }, [ sum, E('div', { 'class': 'splify2-entry-body' }, [ slot,
 			E('div', { 'class': 'cbi-page-actions' }, [
 				E('button', { 'class': 'cbi-button', type: 'button', click: move(-1) }, T('Up')),
 				E('button', { 'class': 'cbi-button', type: 'button', click: move(1) }, T('Down')), rm ]) ]) ]);
 		if (open) wrap.setAttribute('open', '');
 		it.el = wrap;
+		it.built = function() { return !!it.ef; };
 		items.push(it);
 		list.appendChild(wrap);
-		// an edit inside one item renames only it: the others keep their numbers and names
-		ef.change(function() { title(it, items.indexOf(it)); f.fire(); });
+		if (open || !ctx.lazy) ensure();
+		else wrap.addEventListener('toggle', ensure);
 	};
 	(Array.isArray(value) ? value : []).forEach(function(v) { addItem(v, false); });
 	renumber();
@@ -656,7 +669,7 @@ function arrayObjectField(key, node, value, path, ctx) {
 		node.description ? E('div', { 'class': 'cbi-section-descr' }, text(node.description)) : '',
 		list, E('div', { 'class': 'cbi-section-create' }, [ add ]) ]);
 	f.get = function() {
-		var a = items.map(function(it) { return it.field.get(); });
+		var a = items.map(valueOf);
 		return a.length ? a : undefined;
 	};
 	f.validate = function() {

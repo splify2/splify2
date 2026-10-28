@@ -623,6 +623,26 @@ import { scanStrings, stringsFile } from './lib/strings.mjs'
   check('правка одного из ' + N + ' правил читает только его (а не все)', true, gets <= 20 * 2)
   console.log(`    замер: правка поля правила при ${N} правилах — ${dt.toFixed(2)} мс на нажатие, чтений правил: ${gets}`)
   check('номер и имя правки видны в заголовке правила', '#8 · x19', rf.items[7].sum.textContent)
+  // ленивые правила (вкладки разделов): собираются при раскрытии, свёрнутые отдают данные как есть
+  {
+    const M = 1000
+    const rl = Array.from({ length: M }, (_, i) => ({ name: 'r' + i, domain: [ 'd' + i + '.example' ], out: 'direct' }))
+    const sp = { version: 2, outputs: { direct: { kind: 'direct' } }, rules: rl }
+    const t0 = performance.now(); build(FIXTURE, sp, {}); const eager = performance.now() - t0
+    const t1 = performance.now(); const lf = build(FIXTURE, sp, { lazy: true }); const lazy = performance.now() - t1
+    console.log(`    замер: форма из ${M} правил — сразу все ${eager.toFixed(0)} мс, лениво ${lazy.toFixed(0)} мс`)
+    const lr = lf.field('rules')
+    check('ленивые правила: ни одно не собрано до раскрытия', 0, lr.items.filter((it) => it.built()).length)
+    check('ленивые правила: заголовки из данных', '#3 · r2', lr.items[2].sum.textContent)
+    check('ленивые правила: get свёрнутых — данные как пришли', rl, lf.get().rules)
+    lr.items[5].el.dispatchEvent({ type: 'toggle' })
+    check('раскрытие собирает только это правило', [ true, 1 ], [ lr.items[5].built(), lr.items.filter((it) => it.built()).length ])
+    lr.addItem({}); 
+    check('новое правило собрано сразу (оно раскрыто)', true, lr.items.at(-1).built())
+    const bad = build(FIXTURE, { version: 2, outputs: { direct: { kind: 'direct' } }, rules: [ { name: 'ok', domain: [ 'a.b' ], out: 'direct' }, { name: 'bad', domain: [ 'a.b' ] } ] }, { lazy: true })
+    const plain = build(FIXTURE, { version: 2, outputs: { direct: { kind: 'direct' } }, rules: [ { name: 'ok', domain: [ 'a.b' ], out: 'direct' }, { name: 'bad', domain: [ 'a.b' ] } ] }, {})
+    check('проверка ловит ошибку в свёрнутом правиле так же, как в собранном', [ true, plain.validate().map((e) => e.title) ], [ bad.validate().length > 0, bad.validate().map((e) => e.title) ])
+  }
 }
 
 console.log(`\n${total} проверок, провалов: ${fails}`)
