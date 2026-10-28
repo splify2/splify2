@@ -388,6 +388,7 @@ plugin_sync() {
             mkdir -p "$PLUGIN_UI_DIR" 2>/dev/null
             [ "$(readlink "$PLUGIN_UI_DIR/$_ps_id" 2>/dev/null)" = "$PLUGIN_ROOT/$_ps_id/ui" ] ||
                 ln -sfn "$PLUGIN_ROOT/$_ps_id/ui" "$PLUGIN_UI_DIR/$_ps_id"
+            [ -n "$_ps_stamp" ] && printf 'L %s\n' "$PLUGIN_UI_DIR/$_ps_id" >> "$_ps_stamp.$$"
         fi
         plugin_rpc_methods "$_ps_id" || continue
         [ -n "$PLUGIN_RPC_READ$PLUGIN_RPC_WRITE" ] || continue
@@ -396,6 +397,7 @@ plugin_sync() {
         if [ "$(readlink "$_ps_link" 2>/dev/null)" != "$PLUGIN_DISPATCHER" ]; then
             ln -sf "$PLUGIN_DISPATCHER" "$_ps_link" && PLUGIN_SYNC_CHANGED=1
         fi
+        [ -n "$_ps_stamp" ] && printf 'L %s\nF %s\n' "$_ps_link" "$PLUGIN_ACL_DIR/splify2-p-$_ps_id.json" >> "$_ps_stamp.$$"
         _ps_acl="$PLUGIN_ACL_DIR/splify2-p-$_ps_id.json"
         _ps_text="$(plugin_acl_text "$_ps_id")"
         if [ "$(cat "$_ps_acl" 2>/dev/null)" != "$_ps_text" ]; then
@@ -433,8 +435,9 @@ plugin_sync() {
 }
 
 # Всё ли уже в согласии с прошлого прохода plugin_sync: отметка есть, той же версии splify2-api, и ни один вход
-# прохода (state.json менеджера, каталоги и манифесты плагинов, каталоги ссылок и ACL, crontab, режим безопасности,
-# таблица методов) не новее её. Только встроенные проверки оболочки — ни одного процесса: это цена открытия вкладки
+# прохода (state.json менеджера, каталоги и манифесты плагинов, режим безопасности, таблица методов) не новее её, а
+# ссылки и ACL, которые проход оставил, на месте. Лишние ссылки и чужая правка crontab здесь не видны — их убирает
+# любой следующий метод, меняющий состав плагинов. Только встроенные проверки оболочки — ни одного процесса: это цена открытия вкладки
 # «Плагины» без перемен. Любой метод, который меняет состав плагинов, зовёт plugin_sync сам, без этой проверки;
 # перемены мимо панели (`steer plugin …` руками, задача автообновления) пишут state.json — он новее отметки.
 # Сравнение `-ot` (строго старше), а не `-nt`: вход, тронутый в ту же секунду, что и отметка, считается переменой
@@ -448,11 +451,18 @@ plugin_sync_fresh() {
     [ -n "$_sf_v" ] && [ "$_sf_v" = "${EXT_API_VERSION:-1.0.0}" ] || return 1
     if [ -e "$EXT_SAFE_FILE" ]; then [ -e "$EXT_REG.safe" ] || return 1
     else [ -e "$EXT_REG.safe" ] && return 1; fi
-    for _sf_p in "$PLUGIN_STATE" "$PLUGIN_ROOT" "$PLUGIN_ROOT"/*/ "$PLUGIN_ROOT"/*/plugin.json \
-                 "$PLUGIN_RPCD_DIR" "$PLUGIN_ACL_DIR" "$PLUGIN_UI_DIR" "$EXT_CRONTAB" "$EXT_TASKS_JSON" "$EXT_METHODS_TSV"; do
+    for _sf_p in "$PLUGIN_STATE" "$PLUGIN_ROOT" "$PLUGIN_ROOT"/*/ "$PLUGIN_ROOT"/*/plugin.json "$EXT_METHODS_TSV"; do
         [ -e "$_sf_p" ] || continue
         [ "$_sf_p" -ot "$_sf" ] || return 1
     done
+    # Выходы прохода — по наличию, а не по времени каталогов: сам проход их и пишет, и время каталога после него
+    # всегда «новее отметки». Отметка перечисляет ссылки (L) и файлы ACL (F), которые проход оставил.
+    while read -r _sf_k _sf_p; do
+        case "$_sf_k" in
+            L) [ -L "$_sf_p" ] || return 1 ;;
+            F) [ -f "$_sf_p" ] || return 1 ;;
+        esac
+    done < "$_sf"
     return 0
 }
 

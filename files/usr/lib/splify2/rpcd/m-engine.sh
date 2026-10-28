@@ -343,6 +343,19 @@ EOF
             *) fail_code i18n.bad_lang "Expected a language code such as en or pt-BR" ;;
         esac
         case "$_il" in *[!A-Za-z0-9-]*) fail_code i18n.bad_lang "Expected a language code such as en or pt-BR" ;; esac
+        # Ответ — из кэша на язык (/var/run/splify2/ext.reg.i18n.<язык>): годен, пока проход согласия плагинов свеж
+        # (тот же набор включённых плагинов, plugin_sync_fresh), файл не старше его отметки и ни один словарь каркаса
+        # не новее файла. Без кэша — по три процесса на плагин (состояние, чтение, проверка словаря).
+        plugin_need_ext
+        _il_c="$EXT_REG.i18n.$_il"
+        if [ -f "$_il_c" ] && plugin_sync_fresh && [ ! "$_il_c" -ot "$EXT_REG.sync" ]; then
+            _il_ok=1
+            for _il_d in "${PLUGIN_ROOT:-/usr/lib/steer/plugins}"/*/i18n/core/ "${PLUGIN_ROOT:-/usr/lib/steer/plugins}"/*/i18n/core/"$_il".json; do
+                [ -e "$_il_d" ] || continue
+                [ "$_il_d" -ot "$_il_c" ] || { _il_ok=0; break; }
+            done
+            if [ "$_il_ok" = 1 ]; then cat "$_il_c"; exit 0; fi
+        fi
         _il_out=""
         for _il_d in "${PLUGIN_ROOT:-/usr/lib/steer/plugins}"/*/i18n/core/"$_il".json; do
             [ -r "$_il_d" ] || continue
@@ -352,7 +365,12 @@ EOF
             [ -n "$(jsonfilter -s "$_il_t" -e '@' 2>/dev/null)" ] || continue
             _il_out="${_il_out:+$_il_out,}{\"plugin\":\"$_il_id\",\"dict\":$_il_t}"
         done
-        printf '{"ok":true,"lang":"%s","dicts":[%s]}\n' "$_il" "$_il_out"
+        _il_res="$(printf '{"ok":true,"lang":"%s","dicts":[%s]}' "$_il" "$_il_out")"
+        printf '%s\n' "$_il_res"
+        if plugin_sync_fresh; then
+            if printf '%s\n' "$_il_res" 2>/dev/null > "$_il_c.$$"; then mv -f "$_il_c.$$" "$_il_c" 2>/dev/null
+            else rm -f "$_il_c.$$" 2>/dev/null; fi
+        fi
         ;;
 
     ui_get|ui_set)

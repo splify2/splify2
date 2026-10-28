@@ -688,6 +688,17 @@ check "i18n_get: языка нет ни у кого — пустой масси�
 check "i18n_get: язык с регионом" "true" "$(rpcd i18n_get '{"lang":"pt-BR"}' | pj 'd["ok"]')"
 check "i18n_get: код языка не по форме — отказ" "false;false;false" \
     "$(rpcd i18n_get '{"lang":"../x"}' | pj 'd["ok"]');$(rpcd i18n_get '{"lang":"r u"}' | pj 'd["ok"]');$(rpcd i18n_get '{}' | pj 'd["ok"]')"
+# Ответ i18n_get — из кэша на язык, пока проход согласия свеж; словарь или состав плагинов сменились — пересчёт.
+rpcd plugins_list >/dev/null; sleep 1.1; rpcd plugins_list >/dev/null
+rpcd i18n_get '{"lang":"ru"}' >/dev/null
+check "i18n_get: ответ ложится в кэш на язык" "yes;Добавить" \
+    "$([ -f "$PLUG/run/ext.reg.i18n.ru" ] && echo yes || echo no);$(rpcd i18n_get '{"lang":"ru"}' | pj 'd["dicts"][0]["dict"]["Add"]')"
+sleep 1.1
+printf '%s\n' '{"Add":"Прибавить"}' > "$PLUG/lib/lang-ru/i18n/core/ru.json"
+check "  словарь сменился — новые слова" "Прибавить" "$(rpcd i18n_get '{"lang":"ru"}' | pj 'd["dicts"][0]["dict"]["Add"]')"
+sleep 1.1; rpcd plugins_list >/dev/null; rpcd i18n_get '{"lang":"ru"}' >/dev/null
+rpcd plugin_disable '{"id":"lang-ru"}' >/dev/null
+check "  плагин выключили — его словаря нет" "0" "$(rpcd i18n_get '{"lang":"ru"}' | pj 'len(d["dicts"])')"
 
 echo
 if [ "$fails" -ne 0 ]; then
