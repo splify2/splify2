@@ -44,6 +44,10 @@ SPLIFY2_LIB="${SPLIFY2_LIB:-$SPLIFY2_LIBDIR/lib.sh}"
 # Службы хоста для программ плагинов (splify2-api, «Службы хоста») и каталог рабочих файлов плагина в памяти
 # (steer-api: STEER_PLUGIN_STATE, <state>/plugin/<id>).
 SPLIFY2_HOST="${SPLIFY2_HOST:-/usr/sbin/splify2-host}"
+# Ядро. splify2-seed и splify2-plugin-sync подключают только этот файл (без env.sh): без своего значения по умолчанию
+# `"$STEER" plugin …` в postinst пакета звал пустую команду (код 127) и семя отказывало всем плагинам словами
+# «ядро не умеет плагины».
+STEER="${STEER:-/usr/sbin/steer}"
 PLUGIN_STATE_DIR="${PLUGIN_STATE_DIR:-${STEER_STATE_DIR:-/var/lib/steer}/plugin}"
 
 # Тексты для человека: s2_t, s2_fail_doc (i18n.sh); диспетчер плагинов подключает только этот файл.

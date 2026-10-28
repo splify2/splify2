@@ -645,6 +645,8 @@ rm -f "$PLUG/fail.install"
 out="$(seed --no-reload)"; rc=$?
 check "  повторный запуск ставит и снимает строку cron" "0;no" "$rc;$(grep -q 'splify2-seed' "$T/crontab.root" && echo yes || echo no)"
 # Без каталога семени — не ошибка (сборка «только каркас»).
+check "plugin.sh без окружения знает ядро (/usr/sbin/steer): семя в postinst зовёт его без env.sh" "/usr/sbin/steer" \
+    "$(env -u STEER JSHN_SH=/dev/null PLUGIN_SH="$ROOT/files/usr/lib/splify2/plugin.sh" sh -c '. "$1" >/dev/null 2>&1; printf %s "$STEER"' _ "$ROOT/files/usr/lib/splify2/plugin.sh")"
 check "семя: каталога нет — не ошибка" "no seed;0" "$(SPLIFY2_SEED="$T/none" envs sh "$ROOT/files/usr/sbin/splify2-seed" 2>&1);$?"
 seed_reset; : > "$PLUG/needs-unsigned"; rm -f "$SEED/unsigned"
 check "семя: без метки unsigned архив ставится без --unsigned, неподписанный менеджер отклоняет" "yes" \
