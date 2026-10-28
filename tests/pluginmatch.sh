@@ -577,7 +577,7 @@ check "  ссылку убрали после прохода — возвращ�
 # Манифест плагина сменился (обновление руками) — новый метод попадает в ACL.
 sleep 1.1
 sed 's/"status":{"access":"read"}/"status":{"access":"read"},"fresh":{"access":"read"}/' "$PLUG/lib/recheck/plugin.json" > "$PLUG/m.tmp" &&
-    cat "$PLUG/m.tmp" > "$PLUG/lib/recheck/plugin.json"
+    cat "$PLUG/m.tmp" > "$PLUG/lib/recheck/plugin.json"; rm -f "$PLUG/m.tmp"
 rpcd plugins_list >/dev/null
 check "  манифест сменился — ACL пересобран" "yes" "$(grep -q '"fresh"' "$PLUG/acl/splify2-p-recheck.json" && echo yes || echo no)"
 
@@ -588,6 +588,13 @@ out="$(envs sh "$ROOT/files/usr/sbin/splify2-plugin-sync" --no-reload)"
 check "splify2-plugin-sync --no-reload: приводит, не перечитывает" "changed;yes;0" \
     "$out;$([ -L "$PLUG/rpcd/splify2.p.recheck" ] && echo yes || echo no);$(reload_count)"
 check "  повторно — без изменений" "unchanged" "$(envs sh "$ROOT/files/usr/sbin/splify2-plugin-sync")"
+# Одновременные проходы (задание установки и открытая вкладка): временные файлы у каждого свои, хвостов не остаётся.
+rm -f "$PLUG"/acl/splify2-p-*.json
+for _i in 1 2 3 4; do envs sh "$ROOT/files/usr/sbin/splify2-plugin-sync" --no-reload >/dev/null & done; wait
+check "  четыре прохода разом: ACL на месте и целы, временных файлов нет" "ok;0" \
+    "$(python3 -c 'import json,sys; json.load(open(sys.argv[1])); print("ok")' "$PLUG/acl/splify2-p-recheck.json" 2>/dev/null || echo bad);$(ls -a "$PLUG/acl" "$PLUG" "$PLUG/run" | grep -c '\.tmp\|\.new')"
+check "  общих временных имён ACL и tasks.json нет" "0;0" \
+    "$(grep -c '_ps_acl.tmp"' "$ROOT/files/usr/lib/splify2/plugin.sh");$(grep -c 'EXT_TASKS_JSON.new"' "$ROOT/files/usr/lib/splify2/ext.sh")"
 
 # ---- интерфейсы плагинов: ссылка на ui/ ----------------------------------------------------------------------------------
 plug_reset

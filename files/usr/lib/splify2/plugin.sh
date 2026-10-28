@@ -424,8 +424,13 @@ plugin_sync() {
         _ps_acl="$PLUGIN_ACL_DIR/splify2-p-$_ps_id.json"
         _ps_text="$(plugin_acl_text "$_ps_id")"
         if [ "$(cat "$_ps_acl" 2>/dev/null)" != "$_ps_text" ]; then
-            printf '%s\n' "$_ps_text" > "$_ps_acl.tmp" && mv -f "$_ps_acl.tmp" "$_ps_acl" &&
+            # Временное имя — своё у процесса: проход идёт и из задания установки, и из открытой вкладки одновременно,
+            # и общий `.tmp` один из них переименовывал из-под другого (тот получал отказ mv и терял перемену).
+            if printf '%s\n' "$_ps_text" 2>/dev/null > "$_ps_acl.tmp.$$" && mv -f "$_ps_acl.tmp.$$" "$_ps_acl"; then
                 PLUGIN_SYNC_CHANGED=1
+            else
+                rm -f "$_ps_acl.tmp.$$"
+            fi
         fi
     done
     # Интерфейсы плагинов (splify2.luci.interface): ссылка view/splify2/p-<id> -> <каталог плагина>/luci. Вид LuCI грузится
