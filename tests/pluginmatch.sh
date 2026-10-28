@@ -549,6 +549,27 @@ check "  чужие файлы в тех же каталогах не трону
 check "  rpcd перечитан один раз" "1" "$(reload_count)"
 rpcd plugins_list >/dev/null; sleep 0.3
 check "  всё в согласии — перечитки нет" "1" "$(reload_count)"
+# Без перемен проход согласия не повторяется (plugin_sync_fresh): реестр не пересобирается. Метка ставится через
+# секунду после прошлого прохода — сравнение времени у оболочки бывает посекундным.
+rpcd plugins_list >/dev/null; sleep 1.1; touch "$PLUG/mark"
+rpcd plugins_list >/dev/null
+check "  без перемен: реестр не пересобирается при открытии вкладки" "no" \
+    "$([ "$PLUG/run/ext.reg" -nt "$PLUG/mark" ] && echo yes || echo no)"
+# Перемена мимо панели (менеджер руками) — state.json новее отметки: проход идёт заново.
+sleep 1.1; touch "$PLUG/mark"; touch "$PLUG/state.json"
+rpcd plugins_list >/dev/null
+check "  state.json изменился мимо панели — реестр пересобран" "yes" \
+    "$([ "$PLUG/run/ext.reg" -nt "$PLUG/mark" ] && echo yes || echo no)"
+# Ссылку убрали руками через секунду после прохода — каталог обработчиков новее отметки, ссылка возвращается.
+sleep 1.1; rm -f "$PLUG/rpcd/splify2.p.recheck"
+rpcd plugins_list >/dev/null
+check "  ссылку убрали после прохода — возвращается" "yes" "$([ -L "$PLUG/rpcd/splify2.p.recheck" ] && echo yes || echo no)"
+# Манифест плагина сменился (обновление руками) — новый метод попадает в ACL.
+sleep 1.1
+sed 's/"status":{"access":"read"}/"status":{"access":"read"},"fresh":{"access":"read"}/' "$PLUG/lib/recheck/plugin.json" > "$PLUG/m.tmp" &&
+    cat "$PLUG/m.tmp" > "$PLUG/lib/recheck/plugin.json"
+rpcd plugins_list >/dev/null
+check "  манифест сменился — ACL пересобран" "yes" "$(grep -q '"fresh"' "$PLUG/acl/splify2-p-recheck.json" && echo yes || echo no)"
 
 # splify2-plugin-sync: та же приводка командой (postinst).
 rm -f "$PLUG/rpcd/splify2.p.recheck"

@@ -367,6 +367,13 @@ plugin_sync() {
     # Реестр расширений (хуки, задачи, события, псевдонимы) собирается первым: ACL новых имён на объекте splify2
     # берёт из него. Перечень новых имён изменился — rpcd надо перечитать: `list` объекта печатает их.
     plugin_need_ext
+    # Отметка согласия (plugin_sync_fresh) — временем НАЧАЛА прохода: всё, что поменяется во время него, не
+    # окажется старше отметки, и следующий вызов пройдёт заново. На время прохода — под своим именем, на место —
+    # в конце: оборванный проход отметки не оставляет.
+    _ps_stamp="$EXT_REG.sync"
+    mkdir -p "${EXT_REG%/*}" 2>/dev/null
+    rm -f "$_ps_stamp"
+    printf '%s\n' "$EXT_API_VERSION" 2>/dev/null > "$_ps_stamp.$$" || _ps_stamp=""
     _ps_names0="$(ext_new_aliases)"
     ext_rebuild
     [ "$(ext_new_aliases)" = "$_ps_names0" ] || PLUGIN_SYNC_CHANGED=1
@@ -421,6 +428,31 @@ plugin_sync() {
     # Задачи плагинов — один размеченный блок crontab; служба событий — по надобности.
     ext_cron_sync
     ext_events_sync
+    [ -n "$_ps_stamp" ] && mv -f "$_ps_stamp.$$" "$_ps_stamp" 2>/dev/null
+    return 0
+}
+
+# Всё ли уже в согласии с прошлого прохода plugin_sync: отметка есть, той же версии splify2-api, и ни один вход
+# прохода (state.json менеджера, каталоги и манифесты плагинов, каталоги ссылок и ACL, crontab, режим безопасности,
+# таблица методов) не новее её. Только встроенные проверки оболочки — ни одного процесса: это цена открытия вкладки
+# «Плагины» без перемен. Любой метод, который меняет состав плагинов, зовёт plugin_sync сам, без этой проверки;
+# перемены мимо панели (`steer plugin …` руками, задача автообновления) пишут state.json — он новее отметки.
+# Сравнение `-ot` (строго старше), а не `-nt`: вход, тронутый в ту же секунду, что и отметка, считается переменой
+# там, где оболочка сравнивает время с точностью до секунды.
+plugin_sync_fresh() {
+    plugin_need_ext
+    _sf="$EXT_REG.sync"
+    [ -f "$_sf" ] && [ -f "$EXT_REG" ] || return 1
+    _sf_v=""
+    read -r _sf_v < "$_sf" 2>/dev/null
+    [ -n "$_sf_v" ] && [ "$_sf_v" = "${EXT_API_VERSION:-1.0.0}" ] || return 1
+    if [ -e "$EXT_SAFE_FILE" ]; then [ -e "$EXT_REG.safe" ] || return 1
+    else [ -e "$EXT_REG.safe" ] && return 1; fi
+    for _sf_p in "$PLUGIN_STATE" "$PLUGIN_ROOT" "$PLUGIN_ROOT"/*/ "$PLUGIN_ROOT"/*/plugin.json \
+                 "$PLUGIN_RPCD_DIR" "$PLUGIN_ACL_DIR" "$PLUGIN_UI_DIR" "$EXT_CRONTAB" "$EXT_TASKS_JSON" "$EXT_METHODS_TSV"; do
+        [ -e "$_sf_p" ] || continue
+        [ "$_sf_p" -ot "$_sf" ] || return 1
+    done
     return 0
 }
 
