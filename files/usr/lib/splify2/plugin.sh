@@ -167,6 +167,25 @@ plugin_json_array() {  # ТЕКСТ КЛЮЧ
 # Склейка строк — `$!{N;ba}`, а не `N` с проверкой: у однострочного текста `N` на последней строке завершает sed
 # до подстановок, и кавычки оставались неэкранированными.
 plugin_jstr() {  # ТЕКСТ
+    # Без управляющих знаков (почти всегда: версии, имена, слова менеджера) — встроенными средствами оболочки, без
+    # tr и sed: \ и " экранируются разбором строки по первому из них.
+    case "$1" in
+        *[[:cntrl:]]*) ;;
+        *)
+            _pjs_s="$1"; _pjs_o=""
+            while :; do
+                case "$_pjs_s" in
+                    *[\\\"]*)
+                        _pjs_p="${_pjs_s%%[\\\"]*}"
+                        _pjs_s="${_pjs_s#"$_pjs_p"}"
+                        _pjs_o="$_pjs_o$_pjs_p\\${_pjs_s%"${_pjs_s#?}"}"
+                        _pjs_s="${_pjs_s#?}" ;;
+                    *) _pjs_o="$_pjs_o$_pjs_s"; break ;;
+                esac
+            done
+            printf '"%s"' "$_pjs_o"
+            return 0 ;;
+    esac
     printf '"'
     printf '%s' "$1" | tr -d '\000-\010\013-\037' | sed -e ':a' -e '$!{N;ba' -e '}' \
         -e 's/\\/\\\\/g' -e 's/"/\\"/g' -e "s/$(printf '\t')/\\\\t/g" -e 's/\n/\\n/g'
@@ -199,8 +218,22 @@ plugin_manager() {  # ДЕЙСТВИЕ [АРГУМЕНТЫ...]
     PLUGIN_OUT="$("$STEER" plugin "$@" --json 2>"$_pm_err")"
     PLUGIN_RC=$?
     PLUGIN_ERR=""
-    [ "$_pm_err" = /dev/null ] || { PLUGIN_ERR="$(cat "$_pm_err" 2>/dev/null)"; rm -f "$_pm_err"; }
+    if [ "$_pm_err" != /dev/null ]; then
+        [ -s "$_pm_err" ] && PLUGIN_ERR="$(cat "$_pm_err" 2>/dev/null)"
+        rm -f "$_pm_err"
+    fi
     return $PLUGIN_RC
+}
+
+# То же для действий, которые только читают (list, repo list, status, search): первый заход — без файла для stderr,
+# потому что слова менеджера нужны только при отказе, а временный файл стоит трёх процессов (mktemp, cat, rm) на
+# каждый вызов. Отказал — повтор с файлом: чтение можно повторить, и отказ доходит словами менеджера.
+plugin_manager_ro() {  # ДЕЙСТВИЕ [АРГУМЕНТЫ...]
+    PLUGIN_ERR=""
+    PLUGIN_OUT="$("$STEER" plugin "$@" --json 2>/dev/null)"
+    PLUGIN_RC=$?
+    [ "$PLUGIN_RC" = 0 ] && return 0
+    plugin_manager "$@"
 }
 
 # ЯДРО БЕЗ МЕНЕДЖЕРА ПЛАГИНОВ. Менеджер — с ядра 2.1; на более старом `steer plugin` отвечает «нет такой
@@ -453,8 +486,13 @@ plugin_sync() {
         _ps_acl="$PLUGIN_ACL_DIR/splify2-p-$_ps_id.json"
         _ps_text="$(plugin_acl_text "$_ps_id")"
         if [ "$(cat "$_ps_acl" 2>/dev/null)" != "$_ps_text" ]; then
-            printf '%s\n' "$_ps_text" > "$_ps_acl.tmp" && mv -f "$_ps_acl.tmp" "$_ps_acl" &&
+            # Временное имя — своё у процесса: проход идёт и из задания установки, и из открытой вкладки одновременно,
+            # и общий `.tmp` один из них переименовывал из-под другого (тот получал отказ mv и терял перемену).
+            if printf '%s\n' "$_ps_text" 2>/dev/null > "$_ps_acl.tmp.$$" && mv -f "$_ps_acl.tmp.$$" "$_ps_acl"; then
                 PLUGIN_SYNC_CHANGED=1
+            else
+                rm -f "$_ps_acl.tmp.$$"
+            fi
         fi
     done
     # Интерфейсы плагинов (splify2.luci.interface): ссылка view/splify2/p-<id> -> <каталог плагина>/luci. Вид LuCI грузится
@@ -702,7 +740,7 @@ plugin_method_info() {  # ID МЕТОД
 # есть, если это объект JSON. Метод с `job: true` отвечает `{job: "<номер>"}` сразу.
 # Права (read/write) здесь не проверяются: их проверяет rpcd по ACL группы плагина, а шлюз для
 # приложения вне LuCI работает от root и пускает только того, у кого есть право на splify2.
-plugin_invoke() {  # ID МЕТОД [ВХОД_JSON]
+plugin_invoke() {  # ID МЕТОД [ВХОД_JSON [parsed]]
     _pv_id="$1"; _pv_m="$2"; _pv_in="${3:-}"
     plugin_id_ok "$_pv_id" || { plugin_fail bad_request plugin.bad_name "Invalid plugin name"; return 1; }
     plugin_method_ok "$_pv_m" || { plugin_fail no_method plugin.no_method "Plugin {id} has no action {method}" id "$_pv_id" method "$_pv_m"; return 1; }
@@ -725,8 +763,13 @@ plugin_invoke() {  # ID МЕТОД [ВХОД_JSON]
     _pv_to="$PLUGIN_MTIMEOUT"
     case "$_pv_to" in ''|*[!0-9]*|0) _pv_to="$PLUGIN_RPC_TIMEOUT" ;; esac
     _pv_job="$PLUGIN_MJOB"
-    # Вход программы — объект JSON; пусто или не объект — пустой объект.
-    _pv_body="$(plugin_json_obj "$_pv_in")" || _pv_body='{}'
+    # Вход программы — объект JSON; пусто или не объект — пустой объект. Четвёртый аргумент `parsed` — вход уже
+    # вышел из разбора jsonfilter (plugin_call): форма проверяется без второго запуска.
+    if [ "${4:-}" = parsed ]; then
+        case "$_pv_in" in '{'*'}') _pv_body="$_pv_in" ;; *) _pv_body='{}' ;; esac
+    else
+        _pv_body="$(plugin_json_obj "$_pv_in")" || _pv_body='{}'
+    fi
 
     plugin_export_env "$_pv_id"
 

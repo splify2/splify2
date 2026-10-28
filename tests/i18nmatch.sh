@@ -60,7 +60,7 @@ envs() {
         SPLIFY2_LOCK_DIR="$T/lock" PLUGIN_SH="$ROOT/files/usr/lib/splify2/plugin.sh" \
         PLUGIN_ROOT="$PLUG/lib" PLUGIN_STATE="$PLUG/state.json" PLUGIN_JOBS="$T/jobs" \
         EXT_REG="$PLUG/run/ext.reg" EXT_SAFE_FILE="$PLUG/safe" EXT_METHODS_TSV="$ROOT/files/usr/lib/splify2/methods.tsv" \
-        SPLIFY2_LIBDIR="$ROOT/files/usr/lib/splify2" "$@"
+        SPLIFY2_LIBDIR="$ROOT/files/usr/lib/splify2" UCI_SPLIFY2="$T/config/splify2" "$@"
 }
 rpcd() { printf '%s\n' "${2:-}" | envs sh "$SCRIPT" call "$1" 2>"$T/stderr"; }
 
@@ -85,6 +85,28 @@ printf 'luci.main.lang=ru\n' > "$T/uci.db"
 check "luci.main.lang=ru берётся из настроек" "неизвестный метод" "$(rpcd no_such_method '{}' | pj 'd["error"]')"
 printf 'luci.main.lang=auto\n' > "$T/uci.db"
 check "luci.main.lang=auto — английский (браузер бэкенду не виден)" "Unknown method" "$(rpcd no_such_method '{}' | pj 'd["error"]')"
+# Язык, выбранный в интерфейсе (prefs_set ui_lang), — когда язык LuCI auto или не задан.
+printf 'luci.main.lang=auto\n' > "$T/uci.db"
+out="$(rpcd prefs_set '{"ui_lang":"ru"}')"
+check "prefs_set ui_lang без interface: ok, хранится в splify2.main.ui_lang" "true;ru;ru" \
+    "$(printf '%s' "$out" | pj 'd["ok"]');$(printf '%s' "$out" | pj 'd["ui_lang"]');$(sed -n 's/^splify2\.main\.ui_lang=//p' "$T/uci.db" | tr -d "'")"
+check "  luci auto + ui_lang=ru — тексты бэкенда по-русски" "неизвестный метод" "$(rpcd no_such_method '{}' | pj 'd["error"]')"
+check "  prefs_get отдаёт ui_lang" "ru" "$(rpcd prefs_get '{}' | pj 'd["ui_lang"]')"
+printf 'luci.main.lang=en\nsplify2.main.ui_lang=ru\n' > "$T/uci.db"
+check "  язык LuCI задан — он главнее ui_lang" "Unknown method" "$(rpcd no_such_method '{}' | pj 'd["error"]')"
+printf 'splify2.main.ui_lang=ru\n' > "$T/uci.db"
+check "  язык LuCI не задан — ui_lang" "неизвестный метод" "$(rpcd no_such_method '{}' | pj 'd["error"]')"
+check "  ui_lang не по форме — отказ prefs.bad_lang" "prefs.bad_lang;prefs.bad_lang;prefs.bad_lang" \
+    "$(rpcd prefs_set '{"ui_lang":"RU"}' | pj 'd["code"]');$(rpcd prefs_set '{"ui_lang":"ru-"}' | pj 'd["code"]');$(rpcd prefs_set '{"ui_lang":"../x"}' | pj 'd["code"]')"
+check "  ui_lang с регионом — ok" "true" "$(rpcd prefs_set '{"ui_lang":"pt-br"}' | pj 'd["ok"]')"
+check "  ни interface, ни ui_lang — отказ prefs.nothing" "prefs.nothing" "$(rpcd prefs_set '{}' | pj 'd["code"]')"
+rpcd prefs_set '{"ui_lang":"auto"}' >/dev/null
+check "  ui_lang=auto снимает выбор" "auto;0" \
+    "$(rpcd prefs_get '{}' | pj 'd["ui_lang"]');$(grep -c 'ui_lang' "$T/uci.db")"
+check "  interface по-прежнему пишется" "true;andromeda" \
+    "$(rpcd prefs_set '{"interface":"andromeda"}' | pj 'd["ok"]');$(sed -n 's/^splify2\.main\.interface=//p' "$T/uci.db" | tr -d "'")"
+check "сигнатура prefs_set объявляет ui_lang (иначе rpcd отбросит поле)" "1" \
+    "$(grep -c 'json_add_object prefs_set; json_add_string interface; json_add_string ui_lang; json_close_object' "$ROOT/files/usr/libexec/rpcd/splify2")"
 printf 'luci.main.lang=RU\n' > "$T/uci.db"
 check "регистр кода языка не важен" "неизвестный метод" "$(rpcd no_such_method '{}' | pj 'd["error"]')"
 : > "$T/uci.db"

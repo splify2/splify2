@@ -487,6 +487,12 @@ check "plugin_call: тот же диспетчер, params доходят как
     "$(printf '%s' "$out" | pj 'd["ok"]');$(printf '%s' "$out" | pj 'd["in"]["z"]')"
 out="$(rpcd plugin_call '{"id":"recheck","method":"status"}')"
 check "  без params — пустой объект" "{}" "$(printf '%s' "$out" | pj 'd["in"]')"
+out="$(rpcd plugin_call '{"id":"recheck","method":"status","params":{"q":"a'"'"'b \\\" $(id) `x`","n":[1,2]}}')"
+check "  params с кавычками, \$(…) и обратными кавычками доходят как есть (разбор одним jsonfilter)" "a'b \\\" \$(id) \`x\`;[1, 2]" \
+    "$(printf '%s' "$out" | pj 'd["in"]["q"]');$(printf '%s' "$out" | pj 'd["in"]["n"]')"
+check "  params не объект — пустой объект" "{}" "$(rpcd plugin_call '{"id":"recheck","method":"status","params":[1]}' | pj 'd["in"]')"
+check "  id с кавычкой и подстановкой — отказ bad_request" "bad_request" \
+    "$(rpcd plugin_call '{"id":"x'"'"';touch /tmp/pwn;'"'"'","method":"status"}' | pj 'd["code"]')"
 check "  метод с job:true через plugin_call — тоже {job}" "yes" \
     "$(rpcd plugin_call '{"id":"recheck","method":"scan"}' | pj 'd["job"]' | grep -q . && echo yes || echo no)"
 
@@ -577,7 +583,7 @@ check "  ссылку убрали после прохода — возвращ�
 # Манифест плагина сменился (обновление руками) — новый метод попадает в ACL.
 sleep 1.1
 sed 's/"status":{"access":"read"}/"status":{"access":"read"},"fresh":{"access":"read"}/' "$PLUG/lib/recheck/plugin.json" > "$PLUG/m.tmp" &&
-    cat "$PLUG/m.tmp" > "$PLUG/lib/recheck/plugin.json"
+    cat "$PLUG/m.tmp" > "$PLUG/lib/recheck/plugin.json"; rm -f "$PLUG/m.tmp"
 rpcd plugins_list >/dev/null
 check "  манифест сменился — ACL пересобран" "yes" "$(grep -q '"fresh"' "$PLUG/acl/splify2-p-recheck.json" && echo yes || echo no)"
 
@@ -588,6 +594,13 @@ out="$(envs sh "$ROOT/files/usr/sbin/splify2-plugin-sync" --no-reload)"
 check "splify2-plugin-sync --no-reload: приводит, не перечитывает" "changed;yes;0" \
     "$out;$([ -L "$PLUG/rpcd/splify2.p.recheck" ] && echo yes || echo no);$(reload_count)"
 check "  повторно — без изменений" "unchanged" "$(envs sh "$ROOT/files/usr/sbin/splify2-plugin-sync")"
+# Одновременные проходы (задание установки и открытая вкладка): временные файлы у каждого свои, хвостов не остаётся.
+rm -f "$PLUG"/acl/splify2-p-*.json
+for _i in 1 2 3 4; do envs sh "$ROOT/files/usr/sbin/splify2-plugin-sync" --no-reload >/dev/null & done; wait
+check "  четыре прохода разом: ACL на месте и целы, временных файлов нет" "ok;0" \
+    "$(python3 -c 'import json,sys; json.load(open(sys.argv[1])); print("ok")' "$PLUG/acl/splify2-p-recheck.json" 2>/dev/null || echo bad);$(ls -a "$PLUG/acl" "$PLUG" "$PLUG/run" | grep -c '\.tmp\|\.new')"
+check "  общих временных имён ACL и tasks.json нет" "0;0" \
+    "$(grep -c '_ps_acl.tmp"' "$ROOT/files/usr/lib/splify2/plugin.sh");$(grep -c 'EXT_TASKS_JSON.new"' "$ROOT/files/usr/lib/splify2/ext.sh")"
 
 # ---- интерфейсы плагинов: ссылка на ui/ ----------------------------------------------------------------------------------
 plug_reset

@@ -724,7 +724,9 @@ $_cs_json
 }"
         if [ "$(cat "$EXT_TASKS_JSON" 2>/dev/null)" != "$_cs_want" ]; then
             mkdir -p "${EXT_TASKS_JSON%/*}" 2>/dev/null
-            printf '%s\n' "$_cs_want" > "$EXT_TASKS_JSON.new" 2>/dev/null && mv -f "$EXT_TASKS_JSON.new" "$EXT_TASKS_JSON"
+            # Своё временное имя у процесса (см. ACL в plugin_sync): проходы бывают одновременными.
+            if printf '%s\n' "$_cs_want" 2>/dev/null > "$EXT_TASKS_JSON.new.$$"; then mv -f "$EXT_TASKS_JSON.new.$$" "$EXT_TASKS_JSON"
+            else rm -f "$EXT_TASKS_JSON.new.$$"; fi
         fi
     else
         [ -f "$EXT_TASKS_JSON" ] && rm -f "$EXT_TASKS_JSON"
