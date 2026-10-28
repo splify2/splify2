@@ -32,11 +32,15 @@ return baseclass.extend({
 		return out;
 	},
 
+	// The main page (view/splify2/index.js) asks prefs_get to choose the interface: it hands the answer here, so the
+	// frame does not ask it a second time after it.
+	seed: function(prefsPromise) { this.prefsSeed = prefsPromise; },
+
 	// Loads the dictionary once. Never rejects: a frame without a dictionary is an English frame.
 	load: function() {
 		var self = this;
 		if (this.loading) return this.loading;
-		this.loading = Promise.resolve(callPrefs()).then(function(p) {
+		this.loading = Promise.resolve(this.prefsSeed || callPrefs()).then(function(p) {
 			self.prefs = p || null;
 			var cands = self.candidates(p && p.lang);
 			self.lang = cands[0];

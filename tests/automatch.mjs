@@ -686,5 +686,36 @@ import { scanStrings, stringsFile } from './lib/strings.mjs'
   check('плагины изменились — схема прошлой страницы забыта', false, 'splify2.core.schema' in mem)
 }
 
+// ---- 12. главная страница: каркас открывается, не дожидаясь prefs_get, и prefs_get один ----
+{
+  const tick = () => new Promise((r) => setTimeout(r, 0))
+  const run = async (remembered) => {
+    const mem = remembered ? { 'splify2:interface': remembered } : {}
+    globalThis.window = { location: { hash: '', pathname: '/x', search: '', reload() {} },
+      localStorage: { getItem: (k) => (k in mem ? mem[k] : null), setItem: (k, v) => { mem[k] = String(v) }, removeItem: (k) => { delete mem[k] } } }
+    let answer; const wait = new Promise((r) => { answer = r })
+    const rc = []
+    const { load, L } = makeLoader({ rpcCalls: rc, rpcReplies: { prefs_get: () => wait, i18n_get: { ok: true, dicts: [] } } })
+    const req = []
+    const orig = L.require
+    L.require = (n) => { req.push(n); return orig(n) }
+    const idx = load('view.splify2.index')
+    idx.__init__()
+    await tick(); await tick()
+    const before = req.includes('view.splify2.core.main')
+    answer({ ok: true, interface: 'basic', lang: 'en' })
+    await tick(); await tick()
+    const main = Object.create(load('view.splify2.core.main'))
+    await load('view.splify2.core.i18n').load()
+    return { before, after: req.includes('view.splify2.core.main'), prefs: rc.filter((c) => c.method === 'prefs_get').length, i18nEarly: req[0] === 'view.splify2.core.i18n' }
+  }
+  const warm = await run('basic')
+  check('каркас запомнен: открывается, не дожидаясь prefs_get', true, warm.before)
+  check('каркас запомнен: prefs_get один на страницу (словарь берёт ответ главной)', 1, warm.prefs)
+  const cold = await run('')
+  check('первое открытие: модуль словаря грузится, пока идёт prefs_get', [ true, false ], [ cold.i18nEarly, cold.before ])
+  check('первое открытие: после ответа открыт каркас, prefs_get один', [ true, 1 ], [ cold.after, cold.prefs ])
+}
+
 console.log(`\n${total} проверок, провалов: ${fails}`)
 process.exit(fails ? 1 : 0)
