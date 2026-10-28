@@ -760,6 +760,7 @@ rpcd() {  # МЕТОД [JSON_ЗАПРОСА]
     return $_rr
 }
 
+
 rpcd_run() {  # МЕТОД [JSON_ЗАПРОСА]  — вызов метода; для перечня методов есть rpcd_list
     case "$1" in
         # Методы, вынесенные в плагины, видят официальные плагины; остальным нужен менеджер плагинов с заглушкой ядра.
@@ -834,6 +835,15 @@ rpcd_run() {  # МЕТОД [JSON_ЗАПРОСА]  — вызов метода; �
         SINGBOX_INITD="${SINGBOX_INITD_FIXTURE:-$T/box/none}" \
         sh "$SCRIPT" call "$1" 2>"$T/stderr"
 }
+
+# Подписок нет — хук sub_fields плагина subscriptions (запуск его программы) не зовётся: полей некому.
+_sfh="$T/off/lib/subscriptions/hooks/sub-fields"
+mv "$_sfh" "$_sfh.real"
+printf '#!/bin/sh\necho run >> "%s"\nexec "%s" "$@"\n' "$T/subfields.log" "$_sfh.real" > "$_sfh"; chmod +x "$_sfh"
+rm -f "$T/subfields.log"
+check "sub_list без подписок: пустой перечень, хук полей не запускается" "0;no" \
+      "$(rpcd sub_list | python3 -c 'import json,sys; print(len(json.load(sys.stdin)["subs"]))');$([ -f "$T/subfields.log" ] && echo yes || echo no)"
+mv -f "$_sfh.real" "$_sfh"
 
 rpcd_list() {
     env SANDBOX="$T" PATH="$T/bin:$PATH" JSHN_SH="$ROOT/tests/stub/jshn.sh" FETCH_SH="$ROOT/files/usr/lib/splify2/fetch.sh" \
