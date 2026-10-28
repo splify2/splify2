@@ -56,7 +56,7 @@ envs() {
         SPLIFY2_LOCK_DIR="$T/lock" \
         PLUGIN_SH="$ROOT/files/usr/lib/splify2/plugin.sh" PLUG="$PLUG" \
         PLUGIN_ROOT="$PLUG/lib" PLUGIN_STATE="$PLUG/state.json" PLUGIN_RPCD_DIR="$PLUG/rpcd" \
-        PLUGIN_ACL_DIR="$PLUG/acl" PLUGIN_UI_DIR="$PLUG/www" PLUGIN_VIEW_DIR="$PLUG/views" PLUGIN_JOBS="$PLUG/jobs" PLUGIN_RELOAD_DELAY=0 \
+        PLUGIN_ACL_DIR="$PLUG/acl" PLUGIN_UI_DIR="$PLUG/www" PLUGIN_VIEW_DIR="$PLUG/views" PLUGIN_CGI_DIR="$PLUG/cgi" PLUGIN_JOBS="$PLUG/jobs" PLUGIN_RELOAD_DELAY=0 \
         PLUGIN_DISPATCHER="$DISPATCHER" \
         EXT_REG="$PLUG/run/ext.reg" EXT_SAFE_FILE="$PLUG/safe" EXT_TASKS_JSON="$PLUG/tasks.json" \
         EXT_CRONTAB="$PLUG/crontab" EXT_TASK_LOCK_DIR="$PLUG/run" EXT_EVENTS_INITD="$PLUG/no-events-initd" \
@@ -599,7 +599,26 @@ mkdir -p "$PLUG/views"; echo чужое > "$PLUG/views/p-stray"; ln -s /elsewher
 rpcd plugins_list >/dev/null
 check "  чужие файлы и ссылки p-* не тронуты" "yes;yes" \
     "$([ -f "$PLUG/views/p-stray" ] && echo yes || echo no);$([ -L "$PLUG/views/p-foreign" ] && echo yes || echo no)"
-check "plugins_list: splify2_api — 1.1.0" "1.1.0" "$(rpcd plugins_list | pj 'd["splify2_api"]')"
+check "plugins_list: splify2_api — 1.2.0" "1.2.0" "$(rpcd plugins_list | pj 'd["splify2_api"]')"
+
+# ---- CGI плагина: splify2.cgi (splify2-api 1.2) — так встаёт шлюз Desktop API ------------------------------------------
+plug_reset
+install_plugin desktop-api 1.0.0
+printf '{"schema":1,"id":"desktop-api","version":"1.0.0","name":"D","compat":{"splify2-api":"^1.2"},"permissions":["splify2.cgi"],"splify2":{"cgi":["cgi/splify2-api","cgi/sub/x","cgi/gone"]}}\n' > "$PLUG/lib/desktop-api/plugin.json"
+mkdir -p "$PLUG/lib/desktop-api/cgi" "$PLUG/lib/desktop-api/bin"; echo "gw" > "$PLUG/lib/desktop-api/cgi/splify2-api"; echo secret > "$PLUG/lib/desktop-api/bin/prog"
+install_plugin nocgiperm 1.0.0
+printf '{"schema":1,"id":"nocgiperm","version":"1.0.0","name":"n","compat":{"splify2-api":"^1.2"},"splify2":{"cgi":["cgi/other"]}}\n' > "$PLUG/lib/nocgiperm/plugin.json"
+mkdir -p "$PLUG/lib/nocgiperm/cgi"; echo x > "$PLUG/lib/nocgiperm/cgi/other"
+rpcd plugins_list >/dev/null; sleep 0.3
+check "splify2.cgi: ссылка в каталоге CGI ведёт на файл плагина" "$PLUG/lib/desktop-api/cgi/splify2-api" "$(readlink "$PLUG/cgi/splify2-api")"
+check "  без права splify2.cgi, не из cgi/ или без файла — ссылок нет" "no;no;no" \
+    "$([ -e "$PLUG/cgi/other" ] && echo yes || echo no);$([ -e "$PLUG/cgi/x" ] && echo yes || echo no);$([ -e "$PLUG/cgi/gone" ] && echo yes || echo no)"
+rpcd plugin_disable '{"id":"desktop-api"}' >/dev/null
+check "  выключенный плагин — шлюз закрыт (ссылка снята)" "no" "$([ -e "$PLUG/cgi/splify2-api" ] || [ -L "$PLUG/cgi/splify2-api" ] && echo yes || echo no)"
+echo чужое > "$PLUG/cgi/foreign"; ln -s /elsewhere "$PLUG/cgi/foreignlink"
+rpcd plugins_list >/dev/null
+check "  чужие файлы и ссылки в каталоге CGI не тронуты" "yes;yes" \
+    "$([ -f "$PLUG/cgi/foreign" ] && echo yes || echo no);$([ -L "$PLUG/cgi/foreignlink" ] && echo yes || echo no)"
 
 # ---- семя: splify2-seed ставит плагины из пакета через менеджер ядра, один раз ----------------------------------------------
 SEED="$T/seed"; mkdir -p "$SEED"
