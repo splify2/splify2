@@ -404,8 +404,23 @@ function objectField(key, node, value, path, ctx, isEntry) {
 		});
 	};
 
-	// what is written and what the record has by default (for x-when), from the fields of the active layers
-	var state = function() {
+	// The keys the conditions of the kids (x-when, x-when-set) read: a refresh of a record without variants
+	// reads only them - a key of rules does not make the record read all its hundreds of rules on every keystroke.
+	var deps = null, depsN = -1;
+	var depKeys = function() {
+		if (depsN === kids.length) return deps;
+		deps = {}; depsN = kids.length;
+		kids.forEach(function(k) {
+			var w = k.node['x-when'], ws = k.node['x-when-set'];
+			if (w) Object.keys(w).forEach(function(x) { deps[x] = 1; });
+			if (ws) ws.forEach(function(x) { deps[x] = 1; });
+		});
+		return deps;
+	};
+
+	// what is written and what the record has by default (for x-when), from the fields of the active layers;
+	// light: only the keys the conditions read (obj and eff are not the whole record then)
+	var state = function(light) {
 		var vn = variantNow();
 		var absent = !!(vn && V[vn]['x-absent']);
 		var layers = [ '' ];
@@ -418,8 +433,10 @@ function objectField(key, node, value, path, ctx, isEntry) {
 		var obj = {}, eff = {};
 		for (var pass = 0; pass < 4; pass++) {
 			obj = Object.assign({}, sw); eff = Object.assign({}, sw);
+			var dk = light ? depKeys() : null;
 			kids.forEach(function(k, i) {
 				if (layers.indexOf(k.layer) < 0 || !vis[i] || k.field.kind === 'const') return;
+				if (dk && !dk[k.key]) return;
 				var v = k.field.get();
 				if (v !== undefined) { obj[k.key] = v; eff[k.key] = v; }
 				else if (k.node.default !== undefined) eff[k.key] = k.node.default;
@@ -432,8 +449,9 @@ function objectField(key, node, value, path, ctx, isEntry) {
 	};
 
 	var refresh = function() {
-		var st = state();
-		lastObj = st.obj;
+		// lastObj seeds the layer of a variant chosen later: only a record with variants needs all of it
+		var st = state(!(V && D));
+		if (V && D) lastObj = st.obj;
 		kids.forEach(function(k, i) { k.field.show(st.layers.indexOf(k.layer) >= 0 && st.vis[i]); });
 		f.layersNow = st.layers;
 		f.variant = st.variant;
@@ -589,12 +607,11 @@ function arrayObjectField(key, node, value, path, ctx) {
 	var itemNode = node.items;
 	var items = [];
 	var list = E('div', { 'class': 'splify2-entries' });
-	var renumber = function() {
-		items.forEach(function(it, i) {
-			var cur = it.field.get();
-			it.sum.textContent = '#' + (i + 1) + (cur && cur.name ? ' · ' + cur.name : '');
-		});
+	var title = function(it, i) {
+		var cur = it.field.get();
+		it.sum.textContent = '#' + (i + 1) + (cur && cur.name ? ' · ' + cur.name : '');
 	};
+	var renumber = function() { items.forEach(title); };
 	var addItem = function(v, open) {
 		var ef = objectField('', itemNode, v, path + '.[]', ctx, true);
 		ctx.form.fields.push({ path: path + '.[]', node: itemNode, field: ef });
@@ -623,7 +640,8 @@ function arrayObjectField(key, node, value, path, ctx) {
 		it.el = wrap;
 		items.push(it);
 		list.appendChild(wrap);
-		ef.change(function() { renumber(); f.fire(); });
+		// an edit inside one item renames only it: the others keep their numbers and names
+		ef.change(function() { title(it, items.indexOf(it)); f.fire(); });
 	};
 	(Array.isArray(value) ? value : []).forEach(function(v) { addItem(v, false); });
 	renumber();
