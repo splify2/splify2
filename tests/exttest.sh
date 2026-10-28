@@ -185,7 +185,7 @@ for _mp in "sub_auto subscriptions" "sub_quota subscriptions" "sub_rename subscr
     check "$1 без плагина: нужен $2" "not_installed;yes" "$(printf '%s' "$out" | pj 'd["code"]');$(printf '%s' "$out" | grep -q "$2" && echo yes || echo no)"
 done
 check "методы каркаса отвечают как раньше (spec_get)" "2" "$(rpc spec_get | pj 'd["version"]')"
-check "реестр заведён и пуст: версия и режим" "api	1.1.0|safe	0" "$(reg | head -2 | tr '\n' '|' | sed 's/|$//')"
+check "реестр заведён и пуст: версия и режим" "api	1.2.0|safe	0" "$(reg | head -2 | tr '\n' '|' | sed 's/|$//')"
 
 # =====================================================================================================
 echo "== реестр: права, имена, версия API"
@@ -196,7 +196,7 @@ prog nopermit h <<'EOF'
 cat >/dev/null; echo '{"ok":false,"error":"не должен вызываться"}'
 EOF
 fixture_plugin badapi '{"schema":1,"id":"badapi","version":"1.0.0","arch":"all","name":"x","compat":{"splify2-api":"^2.0"},"permissions":["splify2.hooks"],"splify2":{"hooks":{"pre_apply":{"prog":"h"}}}}'
-fixture_plugin newer '{"schema":1,"id":"newer","version":"1.0.0","arch":"all","name":"x","compat":{"splify2-api":"^1.2"},"permissions":["splify2.hooks"],"splify2":{"hooks":{"pre_apply":{"prog":"h"}}}}'
+fixture_plugin newer '{"schema":1,"id":"newer","version":"1.0.0","arch":"all","name":"x","compat":{"splify2-api":"^1.3"},"permissions":["splify2.hooks"],"splify2":{"hooks":{"pre_apply":{"prog":"h"}}}}'
 prog badapi h <<'EOF'
 #!/bin/sh
 cat >/dev/null; echo '{"ok":true}'
@@ -223,9 +223,9 @@ EOF
 sync_now
 R="$PL/run/ext.reg"
 check "хук без права splify2.hooks не попал в реестр" "0;yes" "$(reg | grep -c '^hook	pre_apply	nopermit');$(has 'nopermit: хук pre_apply без права splify2.hooks' "$R")"
-check "compat.splify2-api ^2.0 — блок не применён" "0;yes" "$(reg | grep -c '^hook	pre_apply	badapi');$(has 'badapi: нужен splify2-api ^2.0, у хоста 1.1.0' "$R")"
+check "compat.splify2-api ^2.0 — блок не применён" "0;yes" "$(reg | grep -c '^hook	pre_apply	badapi');$(has 'badapi: нужен splify2-api ^2.0, у хоста 1.2.0' "$R")"
 check "блок без оси splify2-api — не применён" "0;yes" "$(reg | grep -c '^hook	pre_apply	noaxis');$(has 'noaxis: блок splify2 есть, а compat.splify2-api нет' "$R")"
-check "compat.splify2-api ^1.2 на хосте 1.1 — блок не применён (minor добавляет)" "0;yes" "$(reg | grep -c '^hook	pre_apply	newer');$(has 'newer: нужен splify2-api ^1.2, у хоста 1.1.0' "$R")"
+check "compat.splify2-api ^1.3 на хосте 1.2 — блок не применён (minor добавляет)" "0;yes" "$(reg | grep -c '^hook	pre_apply	newer');$(has 'newer: нужен splify2-api ^1.3, у хоста 1.2.0' "$R")"
 check "псевдоним на final-метод отвергнут" "yes" "$(has 'names: псевдоним «plugin_install»: метод final' "$R")"
 check "псевдоним на метод каркаса отвергнут" "yes" "$(has 'names: псевдоним «status»: имя занято каркасом' "$R")"
 check "псевдоним на метод быстрого пути отвергнут" "yes" "$(has 'names: псевдоним «live»: метод быстрого пути' "$R")"
@@ -237,7 +237,7 @@ check "обёртка вынесенного метода отвергнута (
 check "override без права splify2.override отвергнут" "yes" "$(has 'noover: переопределение «ui_get» без права splify2.override' "$R")"
 check "от этих плагинов в реестре нет ни одной записи m" "0" "$(reg | grep -c '^m	')"
 out="$(rpc plugins_list)"
-check "plugins_list: версия splify2-api" "1.1.0" "$(printf '%s' "$out" | pj 'd["splify2_api"]')"
+check "plugins_list: версия splify2-api" "1.2.0" "$(printf '%s' "$out" | pj 'd["splify2_api"]')"
 check "plugins_list: ext_errors называет причины" "yes" "$(printf '%s' "$out" | pj 'd["ext_errors"]' | grep -q 'badapi: нужен splify2-api' && echo yes || echo no)"
 
 # =====================================================================================================

@@ -23,5 +23,5 @@ the real `i18n_get` returns the dictionary of an enabled plugin, `s2p lint --off
 
 ## Not covered
 
-Log lines (`logger`, stderr), developer output and the messages of the `/cgi-bin/splify2-api` gateway (each refusal there
-has its own machine `error`) are not translated by this plugin.
+Log lines (`logger`, stderr), developer output and the messages of the `/cgi-bin/splify2-api` gateway (the `desktop-api` plugin; its refusals carry a
+`gateway.*` code and the plugin's own `i18n/backend` dictionaries) are not translated by this plugin.

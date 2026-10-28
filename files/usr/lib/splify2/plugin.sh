@@ -26,6 +26,9 @@ PLUGIN_UI_DIR="${PLUGIN_UI_DIR:-/www/luci-static/resources/splify2/plugins}"
 # Интерфейс плагина для страницы splify2 (splify2-api 1.1, `splify2.luci.interface`): каталог плагина luci/ раздаётся как
 # view/splify2/p-<id>/, и LuCI грузит вид как модуль view.splify2.p-<id>.<имя>.
 PLUGIN_VIEW_DIR="${PLUGIN_VIEW_DIR:-/www/luci-static/resources/view/splify2}"
+# CGI плагина (splify2-api 1.2, `splify2.cgi`): ссылка <каталог CGI>/<имя> -> <каталог плагина>/cgi/<имя>, для включённого
+# плагина с правом `splify2.cgi`. Так встаёт шлюз Desktop API.
+PLUGIN_CGI_DIR="${PLUGIN_CGI_DIR:-/www/cgi-bin}"
 PLUGIN_JOBS="${PLUGIN_JOBS:-/tmp/splify2-plugin-jobs}"
 # Версия host API панели (plugin-sdk/docs/host-api.md). Её отдаёт plugins_list: плагин, которому
 # нужен host-api новее, не грузится, а раздел «Плагины» называет причину.
@@ -34,7 +37,7 @@ PLUGIN_HOST_API="${PLUGIN_HOST_API:-1.0.0}"
 PLUGIN_RPC_TIMEOUT=30
 # Версия splify2-api (plugin-sdk/docs/splify2-api.md): хуки, задачи, события, псевдонимы и переопределения. Её
 # отдаёт plugins_list рядом с host_api; плагин с compat.splify2-api другого major блок `splify2` не получает.
-PLUGIN_SPLIFY2_API="${PLUGIN_SPLIFY2_API:-1.1.0}"
+PLUGIN_SPLIFY2_API="${PLUGIN_SPLIFY2_API:-1.2.0}"
 # Каталог библиотек: рядом с plugin.sh лежат lib.sh, env.sh, ext.sh и methods.tsv. Стенды подставляют PLUGIN_SH,
 # и каталог выводится из него.
 SPLIFY2_LIBDIR="${SPLIFY2_LIBDIR:-${PLUGIN_SH:+${PLUGIN_SH%/*}}}"
@@ -349,6 +352,28 @@ plugin_interfaces() {
     done
 }
 
+# CGI включённых плагинов (`splify2.cgi`, право `splify2.cgi`): по строке «id имя». Имя — файл прямо в cgi/ плагина.
+# Порядок — по id.
+plugin_cgis() {
+    for _pc_d in "$PLUGIN_ROOT"/*/; do
+        [ -f "${_pc_d}plugin.json" ] || continue
+        _pc_id="${_pc_d%/}"; _pc_id="${_pc_id##*/}"
+        plugin_id_ok "$_pc_id" || continue
+        [ "$(plugin_state_of "$_pc_id")" = enabled ] || continue
+        case " $(jsonfilter -i "${_pc_d}plugin.json" -e '@.permissions[*]' 2>/dev/null | tr '\n' ' ')" in
+            *" splify2.cgi "*) ;;
+            *) continue ;;
+        esac
+        for _pc_rel in $(jsonfilter -i "${_pc_d}plugin.json" -e '@.splify2.cgi[*]' 2>/dev/null); do
+            case "$_pc_rel" in cgi/*) ;; *) continue ;; esac
+            _pc_name="${_pc_rel#cgi/}"
+            case "$_pc_name" in ''|.*|*[!A-Za-z0-9._-]*) continue ;; esac
+            [ -f "${_pc_d}$_pc_rel" ] || continue
+            printf '%s %s\n' "$_pc_id" "$_pc_name"
+        done
+    done
+}
+
 # Текст ACL группы плагина: права LuCI работают, как у любого luci-app-*. Новые имена на объекте splify2
 # (псевдонимы `methods.alias`, которых нет у каркаса) получают права тут же: статический ACL каркаса их не знает.
 plugin_acl_text() {  # ID
@@ -447,6 +472,28 @@ plugin_sync() {
         case "$_ps_viewwant" in *" $_ps_id "*) continue ;; esac
         # Только наши: ссылка ведёт в каталог плагинов.
         case "$(readlink "$_ps_v")" in "$PLUGIN_ROOT"/*) rm -f "$_ps_v" ;; esac
+    done
+    # CGI плагинов (splify2.cgi): ссылка в каталоге CGI веб-сервера на файл плагина. Чужие файлы (не ссылки в каталог
+    # плагинов) не трогаются; имя, занятое чужим файлом, не перекрывается.
+    _ps_cgiwant=" "
+    plugin_cgis > "${TMPDIR:-/tmp}/splify2-cgis.$$"
+    while read -r _ps_ci _ps_cn; do
+        [ -n "$_ps_ci" ] || continue
+        _ps_cgiwant="$_ps_cgiwant$_ps_cn "
+        _ps_ct="$PLUGIN_ROOT/$_ps_ci/cgi/$_ps_cn"
+        [ "$(readlink "$PLUGIN_CGI_DIR/$_ps_cn" 2>/dev/null)" = "$_ps_ct" ] && continue
+        if [ -e "$PLUGIN_CGI_DIR/$_ps_cn" ] || [ -L "$PLUGIN_CGI_DIR/$_ps_cn" ]; then
+            case "$(readlink "$PLUGIN_CGI_DIR/$_ps_cn" 2>/dev/null)" in "$PLUGIN_ROOT"/*) ;; *) continue ;; esac
+        fi
+        mkdir -p "$PLUGIN_CGI_DIR" 2>/dev/null
+        ln -sfn "$_ps_ct" "$PLUGIN_CGI_DIR/$_ps_cn"
+    done < "${TMPDIR:-/tmp}/splify2-cgis.$$"
+    rm -f "${TMPDIR:-/tmp}/splify2-cgis.$$"
+    for _ps_c in "$PLUGIN_CGI_DIR"/*; do
+        [ -L "$_ps_c" ] || continue
+        case "$(readlink "$_ps_c")" in "$PLUGIN_ROOT"/*) ;; *) continue ;; esac
+        case "$_ps_cgiwant" in *" ${_ps_c##*/} "*) continue ;; esac
+        rm -f "$_ps_c"
     done
     # Лишнее: объект плагина, которого нет среди нужных. Чужие файлы не трогаются — только имена
     # нашего вида (`splify2.p.*`, `splify2-p-*.json`).
