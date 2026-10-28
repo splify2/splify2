@@ -3,8 +3,8 @@
 #
 #   1. Словарь каркаса (i18n/core/<язык>.json) покрывает ВСЕ строки strings.json и не несёт лишних; подстановки {имя}
 #      в переводе те же, что в ключе (перевод с потерянной подстановкой показал бы человеку «{name}» или пустоту).
-#   2. Словарь Andromeda (i18n/host/<язык>.json) — тот же набор ключей, что ui/src/copy/<язык>.json, и строка в каждом
-#      ключе; подстановки {0}, {1} совпадают с русской исходной строкой.
+#   2. Словарь Andromeda (i18n/host/<язык>.json) — тот же набор ключей, что у русского (lang-ru), и строка в каждом
+#      ключе (совпадение со строками самой Andromeda, ui/src/copy, проверяет её репозиторий: tests/frame-sync.sh); подстановки {0}, {1} совпадают с русской исходной строкой.
 #   3. Манифест: type language, словарь хоста заявлен и лежит в плагине; сборка `plugins/build.sh` с `s2p lint --official`.
 #   4. Настоящий метод i18n_get отдаёт словарь включённого плагина языка и не отдаёт выключенного.
 #
@@ -38,13 +38,12 @@ print(v if isinstance(v, str) else json.dumps(v, ensure_ascii=False))' "$1"
 # Проверка файлов плагина одного языка: печатает объект JSON с находками.
 cat > "$T/files.py" <<'PY'
 import json, re, sys
-p, lang, strings, copy = sys.argv[1:5]
+p, lang, strings, ru_host = sys.argv[1:5]
 man = json.load(open(f"{p}/plugin.json"))
 core = json.load(open(f"{p}/i18n/core/{lang}.json"))
 keys = json.load(open(strings))
 host = json.load(open(f"{p}/i18n/host/{lang}.json"))
-ref = json.load(open(f"{copy}/{lang}.json"))
-ru = json.load(open(f"{copy}/ru.json"))
+ru = json.load(open(ru_host))
 subst = lambda s: sorted(re.findall(r"\{[A-Za-z0-9_]+\}", s))
 num = lambda s: sorted(re.findall(r"\{\d+\}", s))
 r = {}
@@ -54,7 +53,6 @@ r["core-missing"] = sorted(set(keys) - set(core))
 r["core-extra"] = sorted(set(core) - set(keys))
 r["core-empty"] = [k for k, v in core.items() if not isinstance(v, str) or not v]
 r["core-subst"] = [k for k, v in core.items() if subst(k) != subst(v)]
-r["host-same-as-copy"] = host == ref
 r["host-keys-as-ru"] = sorted(set(host) ^ set(ru))[:5]
 r["host-empty"] = [k for k, v in host.items() if not isinstance(v, str) or not v][:5]
 r["host-subst"] = [k for k in host if k in ru and num(host[k]) != num(ru[k])][:5]
@@ -63,14 +61,13 @@ PY
 
 for lang in ru en; do
     P="$ROOT/plugins/lang-$lang"
-    out="$(python3 "$T/files.py" "$P" "$lang" "$CORE/strings.json" "$ROOT/ui/src/copy")"
+    out="$(python3 "$T/files.py" "$P" "$lang" "$CORE/strings.json" "$ROOT/plugins/lang-ru/i18n/host/ru.json")"
     check "lang-$lang: type language" "language" "$(printf '%s' "$out" | pj 'd["type"]')"
     check "lang-$lang: словарь хоста заявлен в манифесте" "true" "$(printf '%s' "$out" | pj 'd["manifest-host"]')"
     check "lang-$lang: словарь каркаса покрывает strings.json" "[]" "$(printf '%s' "$out" | pj 'd["core-missing"]')"
     check "lang-$lang: в словаре каркаса нет лишних ключей" "[]" "$(printf '%s' "$out" | pj 'd["core-extra"]')"
     check "lang-$lang: в словаре каркаса нет пустых переводов" "[]" "$(printf '%s' "$out" | pj 'd["core-empty"]')"
     check "lang-$lang: подстановки {имя} перевода те же, что у ключа" "[]" "$(printf '%s' "$out" | pj 'd["core-subst"]')"
-    check "lang-$lang: словарь Andromeda совпадает с ui/src/copy/$lang.json" "true" "$(printf '%s' "$out" | pj 'd["host-same-as-copy"]')"
     check "lang-$lang: ключи Andromeda те же, что у русского" "[]" "$(printf '%s' "$out" | pj 'd["host-keys-as-ru"]')"
     check "lang-$lang: в словаре Andromeda нет пустых строк" "[]" "$(printf '%s' "$out" | pj 'd["host-empty"]')"
     check "lang-$lang: подстановки {0}.. те же, что у русской строки" "[]" "$(printf '%s' "$out" | pj 'd["host-subst"]')"

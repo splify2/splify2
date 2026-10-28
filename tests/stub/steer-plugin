@@ -11,6 +11,7 @@
 #   failjson.<действие>  — отказ в JSON-ответе: {"ok":false,"error":<текст>} в stdout, код 1
 #   needed.<id>          — вид плагина есть в спеке: remove без --force отказывает, называя выходы
 #   slow                 — install ждёт две секунды (чтобы увидеть задание «идёт»)
+#   install --file F [--unsigned] — как install <id>: id из имени файла (<id>-<версия>-<арх>.s2p), каталог — из fixtures/<id>
 #   manager.log          — журнал вызовов: аргументы по строке; repo-add.key — тело ключа
 # Нужен python3 (как всему стенду).
 
@@ -72,7 +73,16 @@ case "$act" in
             add)  cat > "$PLUG/repo-add.key"; echo '{"ok":true}' ;;
             del)  echo '{"ok":true}' ;;
         esac ;;
-    install) do_install "$1" || exit 1 ;;
+    install)
+        if [ "${1:-}" = --file ]; then
+            f="${2:-}"; [ -f "$f" ] || { echo "нет файла $f" >&2; exit 1; }
+            fid="$(basename "$f" | sed -n 's/^\(.*[a-z0-9]\)-[0-9][0-9.]*-.*\.s2p$/\1/p')"
+            [ -n "$fid" ] || { echo "имя архива не разобрать: $f" >&2; exit 1; }
+            case " $* " in *" --unsigned "*) ;; *) [ -f "$PLUG/needs-unsigned" ] && { echo "архив не подписан: $f" >&2; exit 1; } ;; esac
+            do_install "$fid" || exit 1
+        else
+            do_install "$1" || exit 1
+        fi ;;
     ensure)
         for id in "$@"; do
             [ "$id" = --json ] && continue
