@@ -61,6 +61,7 @@
           "spec_check",
           "spec_yaml",
           "prefs_get",
+          "paths",
           "i18n_get",
           "plugin_settings_get"
         ]

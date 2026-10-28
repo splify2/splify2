@@ -56,7 +56,7 @@ envs() {
         SPLIFY2_LOCK_DIR="$T/lock" \
         PLUGIN_SH="$ROOT/files/usr/lib/splify2/plugin.sh" PLUG="$PLUG" \
         PLUGIN_ROOT="$PLUG/lib" PLUGIN_STATE="$PLUG/state.json" PLUGIN_RPCD_DIR="$PLUG/rpcd" \
-        PLUGIN_ACL_DIR="$PLUG/acl" PLUGIN_UI_DIR="$PLUG/www" PLUGIN_JOBS="$PLUG/jobs" PLUGIN_RELOAD_DELAY=0 \
+        PLUGIN_ACL_DIR="$PLUG/acl" PLUGIN_UI_DIR="$PLUG/www" PLUGIN_VIEW_DIR="$PLUG/views" PLUGIN_JOBS="$PLUG/jobs" PLUGIN_RELOAD_DELAY=0 \
         PLUGIN_DISPATCHER="$DISPATCHER" \
         EXT_REG="$PLUG/run/ext.reg" EXT_SAFE_FILE="$PLUG/safe" EXT_TASKS_JSON="$PLUG/tasks.json" \
         EXT_CRONTAB="$PLUG/crontab" EXT_TASK_LOCK_DIR="$PLUG/run" EXT_EVENTS_INITD="$PLUG/no-events-initd" \
@@ -581,6 +581,75 @@ rpcd plugins_list >/dev/null
 check "  чужие файлы и ссылки в каталоге интерфейсов не тронуты" "yes;yes" \
     "$([ -f "$PLUG/www/stray" ] && echo yes || echo no);$([ -L "$PLUG/www/foreign" ] && echo yes || echo no)"
 
+# ---- интерфейс плагина для страницы splify2: splify2.luci.interface (splify2-api 1.1) -----------------------------------
+plug_reset
+install_plugin andromeda 26.11.0
+printf '{"schema":1,"id":"andromeda","version":"26.11.0","name":"Andromeda","compat":{"splify2-api":"^1.1"},"splify2":{"luci":{"interface":"luci/home.js"}}}\n' > "$PLUG/lib/andromeda/plugin.json"
+mkdir -p "$PLUG/lib/andromeda/luci" "$PLUG/lib/andromeda/bin"; echo "return view.extend({});" > "$PLUG/lib/andromeda/luci/home.js"; echo secret > "$PLUG/lib/andromeda/bin/prog"
+install_plugin broken 1.0.0
+printf '{"schema":1,"id":"broken","version":"1.0.0","name":"b","splify2":{"luci":{"interface":"luci/sub/home.js"}}}\n' > "$PLUG/lib/broken/plugin.json"
+rpcd plugins_list >/dev/null; sleep 0.3
+check "luci.interface: ссылка view/p-<id> ведёт в luci/ плагина, не во весь плагин" "$PLUG/lib/andromeda/luci" "$(readlink "$PLUG/views/p-andromeda")"
+check "  вид по ссылке доступен, программа плагина — нет" "yes;no" \
+    "$([ -f "$PLUG/views/p-andromeda/home.js" ] && echo yes || echo no);$([ -e "$PLUG/views/p-andromeda/prog" ] && echo yes || echo no)"
+check "  вид не прямо в luci/ — ссылки нет" "no" "$([ -e "$PLUG/views/p-broken" ] && echo yes || echo no)"
+rpcd plugin_disable '{"id":"andromeda"}' >/dev/null
+check "  выключенный плагин — ссылка на вид снята" "no" "$([ -e "$PLUG/views/p-andromeda" ] && echo yes || echo no)"
+mkdir -p "$PLUG/views"; echo чужое > "$PLUG/views/p-stray"; ln -s /elsewhere "$PLUG/views/p-foreign"
+rpcd plugins_list >/dev/null
+check "  чужие файлы и ссылки p-* не тронуты" "yes;yes" \
+    "$([ -f "$PLUG/views/p-stray" ] && echo yes || echo no);$([ -L "$PLUG/views/p-foreign" ] && echo yes || echo no)"
+check "plugins_list: splify2_api — 1.1.0" "1.1.0" "$(rpcd plugins_list | pj 'd["splify2_api"]')"
+
+# ---- семя: splify2-seed ставит плагины из пакета через менеджер ядра, один раз ----------------------------------------------
+SEED="$T/seed"; mkdir -p "$SEED"
+seed_reset() {  # свежая песочница менеджера: в каталоге три плагина, андромеда — с интерфейсом
+    plug_reset
+    for id in lang-en backup andromeda; do fixture_plugin "$id" 26.11.0; done
+    printf '{"schema":1,"id":"andromeda","version":"26.11.0","name":"Andromeda","compat":{"splify2-api":"^1.1"},"splify2":{"luci":{"interface":"luci/home.js"}}}\n' > "$PLUG/fixtures/andromeda/plugin.json"
+    mkdir -p "$PLUG/fixtures/andromeda/luci"; echo "return view.extend({});" > "$PLUG/fixtures/andromeda/luci/home.js"
+    rm -f "$T/seeded" "$T/crontab.root"
+}
+for id in lang-en backup andromeda; do : > "$SEED/$id-26.11.0-all.s2p"; done
+: > "$SEED/unsigned"
+seed() { envs env SPLIFY2_SEED="$SEED" SPLIFY2_SEEDED="$T/seeded" SPLIFY2_CRON="$T/crontab.root" CRON_INITD="$T/bin/initd-rpcd" \
+    sh "$ROOT/files/usr/sbin/splify2-seed" "$@" 2>"$T/stderr"; }
+seed_reset
+out="$(seed --no-reload)"
+check "семя: все три плагина ставятся" "installed backup 26.11.0|installed lang-en 26.11.0" \
+    "$(printf '%s\n' "$out" | grep -v andromeda | sed 's/ *$//' | sort | tr '\n' '|' | sed 's/|$//')"
+check "  Andromeda — последней" "installed andromeda 26.11.0" "$(printf '%s\n' "$out" | tail -n 1)"
+check "  вызовы менеджера: три install --file, без подписи в сборке без ключа" "3;3" \
+    "$(manager_calls | tr '|' '\n' | grep -c 'install --file');$(manager_calls | tr '|' '\n' | grep -c -- '--unsigned')"
+check "  идентификаторы записаны в seeded" "3" "$(wc -l < "$T/seeded" | tr -d ' ')"
+check "  всё встало — строки повтора в cron нет" "no" "$(grep -q 'splify2-seed' "$T/crontab.root" 2>/dev/null && echo yes || echo no)"
+check "  ссылка на вид Andromeda появилась (plugin_sync после установки)" "yes" "$([ -L "$PLUG/views/p-andromeda" ] && echo yes || echo no)"
+rm -f "$PLUG/manager.log"
+out="$(seed --no-reload)"
+check "семя второй раз: стоящее не трогается" "3" "$(printf '%s\n' "$out" | grep -c '^present ')"
+check "  и менеджера ни о чём не просили" "" "$(manager_calls)"
+# Снятое человеком не возвращается после обновления пакета.
+rpcd plugin_remove '{"id":"andromeda"}' >/dev/null; rm -f "$PLUG/manager.log"
+out="$(seed --no-reload)"
+check "семя: снятый человеком плагин не возвращается" "skipped andromeda;0" \
+    "$(printf '%s\n' "$out" | grep andromeda);$(manager_calls | tr '|' '\n' | grep -c 'install --file')"
+# Отказ менеджера: остальные пробуются, неудача повторяется по cron, код возврата 1.
+seed_reset
+echo 'нет места' > "$PLUG/fail.install"
+out="$(seed --no-reload)"; rc=$?
+check "семя: отказ менеджера — failed со словами менеджера, код 1" "yes;1" \
+    "$(printf '%s' "$out" | grep -q '^failed lang-en: нет места' && echo yes || echo no);$rc"
+check "  не поставленное не записано в seeded" "no" "$([ -s "$T/seeded" ] && echo yes || echo no)"
+check "  повтор по cron заведён" "yes" "$(grep -q '# splify2-seed$' "$T/crontab.root" && echo yes || echo no)"
+rm -f "$PLUG/fail.install"
+out="$(seed --no-reload)"; rc=$?
+check "  повторный запуск ставит и снимает строку cron" "0;no" "$rc;$(grep -q 'splify2-seed' "$T/crontab.root" && echo yes || echo no)"
+# Без каталога семени — не ошибка (сборка «только каркас»).
+check "семя: каталога нет — не ошибка" "no seed;0" "$(SPLIFY2_SEED="$T/none" envs sh "$ROOT/files/usr/sbin/splify2-seed" 2>&1);$?"
+seed_reset; : > "$PLUG/needs-unsigned"; rm -f "$SEED/unsigned"
+check "семя: без метки unsigned архив ставится без --unsigned, неподписанный менеджер отклоняет" "yes" \
+    "$(seed --no-reload | grep -q '^failed lang-en' && echo yes || echo no)"
+
 # ---- шлюз приложения и упаковка (по тексту: ucode на машине стенда нет) --------------------------------------------------
 API="$ROOT/files/www/cgi-bin/splify2-api"
 check "шлюз: маршрут /v1/plugin/<id>/<метод> ведёт в plugin_call" "yes;yes" \
@@ -596,7 +665,7 @@ check "postinst приводит объекты плагинов до переч
 check "prerm убирает объекты плагинов" "yes" \
     "$(grep -q 'splify2.p.\*' "$ROOT/build.sh" && grep -q 'splify2-p-\*.json' "$ROOT/build.sh" && echo yes || echo no)"
 check "все шелл-файлы плагинов проходят разбор dash" "ok" \
-    "$(for f in files/usr/lib/splify2/plugin.sh files/usr/lib/splify2/plugin-rpcd files/usr/lib/splify2/rpcd/m-plugin.sh files/usr/sbin/splify2-plugin-sync tests/stub/steer-plugin; do dash -n "$ROOT/$f" 2>&1 || echo "$f"; done | grep -q . && echo bad || echo ok)"
+    "$(for f in files/usr/lib/splify2/plugin.sh files/usr/lib/splify2/plugin-rpcd files/usr/lib/splify2/rpcd/m-plugin.sh files/usr/sbin/splify2-plugin-sync files/usr/sbin/splify2-seed tests/stub/steer-plugin; do dash -n "$ROOT/$f" 2>&1 || echo "$f"; done | grep -q . && echo bad || echo ok)"
 
 # ---- настройки плагина по его схеме (plugin_settings_get / plugin_settings_set) ---------------------------
 # Манифест объявляет обязательную схему: "splify2": {"settings": {"schema": "<файл>"}}; значения — в

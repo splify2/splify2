@@ -6,7 +6,7 @@
 # руками, не запускается никогда — а значит и не сторожит ничего.
 #
 # Здесь нет Makefile, в отличие от steer: у splify2 нет сборки на C, и единственная
-# зависимость стендов — python3 плюс node для интерфейса.
+# зависимость стендов — python3 (и node для каркаса LuCI JS).
 #
 # Запуск: sh tests/run.sh
 set -u
@@ -82,48 +82,9 @@ run langmatch sh "$ROOT/tests/langmatch.sh"
 # Тексты бэкенда на языке каркаса: code и args, словари lang-ru и lang-en против кода, s2_fail_code и s2_t плагинов.
 run i18nmatch sh "$ROOT/tests/i18nmatch.sh"
 
-# Интерфейс. Пропускается вслух, а не молча: молчаливый пропуск читается как «прошло», и
-# ровно так стенд однажды и превратился в фикцию.
-#
-# Требуется node ≥ 20.19: vitest 4 и vite 8 на node 18 не работают. Как ставился локально —
-# записано в STATE.md, раздел «Окружение».
-if [ -d "$ROOT/ui/node_modules/vitest" ]; then
-    node_major="$(node -p 'process.versions.node.split(".")[0]' 2>/dev/null || echo 0)"
-    if [ "$node_major" -lt 20 ] 2>/dev/null; then
-        for _n in /opt/node22/bin /opt/node24/bin /root/.local/opt/node-v22.14.0-linux-x64/bin; do
-            if [ -x "$_n/node" ]; then
-                PATH="$_n:$PATH"
-                node_major="$("$_n/node" -p 'process.versions.node.split(".")[0]' 2>/dev/null || echo 0)"
-                break
-            fi
-        done
-    fi
-    if [ "$node_major" -ge 20 ] 2>/dev/null; then
-        # ТЕ ЖЕ ТРИ ПРОВЕРКИ, ЧТО В ACTIONS, И ДО СТЕНДА. Прежде здесь был только `npm test`, а
-        # lint, tsc и check:cn гонялись лишь в workflow — то есть локальный прогон был зелёным
-        # при красном CI, и узнавалось это через сутки, чужим коммитом. Так и вышло: условно
-        # вызванный хук в RulesTab прошёл vitest (Preact к смене числа хуков терпим) и упал на
-        # oxlint в Actions.
-        run ui-lint sh -c "cd '$ROOT/ui' && npm run lint --silent && npx tsc -b && npm run check:cn --silent"
-        run ui-harness sh -c "cd '$ROOT/ui' && npm test --silent"
-    elif docker image inspect node:22-alpine >/dev/null 2>&1; then
-        # Node в системе старый, а образ есть — гоняем стенд в нём, а не пропускаем.
-        # Пропуск здесь дороже, чем кажется: половина проверок интерфейса — про поведение,
-        # которое нечем проверить больше нигде, и «ПРОПУЩЕН» на каждом прогоне читается как
-        # «этого стенда нет». Каталог монтируется КОРНЕМ дерева, а не ui/: стенд загрузчика
-        # читает luci/htdocs/... по относительному пути и в узком монтировании не находит его.
-        run ui-lint docker run --rm -v "$ROOT":/w -w /w/ui node:22-alpine \
-            sh -c 'npm run lint --silent && npx tsc -b && npm run check:cn --silent'
-        run ui-harness docker run --rm -v "$ROOT":/w -w /w/ui node:22-alpine npm test --silent
-    else
-        printf '\n===== ui-harness =====\nПРОПУЩЕН: нужен node >= 20 (найден %s) либо образ node:22-alpine для docker\n' \
-            "$(node --version 2>/dev/null || echo 'нет node')"
-        fails=$((fails + 1))
-    fi
-else
-    printf '\n===== ui-harness =====\nПРОПУЩЕН: не установлен (cd ui && npm install)\n'
-    fails=$((fails + 1))
-fi
+# Интерфейс (Andromeda) здесь больше не живёт: он — плагин в репозитории andromeda, и его тесты (vitest, lint, tsc, сверка
+# вызовов с таблицей методов splify2-api, словари языков) идут там. Со стороны splify2 проверяется всё, что плагин-интерфейс
+# получает от каркаса: ссылка на вид luci/, prefs_get, метод paths, семя (tests/pluginmatch.sh, tests/rpcdmatch.sh).
 
 printf '\n%s\n' "$([ "$fails" -eq 0 ] && echo 'ВСЕ СТЕНДЫ ЗЕЛЁНЫЕ' || echo "СТЕНДОВ С ПРОВАЛОМ: $fails")"
 [ "$fails" -eq 0 ]

@@ -298,11 +298,17 @@ EOF
         ;;
 
     prefs_get)
-        # Settings of the frame: which interface opens as the main page (`interface`: andromeda, basic or
-        # the id of an interface plugin), the language of the frame (LuCI language, "auto" - the browser's).
-        # Without a saved choice the interface is Andromeda while its bundle is in the package, else basic.
+        # Settings of the frame: which interface opens as the main page (`interface`: basic or the id of an
+        # interface plugin - a plugin with `splify2.luci.interface`, splify2-api 1.1), the language of the frame (LuCI
+        # language, "auto" - the browser's). `interfaces` lists the interface plugins that are installed and
+        # enabled: id and the LuCI module of its view. Without a saved choice the interface is Andromeda while that
+        # plugin is there, else basic; a saved choice that names a plugin that is not there opens basic.
         _pg_if="$(uci -q get splify2.main.interface 2>/dev/null)"
-        _pg_has=0; [ -s "${ANDROMEDA_MARK:-/www/luci-static/resources/splify2/build-id.txt}" ] && _pg_has=1
+        _pg_list="$(plugin_interfaces)"
+        _pg_has=0
+        case "
+$_pg_list" in *"
+andromeda "*) _pg_has=1 ;; esac
         _pg_set=1
         if [ -z "$_pg_if" ]; then
             _pg_set=0
@@ -314,6 +320,17 @@ EOF
         json_add_string interface "$_pg_if"
         json_add_boolean interface_set "$_pg_set"
         json_add_boolean andromeda "$_pg_has"
+        json_add_array interfaces
+        while read -r _pg_id _pg_view; do
+            [ -n "$_pg_id" ] || continue
+            json_add_object
+            json_add_string id "$_pg_id"
+            json_add_string view "$_pg_view"
+            json_close_object
+        done <<EOF
+$_pg_list
+EOF
+        json_close_array
         json_add_string lang "${_pg_lang:-auto}"
         json_dump
         ;;
@@ -329,6 +346,18 @@ EOF
         uci -q set splify2.main.interface="$_ps_if" || fail_code prefs.not_saved "Cannot save the setting"
         uci_commit
         json_init; json_add_boolean ok 1; json_add_string interface "$_ps_if"; json_dump
+        ;;
+
+    paths)
+        # Where the host keeps what the interface would otherwise have to hardcode (splify2-api 1.1): the same answer
+        # as the host service `paths` for plugin programs.
+        json_init
+        json_add_boolean ok 1
+        json_add_string lists "$LISTS"
+        json_add_string spec_dir "${SPEC%/*}"
+        json_add_string subs_dir "$SUBS_DIR"
+        json_add_string steer "$STEER"
+        json_dump
         ;;
 
     i18n_get)
