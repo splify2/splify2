@@ -837,7 +837,8 @@ case "$2" in
         # Журнал имён резолвера движка (апстримы и кэш видны в нём же) и соединения, которые
         # движок повёл в свои выходы. Движок печатает JSON сам — отдаём дословно, как status.
         case "$2" in dns_log) _dl_cmd=dns-log ;; *) _dl_cmd=conns ;; esac
-        raw="$("$STEER" "$_dl_cmd" --spec "$SPEC" 2>&1)"
+        raw="$(STEER_ERR_JSON=1 "$STEER" "$_dl_cmd" --spec "$SPEC" 2>&1)"
+        s2_core_split "$raw" && fail "$S2_CORE_TEXT" "$S2_CORE_CODE" "$S2_CORE_ARGS"    # отказ ядра с кодом
         out="$(json_tail "$raw")"
         [ -n "$out" ] || fail "${raw:-$(s2_t core.no_answer "The core did not respond")}"
         printf '%s\n' "$out"
@@ -883,7 +884,8 @@ case "$2" in
         json_load "$input" 2>/dev/null || fail_code req.unparsable "Unparsable request"
         json_get_var output output
         case "$output" in ''|*[!a-zA-Z0-9_.-]*) fail_code req.bad_output "Invalid output name" ;; esac
-        raw="$("$STEER" ctl helper "$output" 2>&1)"
+        raw="$(STEER_ERR_JSON=1 "$STEER" ctl helper "$output" 2>&1)"
+        s2_core_split "$raw" && fail "$S2_CORE_TEXT" "$S2_CORE_CODE" "$S2_CORE_ARGS"    # отказ ядра с кодом
         out="$(json_tail "$raw")"
         [ -n "$out" ] || fail "${raw:-$(s2_t daemon.no_answer "The daemon did not respond")}"
         printf '%s\n' "$out"
