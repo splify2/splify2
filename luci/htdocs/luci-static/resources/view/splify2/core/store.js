@@ -23,13 +23,65 @@ function canon(v) {
 
 return baseclass.extend({
 	spec: null, rev: '', schema: null, schemaSource: '', devices: [], applied: null,
+	// gen grows every time the spec of the store is replaced (load, save): an open tab compares it with the
+	// gen it was drawn at. schemaP: the schema of the core is asked once per page (`steer spec-schema` is the
+	// slowest call of the frame) and again only after invalidateSchema() - a plugin or the core changed.
+	gen: 0, schemaP: null,
+
+	// The schema of the last page is kept in the browser (localStorage): the forms open with it at once, and the
+	// schema of the core is asked all the same, in the background. When it differs (the core or its plugins changed
+	// without this page knowing), the store takes it and calls onSchema(): the frame redraws the forms nobody edited.
+	// The backend gives no cheap mark of "this core with these plugins" to ask first, so the check is the answer itself.
+	cacheKey: 'splify2.core.schema',
+	onSchema: null,
+
+	readCache: function() {
+		try {
+			var t = window.localStorage.getItem(this.cacheKey);
+			var c = t ? JSON.parse(t) : null;
+			return c && c.schema && c.text ? c : null;
+		} catch (e) { return null; }
+	},
+	writeCache: function(text, r) {
+		try { window.localStorage.setItem(this.cacheKey, JSON.stringify({ text: text, schema: r.schema, source: r.source || 'core' })); }
+		catch (e) { /* private window, full storage: no cache */ }
+	},
+
+	invalidateSchema: function() {
+		this.schemaP = null;
+		try { window.localStorage.removeItem(this.cacheKey); } catch (e) { /* no storage */ }
+	},
+
+	loadSchema: function() {
+		var self = this;
+		if (this.schemaP) return this.schemaP;
+		var cached = this.readCache();
+		var take = function(r) { self.schema = r.schema; self.schemaSource = r.source || 'core'; return self.schema; };
+		var fresh = api.call('spec_schema').then(function(r) {
+			var text = JSON.stringify({ schema: r.schema, source: r.source || 'core' });
+			self.writeCache(text, r);
+			if (cached && cached.text === text) return self.schema;
+			take(r);
+			if (cached && self.onSchema) self.onSchema();
+			return self.schema;
+		});
+		if (cached) {
+			take(cached);
+			this.schemaP = Promise.resolve(this.schema);
+			fresh.catch(function() { /* the cached schema stays */ });
+		} else {
+			var p = this.schemaP = fresh;
+			p.catch(function() { if (self.schemaP === p) self.schemaP = null; });
+		}
+		return this.schemaP;
+	},
 
 	// Everything the forms need, in one go. Errors of the optional parts do not stop the frame.
 	load: function() {
 		var self = this;
 		return Promise.all([
 			api.call('spec_get'),
-			api.call('spec_schema'),
+			this.loadSchema(),
 			api.call('devices').catch(function() { return { devices: [] }; }),
 			api.call('applied_get').catch(function() { return null; })
 		]).then(function(r) {
@@ -37,10 +89,9 @@ return baseclass.extend({
 			self.rev = spec.rev || '';
 			delete spec.rev;
 			self.spec = spec;
-			self.schema = r[1].schema;
-			self.schemaSource = r[1].source || 'core';
 			self.devices = ((r[2] && r[2].devices) || []).map(function(d) { return d.name; });
 			self.applied = r[3] ? (function(a) { a = clone(a); delete a.rev; return a; })(r[3]) : null;
+			self.gen++;
 			return self;
 		});
 	},
@@ -71,6 +122,7 @@ return baseclass.extend({
 		return api.call('spec_set', { spec: JSON.stringify(spec), rev: this.rev }).then(function(r) {
 			self.spec = clone(spec);
 			if (r.rev) self.rev = r.rev;
+			self.gen++;
 			return r;
 		}, function(e) {
 			if (e.reply && e.reply.conflict) { e.conflict = true; if (e.reply.rev) e.currentRev = e.reply.rev; }

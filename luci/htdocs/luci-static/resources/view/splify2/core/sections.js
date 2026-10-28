@@ -5,6 +5,7 @@
 'require view.splify2.core.schema as schema';
 'require view.splify2.core.autoform as autoform';
 'require view.splify2.core.store as store';
+'require view.splify2.core.api as api';
 
 // The sections of the spec: one tab for every root section of the schema of the core (`steer spec-schema`),
 // in its order: lan, clients, lists, outputs, dns, rules. Every tab is a form built by autoform - one field for
@@ -48,6 +49,7 @@ return baseclass.extend({
 		var holder = E('div');
 		var node = this.nodeOf(def);
 		var form = null;
+		var drawnGen = -1, dirty = false;   // the spec the form was built from; edited since
 		var note = function(msg, kind) { ui.addNotification(null, E('p', msg), kind || 'info'); };
 
 		var build = function() {
@@ -55,9 +57,12 @@ return baseclass.extend({
 			def.keys.forEach(function(k) { if (store.spec[k] !== undefined) value[k] = store.clone(store.spec[k]); });
 			form = autoform.build(node, value, {
 				spec: store.spec, devices: store.devices, schemaRoot: store.schema, platform: schema.platformOf(store.schema),
+				lazy: true,   // the items of a list of hundreds of rules are built when opened
 				notify: function(m) { note(m, 'warning'); }
 			});
-			holder.innerHTML = '';
+			drawnGen = store.gen; dirty = false;
+			if (form.root && form.root.change) form.root.change(function() { dirty = true; });
+			while (holder.lastChild) holder.removeChild(holder.lastChild);
 			holder.appendChild(form.el);
 		};
 
@@ -70,7 +75,7 @@ return baseclass.extend({
 			}
 			var val = form.get() || {}, part = {};
 			def.keys.forEach(function(k) { part[k] = val[k]; });
-			store.save(store.merge(part)).then(function() {
+			return store.save(store.merge(part)).then(function() {
 				note(T('Saved. Press Apply to put the changes into effect.'));
 				host.refresh();
 				build();
@@ -93,15 +98,21 @@ return baseclass.extend({
 		if (store.legacy()) holder.appendChild(E('div', { 'class': 'alert-message warning' },
 			T('The spec on this router is in the old format (v1). Open Spec to convert it, or use the Andromeda interface.')));
 		build();
-		return E('div', {}, [
+		var out = E('div', {}, [
 			store.schemaSource === 'core' ? '' :
 				E('div', { 'class': 'alert-message warning' }, T('The forms follow the package: steer {need} or newer gives them their own schema.', { need: '2.1' })),
 			def.keys.every(function(k) { return !!(store.schema.properties || {})[k]; }) ? '' :
 				E('div', { 'class': 'alert-message warning' }, T('The core does not know some keys of this section.')),
 			holder,
 			E('div', { 'class': 'cbi-page-actions' }, [
-				E('button', { 'class': 'cbi-button cbi-button-save', click: save }, T('Save')), ' ',
+				E('button', { 'class': 'cbi-button cbi-button-save', click: api.once(save) }, T('Save')), ' ',
 				E('button', { 'class': 'cbi-button cbi-button-reset', click: function() { build(); } }, T('Reset')) ])
 		]);
+		// The frame keeps the tab while another one is open. Shown again: the spec was replaced meanwhile (the raw
+		// editor, Reload) and nothing was edited here - the form follows it; edited - the edits stay.
+		out.splify2Show = function() { if (drawnGen !== store.gen && !dirty) build(); };
+		out.splify2Dirty = function() { return dirty; };
+		out.splify2Form = function() { return form; };
+		return out;
 	}
 });

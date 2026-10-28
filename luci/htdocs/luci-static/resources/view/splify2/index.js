@@ -54,19 +54,30 @@ return view.extend({
 			// prefs_get did not answer (or is older): the module name follows the rule of splify2-api 1.1.
 			return list.length || (p && p.ok) ? null : 'view.splify2.p-' + which + '.home';
 		}
+		// The frame takes the answer of prefs_get from here (its language), so it does not ask it again; its
+		// dictionary module is fetched while prefs_get is on its way, unless Andromeda is the known choice.
+		var seeded = null;
+		var seedFrame = function() {
+			if (!seeded) seeded = L.require('view.splify2.core.i18n').then(function(i18n) { i18n.seed(prefs); });
+			return seeded;
+		};
+		var openFrame = function() { return seedFrame().then(function() { return L.require(FRAME); }); };
+		if (!guess || guess === 'basic') seedFrame().catch(function() { /* the frame asks prefs_get itself */ });
+		// The frame remembered: it opens at once - its module does not depend on the answer.
 		var pick = guess ? Promise.resolve(guess) : asked;
-		Promise.all([ pick, prefs ]).then(function(r) {
+		var opened = guess === 'basic' ? openFrame() : Promise.all([ pick, prefs ]).then(function(r) {
 			var mod = moduleOf(r[0], r[1]);
 			if (!mod) {
 				if (r[0] !== 'basic') ui.addNotification(null, E('p', {}, 'The interface "' + r[0] + '" is not installed or is disabled. The basic view is shown instead.'), 'warning');
-				return L.require(FRAME);
+				return openFrame();
 			}
+			if (mod === FRAME) return openFrame();
 			return L.require(mod).catch(function(e) {
-				if (mod === FRAME) throw e;
 				ui.addNotification(null, E('p', {}, 'The interface "' + r[0] + '" did not open (' + (e.message || String(e)) + '). The basic view is shown instead.'), 'warning');
-				return L.require(FRAME);
+				return openFrame();
 			});
-		}).catch(function(e) {
+		});
+		opened.catch(function(e) {
 			ui.addNotification(null, E('p', e.message || String(e)), 'danger');
 		});
 	},

@@ -487,11 +487,12 @@ import { scanStrings, stringsFile } from './lib/strings.mjs'
   rr.plugins_list = { ok: false, error: 'ядро 2.0.5 не умеет плагины — нужно 2.1 или новее', code: 'core_too_old', installed: '2.0.5', need: '2.1' }
   rr.steer_versions = { ok: true, versions: [ '2.1.1-pre', '2.1.0', '2.0.5' ], prerelease: '2.1.1-pre' }
   rr.steer_install = { ok: true }
+  notes.length = 0
   const pl = L2.load('view.splify2.core.plugins').render(host)
   await tick(); await tick()
   check('старое ядро: плагины сказали, что нужно и что стоит', 'Plugins need steer 2.1 or newer. Installed: 2.0.5.', find(pl, (n) => n.attrs && n.attrs['class'] === 'alert-message warning').textContent)
   check('старое ядро: слов «нет такой команды» нет', false, /команды|steer help/.test(pl.textContent))
-  check('старое ядро: после отказа каталог не запрашивался', false, rc.some((c) => c.method === 'plugins_search'))
+  check('старое ядро: отказ каталога не повторяет отказ списка вторым сообщением', [], notes.filter((n) => n.kind === 'danger'))
   click(find(pl, (n) => n.tag === 'button' && n.textContent === 'Update the core')); await tick()
   check('старое ядро: кнопка предлагает свежий выпуск (не предварительный)', 'Update steer to 2.1.0?', modals.at(-1).title)
   click(find(modals.at(-1).el, (n) => n.tag === 'button' && n.textContent === 'Update the core')); await tick()
@@ -529,6 +530,191 @@ import { scanStrings, stringsFile } from './lib/strings.mjs'
   check('Remove: used_by нет в ответе — зависимые считаются по requires.plugins списка', [ 'disabled', 'Required by: user2' ], [ rm('lib2').attrs.disabled, why('lib2') ])
   // запасная схема: одна строка на странице разделов
   check('запасная схема названа одной строкой', true, /follow the package/.test(readFileSync(resolve(CORE, 'sections.js'), 'utf8')))
+}
+
+// ---- 10. отзывчивость каркаса: параллельная загрузка, кэш схемы, вкладки не теряют правок, без двойной отправки ----
+{
+  const tick = () => new Promise((r) => setTimeout(r, 0))
+  const find = (el, pred) => { let hit = null; el.walk((n) => { if (!hit && pred(n)) hit = n }); return hit }
+  const click = (el) => el.listeners.click[0]({ preventDefault() {}, currentTarget: el })
+  globalThis.window = { location: { hash: '#plugins', pathname: '/cgi-bin/luci/admin/services/splify2', search: '' } }
+  globalThis.history = { replaceState(a, b, url) { window.location.hash = url.slice(url.indexOf('#')) } }
+  // ответы, которые приходят, когда стенд скажет: так видно, что делается до их прихода
+  const later = () => { let res; const p = new Promise((r) => { res = r }); return { p, res } }
+  const schemaWait = later(), notes = []
+  const ui3 = { ...ui, addNotification: (t, el, kind) => notes.push({ text: el.textContent, kind }), showModal() {}, hideModal() {} }
+  const rc = [], rr = {
+    prefs_get: { ok: true, lang: 'en', interface: 'basic' }, i18n_get: { ok: true, dicts: [] },
+    spec_get: { version: 2, rev: 'r1', outputs: { direct: { kind: 'direct' } } },
+    spec_schema: () => schemaWait.p,
+    devices: { ok: true, devices: [] }, applied_get: { version: 2, rev: 'r1', outputs: { direct: { kind: 'direct' } } },
+    plugins_list: { ok: true, repos: [ { name: 'splify2', official: true } ], plugins: [ { id: 'backup', version: '1.0.0', state: 'disabled', repo: 'splify2' } ] },
+    plugins_search: { ok: true, plugins: [ { id: 'backup', version: '1.0.0', repo: 'splify2' } ] },
+    plugin_enable: { ok: true },
+    spec_set: { ok: true, rev: 'r2' },
+    engine: { ok: true, present: true, running: true }, diag: { ok: true, checks: [] },
+  }
+  const L3 = makeLoader({ rpcCalls: rc, rpcReplies: rr, extra: { ui: ui3 } })
+  const main = L3.load('view.splify2.core.main')
+  const store = L3.load('view.splify2.core.store')
+  const v = Object.create(main)
+  await v.load()
+  check('загрузка: словарь и спека спрашиваются сразу, не друг за другом', [ true, true ], [ rc.some((c) => c.method === 'spec_get'), rc.some((c) => c.method === 'spec_schema') ])
+  const page = v.render()
+  await tick(); await tick()
+  const pane = page.children.at(-1)
+  check('Plugins открыта, пока схема ядра ещё не пришла: список и каталог уже на экране', [ true, true ],
+    [ !!find(pane, (n) => n.attrs && n.attrs['data-plugin'] === 'backup'), !!find(pane, (n) => n.attrs && n.attrs['data-catalog'] === 'backup') ])
+  const listAt = rc.findIndex((c) => c.method === 'plugins_list'), catAt = rc.findIndex((c) => c.method === 'plugins_search')
+  check('список плагинов и каталог спрошены вместе (каталог не ждёт ответа списка)', true, listAt >= 0 && catAt >= 0)
+  check('prefs_get спрошен один раз (ссылка на Andromeda берёт ответ словаря)', 1, rc.filter((c) => c.method === 'prefs_get').length)
+  const menu = page.children.at(-2)
+  check('вкладок разделов нет, пока схемы нет', false, menu.children.some((li) => li.attrs['data-tab'] === 'outputs'))
+  schemaWait.res({ ok: true, source: 'core', schema: FIXTURE })
+  await tick(); await tick()
+  check('схема пришла — вкладки разделов встали перед Spec', [ 'overview', 'lan', 'clients', 'lists', 'outputs', 'dns', 'rules', 'spec', 'plugins', 'settings' ].filter((x) => menu.children.some((li) => li.attrs['data-tab'] === x)),
+    menu.children.map((li) => li.attrs['data-tab']))
+  check('открытая вкладка Plugins не перерисована приходом схемы', true, !!find(pane, (n) => n.attrs && n.attrs['data-plugin'] === 'backup'))
+  const tab = (id) => click(find(menu, (n) => n.tag === 'a' && n.attrs.href === '#' + id))
+  // повторное открытие Plugins ничего не спрашивает заново
+  const n0 = rc.filter((c) => c.method === 'plugins_list').length
+  tab('settings'); await tick(); tab('plugins'); await tick()
+  check('Plugins открыта второй раз: список и каталог не спрашиваются заново', n0, rc.filter((c) => c.method === 'plugins_list').length)
+  // правка в разделе переживает переход на другую вкладку
+  tab('outputs'); await tick()
+  const outEl = pane.children[0]
+  const form = outEl.splify2Form()
+  const mf = form.field('outputs')
+  mf.addNamed('vpn', { kind: 'direct' })
+  mf.fire()
+  tab('plugins'); await tick(); tab('outputs'); await tick()
+  check('правка раздела не теряется при переходе на другую вкладку', true, 'vpn' in (pane.children[0].splify2Form().get().outputs || {}))
+  // двойное нажатие Save: одна запись
+  rc.length = 0
+  const save = find(pane, (n) => n.tag === 'button' && n.textContent === 'Save')
+  click(save); click(save)
+  check('Save нажата дважды подряд: spec_set ушёл один раз', 1, rc.filter((c) => c.method === 'spec_set').length)
+  check('пока запись идёт, кнопка недоступна', 'disabled', save.attrs.disabled)
+  await tick(); await tick()
+  check('запись закончилась — кнопка снова доступна', undefined, save.attrs.disabled)
+  // схема ядра: одна на страницу; плагин включён — спрашивается снова
+  const sc = () => rc.filter((c) => c.method === 'spec_schema').length
+  rc.length = 0
+  await store.load()
+  check('store.load второй раз: схема ядра не спрашивается снова', 0, sc())
+  tab('plugins'); await tick()
+  const en = find(pane, (n) => n.tag === 'button' && n.textContent === 'Enable')
+  click(en); click(en); await tick(); await tick()
+  check('Enable нажата дважды: plugin_enable ушёл один раз', 1, rc.filter((c) => c.method === 'plugin_enable').length)
+  check('после действия с плагином каталог не спрашивается заново, список — да', [ 0, 1 ], [ rc.filter((c) => c.method === 'plugins_search').length, rc.filter((c) => c.method === 'plugins_list').length ])
+  tab('rules'); await tick(); await tick(); await tick()
+  check('плагин включён — при открытии формы схема ядра спрошена заново', 1, sc())
+  check('правленая вкладка outputs сохранила форму после смены схемы', true, !!find(menu, (n) => n.attrs && n.attrs['data-tab'] === 'outputs'))
+  // большая спека: правка одного правила не перечитывает остальные
+  const N = 400
+  const rules = Array.from({ length: N }, (_, i) => ({ name: 'r' + i, domain: [ 'd' + i + '.example' ], out: 'direct' }))
+  const rf = build(FIXTURE, { version: 2, outputs: { direct: { kind: 'direct' } }, rules }, {}).field('rules')
+  let gets = 0
+  rf.items.forEach((it) => { const g = it.field.get; it.field.get = function() { gets++; return g.apply(this, arguments) } })
+  const leaf = rf.items[7].field.kids.find((k) => k.key === 'name').field
+  const t0 = performance.now()
+  for (let i = 0; i < 20; i++) { leaf.widget ? leaf.widget.type('x' + i) : leaf.fire() }
+  const dt = (performance.now() - t0) / 20
+  check('правка одного из ' + N + ' правил читает только его (а не все)', true, gets <= 20 * 2)
+  console.log(`    замер: правка поля правила при ${N} правилах — ${dt.toFixed(2)} мс на нажатие, чтений правил: ${gets}`)
+  check('номер и имя правки видны в заголовке правила', '#8 · x19', rf.items[7].sum.textContent)
+  // ленивые правила (вкладки разделов): собираются при раскрытии, свёрнутые отдают данные как есть
+  {
+    const M = 1000
+    const rl = Array.from({ length: M }, (_, i) => ({ name: 'r' + i, domain: [ 'd' + i + '.example' ], out: 'direct' }))
+    const sp = { version: 2, outputs: { direct: { kind: 'direct' } }, rules: rl }
+    const t0 = performance.now(); build(FIXTURE, sp, {}); const eager = performance.now() - t0
+    const t1 = performance.now(); const lf = build(FIXTURE, sp, { lazy: true }); const lazy = performance.now() - t1
+    console.log(`    замер: форма из ${M} правил — сразу все ${eager.toFixed(0)} мс, лениво ${lazy.toFixed(0)} мс`)
+    const lr = lf.field('rules')
+    check('ленивые правила: ни одно не собрано до раскрытия', 0, lr.items.filter((it) => it.built()).length)
+    check('ленивые правила: заголовки из данных', '#3 · r2', lr.items[2].sum.textContent)
+    check('ленивые правила: get свёрнутых — данные как пришли', rl, lf.get().rules)
+    lr.items[5].el.dispatchEvent({ type: 'toggle' })
+    check('раскрытие собирает только это правило', [ true, 1 ], [ lr.items[5].built(), lr.items.filter((it) => it.built()).length ])
+    lr.addItem({}); 
+    check('новое правило собрано сразу (оно раскрыто)', true, lr.items.at(-1).built())
+    const bad = build(FIXTURE, { version: 2, outputs: { direct: { kind: 'direct' } }, rules: [ { name: 'ok', domain: [ 'a.b' ], out: 'direct' }, { name: 'bad', domain: [ 'a.b' ] } ] }, { lazy: true })
+    const plain = build(FIXTURE, { version: 2, outputs: { direct: { kind: 'direct' } }, rules: [ { name: 'ok', domain: [ 'a.b' ], out: 'direct' }, { name: 'bad', domain: [ 'a.b' ] } ] }, {})
+    check('проверка ловит ошибку в свёрнутом правиле так же, как в собранном', [ true, plain.validate().map((e) => e.title) ], [ bad.validate().length > 0, bad.validate().map((e) => e.title) ])
+  }
+}
+
+// ---- 11. схема прошлой страницы: формы открываются сразу, ответ ядра сверяется в фоне ----
+{
+  const tick = () => new Promise((r) => setTimeout(r, 0))
+  const mem = {}
+  globalThis.window = { location: { hash: '#outputs', pathname: '/x', search: '' },
+    localStorage: { getItem: (k) => (k in mem ? mem[k] : null), setItem: (k, v) => { mem[k] = String(v) }, removeItem: (k) => { delete mem[k] } } }
+  globalThis.history = { replaceState() {} }
+  const later = () => { let res; const p = new Promise((r) => { res = r }); return { p, res } }
+  const page = async (schemaReply) => {
+    const rc = [], rr = {
+      prefs_get: { ok: true, lang: 'en' }, i18n_get: { ok: true, dicts: [] },
+      spec_get: { version: 2, rev: 'r1', outputs: { direct: { kind: 'direct' } } }, spec_schema: schemaReply,
+      devices: { ok: true, devices: [] }, applied_get: null, engine: { ok: true }, diag: { ok: true, checks: [] },
+    }
+    const L = makeLoader({ rpcCalls: rc, rpcReplies: rr, extra: { ui: { ...ui, addNotification() {} } } })
+    const v = Object.create(L.load('view.splify2.core.main'))
+    await v.load()
+    const el = v.render()
+    await tick(); await tick()
+    return { el, rc, store: L.load('view.splify2.core.store'), tabs: () => el.children.at(-2).children.map((li) => li.attrs['data-tab']), pane: el.children.at(-1) }
+  }
+  const w1 = later()
+  const p1 = await page(() => w1.p)
+  check('первая страница: схемы в браузере нет — формы ждут ответа ядра', false, p1.tabs().includes('outputs'))
+  w1.res({ ok: true, source: 'core', schema: FIXTURE }); await tick(); await tick()
+  check('первая страница: схема пришла и сохранена в браузере', [ true, true ], [ p1.tabs().includes('outputs'), !!mem['splify2.core.schema'] ])
+  const w2 = later()
+  const p2 = await page(() => w2.p)
+  check('вторая страница: формы открыты со схемой прошлой страницы, не дожидаясь ядра', [ true, true ],
+    [ p2.tabs().includes('outputs'), !!p2.pane.children[0] && !!p2.pane.children[0].splify2Form ])
+  check('вторая страница: ядро всё равно спрошено (сверка в фоне)', true, p2.rc.some((c) => c.method === 'spec_schema'))
+  const NEW = JSON.parse(JSON.stringify(FIXTURE)); delete NEW.properties.dns
+  const before = p2.pane.children[0]
+  w2.res({ ok: true, source: 'core', schema: NEW }); await tick(); await tick()
+  check('ядро ответило другой схемой — вкладки следуют ей, неправленая форма перерисована', [ false, true, true ],
+    [ p2.tabs().includes('dns'), p2.pane.children[0] !== before, p2.pane.children[0].splify2Form().ctx.schemaRoot === p2.store.schema ])
+  check('и в браузере теперь новая схема', false, 'dns' in JSON.parse(mem['splify2.core.schema']).schema.properties)
+  p2.store.invalidateSchema()
+  check('плагины изменились — схема прошлой страницы забыта', false, 'splify2.core.schema' in mem)
+}
+
+// ---- 12. главная страница: каркас открывается, не дожидаясь prefs_get, и prefs_get один ----
+{
+  const tick = () => new Promise((r) => setTimeout(r, 0))
+  const run = async (remembered) => {
+    const mem = remembered ? { 'splify2:interface': remembered } : {}
+    globalThis.window = { location: { hash: '', pathname: '/x', search: '', reload() {} },
+      localStorage: { getItem: (k) => (k in mem ? mem[k] : null), setItem: (k, v) => { mem[k] = String(v) }, removeItem: (k) => { delete mem[k] } } }
+    let answer; const wait = new Promise((r) => { answer = r })
+    const rc = []
+    const { load, L } = makeLoader({ rpcCalls: rc, rpcReplies: { prefs_get: () => wait, i18n_get: { ok: true, dicts: [] } } })
+    const req = []
+    const orig = L.require
+    L.require = (n) => { req.push(n); return orig(n) }
+    const idx = load('view.splify2.index')
+    idx.__init__()
+    await tick(); await tick()
+    const before = req.includes('view.splify2.core.main')
+    answer({ ok: true, interface: 'basic', lang: 'en' })
+    await tick(); await tick()
+    const main = Object.create(load('view.splify2.core.main'))
+    await load('view.splify2.core.i18n').load()
+    return { before, after: req.includes('view.splify2.core.main'), prefs: rc.filter((c) => c.method === 'prefs_get').length, i18nEarly: req[0] === 'view.splify2.core.i18n' }
+  }
+  const warm = await run('basic')
+  check('каркас запомнен: открывается, не дожидаясь prefs_get', true, warm.before)
+  check('каркас запомнен: prefs_get один на страницу (словарь берёт ответ главной)', 1, warm.prefs)
+  const cold = await run('')
+  check('первое открытие: модуль словаря грузится, пока идёт prefs_get', [ true, false ], [ cold.i18nEarly, cold.before ])
+  check('первое открытие: после ответа открыт каркас, prefs_get один', [ true, 1 ], [ cold.after, cold.prefs ])
 }
 
 console.log(`\n${total} проверок, провалов: ${fails}`)
