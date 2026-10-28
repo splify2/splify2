@@ -478,7 +478,7 @@ plugin_sync() {
 # расходится, и сверка идёт.
 PLUGIN_SYNC_FP="${PLUGIN_SYNC_FP:-/var/run/splify2/plugin-sync.fp}"
 plugin_sync_fp() {
-    printf '%s|%s|%s' "$(cat "$PLUGIN_STATE" "${EXT_METHODS_TSV:-$SPLIFY2_LIBDIR/methods.tsv}" "$PLUGIN_ROOT"/*/plugin.json 2>/dev/null | cksum)" \
+    printf '%s|%s|%s' "$(cat "$PLUGIN_STATE" "${EXT_METHODS_TSV:-$SPLIFY2_LIBDIR/methods.tsv}" "$PLUGIN_ROOT"/*/plugin.json 2>/dev/null | md5sum)" \
         "$(ls "$PLUGIN_ROOT" 2>/dev/null | tr '\n' ' ')" "$(ls "$PLUGIN_RPCD_DIR" "$PLUGIN_ACL_DIR" 2>/dev/null | grep -E '^splify2[.-]p[.-]' | tr '\n' ' ')"
 }
 plugin_sync_if_changed() {
