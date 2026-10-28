@@ -95,6 +95,35 @@ plugin_names_json() {  # ЯЗЫК
     printf '{%s}' "$_pn_out"
 }
 
+# plugin_names_json с кэшем: /var/run/splify2/ext.reg.names.<язык>. Годен, когда проход согласия свеж (тот же
+# набор плагинов и манифестов, plugin_sync_fresh), файл не старше отметки прохода и ни один словарь плагинов не новее
+# файла. Чтение — встроенной `read`, без процессов; пересчёт — прежний, по словарям.
+plugin_names_cached() {  # ЯЗЫК
+    _pnc_k="$1"
+    case "$_pnc_k" in ''|*[!A-Za-z0-9-]*) _pnc_k=_ ;; esac
+    _pnc_f="$EXT_REG.names.$_pnc_k"
+    if [ -f "$_pnc_f" ] && plugin_sync_fresh && [ ! "$_pnc_f" -ot "$EXT_REG.sync" ]; then
+        _pnc_ok=1
+        for _pnc_x in "$PLUGIN_ROOT"/*/*/*.json "$PLUGIN_ROOT"/*/*/; do
+            [ -e "$_pnc_x" ] || continue
+            [ "$_pnc_x" -ot "$_pnc_f" ] || { _pnc_ok=0; break; }
+        done
+        if [ "$_pnc_ok" = 1 ]; then
+            _pnc_v=""
+            IFS= read -r _pnc_v < "$_pnc_f"
+            case "$_pnc_v" in '{'*'}') printf '%s' "$_pnc_v"; return 0 ;; esac
+        fi
+    fi
+    _pnc_v="$(plugin_names_json "$1")"
+    printf '%s' "$_pnc_v"
+    # Свежим кэш пишется, только если проход согласия свеж: иначе файл пережил бы перемену, о которой не знает.
+    if plugin_sync_fresh; then
+        if printf '%s\n' "$_pnc_v" 2>/dev/null > "$_pnc_f.$$"; then mv -f "$_pnc_f.$$" "$_pnc_f" 2>/dev/null
+        else rm -f "$_pnc_f.$$" 2>/dev/null; fi
+    fi
+    return 0
+}
+
 case "$2" in
 
     plugins_list)
@@ -116,15 +145,18 @@ case "$2" in
             _pl_rerr="$(plugin_manager_error)"
         fi
         plugin_sync_reload
+        # Названия на языке человека — из кэша: файл на язык рядом с реестром, годен, пока проход согласия свеж и ни
+        # один словарь плагина не новее файла (plugin_names_cached).
+        _pl_names="$(plugin_names_cached "$_pl_lang")"
         # splify2_api — версия точек расширения каркаса, ext_errors — почему блок `splify2` какого-то плагина не
         # применён (нет права, имя занято, версия API не та): карточка плагина показывает это человеку.
         _pl_ext="$(ext_errors_json)"
         if [ -n "$_pl_rerr" ]; then
             plugin_ok_raw host_api "$(plugin_jstr "$PLUGIN_HOST_API")" splify2_api "$(plugin_jstr "$PLUGIN_SPLIFY2_API")" \
-                ext_errors "$_pl_ext" names "$(plugin_names_json "$_pl_lang")" plugins "$_pl_plugins" repos "$_pl_repos" repos_error "$(plugin_jstr "$_pl_rerr")"
+                ext_errors "$_pl_ext" names "$_pl_names" plugins "$_pl_plugins" repos "$_pl_repos" repos_error "$(plugin_jstr "$_pl_rerr")"
         else
             plugin_ok_raw host_api "$(plugin_jstr "$PLUGIN_HOST_API")" splify2_api "$(plugin_jstr "$PLUGIN_SPLIFY2_API")" \
-                ext_errors "$_pl_ext" names "$(plugin_names_json "$_pl_lang")" plugins "$_pl_plugins" repos "$_pl_repos"
+                ext_errors "$_pl_ext" names "$_pl_names" plugins "$_pl_plugins" repos "$_pl_repos"
         fi
         ;;
 

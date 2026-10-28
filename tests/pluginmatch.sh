@@ -221,6 +221,16 @@ check "plugins_list: плагина без словаря в names нет (ин�
     "$(rpcd plugins_list '{"lang":"ru"}' | pj '"solo" in d["names"]' | sed 's/True/yes/;s/true/yes/;s/False/no/;s/false/no/')"
 check "plugins_list: недопустимый язык — не ломает ответ, en" "true;Export to a file" \
     "$(rpcd plugins_list '{"lang":"../x"}' | pj 'd["ok"]');$(rpcd plugins_list '{"lang":"../x"}' | pj 'd["names"]["backup"]["description"]')"
+# Названия — из кэша на язык (plugin_names_cached); словарь сменился — кэш не годен.
+sleep 1.1; rpcd plugins_list '{"lang":"ru"}' >/dev/null; rpcd plugins_list '{"lang":"ru"}' >/dev/null
+check "plugins_list: названия ложатся в кэш на язык; чужой путь в имени файла не попадает" "yes;no" \
+    "$([ -f "$PLUG/run/ext.reg.names.ru" ] && echo yes || echo no);$(ls "$PLUG/run" | grep -q '\.\.' && echo yes || echo no)"
+check "  из кэша — те же слова" "Архив настроек" "$(rpcd plugins_list '{"lang":"ru"}' | pj 'd["names"]["backup"]["name"]')"
+sleep 1.1
+printf '%s\n' '{"plugin.name":"Архив","plugin.description":"Выгрузка"}' > "$PLUG/lib/backup/i18n/ru.json"
+check "  словарь сменился — новые слова" "Архив;Выгрузка" \
+    "$(rpcd plugins_list '{"lang":"ru"}' | pj 'd["names"]["backup"]["name"]');$(rpcd plugins_list '{"lang":"ru"}' | pj 'd["names"]["backup"]["description"]')"
+check "  другой язык — свой кэш" "Export to a file" "$(rpcd plugins_list '{"lang":"en"}' | pj 'd["names"]["backup"]["description"]')"
 rm -f "$PLUG/fail.list"
 out="$(STEER_FIXTURE=/nonexistent/steer rpcd plugins_list)"
 check "ядро без менеджера плагинов — понятный отказ" "false;ядро не умеет плагины — обновите steer" \
