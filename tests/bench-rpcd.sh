@@ -72,6 +72,7 @@ for m in prefs_get i18n_get plugins_list spec_get spec_schema engine applied_get
     : > "$T/exec.log"
     PATH="$T/shim:$PATH" call "$m" "$in"
     cnt="$(wc -l < "$T/exec.log")"
+    [ -n "${BENCH_SEQ:-}" ] && [ "$m" = "$BENCH_SEQ" ] && tr "\n" " " < "$T/exec.log" && echo
     top="$(sort "$T/exec.log" | uniq -c | sort -rn | head -4 | awk '{printf "%s×%s ", $2, $1}')"
     printf '%-16s %8s %8s  %s\n' "$m" "$best" "$cnt" "$top"
     [ -n "${BENCH_SHOW:-}" ] && { head -c 300 "$T/out"; echo; head -c 300 "$T/err"; echo; }

@@ -160,6 +160,25 @@ plugin_json_array() {  # ТЕКСТ КЛЮЧ
 # Склейка строк — `$!{N;ba}`, а не `N` с проверкой: у однострочного текста `N` на последней строке завершает sed
 # до подстановок, и кавычки оставались неэкранированными.
 plugin_jstr() {  # ТЕКСТ
+    # Без управляющих знаков (почти всегда: версии, имена, слова менеджера) — встроенными средствами оболочки, без
+    # tr и sed: \ и " экранируются разбором строки по первому из них.
+    case "$1" in
+        *[[:cntrl:]]*) ;;
+        *)
+            _pjs_s="$1"; _pjs_o=""
+            while :; do
+                case "$_pjs_s" in
+                    *[\\\"]*)
+                        _pjs_p="${_pjs_s%%[\\\"]*}"
+                        _pjs_s="${_pjs_s#"$_pjs_p"}"
+                        _pjs_o="$_pjs_o$_pjs_p\\${_pjs_s%"${_pjs_s#?}"}"
+                        _pjs_s="${_pjs_s#?}" ;;
+                    *) _pjs_o="$_pjs_o$_pjs_s"; break ;;
+                esac
+            done
+            printf '"%s"' "$_pjs_o"
+            return 0 ;;
+    esac
     printf '"'
     printf '%s' "$1" | tr -d '\000-\010\013-\037' | sed -e ':a' -e '$!{N;ba' -e '}' \
         -e 's/\\/\\\\/g' -e 's/"/\\"/g' -e "s/$(printf '\t')/\\\\t/g" -e 's/\n/\\n/g'
@@ -192,8 +211,22 @@ plugin_manager() {  # ДЕЙСТВИЕ [АРГУМЕНТЫ...]
     PLUGIN_OUT="$("$STEER" plugin "$@" --json 2>"$_pm_err")"
     PLUGIN_RC=$?
     PLUGIN_ERR=""
-    [ "$_pm_err" = /dev/null ] || { PLUGIN_ERR="$(cat "$_pm_err" 2>/dev/null)"; rm -f "$_pm_err"; }
+    if [ "$_pm_err" != /dev/null ]; then
+        [ -s "$_pm_err" ] && PLUGIN_ERR="$(cat "$_pm_err" 2>/dev/null)"
+        rm -f "$_pm_err"
+    fi
     return $PLUGIN_RC
+}
+
+# То же для действий, которые только читают (list, repo list, status, search): первый заход — без файла для stderr,
+# потому что слова менеджера нужны только при отказе, а временный файл стоит трёх процессов (mktemp, cat, rm) на
+# каждый вызов. Отказал — повтор с файлом: чтение можно повторить, и отказ доходит словами менеджера.
+plugin_manager_ro() {  # ДЕЙСТВИЕ [АРГУМЕНТЫ...]
+    PLUGIN_ERR=""
+    PLUGIN_OUT="$("$STEER" plugin "$@" --json 2>/dev/null)"
+    PLUGIN_RC=$?
+    [ "$PLUGIN_RC" = 0 ] && return 0
+    plugin_manager "$@"
 }
 
 # ЯДРО БЕЗ МЕНЕДЖЕРА ПЛАГИНОВ. Менеджер — с ядра 2.1; на более старом `steer plugin` отвечает «нет такой

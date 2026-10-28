@@ -136,10 +136,10 @@ case "$2" in
         # Проход согласия — только когда с прошлого что-то менялось (plugin_sync_fresh): без перемен он стоил
         # сотни запусков процессов на каждое открытие вкладки.
         plugin_sync_fresh || plugin_sync
-        plugin_manager list || { plugin_manager_fail; exit 0; }
+        plugin_manager_ro list || { plugin_manager_fail; exit 0; }
         _pl_plugins="$(plugin_json_array "$PLUGIN_OUT" plugins)"
         _pl_repos="[]"; _pl_rerr=""
-        if plugin_manager repo list; then
+        if plugin_manager_ro repo list; then
             _pl_repos="$(plugin_json_array "$PLUGIN_OUT" repos)"
         else
             _pl_rerr="$(plugin_manager_error)"
@@ -166,13 +166,13 @@ case "$2" in
         _pq="$(plugin_in query)"
         # Слово уходит менеджеру одним аргументом; начинаться с «-» оно не может — его приняли бы за флаг.
         case "$_pq" in -*) plugin_fail bad_request plugin.query_dash "The query cannot start with a hyphen"; exit 0 ;; esac
-        if [ -n "$_pq" ]; then plugin_manager search "$_pq"; else plugin_manager search; fi ||
+        if [ -n "$_pq" ]; then plugin_manager_ro search "$_pq"; else plugin_manager_ro search; fi ||
             { plugin_manager_fail; exit 0; }
         plugin_ok_raw plugins "$(plugin_json_array "$PLUGIN_OUT" plugins)"
         ;;
 
     repos_list)
-        plugin_manager repo list || { plugin_manager_fail; exit 0; }
+        plugin_manager_ro repo list || { plugin_manager_fail; exit 0; }
         plugin_ok_raw repos "$(plugin_json_array "$PLUGIN_OUT" repos)"
         ;;
 
@@ -182,9 +182,9 @@ case "$2" in
         PL_ID="$(plugin_in id)"
         if [ -n "$PL_ID" ]; then
             plugin_id_ok "$PL_ID" || { plugin_fail bad_request plugin.bad_name "Invalid plugin name"; exit 0; }
-            plugin_manager status "$PL_ID" || { plugin_manager_fail; exit 0; }
+            plugin_manager_ro status "$PL_ID" || { plugin_manager_fail; exit 0; }
         else
-            plugin_manager status || { plugin_manager_fail; exit 0; }
+            plugin_manager_ro status || { plugin_manager_fail; exit 0; }
         fi
         # Ответ ядра идёт целиком под ключом status: его форма — дело ядра, а не этого слоя.
         _ps_obj="$(plugin_json_obj "$PLUGIN_OUT")" || _ps_obj="null"
