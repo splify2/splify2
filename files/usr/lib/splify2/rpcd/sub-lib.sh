@@ -263,6 +263,8 @@ sub_fields_cb() {  # ID КОД ФАЙЛ РЕЖИМ КРИТИЧЕСКИЙ
 
 sub_fields_run() {  # ИМЯ...
     SUBF_DIR=""
+    # Подписок нет — и полей им нет: хук плагина (запуск его программы) на пустой список не зовётся.
+    [ $# -gt 0 ] || return 0
     need_ext || return 0
     ext_has_hook sub_fields || return 0
     SUBF_DIR="$(mktemp -d 2>/dev/null)" || { SUBF_DIR=""; return 0; }
