@@ -104,7 +104,7 @@ case "$2" in
         # возвращает.
         read -r input
         _pl_lang="$(plugin_in lang)"
-        plugin_sync
+        plugin_sync_if_changed
         plugin_manager list || { plugin_manager_fail; exit 0; }
         _pl_plugins="$(plugin_json_array "$PLUGIN_OUT" plugins)"
         _pl_repos="[]"; _pl_rerr=""

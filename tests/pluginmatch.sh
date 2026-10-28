@@ -57,7 +57,7 @@ envs() {
         PLUGIN_SH="$ROOT/files/usr/lib/splify2/plugin.sh" PLUG="$PLUG" \
         PLUGIN_ROOT="$PLUG/lib" PLUGIN_STATE="$PLUG/state.json" PLUGIN_RPCD_DIR="$PLUG/rpcd" \
         PLUGIN_ACL_DIR="$PLUG/acl" PLUGIN_UI_DIR="$PLUG/www" PLUGIN_VIEW_DIR="$PLUG/views" PLUGIN_JOBS="$PLUG/jobs" PLUGIN_RELOAD_DELAY=0 \
-        PLUGIN_DISPATCHER="$DISPATCHER" \
+        PLUGIN_DISPATCHER="$DISPATCHER" PLUGIN_SYNC_FP="$PLUG/run/sync.fp" \
         EXT_REG="$PLUG/run/ext.reg" EXT_SAFE_FILE="$PLUG/safe" EXT_TASKS_JSON="$PLUG/tasks.json" \
         EXT_CRONTAB="$PLUG/crontab" EXT_TASK_LOCK_DIR="$PLUG/run" EXT_EVENTS_INITD="$PLUG/no-events-initd" \
         EXT_METHODS_TSV="$ROOT/files/usr/lib/splify2/methods.tsv" SPLIFY2_LIBDIR="$ROOT/files/usr/lib/splify2" \
@@ -549,6 +549,13 @@ check "  чужие файлы в тех же каталогах не трону
 check "  rpcd перечитан один раз" "1" "$(reload_count)"
 rpcd plugins_list >/dev/null; sleep 0.3
 check "  всё в согласии — перечитки нет" "1" "$(reload_count)"
+# Набор плагинов не менялся — сверки нет (на роутере она стоит секунды); изменился — идёт.
+echo '{"x":1}' > "$PLUG/acl/splify2-p-recheck.json"
+rpcd plugins_list >/dev/null
+check "  набор не менялся — сверки нет" '{"x":1}' "$(cat "$PLUG/acl/splify2-p-recheck.json")"
+rm -f "$PLUG/run/sync.fp"
+rpcd plugins_list >/dev/null
+check "  отпечатка нет (перезагрузка) — сверка идёт" "no" "$(grep -q '"x"' "$PLUG/acl/splify2-p-recheck.json" && echo yes || echo no)"
 
 # splify2-plugin-sync: та же приводка командой (postinst).
 rm -f "$PLUG/rpcd/splify2.p.recheck"

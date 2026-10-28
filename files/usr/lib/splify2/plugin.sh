@@ -470,6 +470,28 @@ plugin_sync() {
 # Перечитать rpcd, если ссылки или ACL менялись. В фоне и с задержкой: этот процесс — потомок rpcd,
 # и перечитка (SIGHUP снимает объекты обработчиков и регистрирует заново) до отправки ответа унесла
 # бы его (тот же довод, что у перезапуска в splify2_install).
+# Сверка при открытии вкладки «Плагины» (plugins_list) — только когда набор плагинов изменился с прошлой сверки. Полная
+# сверка — десятки jsonfilter на плагин (на стенде TCG с 14 плагинами 20 с, и вызов LuCI обрывался по своему пределу в
+# 20 с: вкладка не открывалась). Отпечаток — состояние менеджера (что стоит, версии, включён ли), состав каталога плагинов
+# с их манифестами и таблица методов каркаса; хранится в /var/run: после перезагрузки и sysupgrade (когда ссылки rpcd пропадают) его нет,
+# и первое открытие сверяет полностью. Плагин, поставленный мимо панели (`steer plugin install`), меняет состояние — отпечаток
+# расходится, и сверка идёт.
+PLUGIN_SYNC_FP="${PLUGIN_SYNC_FP:-/var/run/splify2/plugin-sync.fp}"
+plugin_sync_fp() {
+    printf '%s|%s|%s' "$(cat "$PLUGIN_STATE" "${EXT_METHODS_TSV:-$SPLIFY2_LIBDIR/methods.tsv}" "$PLUGIN_ROOT"/*/plugin.json 2>/dev/null | cksum)" \
+        "$(ls "$PLUGIN_ROOT" 2>/dev/null | tr '\n' ' ')" "$(ls "$PLUGIN_RPCD_DIR" "$PLUGIN_ACL_DIR" 2>/dev/null | grep -E '^splify2[.-]p[.-]' | tr '\n' ' ')"
+}
+plugin_sync_if_changed() {
+    PLUGIN_SYNC_CHANGED=0
+    plugin_need_ext    # ext_errors_json и прочее из ext.sh нужны вызывающему и без сверки
+    _psc_fp="$(plugin_sync_fp)"
+    [ "$(cat "$PLUGIN_SYNC_FP" 2>/dev/null)" = "$_psc_fp" ] && return 0
+    plugin_sync
+    # Отпечаток после сверки: сверка сама меняет ссылки rpcd и ACL, их имена входят в отпечаток.
+    mkdir -p "${PLUGIN_SYNC_FP%/*}" 2>/dev/null && plugin_sync_fp > "$PLUGIN_SYNC_FP" 2>/dev/null
+    return 0
+}
+
 plugin_sync_reload() {
     [ "${PLUGIN_SYNC_CHANGED:-0}" = 1 ] || return 0
     ( sleep "${PLUGIN_RELOAD_DELAY:-2}"; "${RPCD_INITD:-/etc/init.d/rpcd}" reload ) </dev/null >/dev/null 2>&1 &
