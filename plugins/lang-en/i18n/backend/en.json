@@ -247,6 +247,8 @@
   "plugin.timeout": "Plugin {id} did not answer within {seconds} s",
   "plugin.values_object": "The values must be an object",
   "prefs.bad_interface": "The interface must be a lowercase id: basic, andromeda or an interface plugin",
+  "prefs.bad_lang": "The interface language must be a code such as en or pt-br",
+  "prefs.nothing": "Nothing to save: interface or ui_lang is required",
   "prefs.not_saved": "Cannot save the setting",
   "probe.no_answer": "No answer through the output",
   "purge.box": "The core is run by steer-box-connector: the steer service, its nftables table and the core packages stay, they are not ours",

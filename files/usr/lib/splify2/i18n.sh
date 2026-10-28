@@ -26,6 +26,8 @@ s2_lang_init() {
     [ -z "${S2_LANG_NOW+x}" ] || return 0
     S2_LANG_NOW="${S2_LANG:-}"
     [ -n "$S2_LANG_NOW" ] || S2_LANG_NOW="$(uci -q get luci.main.lang 2>/dev/null)"
+    # Язык LuCI — auto или не задан: браузер бэкенду не виден, но язык, выбранный в интерфейсе (prefs_set ui_lang), — да.
+    case "$S2_LANG_NOW" in ''|auto) S2_LANG_NOW="$(uci -q get splify2.main.ui_lang 2>/dev/null)" ;; esac
     case "$S2_LANG_NOW" in ''|auto|*[!A-Za-z0-9_-]*) S2_LANG_NOW=en ;; esac
     S2_LANG_NOW="$(printf '%s' "$S2_LANG_NOW" | tr 'A-Z_' 'a-z-')"
 }

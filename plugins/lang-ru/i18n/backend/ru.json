@@ -247,6 +247,8 @@
   "plugin.timeout": "Плагин {id} не ответил за {seconds} с",
   "plugin.values_object": "Значения должны быть объектом",
   "prefs.bad_interface": "interface: ждём строчный идентификатор (basic, andromeda или плагин интерфейса)",
+  "prefs.bad_lang": "язык интерфейса: ждём код вида en или pt-br",
+  "prefs.nothing": "нечего сохранять: нужен interface или ui_lang",
   "prefs.not_saved": "не удалось записать настройку",
   "probe.no_answer": "через выход не ответили",
   "purge.box": "ядро ведёт steer-box-connector — служба steer, её таблица nftables и пакеты ядра остаются: это не наше",

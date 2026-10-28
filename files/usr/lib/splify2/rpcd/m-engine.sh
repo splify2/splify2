@@ -332,20 +332,42 @@ $_pg_list
 EOF
         json_close_array
         json_add_string lang "${_pg_lang:-auto}"
+        _pg_ul="$(uci -q get splify2.main.ui_lang 2>/dev/null)"
+        json_add_string ui_lang "${_pg_ul:-auto}"
         json_dump
         ;;
 
     prefs_set)
         read -r input
         json_load "$input" 2>/dev/null || fail_code req.unparsable "Unparsable request"
+        # Оба поля необязательны, но хотя бы одно нужно. ui_lang — язык интерфейса, выбранный в самом интерфейсе
+        # (Andromeda): им же говорит бэкенд, когда язык LuCI — auto или не задан (i18n.sh, s2_lang_init).
+        # «auto» снимает выбор.
+        _ps_if=""; _ps_ul=""
         json_get_var _ps_if interface
+        json_get_var _ps_ul ui_lang
+        [ -n "$_ps_if$_ps_ul" ] || fail_code prefs.nothing "Nothing to save: interface or ui_lang is required"
         case "$_ps_if" in
-            ''|*[!a-z0-9-]*) fail_code prefs.bad_interface "The interface must be a lowercase id: basic, andromeda or an interface plugin" ;;
+            *[!a-z0-9-]*) fail_code prefs.bad_interface "The interface must be a lowercase id: basic, andromeda or an interface plugin" ;;
+        esac
+        case "$_ps_ul" in
+            ''|auto|[a-z][a-z]|[a-z][a-z]-[a-z][a-z]|[a-z][a-z]-[a-z][a-z][a-z]|[a-z][a-z]-[a-z][a-z][a-z][a-z]) ;;
+            *) fail_code prefs.bad_lang "The interface language must be a code such as en or pt-br" ;;
         esac
         uci_file || fail_code disk.cannot_create "Cannot create {file}: no space left" file "$UCI_SPLIFY2"
-        uci -q set splify2.main.interface="$_ps_if" || fail_code prefs.not_saved "Cannot save the setting"
+        if [ -n "$_ps_if" ]; then
+            uci -q set splify2.main.interface="$_ps_if" || fail_code prefs.not_saved "Cannot save the setting"
+        fi
+        case "$_ps_ul" in
+            '') ;;
+            auto) uci -q delete splify2.main.ui_lang 2>/dev/null ;;
+            *) uci -q set splify2.main.ui_lang="$_ps_ul" || fail_code prefs.not_saved "Cannot save the setting" ;;
+        esac
         uci_commit
-        json_init; json_add_boolean ok 1; json_add_string interface "$_ps_if"; json_dump
+        json_init; json_add_boolean ok 1
+        [ -n "$_ps_if" ] && json_add_string interface "$_ps_if"
+        [ -n "$_ps_ul" ] && json_add_string ui_lang "$_ps_ul"
+        json_dump
         ;;
 
     paths)
