@@ -148,17 +148,21 @@ check "CONTROL убирается после сборки ipk" "1" "$(grep -c 'r
 for suffix in noarch.apk all.ipk; do
     check "build.sh кладёт splify2-...-1_$suffix" "1" \
         "$(grep -c "splify2-\$VERSION-1_$suffix\|splify2-\${VERSION}-1_$suffix" build.sh)"
-    # release.yml (и releases/) переименование ещё не прошло: их правит владелец отдельно. Пока там
-    # прежнее имя файла, стенд сообщает об этом, но не падает; на новом имени проверка строгая.
-    new_b="$(grep -c "test -f \"out/splify2-\${VERSION}-1_$suffix\"" "$WF")"
-    old_b="$(grep -c "test -f \"out/luci-app-splify2-\${VERSION}-1_$suffix\"" "$WF")"
-    new_u="$(grep -c "^ *out/splify2-\${{ env.VERSION }}-1_$suffix\$" "$WF")"
-    if [ "$old_b" = 1 ] && [ "$new_b" = 0 ]; then
-        printf 'ВНИМАНИЕ: release.yml ещё ждёт luci-app-splify2-...-1_%s: переименуйте шаги выпуска\n' "$suffix"
-    else
-        check "барьер релиза требует $suffix" "1" "$new_b"
-        check "релиз выкладывает $suffix" "1" "$new_u"
-    fi
+    check "барьер релиза требует $suffix" "1" "$(grep -c "test -f \"out/splify2-\${VERSION}-1_$suffix\"" "$WF")"
+    check "релиз выкладывает $suffix" "1" "$(grep -c "^ *out/splify2-\${{ env.VERSION }}-1_$suffix\$" "$WF")"
+    # Переход: обновление 26.10.x ищет файл по прежнему имени — релиз выкладывает копию пакета под ним.
+    check "релиз выкладывает копию luci-app-splify2-...-1_$suffix" "1" \
+        "$(grep -c "^ *out/compat/luci-app-splify2-\${{ env.VERSION }}-1_$suffix\$" "$WF")"
+done
+
+# ---- официальные репозитории плагинов по умолчанию -------------------------------
+# splify2-core-plugins и splify2-extended-plugins подключает пакет: без файла repos.d каталог «Плагины» их не видит,
+# а семя не обновляется из сети. Оба официальные (подписаны ключами splify2 из steer-core).
+for r in splify2-core-plugins splify2-extended-plugins; do
+    check "пакет кладёт repos.d/$r.json" "1" "$(grep -c 'for r in splify2-core-plugins splify2-extended-plugins; do' build.sh)"
+    check "repos.d/$r.json: id, official, адрес Pages" "$r;True;https://splify2.github.io/$r/" \
+        "$(python3 -c 'import json,sys; d=json.load(open(sys.argv[1])); print("%s;%s;%s" % (d["id"], d["official"], d["url"]))' \
+            "files/etc/steer/plugins/repos.d/$r.json")"
 done
 
 # ---- установщик умеет оба менеджера --------------------------------------------

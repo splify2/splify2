@@ -13,6 +13,11 @@ on:
         required: false
         default: false
         type: boolean
+      andromeda:
+        description: 'Версия Andromeda для семени (выпуск vВЕРСИЯ репозитория andromeda); пусто — последний выпуск'
+        required: false
+        default: ''
+        type: string
       codename:
         description: 'Кодовое имя выпуска (например Andromeda). Попадёт в заголовок релиза: «26.9 Andromeda»'
         required: false
@@ -38,9 +43,12 @@ jobs:
           node-version: '22'
 
       - name: Проверить формат версии
+        env:
+          INPUT_VERSION: ${{ inputs.version }}
         run: |
           set -eu
-          V='${{ inputs.version }}'
+          # Значение — через env, а не подстановкой в текст: кавычка во входных данных стала бы кодом.
+          V="$INPUT_VERSION"
           # Версия попадает не только в имя пакета: build.sh штампует её в ?v= у бандлов и
           # в build-id.txt, по которому загрузчик решает, брать интерфейс из кеша браузера
           # или заново. Опечатка здесь — это «пакет обновился, интерфейс прежний».
@@ -101,6 +109,41 @@ jobs:
             fi
           fi
 
+      # Семя пакета (плагины «из коробки» и Andromeda) подписано ключом роли plugins официальных репозиториев:
+      # секрет S2P_KEY_PLUGINS (файл .sec от `s2p keygen`, решение владельца В8; plugin-sdk/docs/s2p.md). Без ключа
+      # build.sh собрал бы семя без подписи с пометкой unsigned — выпуску это не годится, поэтому отказ здесь, до сборки.
+      # Индекс splify2-core-plugins подписывает S2P_KEY_INDEX и публикует PLUGINS_TOKEN (только стабильный выпуск).
+      - name: Ключи подписи
+        env:
+          S2P_KEY_PLUGINS: ${{ secrets.S2P_KEY_PLUGINS }}
+          S2P_KEY_INDEX: ${{ secrets.S2P_KEY_INDEX }}
+          PLUGINS_TOKEN: ${{ secrets.PLUGINS_TOKEN }}
+          INPUT_PRERELEASE: ${{ inputs.prerelease }}
+        run: |
+          set -eu
+          miss=""
+          [ -n "$S2P_KEY_PLUGINS" ] || miss="$miss S2P_KEY_PLUGINS"
+          if [ "$INPUT_PRERELEASE" != true ]; then
+            [ -n "$S2P_KEY_INDEX" ] || miss="$miss S2P_KEY_INDEX"
+            [ -n "$PLUGINS_TOKEN" ] || miss="$miss PLUGINS_TOKEN"
+          fi
+          [ -z "$miss" ] || { echo "::error::нет секретов:$miss — семя и индекс splify2-core-plugins подписываются только ключами splify2"; exit 1; }
+          K="$RUNNER_TEMP/s2p-keys"
+          mkdir -p "$K"
+          ( umask 077; printf '%s\n' "$S2P_KEY_PLUGINS" > "$K/plugins.sec"
+            [ -z "$S2P_KEY_INDEX" ] || printf '%s\n' "$S2P_KEY_INDEX" > "$K/index.sec" )
+          # Открытый ключ — из закрытого (в закрытом ключе usign есть номер и ключ Ed25519): им проверяется семя и Andromeda.
+          python3 - "$K/plugins.sec" "$K/plugins.pub" <<'PY'
+          import base64, sys
+          lines = [l for l in open(sys.argv[1]).read().splitlines() if l.strip()]
+          raw = base64.b64decode(lines[-1])
+          if len(raw) != 104 or raw[:4] != b"EdBK" or any(raw[4:8]):
+              sys.exit("S2P_KEY_PLUGINS — не закрытый ключ usign без пароля")
+          open(sys.argv[2], "w").write("untrusted comment: splify2 plugins key %s\n%s\n"
+              % (raw[32:40].hex(), base64.b64encode(b"Ed" + raw[32:40] + raw[72:104]).decode()))
+          PY
+          { echo "S2P_KEY=$K/plugins.sec"; echo "S2P_KEYS=$K"; } >> "$GITHUB_ENV"
+
       - name: Взять SDK плагинов
         run: |
           set -eu
@@ -113,13 +156,20 @@ jobs:
       - name: Взять Andromeda
         env:
           GH_TOKEN: ${{ github.token }}
+          INPUT_ANDROMEDA: ${{ inputs.andromeda }}
         run: |
           set -eu
           # Интерфейс — плагин andromeda из своего репозитория: пакет несёт его в семени (/usr/share/splify2/seed) и
           # ставит при установке и обновлении. Берётся архив последнего выпуска плагина (`andromeda-<версия>-all.s2p`).
-          mkdir -p "$GITHUB_WORKSPACE/../andromeda/out"
-          gh release download --repo splify2/andromeda --pattern 'andromeda-*-all.s2p' \
-              --dir "$GITHUB_WORKSPACE/../andromeda/out"
+          # Подпись архива сверяется ключом plugins: неподписанный или чужой архив в семя не попадает.
+          set -- --repo splify2/andromeda --pattern 'andromeda-*-all.s2p' --dir "$RUNNER_TEMP/andromeda"
+          [ -z "$INPUT_ANDROMEDA" ] || set -- "v$INPUT_ANDROMEDA" "$@"
+          gh release download "$@"
+          a="$(ls "$RUNNER_TEMP"/andromeda/andromeda-*-all.s2p)"
+          [ "$(printf '%s\n' "$a" | wc -l)" -eq 1 ] || { echo "::error::в выпуске andromeda не один архив: $a"; exit 1; }
+          "$PLUGIN_SDK/bin/s2p" verify "$a" --pub "$S2P_KEYS/plugins.pub" >/dev/null || {
+            echo "::error::$a не подписан ключом plugins"; exit 1; }
+          echo "ANDROMEDA_S2P=$a" >> "$GITHUB_ENV"
 
       - name: Собрать ядро для стендов
         run: |
@@ -161,10 +211,24 @@ jobs:
           # Оба формата обязательны. Пропустить один легко — сборка от этого не падает,
           # просто половина роутеров (OpenWrt 24.10 и старше, там opkg) остаётся без
           # пакета, и узнаётся это от людей, а не от барьера.
-          test -f "out/luci-app-splify2-${VERSION}-1_noarch.apk" || {
-            echo "::error::пакет luci-app-splify2-${VERSION}-1_noarch.apk не найден"; exit 1; }
-          test -f "out/luci-app-splify2-${VERSION}-1_all.ipk" || {
-            echo "::error::пакет luci-app-splify2-${VERSION}-1_all.ipk не найден"; exit 1; }
+          test -f "out/splify2-${VERSION}-1_noarch.apk" || {
+            echo "::error::пакет splify2-${VERSION}-1_noarch.apk не найден"; exit 1; }
+          test -f "out/splify2-${VERSION}-1_all.ipk" || {
+            echo "::error::пакет splify2-${VERSION}-1_all.ipk не найден"; exit 1; }
+          # Семя: каждый архив подписан ключом plugins, пометки unsigned нет.
+          [ ! -f build/pkg/usr/share/splify2/seed/unsigned ] || { echo "::error::семя собрано без подписи"; exit 1; }
+          for f in build/seed/*.s2p; do
+            "$PLUGIN_SDK/bin/s2p" verify "$f" --pub "$S2P_KEYS/plugins.pub" >/dev/null || {
+              echo "::error::$f в семени не подписан ключом plugins"; exit 1; }
+          done
+          # ПЕРЕХОД С luci-app-splify2. Пакет переименован в splify2 (provides, replaces и conflicts прежнего имени —
+          # build.sh), но обновление в 26.10.x ищет файл по прежнему имени (m-engine.sh: luci-app-splify2-<версия>-1_<noarch|all>
+          # в version.json и ветке dist). Поэтому на переходе тот же пакет выкладывается ещё и копией под прежним именем:
+          # имя файла менеджеру безразлично, ставится пакет splify2 и снимает прежний в той же транзакции. Отдельный
+          # переходный пакет luci-app-splify2 не нужен — он остался бы стоять пустой записью в базе.
+          mkdir -p out/compat
+          cp "out/splify2-${VERSION}-1_noarch.apk" "out/compat/luci-app-splify2-${VERSION}-1_noarch.apk"
+          cp "out/splify2-${VERSION}-1_all.ipk" "out/compat/luci-app-splify2-${VERSION}-1_all.ipk"
 
       - name: Зафиксировать версию в репозитории
         run: |
@@ -197,8 +261,9 @@ jobs:
           # целиком качает роутер ради одного файла.
           rm -rf /tmp/dist
           mkdir -p /tmp/dist
-          cp "out/luci-app-splify2-${VERSION}-1_noarch.apk" \
-             "out/luci-app-splify2-${VERSION}-1_all.ipk" \
+          cp "out/splify2-${VERSION}-1_noarch.apk" \
+             "out/splify2-${VERSION}-1_all.ipk" \
+             out/compat/*.apk out/compat/*.ipk \
              install.sh /tmp/dist/
           echo "$VERSION" > /tmp/dist/VERSION
           cd /tmp/dist
@@ -216,7 +281,7 @@ jobs:
         env:
           NOTES: |
             Интерфейс и управление для [ядра steer](https://github.com/splify2/steer). Нужно ядро
-            steer 2.0.0 или новее (`steer-core` и модули протоколов).
+            steer 2.1.0 или новее (`steer-core`; протоколы ядро ставит плагинами само).
 
             Установка одной строкой — она же поставит ядро, если его нет:
 
@@ -236,9 +301,11 @@ jobs:
             и [здесь](https://github.com/splify2/splify2/tree/dist), — и первая команда берёт
             их оттуда сама.
 
-            С ядром 1.x: сначала обновите splify2 (Настройки → О ПО → Интерфейс), затем ядро —
-            там же, в карточке ядра: steer-core и модули ставятся одной транзакцией, спека,
-            списки и подписки остаются на месте.
+            **Пакет теперь называется `splify2`** (был `luci-app-splify2`): он заменяет прежний
+            сам. Панель Andromeda, языки, подписки, каталог списков, архив настроек и
+            обновление — плагины: пакет несёт их подписанными и ставит при установке, без
+            сети тоже. Файлы `luci-app-splify2-*` — тот же пакет под прежним именем, для
+            кнопки обновления в splify2 26.10.
 
             Пакет один на все роутеры: архитектуры здесь нет, весь бинарный код в ядре steer.
             Форматов два: `.apk` для OpenWrt 25.12 и новее, `.ipk` для 24.10, 23.05 и
@@ -246,9 +313,9 @@ jobs:
 
             ```sh
             # OpenWrt 25.12+
-            apk add --allow-untrusted ./luci-app-splify2-${{ env.VERSION }}-1_noarch.apk
+            apk add --allow-untrusted ./splify2-${{ env.VERSION }}-1_noarch.apk
             # OpenWrt 24.10 и старше
-            opkg install ./luci-app-splify2-${{ env.VERSION }}-1_all.ipk
+            opkg install ./splify2-${{ env.VERSION }}-1_all.ipk
             ```
         run: |
           set -eu
@@ -268,10 +335,31 @@ jobs:
           name: ${{ env.RELEASE_NAME }}
           prerelease: ${{ inputs.prerelease }}
           files: |
-            out/luci-app-splify2-${{ env.VERSION }}-1_noarch.apk
-            out/luci-app-splify2-${{ env.VERSION }}-1_all.ipk
+            out/splify2-${{ env.VERSION }}-1_noarch.apk
+            out/splify2-${{ env.VERSION }}-1_all.ipk
+            out/compat/luci-app-splify2-${{ env.VERSION }}-1_noarch.apk
+            out/compat/luci-app-splify2-${{ env.VERSION }}-1_all.ipk
             install.sh
           body_path: ${{ runner.temp }}/release-notes.md
+
+      # Индекс splify2-core-plugins (splify2/splify2-core-plugins, ветка gh-pages; репозиторий подключает пакет —
+      # files/etc/steer/plugins/repos.d/splify2-core-plugins.json): плагины семени этого выпуска, с Andromeda. Все —
+      # «из коробки» (default) и подписаны ключом роли plugins. Предварительный выпуск в индекс не идёт.
+      - name: Опубликовать плагины в splify2-core-plugins
+        if: ${{ !inputs.prerelease }}
+        env:
+          PUBLISH_TOKEN: ${{ secrets.PLUGINS_TOKEN }}
+        run: |
+          set -eu
+          meta="$RUNNER_TEMP/core-meta.json"
+          python3 - build/seed "$meta" <<'PY'
+          import json, os, re, sys
+          ids = sorted({re.sub(r"-[0-9][0-9.]*-[^-]+\.s2p$", "", f) for f in os.listdir(sys.argv[1]) if f.endswith(".s2p")})
+          json.dump({"plugins": {i: {"default": True, "key_role": "plugins"} for i in ids}}, open(sys.argv[2], "w"))
+          PY
+          S2P="$PLUGIN_SDK/bin/s2p" INDEX_SLUG=splify2/splify2-core-plugins INDEX_ID=splify2-core-plugins \
+            INDEX_NAME='splify2 core plugins' INDEX_KEY="$S2P_KEYS/index.sec" PUBS="$S2P_KEYS/plugins.pub" \
+            ARCHIVES=build/seed META="$meta" sh "$PLUGIN_SDK/tools/publish-index.sh"
 
       # splify2/releases — version.json, списки изменений и копии пакетов всех проектов: по нему
       # установщик, роутер и сайт узнают о выпуске. Шаги последние: выпуск здесь к этому времени
@@ -307,8 +395,9 @@ jobs:
           assets="$RUNNER_TEMP/release-assets"
           rm -rf "$assets"
           mkdir -p "$assets"
-          cp "out/luci-app-splify2-${VERSION}-1_noarch.apk" \
-             "out/luci-app-splify2-${VERSION}-1_all.ipk" \
+          cp "out/splify2-${VERSION}-1_noarch.apk" \
+             "out/splify2-${VERSION}-1_all.ipk" \
+             out/compat/*.apk out/compat/*.ipk \
              install.sh "$assets/"
           channel=stable
           [ "$PRERELEASE" = true ] && channel=prerelease
