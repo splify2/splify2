@@ -6,7 +6,7 @@
 # руками, не запускается никогда — а значит и не сторожит ничего.
 #
 # Здесь нет Makefile, в отличие от steer: у splify2 нет сборки на C, и единственная
-# зависимость стендов — python3 плюс node для интерфейса.
+# зависимость стендов — python3 (и node для каркаса LuCI JS).
 #
 # Запуск: sh tests/run.sh
 set -u
@@ -34,12 +34,32 @@ run enginematch sh "$ROOT/tests/enginematch.sh"
 # скачивание, сохранение спеки настоящим движком, доскачивание, ночное обновление, удаление.
 run srsmatch sh "$ROOT/tests/srsmatch.sh"
 run pkgmatch   sh "$ROOT/tests/pkgmatch.sh"
-# Автообновление подписок: задание крона само ничего не качает — оно зовёт объект rpcd по тем
-# подпискам, у которых срок вышел. Стенд про то, кого позвали и кого не тронули.
+# Плагины: методы вкладки «Плагины» над менеджером ядра (заглушка), диспетчер методов плагинов, ACL из
+# манифеста, ссылки объектов splify2.p.<id>, шлюз /v1/plugin/*.
+run pluginmatch sh "$ROOT/tests/pluginmatch.sh"
+# Точки расширения каркаса (splify2-api): хуки, задачи, события, псевдонимы и переопределения плагинов, безопасный
+# режим, архив настроек с разделами плагинов, сборка .s2p плагинов каркаса.
+run exttest sh "$ROOT/tests/exttest.sh"
+# Граница API официальных плагинов: ни путей, ни файлов, ни швов, ни функций каркаса — только службы хоста; слои: grep и
+# `s2p lint --official`, оба доказаны обратным опытом.
+run pluginhygiene sh "$ROOT/tests/pluginhygiene.sh"
+# Службы хоста для программ плагинов (splify2-host): скачивание, спека, настройки плагина, архив настроек каркаса, применение.
+run hostmatch sh "$ROOT/tests/hostmatch.sh"
+# ReCheck: таблица nftables для IPv4 и IPv6, служба и rpcd без движка.
+run recheckmatch sh "$ROOT/tests/recheckmatch.sh"
+# Спека в spec.yaml (spec.sh): JSON-вид, запись переводом ядра, перевод при обновлении ядра.
+run specfilematch sh "$ROOT/tests/specfilematch.sh"
+# Автоприменение на роутере (плагин autoapply): хук после записи спеки, пауза, склейка правок, sweep, события.
+run autoapplymatch sh "$ROOT/tests/autoapplymatch.sh"
+# Проверка узлов и выходов на роутере (плагин node-check): страна выхода с кэшем, перебор узлов подписки, лучший узел.
+run nodecheckmatch sh "$ROOT/tests/nodecheckmatch.sh"
+# Проверки групп выходов (плагин group-check): приговор по членам, подсказка, история, события, расписание.
+run groupcheckmatch sh "$ROOT/tests/groupcheckmatch.sh"
+# Версии и установка ядра и splify2 (плагин updater): порядок шагов, проверки до сети, итог проверки выпусков, задача.
+run updatermatch sh "$ROOT/tests/updatermatch.sh"
+# Плагин subscriptions: расписание автообновления (задача зовёт методы каркаса только по тем подпискам, у которых срок
+# вышел), остаток трафика, название, поля sub_list через хук, архив. Стенд про то, кого позвали и кого не тронули.
 run subsmatch  sh "$ROOT/tests/subsmatch.sh"
-# Отклик для счётчика на сайте: тело ровно `{"v":1,"id":…}`, 23 часа между откликами, ответы
-# сайта, выключенный учёт, uclient-fetch без curl и объект rpcd.
-run telemetrymatch sh "$ROOT/tests/telemetrymatch.sh"
 # Команда полного удаления: убирает ТОЛЬКО записанное за нами и по умолчанию ничего не
 # делает вовсе. Стенд про порядок (проброс уходит раньше зоны — иначе fw4 не перезагрузится)
 # и про чужое, которое остаться обязано.
@@ -54,48 +74,17 @@ run protomatch python3 "$ROOT/tests/protomatch.py"
 # настройке интерфейса. Заглушки в PATH и швы в самом обработчике, ядро не нужно.
 run protohandler sh "$ROOT/tests/protohandler.sh"
 
-# Интерфейс. Пропускается вслух, а не молча: молчаливый пропуск читается как «прошло», и
-# ровно так стенд однажды и превратился в фикцию.
-#
-# Требуется node ≥ 20.19: vitest 4 и vite 8 на node 18 не работают. Как ставился локально —
-# записано в STATE.md, раздел «Окружение».
-if [ -d "$ROOT/ui/node_modules/vitest" ]; then
-    node_major="$(node -p 'process.versions.node.split(".")[0]' 2>/dev/null || echo 0)"
-    if [ "$node_major" -lt 20 ] 2>/dev/null; then
-        for _n in /opt/node22/bin /opt/node24/bin /root/.local/opt/node-v22.14.0-linux-x64/bin; do
-            if [ -x "$_n/node" ]; then
-                PATH="$_n:$PATH"
-                node_major="$("$_n/node" -p 'process.versions.node.split(".")[0]' 2>/dev/null || echo 0)"
-                break
-            fi
-        done
-    fi
-    if [ "$node_major" -ge 20 ] 2>/dev/null; then
-        # ТЕ ЖЕ ТРИ ПРОВЕРКИ, ЧТО В ACTIONS, И ДО СТЕНДА. Прежде здесь был только `npm test`, а
-        # lint, tsc и check:cn гонялись лишь в workflow — то есть локальный прогон был зелёным
-        # при красном CI, и узнавалось это через сутки, чужим коммитом. Так и вышло: условно
-        # вызванный хук в RulesTab прошёл vitest (Preact к смене числа хуков терпим) и упал на
-        # oxlint в Actions.
-        run ui-lint sh -c "cd '$ROOT/ui' && npm run lint --silent && npx tsc -b && npm run check:cn --silent"
-        run ui-harness sh -c "cd '$ROOT/ui' && npm test --silent"
-    elif docker image inspect node:22-alpine >/dev/null 2>&1; then
-        # Node в системе старый, а образ есть — гоняем стенд в нём, а не пропускаем.
-        # Пропуск здесь дороже, чем кажется: половина проверок интерфейса — про поведение,
-        # которое нечем проверить больше нигде, и «ПРОПУЩЕН» на каждом прогоне читается как
-        # «этого стенда нет». Каталог монтируется КОРНЕМ дерева, а не ui/: стенд загрузчика
-        # читает luci/htdocs/... по относительному пути и в узком монтировании не находит его.
-        run ui-lint docker run --rm -v "$ROOT":/w -w /w/ui node:22-alpine \
-            sh -c 'npm run lint --silent && npx tsc -b && npm run check:cn --silent'
-        run ui-harness docker run --rm -v "$ROOT":/w -w /w/ui node:22-alpine npm test --silent
-    else
-        printf '\n===== ui-harness =====\nПРОПУЩЕН: нужен node >= 20 (найден %s) либо образ node:22-alpine для docker\n' \
-            "$(node --version 2>/dev/null || echo 'нет node')"
-        fails=$((fails + 1))
-    fi
-else
-    printf '\n===== ui-harness =====\nПРОПУЩЕН: не установлен (cd ui && npm install)\n'
-    fails=$((fails + 1))
-fi
+# Каркас на классическом LuCI JS (view/splify2/core): автоформа «схема ключей ядра -> поля» с покрытием каждого
+# ключа фикстуры, словарь T(), список строк strings.json, методы rpcd каркаса. Настоящие модули, LuCI-заглушки.
+run automatch sh "$ROOT/tests/automatch.sh"
+# Языковые плагины lang-ru и lang-en: словари каркаса и Andromeda, i18n_get, сборка с lint --official.
+run langmatch sh "$ROOT/tests/langmatch.sh"
+# Тексты бэкенда на языке каркаса: code и args, словари lang-ru и lang-en против кода, s2_fail_code и s2_t плагинов.
+run i18nmatch sh "$ROOT/tests/i18nmatch.sh"
+
+# Интерфейс (Andromeda) здесь больше не живёт: он — плагин в репозитории andromeda, и его тесты (vitest, lint, tsc, сверка
+# вызовов с таблицей методов splify2-api, словари языков) идут там. Со стороны splify2 проверяется всё, что плагин-интерфейс
+# получает от каркаса: ссылка на вид luci/, prefs_get, метод paths, семя (tests/pluginmatch.sh, tests/rpcdmatch.sh).
 
 printf '\n%s\n' "$([ "$fails" -eq 0 ] && echo 'ВСЕ СТЕНДЫ ЗЕЛЁНЫЕ' || echo "СТЕНДОВ С ПРОВАЛОМ: $fails")"
 [ "$fails" -eq 0 ]

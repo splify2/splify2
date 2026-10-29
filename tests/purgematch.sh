@@ -21,7 +21,7 @@
 #
 # Заглушки uci/nft/ip/fw4 и init-скриптов стоят в PATH, пути внутри скрипта подменены швами
 # (SPLIFY2_DIR, STEER_DIR, CRONTAB и прочие). Имена зон, таблиц nftables и номера таблицы
-# маршрутов НАРОЧНО оставлены умолчаниями скрипта: переименование steer_vless или splify2_doh
+# маршрутов НАРОЧНО оставлены умолчаниями скрипта: переименование steer_vless или splify2_recheck
 # в одном месте должно ронять стенд, а не тихо расходиться с рабочей системой.
 #
 # Запуск: sh tests/purgematch.sh
@@ -45,6 +45,7 @@ check() {  # ОПИСАНИЕ ОЖИДАЕМОЕ ПОЛУЧЕННОЕ
 }
 
 mkdir -p "$T/bin"
+cp "$ROOT/tests/stub/jsonfilter" "$T/bin/jsonfilter"   # словарь языка читает jsonfilter (i18n.sh); настоящего на машине разработки нет
 
 # ---- заглушка uci ------------------------------------------------------------------
 # Плоское хранилище «ключ=значение», как в tests/rpcdmatch.sh, плюс две добавки, без которых
@@ -206,8 +207,8 @@ chmod +x "$T/bin"/*
 # Состояние роутера «пакет стоит и работает»: две наших зоны с пробросами, чужая зона lan,
 # чужая таблица nftables, чужое правило маршрутизации, чужая строка в crontab и чужой
 # интерфейс. Всё чужое здесь нужно ровно затем, чтобы проверить, что его не тронули.
-setup() {  # [УСТРОЙСТВА_ЗОНЫ_STEER_VLESS] [СРОК_RPCD] [RUN_ON_BOOT] [FORCE_DNS]
-    _dev="${1:-tun-vless}"; _rt="${2:-120}"; _zb="${3:-0}"; _fd="${4:-0}"
+setup() {  # [УСТРОЙСТВА_ЗОНЫ_STEER_VLESS] [СРОК_RPCD]
+    _dev="${1:-tun-vless}"; _rt="${2:-120}"
     rm -rf "$T/etc" "$T/var"
     mkdir -p "$T/etc/config" "$T/etc/crontabs" "$T/etc/splify2" "$T/etc/steer/lists" \
              "$T/var/lib/splify2" "$T/var/lib/steer" "$T/var/run/xsteer"
@@ -243,8 +244,6 @@ firewall.@forwarding[4].src=steer_clients
 firewall.@forwarding[4].dest=steer_iface
 rpcd.@rpcd[0]=rpcd
 rpcd.@rpcd[0].timeout=$_rt
-zapret.config=zapret
-zapret.config.run_on_boot=$_zb
 network.lan=interface
 network.lan.proto=static
 network.xs0=interface
@@ -253,7 +252,6 @@ splify2.main=splify2
 splify2.main.telemetry=0
 splify2.main.telemetry_id=sp-00112233445566778899aabbccddeeff
 splify2.main.ping_url=https://panel.example/api/ping
-splify2.main.telemetry_url=https://old-panel.example/api/report
 EOF
 
     # Расписка: обе зоны и обе устройства заведены нами. Постороннее устройство в первой
@@ -272,45 +270,28 @@ EOF
     echo '{"outputs":{}}' > "$T/etc/steer/spec.applied.json"
     echo 'https://panel.example/sub' > "$T/etc/steer/sub.txt"
     printf "config splify2 'main'\n\toption sub 'x'\n" > "$T/etc/config/splify2"
-    # Конфиг DoH — в том виде, в каком его оставляет doh_write: наша настройка плюс СЕКЦИЯ
-    # КОПИИ с чужой редакцией. Признаком «писали мы» служит именно метка копии, а не
-    # значение force_dns: тот правит и Zapret Manager, и после его правки purge посчитал бы
-    # файл чужим и оставил бы нашу настройку на роутере навсегда.
-    {
-        printf "config main 'config'\n\toption force_dns '%s'\n\n" "$_fd"
-        printf "config https-dns-proxy\n\toption resolver_url 'https://cloudflare-dns.com/dns-query'\n\n"
-        printf "config splify2_backup 'splify2'\n"
-        printf "\toption splify2_state 'saved'\n"
-        printf "\tlist splify2_orig 'option resolver_url https://dns.foreign/dns-query'\n"
-    } > "$T/etc/config/https-dns-proxy"
-    # ДВЕ НАШИХ СТРОКИ, а не одна: отклик для счётчика на сайте живёт своим почасовым
-    # заданием. Обе обязаны уйти — забытая строка зовёт каждый час команду, которой уже нет.
-    # Третья — строка прежнего почасового отчёта (до 26.10): её снимает установка новой
-    # версии, но чистку зовут и на роутере, где обновления не было.
-    printf '%s\n%s\n%s\n%s\n' '0 3 * * * /usr/bin/чужое-обновление' \
+    # НАШИ СТРОКИ: обновление списков и строка прежнего отклика счётчика.
+    # Обновление пакета её снимает, но чистку зовут и на роутере,
+    # где обновления не было; забытая строка зовёт каждый час команду, которой уже нет.
+    printf '%s\n%s\n%s\n' '0 3 * * * /usr/bin/чужое-обновление' \
         '17 5 * * * /usr/sbin/splify2-update-lists' \
-        '41 * * * * /usr/sbin/splify2-ping' \
-        '23 * * * * /usr/sbin/splify2-telemetry --scheduled' > "$T/etc/crontabs/root"
-    : > "$T/var/run/splify2-vless-dirty"
-    printf 'at=1757000000\nok=1757000000\nerr=\n' > "$T/var/run/splify2-ping"
-    printf '%s\n%s\n%s\n%s\n' splify2_doh splify2_zm steer fw4 > "$T/nft.tables"
-    printf '%s\n%s\n' '29000:	from all uidrange 65534-65534 lookup 290' \
-        '30000:	from all lookup main' > "$T/ip.rules"
-    printf '%s\n' 'default dev wg0 scope link' > "$T/ip.routes"
+        '41 * * * * /usr/sbin/splify2-ping' > "$T/etc/crontabs/root"
+        printf 'at=1757000000\nok=1757000000\nerr=\n' > "$T/var/run/splify2-ping"
+    printf '%s\n%s\n%s\n' splify2_recheck steer fw4 > "$T/nft.tables"
 }
 
 rc=0
 run_purge() {  # КЛЮЧИ СКРИПТА
-    SANDBOX="$T" PATH="$T/bin:$PATH" \
+    SANDBOX="$T" PATH="$T/bin:$PATH" I18N_SH="$ROOT/files/usr/lib/splify2/i18n.sh" S2_LANG=ru S2_DICT_EXTRA="$ROOT/plugins/lang-ru/i18n/backend" \
     SPLIFY2_DIR="$T/etc/splify2" \
     STEER_DIR="$T/etc/steer" \
     UCI_SPLIFY2="$T/etc/config/splify2" \
-    DOH_CONF="$T/etc/config/https-dns-proxy" \
     CRONTAB="$T/etc/crontabs/root" \
     CRON_INITD="$T/bin/initd-cron" \
     INITD="$T/bin/initd-steer" \
     FW_INITD="$T/bin/initd-firewall" \
-    STATE_PATHS="$T/var/lib/splify2 $T/var/lib/steer $T/var/run/xsteer $T/var/run/splify2-vless-dirty \
+    BOX_INITD="${BOX_INITD:-$T/no-sing-box}" \
+    STATE_PATHS="$T/var/lib/splify2 $T/var/lib/steer $T/var/run/xsteer \
 $T/var/run/splify2-ping" \
         sh "$SCRIPT" "$@" > "$T/out" 2>&1
     rc=$?
@@ -341,7 +322,6 @@ check "показ не останавливает движок" "0" "$(grep -c .
 check "показ оставляет спеку" "yes" "$(exists "$T/etc/steer/spec.json")"
 check "показ оставляет настройку" "yes" "$(exists "$T/etc/config/splify2")"
 check "показ оставляет расписку" "yes" "$(exists "$T/etc/splify2/fw-owned")"
-check "показ оставляет конфиг DoH" "yes" "$(exists "$T/etc/config/https-dns-proxy")"
 check "показ оставляет запись в crontab" "1" "$(grep -c splify2-update-lists "$T/etc/crontabs/root")"
 check "показ оставляет и строку отклика" "1" \
     "$(grep -c splify2-ping "$T/etc/crontabs/root")"
@@ -350,7 +330,7 @@ check "показ оставляет состояние в /var" "yes" "$(exists
 # ни про свою спеку — а именно они и есть цена ошибки.
 check "показ называет зону" "yes" "$(outhas steer_vless)"
 check "показ называет спеку" "yes" "$(outhas spec.json)"
-check "показ называет таблицу nftables" "yes" "$(outhas splify2_doh)"
+check "показ называет таблицу nftables" "yes" "$(outhas splify2_recheck)"
 check "показ говорит, чем удалять" "yes" "$(outhas '--yes')"
 
 # ---- с --yes: своё уходит, чужое остаётся ------------------------------------------
@@ -373,35 +353,16 @@ check "движок остановлен и снят с автозапуска" 
     "$(grep '^steer ' "$T/initd.log" | tr '\n' ' ' | sed 's/ $//')"
 check "наши таблицы nftables удалены" "fw4" "$(cat "$T/nft.tables")"
 check "чужую таблицу не удаляли" "0" "$(grep -c 'delete table inet fw4' "$T/nft.log")"
-# splify2_ztest в песочнице нет: удалять отсутствующее незачем, а обещать — вводить в
-# заблуждение, поэтому попытки быть не должно вовсе.
-check "отсутствующую таблицу не удаляли" "0" "$(grep -c 'delete table inet splify2_ztest' "$T/nft.log")"
-check "правило DoH снято" "30000:	from all lookup main" "$(cat "$T/ip.rules")"
-check "таблица маршрутов очищена" "" "$(cat "$T/ip.routes")"
 check "наша запись в crontab убрана" "0" "$(grep -c splify2-update-lists "$T/etc/crontabs/root")"
 check "строка отклика убрана тоже" "0" \
     "$(grep -c splify2-ping "$T/etc/crontabs/root")"
-check "строка прежнего отчёта убрана" "0" \
-    "$(grep -c splify2-telemetry "$T/etc/crontabs/root")"
 check "чужая запись в crontab осталась" "1" "$(grep -c 'чужое-обновление' "$T/etc/crontabs/root")"
 check "cron перезапущен" "1" "$(grep -c '^cron restart' "$T/initd.log")"
 check "срок вызова rpcd снят" "no" "$(has 'rpcd.@rpcd[0].timeout=120')"
-# Ключ ЧУЖОГО пакета не удаляется, а возвращается к его умолчанию: ноль в нём — это наше
-# «обход выключен», и уйти, оставив человека без автозапуска обхода, значило бы наследить.
-check "run_on_boot возвращён zapret-у" "1" "$(val 'zapret\.config\.run_on_boot')"
-# КОНФИГ https-dns-proxy ЭТА ВЕРСИЯ НЕ ВОССТАНАВЛИВАЕТ. Файл записывала прежняя версия splify2
-# (с копией чужой редакции внутри), а писателя этого файла в коде больше нет: настройка
-# принадлежит человеку. Файл остаётся как есть, вместе с копией, и об этом сказано.
-check "конфиг https-dns-proxy на месте как был" "yes" \
-    "$(exists "$T/etc/config/https-dns-proxy")"
-check "и чужая редакция в копии цела" "1" \
-    "$(grep -c 'dns.foreign' "$T/etc/config/https-dns-proxy")"
-check "и сказано, что его записывала прежняя версия" "yes" "$(outhas 'прежняя версия splify2')"
 check "каталог /etc/splify2 удалён" "no" "$(exists "$T/etc/splify2")"
 check "каталог настроек движка удалён" "no" "$(exists "$T/etc/steer")"
 check "настройка splify2 удалена" "no" "$(exists "$T/etc/config/splify2")"
 check "состояние в /var удалено" "no" "$(exists "$T/var/lib/splify2")"
-check "признак в /var удалён" "no" "$(exists "$T/var/run/splify2-vless-dirty")"
 # Интерфейс с протоколом xsteer заводил человек — он его и уберёт. Но молчать о нём нельзя:
 # без обработчика протокола он не поднимется, и выглядеть это будет как поломка сети.
 check "интерфейс xsteer не удалён" "yes" "$(has 'network.xs0.proto=xsteer')"
@@ -432,6 +393,23 @@ check "наши остальные зоны удалены, и снова пос
       "forwarding forwarding zone forwarding zone " "$(del_seq)"
 check "о чужой зоне сказано" "yes" "$(outhas 'steer_vless')"
 
+# ---- текущая зона steer_zone ---------------------------------------------------------
+# После слияния зон выходы стоят в steer_zone; прежние steer_vless и steer_iface (если обновление
+# ещё не дошло до apply) убираются так же, как и она, — по расписке.
+setup
+cat >> "$T/uci.store" <<'EOF2'
+firewall.@zone[4]=zone
+firewall.@zone[4].name=steer_zone
+firewall.@zone[4].device=tun-new
+firewall.@forwarding[5]=forwarding
+firewall.@forwarding[5].src=lan
+firewall.@forwarding[5].dest=steer_zone
+EOF2
+printf '%s\n' 'zone steer_zone' 'dev steer_zone tun-new' >> "$T/etc/splify2/fw-owned"
+run_purge --yes
+check "steer_zone и прежние зоны удалены, чужая lan осталась" "lan " "$(zones)"
+check "проброс в steer_zone удалён" "wan " "$(fwds)"
+
 # ---- --keep-config -----------------------------------------------------------------
 # Смысл флага: снести правила и зоны, оставив настройки. Спека и /etc/config/splify2 при этом
 # обязаны выжить, иначе флаг есть, а верить ему нельзя.
@@ -440,7 +418,6 @@ run_purge --yes --keep-config
 check "с --keep-config спека осталась" "yes" "$(exists "$T/etc/steer/spec.json")"
 check "с --keep-config подписка осталась" "yes" "$(exists "$T/etc/steer/sub.txt")"
 check "с --keep-config настройка осталась" "yes" "$(exists "$T/etc/config/splify2")"
-check "с --keep-config конфиг DoH остался" "yes" "$(exists "$T/etc/config/https-dns-proxy")"
 check "с --keep-config зоны всё равно удалены" "lan " "$(zones)"
 check "с --keep-config таблицы всё равно удалены" "fw4" "$(cat "$T/nft.tables")"
 check "с --keep-config запись в crontab всё равно убрана" "0" \
@@ -448,18 +425,15 @@ check "с --keep-config запись в crontab всё равно убрана" 
 check "с --keep-config строка отклика убрана" "0" \
     "$(grep -c splify2-ping "$T/etc/crontabs/root")"
 
-# ---- отклик для счётчика на сайте -----------------------------------------------
+# ---- следы прежнего счётчика установок -------------------------------------------
 #
-# Здесь ЕДИНСТВЕННОЕ место в настройке, где --keep-config не спасает всё подряд, и проверять
-# надо обе стороны сразу: наше состояние уходит, ОТВЕТ ЧЕЛОВЕКА остаётся. Стерев ноль в
-# `telemetry`, чистка включила бы отклик тому, кто его выключил: пустой ключ значит «включено».
+# Счётчика больше нет; ключи прежних версий — наше состояние, а не настройка человека, и
+# уходят даже с --keep-config, чужая настройка рядом остаётся.
 setup
 run_purge --yes --keep-config
 check "с --keep-config идентификатор снят" "no" "$(has 'splify2.main.telemetry_id=sp-00112233445566778899aabbccddeeff')"
 check "с --keep-config адрес для стендов снят" "no" "$(has 'splify2.main.ping_url=https://panel.example/api/ping')"
-check "с --keep-config ключ прежнего отчёта снят" "no" "$(has 'splify2.main.telemetry_url=https://old-panel.example/api/report')"
-check "НО ОТКАЗ ЧЕЛОВЕКА ОСТАЛСЯ" "yes" "$(has 'splify2.main.telemetry=0')"
-check "и чужая настройка рядом не пострадала" "yes" "$(has 'zapret.config.run_on_boot=1')"
+check "с --keep-config согласие прежнего счётчика снято" "no" "$(has 'splify2.main.telemetry=0')"
 check "отметка отклика удалена" "no" "$(exists "$T/var/run/splify2-ping")"
 # А ЭТО — ПРО УМОЛЧАНИЕ САМОГО СКРИПТА. Проверки выше подменяют STATE_PATHS швом, то есть
 # проверяют список, написанный в стенде; рабочий список после этого не сторожит ничто.
@@ -470,26 +444,16 @@ state_paths_default() {
     sh "$T/state-paths.sh"
 }
 check "умолчание скрипта: список путей вообще разбирается" "yes" \
-      "$([ "$(state_paths_default | grep -c .)" -ge 8 ] && echo yes || echo no)"
-# Отметка отклика лежит там, где её пишет команда отправки (PING_STATE в ping.sh).
-ping_state="$(sed -n 's/^PING_STATE=\${PING_STATE:-\(.*\)}$/\1/p' "$ROOT/files/usr/lib/splify2/ping.sh")"
-check "умолчание скрипта знает отметку отклика $ping_state" "1" \
-      "$(state_paths_default | grep -cx "${ping_state:-нет}")"
+      "$([ "$(state_paths_default | grep -c .)" -ge 4 ] && echo yes || echo no)"
+# Отметка прежнего отклика (команды отправки больше нет) всё ещё убирается чисткой.
+check "умолчание скрипта знает отметку прежнего отклика /tmp/splify2-ping" "1" \
+      "$(state_paths_default | grep -cx '/tmp/splify2-ping')"
 # Показ обязан назвать это словами: по нему человек решает, звать ли с --yes.
 setup
 run_purge
-check "показ называет идентификатор отклика" "yes" "$(outhas 'идентификатор отклика')"
+check "показ называет следы прежнего счётчика" "yes" "$(outhas 'следы прежнего счётчика')"
 check "и при показе ничего не удалено" "yes" "$(has 'splify2.main.telemetry_id=sp-00112233445566778899aabbccddeeff')"
 check "и отметка отклика на месте" "yes" "$(exists "$T/var/run/splify2-ping")"
-
-# ---- чужой конфиг https-dns-proxy --------------------------------------------------
-# force_dns '1' пишет сам пакет и пишет Zapret Manager; метку копии (`splify2_state`) ставила
-# только прежняя версия splify2. Файл без метки — не наш, и удалять его нельзя: у человека
-# там мог быть свой резолвер.
-setup tun-vless 120 0 1
-run_purge --yes
-check "чужой конфиг DoH оставлен" "yes" "$(exists "$T/etc/config/https-dns-proxy")"
-check "и об этом сказано" "yes" "$(outhas 'https-dns-proxy')"
 
 # ---- чужой срок вызова rpcd --------------------------------------------------------
 # 120 ставит наш uci-defaults; другое значение поставил администратор, и снимать его —
@@ -497,11 +461,6 @@ check "и об этом сказано" "yes" "$(outhas 'https-dns-proxy')"
 setup tun-vless 300
 run_purge --yes
 check "чужой срок вызова rpcd не тронут" "300" "$(val 'rpcd\.@rpcd\[0\]\.timeout')"
-
-# ---- run_on_boot, которого мы не выключали -----------------------------------------
-setup tun-vless 120 1
-run_purge --yes
-check "единицу в run_on_boot не переписываем" "0" "$(grep -c '^set zapret' "$T/uci.log")"
 
 # ---- движка уже нет, а его таблица осталась ----------------------------------------
 # Самый вероятный порядок в жизни: человек сначала снял пакеты, потом вспомнил про мусор. Вместе
@@ -513,6 +472,18 @@ run_purge --yes
 mv "$T/bin/initd-steer.off" "$T/bin/initd-steer"
 check "таблица движка снята и без его init-скрипта" "fw4" "$(cat "$T/nft.tables")"
 check "движок не звали — его нет" "0" "$(grep -c '^steer ' "$T/initd.log")"
+
+# ---- ядро ведёт steer-box-connector ---------------------------------------------------
+# Служба sing-box коннектора держит свой steerd и свою таблицу inet steer: ни служба steer, ни её
+# таблица не наши — остаются, и об этом сказано. Остальное (зоны, расписание, настройки) убирается.
+setup
+printf '#!/bin/sh\n# steer-box-connector\n' > "$T/sing-box.init"
+BOX_INITD="$T/sing-box.init" run_purge --yes
+check "при коннекторе таблицу inet steer не удаляем" "0" "$(grep -c 'delete table inet steer$' "$T/nft.log")"
+check "при коннекторе таблица осталась" "yes" "$(grep -qxF steer "$T/nft.tables" && echo yes || echo no)"
+check "при коннекторе службу steer не останавливаем" "0" "$(grep -c '^steer ' "$T/initd.log")"
+check "и сказано, что ядро ведёт коннектор" "yes" "$(outhas 'ведёт steer-box-connector')"
+check "наши зоны при этом убраны" "no" "$(zones | grep -q steer_ && echo yes || echo no)"
 
 # ---- нечего убирать ----------------------------------------------------------------
 # Роутер, где следов нет: скрипт обязан сказать это и выйти успехом, а не ругаться.

@@ -1,0 +1,28 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "Auto-apply",
+  "type": "object",
+  "properties": {
+    "enabled": {
+      "type": "boolean",
+      "title": "Apply saved settings automatically",
+      "description": "Off - the Apply button stays an explicit action. On - saved changes are applied after a pause, even if the page was closed.",
+      "default": false
+    },
+    "pause_s": {
+      "type": "integer",
+      "minimum": 1,
+      "maximum": 3600,
+      "title": "Pause after the last save, seconds",
+      "description": "Changes that follow one another within this pause are applied by one application.",
+      "default": 2
+    },
+    "sweep": {
+      "type": "boolean",
+      "title": "Apply what was saved but not applied",
+      "description": "Every few minutes, apply settings that were saved earlier (another window, an unavailable core, a reboot) and not applied. A rejected application is not repeated until the settings change.",
+      "default": true
+    }
+  },
+  "additionalProperties": false
+}

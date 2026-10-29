@@ -1,0 +1,28 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "Lists catalog",
+  "type": "object",
+  "properties": {
+    "manifest_url": {
+      "type": "string",
+      "title": "Catalog address",
+      "description": "Address of the catalog file. Empty - the splify2-lists catalog.",
+      "default": "https://github.com/splify2/splify2-lists/releases/latest/download/lists.json",
+      "pattern": "^https?://[^ \"'`$|<>]+$"
+    },
+    "list_shrink_factor": {
+      "type": "integer",
+      "minimum": 0,
+      "title": "List shrink limit",
+      "description": "A list that shrank by this factor or more during an update is not applied. 0 - no limit.",
+      "default": 4
+    },
+    "allow_domains_tag": {
+      "type": "string",
+      "title": "Second publisher release",
+      "description": "Release tag of the allow-domains lists. Empty - the release pinned in this plugin.",
+      "pattern": "^[A-Za-z0-9_.-]+$"
+    }
+  },
+  "additionalProperties": false
+}

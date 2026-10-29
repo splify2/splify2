@@ -1,0 +1,79 @@
+{
+  "schema": 1,
+  "id": "subscriptions",
+  "version": "1.0.0",
+  "name": "Subscriptions",
+  "description": "Subscription schedule, traffic quota and own names for subscriptions",
+  "homepage": "https://github.com/splify2/splify2",
+  "compat": {
+    "splify2-api": "^1.0"
+  },
+  "arch": "all",
+  "permissions": [
+    "splify2.hooks"
+  ],
+  "i18n": {
+    "languages": [
+      "ru",
+      "en"
+    ]
+  },
+  "rpc": {
+    "prog": "bin/subs",
+    "methods": {
+      "sub_auto": {
+        "access": "write",
+        "timeout_s": 30
+      },
+      "sub_quota": {
+        "access": "write",
+        "timeout_s": 60
+      },
+      "sub_rename": {
+        "access": "write",
+        "timeout_s": 30
+      },
+      "subs_schedule": {
+        "access": "read",
+        "timeout_s": 30
+      }
+    }
+  },
+  "splify2": {
+    "hooks": {
+      "sub_fields": {
+        "prog": "hooks/sub-fields",
+        "timeout_s": 5
+      },
+      "backup_sections": {
+        "prog": "hooks/backup",
+        "timeout_s": 30
+      },
+      "support_report": {
+        "prog": "hooks/support"
+      },
+      "purge": {
+        "prog": "hooks/purge"
+      }
+    },
+    "tasks": [
+      {
+        "name": "update-subs",
+        "every": "10m",
+        "prog": "bin/update-subs",
+        "timeout_s": 900
+      }
+    ],
+    "methods": {
+      "alias": {
+        "sub_auto": "sub_auto",
+        "sub_quota": "sub_quota",
+        "sub_rename": "sub_rename",
+        "subs_schedule": "subs_schedule"
+      }
+    },
+    "settings": {
+      "schema": "settings.schema.json"
+    }
+  }
+}

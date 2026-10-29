@@ -1,0 +1,34 @@
+#!/bin/sh
+# Хук sub_fields: к строке каждой подписки в ответах sub_list и sub_info — интервал автообновления (`auto`), время
+# последней попытки (`auto_at`) и «пора ли обновлять» (`due`). Каркас эти поля сам не знает: расписание — у плагина.
+. "${STEER_PLUGIN_DIR:?программа запускается хостом splify2 (нет STEER_PLUGIN_DIR)}/lib/base.sh"
+
+input="$(cat)"
+json_load "$input" 2>/dev/null || s2_fail_code req.unparsable "Unparsable request"
+json_select ctx 2>/dev/null && json_select subs 2>/dev/null || { echo '{"ok":true,"fields":{}}'; exit 0; }
+json_get_keys idx
+rows=""
+for i in $idx; do
+    json_select "$i" 2>/dev/null || continue
+    name=''; kind=''; mtime=''
+    json_get_var name name; json_get_var kind kind; json_get_var mtime mtime
+    json_select ..
+    sub_name_ok "$name" || continue
+    rows="$rows $name:$kind:${mtime:-0}"
+done
+
+json_init
+json_add_boolean ok 1
+json_add_object fields
+for r in $rows; do
+    name="${r%%:*}"; rest="${r#*:}"; kind="${rest%%:*}"; mtime="${rest#*:}"
+    json_add_object "$name"
+    # У подписки из вставленных ссылок обновлять нечем, интервал для неё не действует.
+    if [ "$kind" = url ]; then json_add_int auto "$(sched_get "$name")"; else json_add_int auto 0; fi
+    at="$(stamp_get "$name")"
+    [ "$at" != 0 ] && json_add_int auto_at "$at"
+    if sched_due "$name" "$kind" "$mtime"; then json_add_boolean due 1; else json_add_boolean due 0; fi
+    json_close_object
+done
+json_close_object
+json_dump

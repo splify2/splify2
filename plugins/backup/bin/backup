@@ -1,0 +1,13 @@
+#!/bin/sh
+# Программа rpc плагина backup: $1 — метод (get, put), параметры — одна строка JSON в stdin, ответ — один объект JSON в
+# stdout. Методы объявлены в plugin.json и видны на объекте splify2 как backup_get и backup_put.
+#
+# Всё, что принадлежит платформе, плагин берёт через её API: библиотека `$SPLIFY2_LIB` (jshn, s2_fail, s2_setting) и
+# службы хоста `$SPLIFY2_HOST` (настройки каркаса, хуки плагинов). Сам формат архива и передача по кускам — lib/archive.sh.
+. "${STEER_PLUGIN_DIR:?программа запускается хостом splify2 (нет STEER_PLUGIN_DIR)}/lib/archive.sh"
+
+case "${1:-}" in
+    get) backup_get ;;
+    put) backup_put ;;
+    *) echo "no such method: ${1:-}" >&2; exit 2 ;;
+esac

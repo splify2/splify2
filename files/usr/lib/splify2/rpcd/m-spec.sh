@@ -6,10 +6,6 @@
 # Переменные и швы для стендов объявлены в диспетчере и здесь доступны как есть.
 
 
-# Этой группе нужно скачивание (fetch.sh): подключается здесь, а не каждым вызовом объекта.
-need_fetch
-
-
 # Отпечатков выбора узла и обфускатора здесь больше нет: помощников выходов держит демон
 # движка, и он сам перезапускает того, у кого изменились параметры выхода или файл подписки.
 
@@ -74,8 +70,8 @@ fw_zone_devices() {  # ИДЕНТИФИКАТОР_СЕКЦИИ
 # которых зону заводим мы (fw_client_devices_unzoned). Два списка, выведенных по-разному, рано
 # или поздно разошлись бы ровно на том устройстве, из-за которого всё и заводилось.
 fw_client_devices() {
-    _fcd="$(jsonfilter -i "$SPEC" -e '@.lan.devices[*]' -e '@.lan_devices[*]' 2>/dev/null)"
-    [ -n "$_fcd" ] || _fcd="$(jsonfilter -i "$SPEC" -e '@.lan_device' 2>/dev/null)"
+    _fcd="$(jsonfilter -i "$(spec_json)" -e '@.lan.devices[*]' -e '@.lan_devices[*]' 2>/dev/null)"
+    [ -n "$_fcd" ] || _fcd="$(jsonfilter -i "$(spec_json)" -e '@.lan_device' 2>/dev/null)"
     [ -n "$_fcd" ] || _fcd="br-lan"
     printf '%s\n' $_fcd | grep . | sort -u
 }
@@ -208,7 +204,7 @@ fw_forwarding_id() {  # SRC DEST -> идентификатор секции пр
 
 # Принять существующую зону за свою, если отличить её от нашей нельзя.
 #
-# Зона steer_vless заводилась и прежними версиями, когда расписок ещё не было. Без принятия она
+# Зоны steer_vless и steer_iface (теперь слиты в steer_zone, см. fw_zone_migrate) заводились и прежними версиями, когда расписок ещё не было. Без принятия она
 # навсегда осталась бы «чужой» и перестала бы убираться вместе с последним туннельным выходом —
 # ровно та накопительная беда, от которой и просили избавить.
 #
@@ -270,7 +266,7 @@ fw_zone_sync() {  # ЗОНА ВИДЫ MASQ
     # тогда работа кончится раньше, а человек так и не узнает, почему его туннель в нашу
     # зону не попал. Молчание здесь читается как «сделали и не помогло».
     [ -n "$skipped" ] &&
-        echo "устройства$skipped уже в своих зонах фаервола — оставлены как есть"
+        echo "$(s2_t fw.devices_skipped "Devices{devices} are already in their own firewall zones and were left as they are" devices "$skipped")"
 
     if [ -z "$want" ]; then
         [ -n "$idx" ] || { fw_unnote "zone $_z"; return 0; }
@@ -292,7 +288,7 @@ fw_zone_sync() {  # ЗОНА ВИДЫ MASQ
         if [ "$changed" = 1 ]; then
             uci -q commit firewall
             fw_unnote "zone $_z"
-            echo "зона $_z удалена — выходов с такими устройствами в спеке больше нет"
+            echo "$(s2_t fw.zone_removed "Zone {zone} removed: no outputs with such devices are left in the spec" zone "$_z")"
         fi
         return "$changed"
     fi
@@ -321,7 +317,7 @@ fw_zone_sync() {  # ЗОНА ВИДЫ MASQ
         [ -n "$idx" ] || return 0
         fw_note "zone $_z"
         changed=1
-        msg="зона $_z создана (NAT: $_masq)"
+        msg="$(s2_t fw.zone_created "Zone {zone} created" zone "$_z")"
     else
         fw_adopt_if_ours "$_z" "$idx" "$want" || true
     fi
@@ -368,7 +364,7 @@ fw_zone_sync() {  # ЗОНА ВИДЫ MASQ
             uci -q set firewall.@forwarding[-1].dest='wan'
             fw_note "fwd wan $_z"
             changed=1
-            msg="${msg:+$msg, }проброс $_z -> wan добавлен"
+            msg="$(s2_t fw.fwd_wan_added "{prefix}forwarding {zone} -> wan added" prefix "${msg:+$msg, }" zone "$_z")"
         }
     else
         # Разрешение lan -> зона. Без него зона есть, а трафик всё равно не идёт: политика forward
@@ -378,7 +374,7 @@ fw_zone_sync() {  # ЗОНА ВИДЫ MASQ
             uci -q set firewall.@forwarding[-1].src='lan'
             uci -q set firewall.@forwarding[-1].dest="$_z"
             changed=1
-            msg="${msg:+$msg, }проброс lan -> $_z добавлен"
+            msg="$(s2_t fw.fwd_lan_added "{prefix}forwarding lan -> {zone} added" prefix "${msg:+$msg, }" zone "$_z")"
         }
 
         # ПРОБРОС ИЗ ЗОН УСТРОЙСТВ КЛИЕНТОВ. Спека может назвать интерфейс из другой зоны — tailscale0
@@ -398,31 +394,79 @@ fw_zone_sync() {  # ЗОНА ВИДЫ MASQ
             uci -q set firewall.@forwarding[-1].dest="$_z"
             fw_note "fwd $_z $_cz"
             changed=1
-            msg="${msg:+$msg, }проброс $_cz -> $_z добавлен (в зоне $_cz устройства клиентов)"
+            msg="$(s2_t fw.fwd_clients_added "{prefix}forwarding {from} -> {zone} added (zone {from} holds client devices)" prefix "${msg:+$msg, }" from "$_cz" zone "$_z")"
         done
         for _cz in $(sed -n "s/^fwd $_z //p" "$FW_OWNED" 2>/dev/null); do
             printf '%s\n' "$_cz_want" | grep -qx "$_cz" && continue
             _f="$(fw_forwarding_id "$_cz" "$_z")"
             [ -n "$_f" ] && uci -q delete "firewall.$_f" && changed=1
             fw_unnote "fwd $_z $_cz"
-            msg="${msg:+$msg, }проброс $_cz -> $_z убран — устройств клиентов в зоне $_cz больше нет"
+            msg="$(s2_t fw.fwd_clients_removed "{prefix}forwarding {from} -> {zone} removed: zone {from} holds no client devices any more" prefix "${msg:+$msg, }" from "$_cz" zone "$_z")"
         done
     fi
 
     if [ "$changed" = 1 ]; then
         uci -q commit firewall
-        [ -n "$added" ] && msg="${msg:+$msg, }добавлены устройства:$added"
-        [ -n "$removed" ] && msg="${msg:+$msg, }убраны ушедшие устройства:$removed"
-        fw_noted "zone $_z" || msg="$msg (зона $_z не наша — только дополняем, ничего не удаляем)"
+        [ -n "$added" ] && msg="$(s2_t fw.devices_added "{prefix}devices added:{devices}" prefix "${msg:+$msg, }" devices "$added")"
+        [ -n "$removed" ] && msg="$(s2_t fw.devices_removed "{prefix}departed devices removed:{devices}" prefix "${msg:+$msg, }" devices "$removed")"
+        fw_noted "zone $_z" || msg="$(s2_t fw.zone_foreign "{msg} (zone {zone} is not ours: we only add to it and remove nothing)" msg "$msg" zone "$_z")"
         echo "$msg"
     fi
     return "$changed"
+}
+
+# Зоны прежних версий, слитые в steer_zone: steer_vless (masq 0) и steer_iface (masq 1).
+FW_LEGACY_ZONES="${FW_LEGACY_ZONES:-steer_vless steer_iface}"
+
+# МИГРАЦИЯ ПРЕЖНИХ ЗОН. Заведённые нами steer_vless и steer_iface убираются вместе с пробросами и
+# расписками РАНЬШЕ, чем синхронизируется steer_zone: устройство в двух зонах fw4 не прощает, а
+# fw_zone_sync оставил бы устройство в прежней зоне как «уже в своей». Зона с тем же именем, которой
+# мы не заводили (есть устройство, не названное в спеке и без расписки), — зона человека: её не
+# трогаем, а устройства из неё нашими не считаем — дальше о ней просто не заботимся.
+# Печатает, что сделала; код 1 — изменения были (нужна перезагрузка fw4).
+fw_zone_migrate() {
+    _zm_any=0
+    _zm_all="$(fw_devices_of vless,hysteria2,trojan,shadowsocks,socks,http,vmess,xsteer,warp-masque,interface,awg)"
+    for _zm_z in $FW_LEGACY_ZONES; do
+        _zm_i="$(zone_index "$_zm_z")"
+        if [ -z "$_zm_i" ]; then
+            # Зоны нет — расписки о ней устарели, чтобы не висели.
+            fw_noted "zone $_zm_z" && fw_forget_zone "$_zm_z"
+            continue
+        fi
+        fw_adopt_if_ours "$_zm_z" "$_zm_i" "$_zm_all" || true
+        fw_noted "zone $_zm_z" || continue
+        # Сначала пробросы (в зону и из неё), потом зона: проброс на несуществующую зону fw4 отвергает.
+        while :; do
+            _zm_f="$( { fw_forwardings_to "$_zm_z"; fw_forwardings_from "$_zm_z"; } | head -1)"
+            [ -n "$_zm_f" ] || break
+            uci -q delete "firewall.$_zm_f" || break
+        done
+        _zm_i="$(zone_index "$_zm_z")"
+        [ -n "$_zm_i" ] && uci -q delete "firewall.$_zm_i"
+        uci -q commit firewall
+        fw_forget_zone "$_zm_z"
+        _zm_any=1
+        echo "$(s2_t fw.zone_dropped "Zone {zone} removed: the outputs are now in the zone steer_zone" zone "$_zm_z")"
+    done
+    return "$_zm_any"
+}
+
+# Вычеркнуть из расписки всё, что относится к зоне: саму зону, её устройства и пробросы.
+fw_forget_zone() {  # ЗОНА
+    [ -f "$FW_OWNED" ] || return 0
+    grep -vE "^(zone $1|dev $1 .*|fwd $1 .*|fwd wan $1)\$" "$FW_OWNED" > "$FW_OWNED.tmp" 2>/dev/null
+    mv "$FW_OWNED.tmp" "$FW_OWNED" 2>/dev/null || rm -f "$FW_OWNED.tmp"
 }
 
 # Привести фаервол в соответствие со спекой. Перезагрузка правил ОДНА на все зоны: fw4 reload
 # перестраивает набор целиком, и звать его на каждую зону значило бы дважды уронить транзит.
 fw_sync() {
     any=0
+    _mout="$(fw_zone_migrate)" || any=1
+    [ -n "$_mout" ] && printf '%s\n' "$_mout" | while IFS= read -r l; do
+        [ -n "$l" ] && printf 'splify2: %s\n' "$l"
+    done
     for z in $FW_ZONES; do
         _n="${z%%:*}"; _rest="${z#*:}"
         _k="${_rest%%:*}"; _m="${_rest##*:}"
@@ -442,14 +486,14 @@ fw_sync() {
 # Спека v1 — верхний ключ `schema` без `version`. Слово «schema» глубже (имя выхода или списка)
 # v1 не делает, поэтому поиском по тексту это не определяется.
 spec_is_v1() {
-    [ -n "$(jsonfilter -i "$SPEC" -e '@.schema' 2>/dev/null)" ] &&
-        [ -z "$(jsonfilter -i "$SPEC" -e '@.version' 2>/dev/null)" ]
+    [ -n "$(jsonfilter -i "$(spec_json)" -e '@.schema' 2>/dev/null)" ] &&
+        [ -z "$(jsonfilter -i "$(spec_json)" -e '@.version' 2>/dev/null)" ]
 }
 
 # САМОЛЕЧЕНИЕ: выходу-интерфейсу без ключа `ipv6` в нашей зоне без masq6 записывается `ipv6: nat`
 # или `ipv6: off` — смотря по тому, есть ли у его устройства адрес IPv6.
 #
-# ЗАЧЕМ. Зона steer_iface заводится с masq (IPv4), а masq6 в ней нет, и ядро steer (diag,
+# ЗАЧЕМ. Зона steer_zone заводится без masq и без masq6 (IPv4 подменяет само ядро), и ядро steer (diag,
 # output_nat6) пишет про такой выход «нет masquerade IPv6 — включите masq6 у зоны выхода»:
 # человек добавил WARP, а панель жалуется на интерфейс, который создала сама. Подмену IPv6
 # на устройство ставит само ядро по ключу `ipv6: nat` (у пира WARP один адрес, клиенты на ULA),
@@ -467,10 +511,10 @@ spec_is_v1() {
 # ЧТО ТРОГАЕМ, СТРОГО:
 #   - только выходы kind interface и awg (остальным виды подмену IPv6 не нужны или делают сами);
 #   - только без ключа `ipv6` — явные routed / off / nat человека остаются как есть;
-#   - только если устройство лежит в зоне steer_iface, которую ведём мы, и у зоны нет masq6:
+#   - только если устройство лежит в зоне steer_zone, которую ведём мы, и у зоны нет masq6:
 #     устройство в чужой зоне — чужая настройка (зона узнаётся и по `device`, и по `network`:
 #     fw_zone_id_of_dev), а при masq6 у зоны жалобы и нет;
-#   - только спека v2 (v1 ключа не знает) и только когда рядом нет spec.yaml (его ведёт человек).
+#   - только спека v2 (v1 ключа не знает).
 # masq6 у зоны мы НЕ включаем: зона общая, и подмена всего её IPv6 сломала бы соседний выход с
 # `ipv6: routed` (diag тогда советует masq6 снять).
 #
@@ -484,14 +528,13 @@ spec_is_v1() {
 # Идемпотентна: после правки у выхода ключ есть. Печатает по строке «РЕЖИМ ВЫХОД» на каждый
 # записанный ключ; код 0 — спека изменена, 1 — менять нечего.
 spec_heal_ipv6() {
-    [ -s "$SPEC" ] || return 1
-    [ -s "${SPEC%/*}/spec.yaml" ] && return 1
+    [ -s "$(spec_json)" ] || return 1
     spec_is_v1 && return 1
     _sh_devs=""
     for _sh_d in $(fw_devices_of interface,awg); do
         _sh_z="$(fw_zone_id_of_dev "$_sh_d")"
         [ -n "$_sh_z" ] || continue
-        [ "$(uci -q get "firewall.$_sh_z.name" 2>/dev/null)" = steer_iface ] || continue
+        [ "$(uci -q get "firewall.$_sh_z.name" 2>/dev/null)" = steer_zone ] || continue
         [ "$(uci -q get "firewall.$_sh_z.masq6" 2>/dev/null)" = 1 ] && continue
         _sh_devs="$_sh_devs $_sh_d"
     done
@@ -581,7 +624,7 @@ spec_heal_ipv6() {
         printf "%s%s", out, substr(s, last)
     }'
     # Первый проход: выходы-кандидаты — «имя|вид|устройство|файл настройки».
-    _sh_cand="$(awk -v mode=scan -v devs="$_sh_devs" "$_sh_awk" "$SPEC" 2>/dev/null)"
+    _sh_cand="$(awk -v mode=scan -v devs="$_sh_devs" "$_sh_awk" "$(spec_json)" 2>/dev/null)"
     [ -n "$_sh_cand" ] || return 1
     _sh_tbl="$(net_v6_table)"
     _sh_nat=""; _sh_off=""
@@ -600,20 +643,178 @@ EOF
     _sh_tmp="$SPEC.new.$$"
     _sh_names="$_sh_tmp.names"
     awk -v mode=apply -v devs="$_sh_devs" -v nat="$_sh_nat" -v off="$_sh_off" -v namesf="$_sh_names" \
-        "$_sh_awk" "$SPEC" > "$_sh_tmp" 2>/dev/null || { rm -f "$_sh_tmp" "$_sh_names"; return 1; }
+        "$_sh_awk" "$(spec_json)" > "$_sh_tmp" 2>/dev/null || { rm -f "$_sh_tmp" "$_sh_names"; return 1; }
     # Компилятор — судья и здесь: не принял — спека остаётся прежней, жалоба диагностики
     # остаётся жалобой, а не превращается в отказ загрузки.
     if ! engine_check "$_sh_tmp" >/dev/null 2>&1; then
         rm -f "$_sh_tmp" "$_sh_names"
         return 1
     fi
-    mv "$_sh_tmp" "$SPEC" || { rm -f "$_sh_tmp" "$_sh_names"; return 1; }
+    spec_put "$_sh_tmp" || { rm -f "$_sh_names"; return 1; }
     cat "$_sh_names" 2>/dev/null
     rm -f "$_sh_names"
     return 0
 }
 
+# ВЫХОДЫ `kind: zapret` БОЛЬШЕ НЕ ПОДДЕРЖИВАЮТСЯ: ядро отвергает такую спеку целиком. Прежняя панель
+# и руки их писали, поэтому при обновлении (uci-defaults зовёт spec_heal) и при каждом apply спека
+# приводится к виду, который ядро принимает:
+#   - выход с kind zapret убирается из outputs;
+#   - правила и апстримы DNS (`out`), ссылавшиеся на него, идут в `direct`; если выхода direct в
+#     спеке не было, он заводится на месте первого убранного (слово direct в `out` ядро принимает и
+#     так, но явный выход виден в редакторе);
+#   - `on_fail: zapret` у остальных выходов становится `direct`.
+# Правка текстом по тому же приёму, что у spec_heal_ipv6: awk идёт по JSON с глубиной и строками,
+# меняются только названные участки, остальное — байт в байт. Пакет zapret и его настройку не
+# трогаем никогда. Прежняя спека — копией spec.json.zapret.bak (одна, старейшая).
+# Идемпотентна: после правки выходов этого вида нет. Печатает строки отчёта; код 0 — спека
+# изменена, 1 — менять нечего (или ядро не приняло результат).
+spec_heal_zapret() {
+    [ -s "$(spec_json)" ] || return 1
+    spec_is_v1 && return 1
+    grep -q zapret "$(spec_json)" 2>/dev/null || return 1
+    _sz_tmp="$SPEC.new.$$"
+    _sz_rep="$_sz_tmp.rep"
+    awk -v repf="$_sz_rep" '
+    { s = s $0 "\n" }
+    function str_end(i,   j, c, v) {
+        v = ""; j = i + 1
+        while (j <= n) {
+            c = substr(s, j, 1)
+            if (c == "\\") { v = v substr(s, j, 2); j += 2; continue }
+            if (c == "\"") break
+            v = v c; j++
+        }
+        STR = v
+        return j
+    }
+    function skip_ws(i,   c) {
+        while (i <= n) {
+            c = substr(s, i, 1)
+            if (c != " " && c != "\t" && c != "\n" && c != "\r") break
+            i++
+        }
+        return i
+    }
+    function cover(a, b,   q) { for (q = a; q <= b; q++) skip[q] = 1 }
+    END {
+        n = length(s); depth = 0; top = ""; nm = 0; nr = 0; inobj = 0; hasdirect = 0
+        i = 1
+        while (i <= n) {
+            c = substr(s, i, 1)
+            if (c == "\"") {
+                j = str_end(i); tok = STR
+                k = skip_ws(j + 1)
+                if (substr(s, k, 1) == ":") {
+                    if (depth == 1) top = tok
+                    else if (depth == 2 && top == "outputs") {
+                        nm++; mname[nm] = tok; mks[nm] = i; mkind[nm] = ""; mve[nm] = 0; mca[nm] = 0
+                        if (tok == "direct") hasdirect = 1
+                    }
+                    else if (depth == 3 && top == "outputs" && tok == "kind") {
+                        v = skip_ws(k + 1)
+                        if (substr(s, v, 1) == "\"") { e = str_end(v); mkind[nm] = STR }
+                    }
+                    if ((tok == "out" && top != "outputs") || tok == "on_fail") {
+                        v = skip_ws(k + 1)
+                        if (substr(s, v, 1) == "\"") {
+                            e = str_end(v)
+                            nr++; ra[nr] = v; rb[nr] = e; rv[nr] = STR; rk[nr] = tok
+                        }
+                    }
+                }
+                i = j + 1; continue
+            }
+            if (c == "{" || c == "[") { depth++; i++; continue }
+            if (c == "}" || c == "]") {
+                if (depth == 3 && top == "outputs" && c == "}") mve[nm] = i
+                depth--; i++; continue
+            }
+            if (c == "," && depth == 2 && top == "outputs" && nm > 0 && mve[nm] > 0 && !mca[nm]) mca[nm] = i
+            i++
+        }
+        zn = " "; nz = 0
+        for (m = 1; m <= nm; m++) if (mkind[m] == "zapret") { nz++; zn = zn mname[m] " " }
+        edits = 0
+        # Ссылки: out на убранный выход — в direct; on_fail: zapret — в direct.
+        nrules = 0
+        for (q = 1; q <= nr; q++) {
+            if ((rk[q] == "out" && index(zn, " " rv[q] " ")) || (rk[q] == "on_fail" && rv[q] == "zapret")) {
+                rrep[q] = 1; edits++
+                if (rk[q] == "out") nrules++
+            }
+        }
+        if (!nz && !edits) exit 1
+        # Убранные выходы.
+        first = 1
+        for (m = 1; m <= nm; m++) {
+            if (mkind[m] != "zapret" || !mve[m]) continue
+            gone[m] = 1
+        }
+        for (m = 1; m <= nm; m++) {
+            if (!gone[m]) continue
+            if (first && !hasdirect) {
+                # Первый убранный выход становится выходом direct: запятые вокруг остаются.
+                cover(mks[m], mve[m]); drep[mks[m]] = "\"direct\":{\"kind\":\"direct\"}"
+                hasdirect = 1; first = 0; gone[m] = 0; repl[m] = 1
+                continue
+            }
+            first = 0
+        }
+        for (m = 1; m <= nm; m++) {
+            if (!gone[m]) continue
+            if (mca[m]) cover(mks[m], mca[m])
+            else {
+                # Последний член: уходит и запятая перед ним (у ближайшего оставшегося члена).
+                pc = 0
+                for (p = m - 1; p >= 1; p--) if (!gone[p]) { pc = mca[p]; break }
+                cover(pc ? pc : mks[m], mve[m])
+            }
+        }
+        for (q = 1; q <= nr; q++) if (rrep[q] && !skip[ra[q]]) { cover(ra[q], rb[q]); drep[ra[q]] = "\"direct\"" }
+        out = ""; run = 1
+        for (q = 1; q <= n; q++) {
+            if (!skip[q]) continue
+            if (q > run) out = out substr(s, run, q - run)
+            run = q + 1
+            if (q in drep) out = out drep[q]
+        }
+        printf "%s%s", out, substr(s, run)
+        names = ""
+        for (m = 1; m <= nm; m++) if (mkind[m] == "zapret") names = names " " mname[m]
+        print "outputs" names > repf
+        print "rules " nrules > repf
+    }' "$(spec_json)" > "$_sz_tmp" 2>/dev/null || { rm -f "$_sz_tmp" "$_sz_rep"; return 1; }
+    [ -s "$_sz_tmp" ] || { rm -f "$_sz_tmp" "$_sz_rep"; return 1; }
+    if ! engine_check "$_sz_tmp" >/dev/null 2>&1; then
+        rm -f "$_sz_tmp" "$_sz_rep"
+        return 1
+    fi
+    [ -e "$SPEC.zapret.bak" ] || cp "$(spec_json)" "$SPEC.zapret.bak" 2>/dev/null
+    spec_put "$_sz_tmp" || { rm -f "$_sz_rep"; return 1; }
+    _sz_o="$(sed -n 's/^outputs *//p' "$_sz_rep")"
+    _sz_n="$(sed -n 's/^rules //p' "$_sz_rep")"
+    rm -f "$_sz_rep"
+    printf 'splify2: %s\n' "$(s2_t heal.zapret "DPI bypass (zapret) is no longer supported: outputs removed{outputs}, rules moved to direct: {rules}" outputs "${_sz_o:+ $_sz_o}" rules "${_sz_n:-0}")"
+    logger -t splify2 "zapret outputs removed from the spec (${_sz_o# }), rules moved to direct: ${_sz_n:-0}; the previous spec is $SPEC.zapret.bak" 2>/dev/null
+    return 0
+}
+
 # Имена выходов с этим режимом из вывода spec_heal_ipv6, через пробел.
+# Лечение спеки плагинами (хук heal, splify2-api): рабочая копия спеки идёт по плагинам по порядку, изменённую
+# копию, которую приняло ядро, кладём на место. Печатает, что сказали плагины; возврат 0 — спека изменена.
+spec_heal_plugins() {
+    need_ext && ext_has_hook heal || return 1
+    _hp="$SPEC.heal.$$"
+    cp "$(spec_json)" "$_hp" 2>/dev/null || return 1
+    if ext_heal "$_hp" && engine_check "$_hp" >/dev/null && spec_put "$_hp"; then
+        printf '%s' "${EXT_HEAL_MSG:-$(s2_t heal.plugin "A plugin fixed the spec")}"
+        return 0
+    fi
+    rm -f "$_hp"
+    return 1
+}
+
 heal_names() {  # РЕЖИМ ВЫВОД
     printf '%s\n' "$2" | sed -n "s/^$1 //p" | tr '\n' ' ' | sed 's/ $//'
 }
@@ -623,43 +824,98 @@ heal_names() {  # РЕЖИМ ВЫВОД
 heal_report() {  # ВЫВОД spec_heal_ipv6
     _hr_n="$(heal_names nat "$1")"
     [ -n "$_hr_n" ] &&
-        printf 'splify2: выходам без ключа ipv6 записан ipv6: nat (у туннеля есть адрес IPv6): %s\n' "$_hr_n"
+        printf 'splify2: outputs without an ipv6 key got ipv6: nat (the tunnel has an IPv6 address): %s\n' "$_hr_n"
     _hr_f="$(heal_names off "$1")"
     [ -n "$_hr_f" ] &&
-        printf 'splify2: выходам без ключа ipv6 записан ipv6: off (у туннеля нет адреса IPv6, клиенты идут по IPv4): %s\n' "$_hr_f"
+        printf 'splify2: outputs without an ipv6 key got ipv6: off (the tunnel has no IPv6 address, clients use IPv4): %s\n' "$_hr_f"
     return 0
 }
 
-# ЗАМОК СПЕКИ. spec_set, apply и spec_heal читают спеку, правят и заменяют её через mv; два
-# таких вызова вперемешку (сохранение из интерфейса и отложенное лечение после установки) теряли
-# правку того, кто заменял раньше. Замок один на все три метода и на всё время метода: flock
-# на /var/lock/splify2-spec.lock, как в splify2-update-subs. Повторный вход (spec_heal зовёт
-# apply дочерним вызовом) замок не берёт заново — его держит родитель, SPLIFY2_SPEC_LOCKED
-# уходит в окружение дочернему. Без flock или без места под файл замка работаем как раньше.
-SPEC_LOCK="${SPEC_LOCK:-/var/lock/splify2-spec.lock}"
-spec_lock() {
-    [ -n "$SPLIFY2_SPEC_LOCKED" ] && return 0
-    command -v flock >/dev/null 2>&1 || return 0
-    ( : >> "$SPEC_LOCK" ) 2>/dev/null || return 0
-    exec 8>> "$SPEC_LOCK"
-    flock -w 120 8 || fail "спеку сейчас правит другой вызов — повторите через минуту"
-    SPLIFY2_SPEC_LOCKED=1
-    export SPLIFY2_SPEC_LOCKED
+# ТЕКСТ СПЕКИ ОТ КАРКАСА — YAML (его показывают человеку) или JSON (Andromeda, прежние клиенты, ssh).
+# Текст, начинающийся с «{», идёт как JSON без перевода. Иное переводит ядро: `steer spec convert --json
+# --spec -` (stdin) — оно же и разбирает YAML, и называет строку и колонку разбора: «stdin:5:1: …».
+# Комментарии YAML при записи теряются: спеку на диск кладёт перевод ядром (spec_put), а не присланный текст.
+SPEC_ERR_LINE=""; SPEC_ERR_COL=""
+
+# Слова отказа ядра без адреса «steer: файл:строка:колонка: » — в SPEC_ERR_MSG (без подоболочки: значения
+# переменных нужны вызывающему); строка и колонка — в SPEC_ERR_LINE/COL, когда адрес есть и $2 = keep
+# (разбор самого текста: номера строк — те, что видит человек).
+spec_err_split() {  # ТЕКСТ [keep]
+    SPEC_ERR_LINE=""; SPEC_ERR_COL=""; SPEC_ERR_MSG="$1"
+    _se_a="$(printf '%s' "$1" | sed -n '1s/^\(steer: \)\{0,1\}[^ :]*:\([0-9][0-9]*\):\([0-9][0-9]*\): .*/\2 \3/p')"
+    [ -n "$_se_a" ] || return 0
+    if [ "${2:-}" = keep ]; then
+        SPEC_ERR_LINE="${_se_a% *}"; SPEC_ERR_COL="${_se_a#* }"
+        # libyaml замечает незакрытую кавычку, скобку или ключ без двоеточия только на следующей записи или в конце
+        # текста: адрес ошибки уезжает вниз на пустые строки и комментарии (ядро сообщает 10, ошибка на строке 8).
+        # Ядро называет и строку, где конструкция началась («начало в строке 8») — человеку нужна она. Ошибки
+        # разбора блоков («did not find expected key») остаются с адресом ядра: там начало — вся таблица выше.
+        case "$1" in
+            *"while scanning"*|*"while parsing a flow"*)
+                _se_b="$(printf '%s' "$1" | sed -n '1s/.*начало в строке \([0-9][0-9]*\).*/\1/p')"
+                if [ -n "$_se_b" ] && [ "$_se_b" -lt "$SPEC_ERR_LINE" ]; then SPEC_ERR_LINE="$_se_b"; SPEC_ERR_COL=1; fi ;;
+        esac
+    fi
+    SPEC_ERR_MSG="$(printf '%s' "$1" | sed '1s/^\(steer: \)\{0,1\}[^ :]*:[0-9][0-9]*:[0-9][0-9]*: //')"
+}
+
+# Отказ спеки: {ok:false, error[, line, col]}.
+spec_refuse() {  # СЛОВА
+    s2_core_load "${SPEC_EARGS:-}"    # до json_init: json_load сбрасывает документ
+    json_init; json_add_boolean ok 0
+    if [ -n "${SPEC_ECODE:-}" ]; then s2_core_fields "$SPEC_ECODE" "$1"; else json_add_string error "$1"; fi
+    if [ -n "$SPEC_ERR_LINE" ]; then json_add_int line "$SPEC_ERR_LINE"; json_add_int col "$SPEC_ERR_COL"; fi
+    json_dump
+    exit 0
+}
+
+# Текст спеки в JSON-файл. Код 1 — ядро не разобрало: слова в SPEC_ERR (+ SPEC_ERR_LINE/COL).
+spec_text_to_json() {  # ТЕКСТ ФАЙЛ_JSON
+    SPEC_ECODE=""; SPEC_EARGS=""
+    _st_t="$2.txt"
+    printf '%s' "$1" > "$_st_t" || { rm -f "$_st_t"; SPEC_ERR="$(s2_t spec.not_written "Cannot write the spec: no space left")"; return 1; }
+    _st_c="$(sed -n '/[^[:space:]]/{s/^[[:space:]]*\(.\).*/\1/p;q}' "$_st_t")"
+    if [ "$_st_c" = "{" ]; then
+        mv "$_st_t" "$2" || { rm -f "$_st_t" "$2"; SPEC_ERR="$(s2_t spec.not_written "Cannot write the spec: no space left")"; return 1; }
+        return 0
+    fi
+    _st_e="$(STEER_ERR_JSON=1 "$STEER" spec convert --json --spec - < "$_st_t" 2>&1 > "$2")"; _st_rc=$?
+    rm -f "$_st_t"
+    if [ "$_st_rc" != 0 ] || [ ! -s "$2" ]; then
+        rm -f "$2"
+        SPEC_ECODE=""; SPEC_EARGS=""
+        if s2_core_split "$_st_e"; then SPEC_ECODE="$S2_CORE_CODE"; SPEC_EARGS="$S2_CORE_ARGS"; fi
+        _st_e="$S2_CORE_TEXT"
+        spec_err_split "${_st_e:-$(s2_t spec.core_cannot_parse "The core could not parse the spec")}" keep
+        SPEC_ERR="$SPEC_ERR_MSG"
+        return 1
+    fi
+    return 0
 }
 
 case "$2" in
 
     spec_set)
         read -r input
-        json_load "$input" 2>/dev/null || fail "неразбираемый запрос"
+        json_load "$input" 2>/dev/null || fail_code req.unparsable "Unparsable request"
         json_get_var spec spec
-        [ -n "$spec" ] || fail "пустая спецификация"
-        spec_lock
-        # Рядом с нашим файлом лежит spec.yaml: человек ведёт спеку руками. Движок при двух
-        # спеках отказывается читать обе («две спеки»), поэтому второй файл мы не заводим —
-        # говорим словами, что делать.
-        if [ -s "${SPEC%/*}/spec.yaml" ]; then
-            fail "рядом со spec.json лежит spec.yaml — ядро не читает две спеки сразу; уберите один из файлов"
+        json_get_var rev rev
+        [ -n "$spec" ] || fail_code spec.empty "The spec is empty"
+        # Правка поверх чужой записи (D-P2.7): страница пишет спеку целиком, а за время, что она её
+        # держала, файл могли переписать — вторая вкладка, ssh, подписка, самолечение apply. `rev` —
+        # ревизия, с которой страница начала (spec_get); не совпала с лежащей — отказ с текущей
+        # ревизией, и страница сливает правки с тем, что на роутере, вместо молчаливой замены.
+        # Замок группы spec держится на весь вызов, так что между сверкой и записью файл не меняется.
+        # Без `rev` (ssh) — пишется без сверки.
+        if [ -n "$rev" ]; then
+            cur="$(spec_rev)"
+            if [ -n "$cur" ] && [ "$cur" != "$rev" ]; then
+                json_init; json_add_boolean ok 0; json_add_boolean conflict 1
+                json_add_string rev "$cur"
+                s2_fail_fields spec.changed "The spec on the router changed after it was opened"
+                json_dump
+                exit 0
+            fi
         fi
         # Временный файл РЯДОМ с целевым, а не в /tmp, и это не мелочь. /tmp на OpenWrt —
         # tmpfs, а спека лежит на overlay; mv между разными файловыми системами busybox
@@ -670,12 +926,20 @@ case "$2" in
         # Ровно так уже сделано в download() выше, по той же причине.
         mkdir -p "$(dirname "$SPEC")"
         tmp="$SPEC.new.$$"
-        printf '%s' "$spec" > "$tmp" || { rm -f "$tmp"; fail "не удалось записать спецификацию — кончилось место?"; }
-        # Списки, на которые ссылается ПРИСЛАННАЯ спека, доскачиваем ДО проверки: движок
-        # умирает на отсутствующем файле, и без этого выбор нового сервиса не сохранялся вовсе
-        # (см. fetch_missing_lists). Предупреждения о нескачанном не отменяют сохранение —
-        # спека с недоступным списком остаётся верной, просто её канал не поднимется.
-        set_warn="$(fetch_missing_lists "$tmp")"
+        if ! spec_text_to_json "$spec" "$tmp"; then spec_refuse "$SPEC_ERR"; fi
+        # Хук pre_spec_set (splify2-api): плагины могут переписать присланную спеку (transform), отказать (veto) и
+        # довезти файлы, на которые она ссылается: ядро умирает на отсутствующем списке, и без этого выбор нового
+        # сервиса не сохранялся бы вовсе (так делает плагин lists-catalog). Хук идёт ДО проверки: файлы нужны под
+        # спеку, какой она станет, а судья — по-прежнему ядро. Предупреждения (например, о нескачанном списке) не
+        # отменяют сохранение — спека с недоступным списком остаётся верной, просто её канал не поднимется.
+        # Упавший хук ничего не останавливает: только предупреждение в ответе.
+        hook_warn=""
+        if need_ext; then
+            ext_pre_spec_set "$tmp"
+            if [ -n "$EXT_VETO" ]; then rm -f "$tmp"; fail "$EXT_VETO"; fi
+            hook_warn="$EXT_WARN"
+        fi
+        set_warn=""
         # Компилятор — единственный судья: он же будет это применять. Проверка до
         # записи означает, что на диске не окажется спеки, которую движок отвергнет
         # при следующей загрузке.
@@ -685,38 +949,98 @@ case "$2" in
             # движка называет следствие — «cannot read a channel's list» — и отправляет
             # человека искать испорченный файл, которого никогда не было на диске. Проверено:
             # при недоступном списке ответ был ровно таким, без единого слова о загрузке.
-            fail "${set_warn:+$set_warn; }${err:-ядро отвергло спецификацию}"
+            spec_err_split "$err"; err="$SPEC_ERR_MSG"
+            engine_core_load
+            S2_CORE_PREFIX="${hook_warn:+$hook_warn; }"
+            fail "${hook_warn:+$hook_warn; }${err:-$(s2_t spec.core_rejected "The core rejected the spec")}" "$ENGINE_ECODE" "$ENGINE_EARGS"
         fi
-        # Прежняя спека v1 (`schema`) перед первой заменой на v2 остаётся копией рядом:
-        # интерфейс переписывает формат сам, и откатить перенос должно быть чем. Копия
-        # одна и старейшая — повторные сохранения её не затирают.
-        if [ -s "$SPEC" ] && spec_is_v1 && [ ! -e "$SPEC.v1.bak" ]; then
-            cp "$SPEC" "$SPEC.v1.bak" 2>/dev/null
+        # СНИМОК ПРИМЕНЁННОГО — ДО ПЕРВОЙ ПРАВКИ. Пока снимка нет (свежая установка, ни разу не
+        # нажатое «Применить»), applied_get отдаёт саму спеку, и любая записанная правка выглядела
+        # применённой: страницу перезагрузили — пилюля «Применить · N» пропала, хотя ядро о правке
+        # не знает. Прежняя спека на диске — это и есть то, что исполняет ядро (пустая у свежей
+        # установки), поэтому снимок снимается с неё, как в backup_put, ровно один раз и ПЕРЕД
+        # заменой; дальше его двигает только apply.
+        if [ ! -s "$APPLIED" ]; then
+            if spec_have; then cp "$(spec_json)" "$APPLIED.new.$$" 2>/dev/null
+            else printf '{"version":2}\n' > "$APPLIED.new.$$" 2>/dev/null
+            fi
+            if [ -s "$APPLIED.new.$$" ]; then mv "$APPLIED.new.$$" "$APPLIED" 2>/dev/null || rm -f "$APPLIED.new.$$"
+            else rm -f "$APPLIED.new.$$"
+            fi
         fi
         # Код возврата mv проверяется: без этого «Сохранено» печаталось независимо от
         # того, легла спека на диск или нет.
-        mv "$tmp" "$SPEC" || { rm -f "$tmp"; fail "не удалось заменить спецификацию"; }
+        # spec_put (spec.sh): spec.yaml (переводом ядром).
+        spec_put "$tmp" || fail_code spec.not_replaced "Cannot replace the spec"
+        # Хук post_spec_set: плагины узнают, что новая спека легла (так плагин ставит отложенное применение).
+        if need_ext; then
+            ext_gate post_spec_set "{\"rev\":$(plugin_jstr "$(spec_rev)")}"
+            [ -n "$EXT_WARN" ] && hook_warn="${hook_warn:+$hook_warn
+}$EXT_WARN"
+        fi
+        [ -n "$hook_warn" ] && set_warn="${set_warn:+$set_warn
+}$hook_warn"
         # Предупреждение о нескачанном списке едет В ОТВЕТЕ, а не в журнал: сохранение
         # прошло, спека верна, но канал, ссылающийся на недоступный список, не поднимется —
         # и узнать об этом человек должен там же, где нажимал, а не догадываться позже по
         # неработающему каналу.
         json_init; json_add_boolean ok 1
         [ -n "$set_warn" ] && json_add_string warn "$set_warn"
+        # Новая ревизия — чтобы следующая запись страницы шла от неё, не перечитывая спеку.
+        json_add_string rev "$(spec_rev)"
+        json_dump
+        ;;
+
+    spec_check)
+        # Check a spec WITHOUT saving it: the same judge as spec_set (`steer check`), the answer is
+        # {ok:true[, warn]} or {ok:false, error}. Used by the raw spec editor of the splify2 frame.
+        # The temporary file lies next to the real spec, not in /tmp: relative paths in a spec (lists,
+        # subscriptions) are resolved from the directory of the spec file.
+        read -r input
+        json_load "$input" 2>/dev/null || fail_code req.unparsable "Unparsable request"
+        json_get_var spec spec
+        [ -n "$spec" ] || fail_code spec.empty "The spec is empty"
+        mkdir -p "$(dirname "$SPEC")"
+        chk="$SPEC.chk.$$"
+        # YAML (what the frame shows) or JSON: the core translates YAML first and names the line and column.
+        if ! spec_text_to_json "$spec" "$chk"; then spec_refuse "$SPEC_ERR"; fi
+        err="$(engine_check "$chk")"; rc=$?
+        rm -f "$chk"
+        spec_err_split "$err"; err="$SPEC_ERR_MSG"
+        engine_core_load
+        s2_core_load "$ENGINE_EARGS"      # до json_init: json_load сбрасывает документ
+        json_init
+        if [ "$rc" = 0 ]; then
+            json_add_boolean ok 1
+            [ -n "$err" ] && json_add_string warn "$err"
+        else
+            json_add_boolean ok 0
+            if [ -n "$ENGINE_ECODE" ]; then s2_core_fields "$ENGINE_ECODE" "${err:-the core rejected the spec}"
+            else json_add_string error "${err:-the core rejected the spec}"; fi
+        fi
         json_dump
         ;;
 
     apply)
-        spec_lock
         # Ядро ведёт steer-box-connector (podkop, forkop): `steer apply` без службы steer исполняет
         # само ядро и поставило бы таблицу inet steer поверх таблицы коннектора (box_busy).
-        box_busy && fail "ядро занято: $BOX_BY"
+        box_busy && fail_code core.busy "The core is busy: {by}" by "$BOX_BY"
         # Зона туннельных устройств приводится в порядок ДО apply: иначе первый же прогон
         # объявит, что устройство никому не известно, и будет прав. Синхронизация в обе
         # стороны — добавить появившееся и убрать ушедшее вместе с самой зоной, когда
         # туннельных выходов не осталось (см. fw_sync). Ответ netifd о логических интерфейсах
         # спрашивается один раз и здесь, до подоболочек fw_sync и лечения (net_dump_load).
         net_dump_load
+        # Выходы zapret ядро больше не принимает: спека приводится к принимаемой до apply.
+        zap_msg="$(spec_heal_zapret)"
         zone_msg="$(fw_sync 2>&1)"
+        [ -n "$zap_msg" ] && zone_msg="$zap_msg${zone_msg:+
+$zone_msg}"
+        # Лечение плагинов (хук heal) — после зашитых: они приводят спеку к принимаемой, плагин дополняет.
+        if heal_plug="$(spec_heal_plugins)"; then
+            zone_msg="${zone_msg:+$zone_msg
+}splify2: $heal_plug"
+        fi
         # Самолечение выходов без ipv6 (spec_heal_ipv6, шапка там же): после fw_sync, потому что
         # устройство попадает в нашу зону именно им, и до `steer apply`, чтобы тот же apply
         # довёл правку до ядра — отдельной перезагрузки не нужно. В ответ apply — что записано и
@@ -725,11 +1049,23 @@ case "$2" in
             zone_msg="${zone_msg:+$zone_msg
 }$(heal_report "$heal_out")"
         fi
-        # То же доскачивание, что и при сохранении: спеку могли положить на диск в обход
-        # интерфейса (splify2 spec_set — не единственный способ), да и файл мог быть удалён
-        # уборкой между сохранением и применением.
-        fetch_warn="$(fetch_missing_lists "$SPEC")"
-        out="$("$STEER" apply --spec "$SPEC" 8>&- 2>&1)"; rc=$?
+        # Хук pre_apply (splify2-api): veto останавливает применение с причиной плагина, warn — строка в ответе. Так
+        # плагин довозит списки, на которые ссылается спека, перед применением: спеку могли положить на диск в обход
+        # интерфейса (spec_set — не единственный способ), да и файл мог быть удалён уборкой между сохранением и
+        # применением.
+        hook_warn=""
+        if need_ext; then
+            ext_gate pre_apply "{\"spec\":$(plugin_jstr "$(spec_json)")}"
+            if [ -n "$EXT_VETO" ]; then
+                json_init; json_add_boolean ok 0; json_add_boolean veto 1
+                json_add_string error "$EXT_VETO"
+                json_add_string output "$(s2_t apply.vetoed "splify2: apply stopped by a plugin: {reason}" reason "$EXT_VETO")"
+                json_dump
+                exit 0
+            fi
+            hook_warn="$EXT_WARN"
+        fi
+        out="$("$STEER" apply --spec "$SPEC" 2>&1)"; rc=$?
         # Снимок — только на успехе: неудавшийся apply ничего не изменил в ядре, и счётчик
         # обязан продолжать это показывать.
         #
@@ -738,16 +1074,31 @@ case "$2" in
         # снимок, из которого applied_get и проверки движка читали полспеки. mv внутри одного
         # каталога атомарен: снимок либо прежний, либо новый целиком.
         if [ "$rc" -eq 0 ]; then
-            if cp "$SPEC" "$APPLIED.new.$$" 2>/dev/null; then
+            # Прежнее применённое — рядом, как spec.prev.json (D-P2.4): откатить применение руками —
+            # положить его на место спеки. Только когда применённое изменилось: повторный apply без
+            # правок не должен затирать откат копией той же спеки.
+            prev="${APPLIED%/*}/spec.prev.json"
+            if [ -s "$APPLIED" ] && ! cmp -s "$APPLIED" "$(spec_json)" &&
+                    cp "$APPLIED" "$prev.new.$$" 2>/dev/null; then
+                mv "$prev.new.$$" "$prev" 2>/dev/null || rm -f "$prev.new.$$"
+            fi
+            if cp "$(spec_json)" "$APPLIED.new.$$" 2>/dev/null; then
                 mv "$APPLIED.new.$$" "$APPLIED" 2>/dev/null || rm -f "$APPLIED.new.$$"
             else
                 rm -f "$APPLIED.new.$$"
             fi
         fi
-        [ -n "$fetch_warn" ] && out="$fetch_warn
-$out"
         [ -n "$zone_msg" ] && out="$zone_msg
 $out"
+        [ -n "$hook_warn" ] && out="$hook_warn
+$out"
+        # Хуки post_apply и post_apply_fail: плагины узнают исход. Исход они не меняют; их предупреждения — в конец.
+        if need_ext; then
+            if [ "$rc" -eq 0 ]; then _pa_hook=post_apply; else _pa_hook=post_apply_fail; fi
+            ext_gate "$_pa_hook" "{\"rc\":$rc,\"output\":$(plugin_jstr "$out")}"
+            [ -n "$EXT_WARN" ] && out="$out
+$EXT_WARN"
+        fi
 
         # ПОМОЩНИКОВ (клиенты VLESS и hysteria2, xsteer, обфускатор, мост Telegram) И РЕЗОЛВЕР
         # БОЛЬШЕ НЕ ПЕРЕЗАПУСКАЕМ САМИ. Их держит демон движка (`steerd --supervise`): `steer
@@ -765,47 +1116,39 @@ $out"
         ;;
 
     spec_heal)
-        spec_lock
         # Вызов из установки и обновления пакета (uci-defaults) и для рук: вылечить спеку
         # (spec_heal_ipv6) и, только если она изменилась И уже применялась, применить так же, как
         # применяет интерфейс. Спеку, которую ни разу не применяли, не применяем: включать
         # маршрутизацию без ведома человека — не наше дело. Сначала зоны (fw_sync в apply), а
         # лечение смотрит на зону, поэтому устройства в нашу зону доводит сам apply, а здесь
         # лечатся только те, что в ней уже стоят.
-        box_busy && fail "ядро занято: $BOX_BY"
+        box_busy && fail_code core.busy "The core is busy: {by}" by "$BOX_BY"
         net_dump_load
+        # Было ли до лечения всё применено: снимок есть и равен спеке. Снимок теперь заводит и
+        # spec_set (до первой правки), поэтому одного его наличия мало — неприменённые правки
+        # человека лечение применять не должно.
+        _sh_clean=0
+        if [ -s "$APPLIED" ] && cmp -s "$(spec_json)" "$APPLIED" 2>/dev/null; then _sh_clean=1; fi
+        healed=0
+        # Лечение плагинов (хук heal) идёт первым по времени записи, а применяется вместе с остальным через apply.
+        spec_heal_plugins >/dev/null && healed=1
+        zap_msg="$(spec_heal_zapret)" && healed=1
         if heal_out="$(spec_heal_ipv6)"; then
             healed=1
-            if [ -s "$APPLIED" ]; then
-                "$0" call apply </dev/null >/dev/null 2>&1 8>&-
+        fi
+        if [ "$healed" = 1 ]; then
+            if [ "$_sh_clean" = 1 ]; then
+                "$0" call apply </dev/null >/dev/null 2>&1
             fi
-        else
-            healed=0
         fi
         json_init; json_add_boolean ok 1; json_add_boolean healed "$healed"
+        [ -n "${zap_msg:-}" ] && json_add_string zapret "$zap_msg"
         json_add_string outputs "$(printf '%s\n' "${heal_out:-}" | sed -n 's/^[a-z]* //p' | tr '\n' ' ' | sed 's/ $//')"
         json_add_string nat "$(heal_names nat "${heal_out:-}")"
         json_add_string off "$(heal_names off "${heal_out:-}")"
         json_dump
         ;;
 
-    group_select)
-        # Выбрать член группы `pick: manual` без apply (`steer select`): таблица группы сразу
-        # ведёт в устройство члена, выбор запоминается и переживает перезагрузку. Выбранный
-        # член не работает — группа применяет свой on_fail, а не переходит на другой.
-        read -r input
-        json_load "$input" 2>/dev/null || fail "неразбираемый запрос"
-        json_get_var grp group
-        json_get_var mem member
-        # Имена уходят в командную строку движка и в его сокет: только имя, никакого флага.
-        case "$grp" in ''|-*|*[!a-zA-Z0-9_.-]*) fail "недопустимое имя группы" ;; esac
-        case "$mem" in ''|-*|*[!a-zA-Z0-9_.-]*) fail "недопустимое имя члена" ;; esac
-        out="$("$STEER" select "$grp" "$mem" --spec "$SPEC" 2>&1)"; rc=$?
-        json_init
-        json_add_boolean ok $([ $rc -eq 0 ] && echo 1 || echo 0)
-        [ $rc -ne 0 ] && json_add_string error "${out:-ядро отказало}"
-        json_dump
-        ;;
 
-    *) fail "неизвестный метод" ;;
+    *) fail_code req.unknown_method "Unknown method" ;;
 esac

@@ -1,0 +1,1176 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "Спека steer v2",
+  "description": "Схема спеки v2: разделы, ключи, виды выходов и виды установленных плагинов.",
+  "x-schema-version": 1,
+  "x-steer-version": "2.0.5",
+  "x-platform": "router",
+  "x-plugins": [],
+  "type": "object",
+  "properties": {
+    "version": {
+      "type": "integer",
+      "description": "Версия формата спеки: сейчас 2.",
+      "enum": [2],
+      "x-example": 2
+    },
+    "lan": {
+      "type": "object",
+      "description": "Клиенты по умолчанию: правило без for относится к ним.",
+      "properties": {
+        "devices": {
+          "type": "array",
+          "description": "Устройства, с которых ядро забирает трафик клиентов.",
+          "items": {
+            "type": "string"
+          },
+          "minItems": 1,
+          "x-one-or-list": true,
+          "default": ["br-lan"],
+          "x-example": ["br-lan"]
+        },
+        "addr": {
+          "type": "array",
+          "description": "Адреса, подсети или диапазоны клиентов по умолчанию, IPv4 и IPv6. Вместе с несколькими устройствами не пишется.",
+          "items": {
+            "type": "string"
+          },
+          "x-one-or-list": true,
+          "x-example": ["192.168.1.0/24"]
+        }
+      },
+      "additionalProperties": false,
+      "x-example": {}
+    },
+    "clients": {
+      "type": "object",
+      "description": "Именованные группы клиентов: по адресам, MAC или приложениям.",
+      "additionalProperties": {
+        "type": "object",
+        "properties": {
+          "addr": {
+            "type": "array",
+            "description": "Адреса, подсети или диапазоны клиента, IPv4 и IPv6. Вместе с mac в одном клиенте не пишется.",
+            "items": {
+              "type": "string"
+            },
+            "x-one-or-list": true,
+            "x-example": ["192.168.1.50"]
+          },
+          "mac": {
+            "type": "array",
+            "description": "MAC-адреса клиента.",
+            "items": {
+              "type": "string",
+              "pattern": "^[0-9A-Fa-f]{2}(:[0-9A-Fa-f]{2}){5}$"
+            },
+            "x-one-or-list": true,
+            "x-example": ["aa:bb:cc:dd:ee:01"]
+          },
+          "uid": {
+            "type": "array",
+            "description": "Приложения телефона: UID вида 10123 или диапазон 10000-10099.",
+            "items": {
+              "type": ["integer", "string"]
+            },
+            "x-one-or-list": true,
+            "x-example": [10123],
+            "x-platform": "phone"
+          },
+          "self": {
+            "type": "boolean",
+            "description": "Трафик всех приложений самого устройства.",
+            "x-example": true,
+            "x-platform": "phone"
+          },
+          "app": {
+            "type": "array",
+            "description": "Имена пакетов приложений; пока вместо них — uid.",
+            "items": {
+              "type": "string"
+            },
+            "x-one-or-list": true,
+            "x-example": ["org.example.app"],
+            "x-unsupported": "ещё не поддерживается в этой версии ядра steer",
+            "x-platform": "phone"
+          }
+        },
+        "x-example": {"addr": ["192.168.1.50"]},
+        "additionalProperties": false,
+        "description": "Именованные группы клиентов: по адресам, MAC или приложениям."
+      },
+      "x-name": {
+        "pattern": "^[A-Za-z0-9_.-]+$",
+        "maxLength": 31,
+        "reserved": ["lan"]
+      },
+      "x-example": {}
+    },
+    "lists": {
+      "type": "object",
+      "description": "Назначения: именованные списки адресов, доменов и наборов sing-box.",
+      "additionalProperties": {
+        "type": "object",
+        "properties": {
+          "srs": {
+            "type": "array",
+            "description": "Наборы sing-box (.srs): имена, подсети и сужение в одном файле.",
+            "items": {
+              "type": "string",
+              "x-path": "etc"
+            },
+            "x-one-or-list": true,
+            "x-example": ["lists/work.srs"]
+          },
+          "prefixes_file": {
+            "type": "array",
+            "description": "Файлы адресов и подсетей, IPv4 и IPv6.",
+            "items": {
+              "type": "string",
+              "x-path": "etc"
+            },
+            "x-one-or-list": true,
+            "x-example": ["lists/work.lst"]
+          },
+          "domains_file": {
+            "type": "array",
+            "description": "Файлы доменов.",
+            "items": {
+              "type": "string",
+              "x-path": "etc"
+            },
+            "x-one-or-list": true,
+            "x-example": ["lists/work.dom"]
+          },
+          "domains": {
+            "type": "array",
+            "description": "Встроенные домены; пока вместо них — domains_file.",
+            "items": {
+              "type": "string"
+            },
+            "x-one-or-list": true,
+            "x-example": ["corp.example"],
+            "x-unsupported": "ещё не поддерживается в этой версии ядра steer"
+          },
+          "prefixes": {
+            "type": "array",
+            "description": "Встроенные адреса и подсети; пока вместо них — prefixes_file.",
+            "items": {
+              "type": "string"
+            },
+            "x-one-or-list": true,
+            "x-example": ["10.20.0.0/16"],
+            "x-unsupported": "ещё не поддерживается в этой версии ядра steer"
+          },
+          "proto": {
+            "type": "string",
+            "description": "Протокол, к которому относится список: без сужения, если both.",
+            "enum": ["tcp", "udp", "both"],
+            "default": "both",
+            "x-example": "udp"
+          },
+          "ports": {
+            "type": "array",
+            "description": "Порты 443 и диапазоны 50000-65535; диапазоны не пересекаются.",
+            "items": {
+              "type": ["integer", "string"]
+            },
+            "maxItems": 16,
+            "x-one-or-list": true,
+            "x-example": ["50000-65535"]
+          },
+          "all": {
+            "type": "boolean",
+            "description": "Весь трафик (с сужением proto и ports); источники рядом не пишутся.",
+            "default": false,
+            "x-example": true
+          },
+          "override_port": {
+            "type": "integer",
+            "description": "Подмена порта назначения для имён списка; только у списка доменов (domains_file без prefixes_file, srs и all) и в режиме fakeip.",
+            "minimum": 1,
+            "maximum": 65535,
+            "x-example": 8443
+          }
+        },
+        "x-example": {"domains_file": ["lists/work.dom"]},
+        "additionalProperties": false,
+        "description": "Назначения: именованные списки адресов, доменов и наборов sing-box."
+      },
+      "x-name": {
+        "pattern": "^[A-Za-z0-9_.-]+$",
+        "maxLength": 31,
+        "reserved": ["all"]
+      },
+      "x-example": {}
+    },
+    "outputs": {
+      "type": "object",
+      "description": "Выходы: куда вести трафик — устройство, туннель, группа, блок.",
+      "additionalProperties": {
+        "type": "object",
+        "properties": {
+          "kind": {
+            "type": "string",
+            "description": "Вид выхода.",
+            "enum": ["direct", "interface", "tunnel", "xsteer", "tgws", "awg", "block", "group", "warp"]
+          }
+        },
+        "required": ["kind"],
+        "x-protocols": ["vless", "hysteria2", "trojan", "shadowsocks", "socks", "http", "vmess"],
+        "x-discriminator": {
+          "key": "kind",
+          "then": {
+            "tunnel": "protocol"
+          }
+        },
+        "x-variants": {
+          "direct": {
+            "type": "object",
+            "description": "Не маршрутизировать: трафик идёт обычным путём.",
+            "x-spec": {
+              "kind": "direct"
+            },
+            "properties": {
+              "kind": {
+                "type": "string",
+                "description": "Вид выхода.",
+                "const": "direct"
+              }
+            },
+            "x-example": {"kind": "direct"},
+            "required": ["kind"],
+            "additionalProperties": false
+          },
+          "interface": {
+            "type": "object",
+            "description": "Устройство системы: WireGuard, PPPoE и другие.",
+            "x-spec": {
+              "kind": "interface"
+            },
+            "properties": {
+              "kind": {
+                "type": "string",
+                "description": "Вид выхода.",
+                "const": "interface"
+              },
+              "on_fail": {
+                "type": "string",
+                "description": "Что делать, когда выход не работает: drop — отказ, direct — напрямую, zapret — обход DPI (не на телефоне).",
+                "enum": ["drop", "direct", "zapret"],
+                "default": "drop",
+                "x-example": "drop"
+              },
+              "over": {
+                "type": "string",
+                "description": "Выход-подложка: через него идёт трафик самого туннеля; без ключа — напрямую.",
+                "x-ref": {
+                  "section": "outputs"
+                },
+                "x-example": "wg0",
+                "x-when-set": ["obfs"]
+              },
+              "device": {
+                "type": "string",
+                "description": "Устройство выхода; без ключа выводится из имени выхода (у interface обязательно).",
+                "x-example": "ext0"
+              },
+              "ipv6": {
+                "type": "string",
+                "description": "IPv6 от хоста на том конце туннеля: routed и nat — у interface и awg, off — и у туннеля, и у группы.",
+                "enum": ["routed", "nat", "off"],
+                "x-example": "off"
+              },
+              "prefix": {
+                "type": "string",
+                "description": "Префикс хоста при ipv6: routed, например 2001:db8:1::/56; без ключа выводится из адресов LAN.",
+                "x-when": {
+                  "ipv6": ["routed"]
+                },
+                "x-example": "2001:db8:1::/56"
+              },
+              "obfs": {
+                "type": "object",
+                "description": "WireGuard поверх поддельного TCP.",
+                "properties": {
+                  "mode": {
+                    "type": "string",
+                    "description": "Режим: WireGuard поверх поддельного TCP.",
+                    "enum": ["wg-over-tcp"],
+                    "default": "wg-over-tcp",
+                    "x-example": "wg-over-tcp"
+                  },
+                  "server": {
+                    "type": "string",
+                    "description": "Сервер обфускации: адрес:порт литералом.",
+                    "x-example": "192.0.2.1:443"
+                  },
+                  "listen": {
+                    "type": "string",
+                    "description": "Локальный адрес:порт обфускатора литералом: тот же, что в Endpoint пира WireGuard.",
+                    "x-example": "127.0.0.1:51821"
+                  }
+                },
+                "required": ["server", "listen"],
+                "additionalProperties": false,
+                "x-example": {"server": "192.0.2.1:443", "listen": "127.0.0.1:51821"}
+              }
+            },
+            "x-example": {"kind": "interface", "device": "ext0"},
+            "required": ["kind", "device"],
+            "additionalProperties": false
+          },
+          "tunnel:vless": {
+            "type": "object",
+            "x-spec": {
+              "kind": "tunnel",
+              "protocol": "vless"
+            },
+            "properties": {},
+            "description": "Туннель VLESS по подписке.",
+            "x-absent": "kind vless требует пакет steer-vless (входит в steer-extended)"
+          },
+          "xsteer": {
+            "type": "object",
+            "x-spec": {
+              "kind": "xsteer"
+            },
+            "properties": {},
+            "description": "Туннель xsteer.",
+            "x-absent": "kind xsteer требует пакет steer-xsteer (входит в steer-extended)"
+          },
+          "tgws": {
+            "type": "object",
+            "description": "Мост Telegram.",
+            "x-spec": {
+              "kind": "tgws"
+            },
+            "properties": {
+              "kind": {
+                "type": "string",
+                "description": "Вид выхода.",
+                "const": "tgws"
+              },
+              "on_fail": {
+                "type": "string",
+                "description": "Что делать, когда выход не работает: drop — отказ, direct — напрямую, zapret — обход DPI (не на телефоне).",
+                "enum": ["drop"],
+                "default": "drop",
+                "x-example": "drop"
+              },
+              "domain": {
+                "type": "string",
+                "description": "Имя за Cloudflare, у которого kwsN.<domain> ведёт на веб-точку Telegram.",
+                "x-example": "tg.example"
+              }
+            },
+            "x-example": {"kind": "tgws", "domain": "tg.example"},
+            "required": ["kind", "domain"],
+            "additionalProperties": false
+          },
+          "awg": {
+            "type": "object",
+            "description": "AmneziaWG: устройство заводит ядро.",
+            "x-spec": {
+              "kind": "awg"
+            },
+            "properties": {
+              "kind": {
+                "type": "string",
+                "description": "Вид выхода.",
+                "const": "awg"
+              },
+              "on_fail": {
+                "type": "string",
+                "description": "Что делать, когда выход не работает: drop — отказ, direct — напрямую, zapret — обход DPI (не на телефоне).",
+                "enum": ["drop", "direct", "zapret"],
+                "default": "drop",
+                "x-example": "drop"
+              },
+              "over": {
+                "type": "string",
+                "description": "Выход-подложка: через него идёт трафик самого туннеля; без ключа — напрямую.",
+                "x-ref": {
+                  "section": "outputs"
+                },
+                "x-example": "wg0"
+              },
+              "device": {
+                "type": "string",
+                "description": "Устройство выхода; без ключа выводится из имени выхода (у interface обязательно).",
+                "x-example": "ext0"
+              },
+              "ipv6": {
+                "type": "string",
+                "description": "IPv6 от хоста на том конце туннеля: routed и nat — у interface и awg, off — и у туннеля, и у группы.",
+                "enum": ["routed", "nat", "off"],
+                "x-example": "off"
+              },
+              "prefix": {
+                "type": "string",
+                "description": "Префикс хоста при ipv6: routed, например 2001:db8:1::/56; без ключа выводится из адресов LAN.",
+                "x-when": {
+                  "ipv6": ["routed"]
+                },
+                "x-example": "2001:db8:1::/56"
+              },
+              "conf": {
+                "type": "string",
+                "description": "Файл настройки в стиле wg; без ключа {etc}/<вид>/<имя>.conf.",
+                "x-path": "etc",
+                "x-example": "xsteer/x.conf"
+              }
+            },
+            "x-example": {"kind": "awg"},
+            "required": ["kind"],
+            "additionalProperties": false
+          },
+          "tunnel:hysteria2": {
+            "type": "object",
+            "x-spec": {
+              "kind": "tunnel",
+              "protocol": "hysteria2"
+            },
+            "properties": {},
+            "description": "Туннель Hysteria2 (QUIC) по подписке.",
+            "x-absent": "kind hysteria2 требует пакет steer-hysteria2"
+          },
+          "tunnel:trojan": {
+            "type": "object",
+            "x-spec": {
+              "kind": "tunnel",
+              "protocol": "trojan"
+            },
+            "properties": {},
+            "description": "Туннель Trojan по подписке.",
+            "x-absent": "kind trojan требует пакет steer-proxy"
+          },
+          "tunnel:shadowsocks": {
+            "type": "object",
+            "x-spec": {
+              "kind": "tunnel",
+              "protocol": "shadowsocks"
+            },
+            "properties": {},
+            "description": "Туннель Shadowsocks по подписке.",
+            "x-absent": "kind shadowsocks требует пакет steer-proxy"
+          },
+          "tunnel:socks": {
+            "type": "object",
+            "x-spec": {
+              "kind": "tunnel",
+              "protocol": "socks"
+            },
+            "properties": {},
+            "description": "Туннель через прокси SOCKS по подписке.",
+            "x-absent": "kind socks требует пакет steer-proxy"
+          },
+          "tunnel:http": {
+            "type": "object",
+            "x-spec": {
+              "kind": "tunnel",
+              "protocol": "http"
+            },
+            "properties": {},
+            "description": "Туннель через прокси HTTP по подписке.",
+            "x-absent": "kind http требует пакет steer-proxy"
+          },
+          "tunnel:vmess": {
+            "type": "object",
+            "x-spec": {
+              "kind": "tunnel",
+              "protocol": "vmess"
+            },
+            "properties": {},
+            "description": "Туннель VMess по подписке.",
+            "x-absent": "kind vmess требует пакет steer-proxy"
+          },
+          "block": {
+            "type": "object",
+            "description": "Блок: трафик правила не пропускается.",
+            "x-spec": {
+              "kind": "block"
+            },
+            "properties": {
+              "kind": {
+                "type": "string",
+                "description": "Вид выхода.",
+                "const": "block"
+              },
+              "on_fail": {
+                "type": "string",
+                "description": "Что делать, когда выход не работает: drop — отказ, direct — напрямую, zapret — обход DPI (не на телефоне).",
+                "enum": ["drop", "direct", "zapret"],
+                "default": "drop",
+                "x-example": "drop"
+              },
+              "ipv6": {
+                "type": "string",
+                "description": "IPv6 от хоста на том конце туннеля: routed и nat — у interface и awg, off — и у туннеля, и у группы.",
+                "enum": ["off"],
+                "x-example": "off"
+              }
+            },
+            "x-example": {"kind": "block"},
+            "required": ["kind"],
+            "additionalProperties": false
+          },
+          "group": {
+            "type": "object",
+            "description": "Группа выходов: выбор члена по порядку, задержке, вручную или балансом.",
+            "x-spec": {
+              "kind": "group"
+            },
+            "properties": {
+              "kind": {
+                "type": "string",
+                "description": "Вид выхода.",
+                "const": "group"
+              },
+              "on_fail": {
+                "type": "string",
+                "description": "Что делать, когда выход не работает: drop — отказ, direct — напрямую, zapret — обход DPI (не на телефоне).",
+                "enum": ["drop", "direct", "zapret"],
+                "default": "drop",
+                "x-example": "drop"
+              },
+              "ipv6": {
+                "type": "string",
+                "description": "IPv6 от хоста на том конце туннеля: routed и nat — у interface и awg, off — и у туннеля, и у группы.",
+                "enum": ["off"],
+                "x-example": "off"
+              },
+              "pick": {
+                "type": "string",
+                "description": "Как выбирается член: order — первый живой, latency — самый быстрый с допуском, manual — выбор человека, balance — соединения раздаются по живым.",
+                "enum": ["order", "latency", "manual", "balance"],
+                "default": "order",
+                "x-example": "order"
+              },
+              "members": {
+                "type": "array",
+                "description": "Члены группы по предпочтению: выходы с устройством, в том числе другие группы.",
+                "items": {
+                  "type": "string",
+                  "x-ref": {
+                    "section": "outputs"
+                  }
+                },
+                "minItems": 1,
+                "x-one-or-list": true,
+                "x-example": ["wg0", "wg1"]
+              },
+              "default": {
+                "type": "string",
+                "description": "Член до первой команды select.",
+                "x-ref": {
+                  "section": "outputs"
+                },
+                "x-when": {
+                  "pick": ["manual"]
+                },
+                "x-example": "wg0"
+              },
+              "tolerance": {
+                "type": "integer",
+                "description": "Допуск смены члена, мс: 0 — строго самый быстрый. Без ключа — умолчание сторожа (50).",
+                "minimum": 0,
+                "maximum": 60000,
+                "x-when": {
+                  "pick": ["latency"]
+                },
+                "x-example": 50
+              },
+              "interval": {
+                "type": "integer",
+                "description": "Интервал замера, секунды. Без ключа — умолчание сторожа (180).",
+                "minimum": 5,
+                "maximum": 86400,
+                "x-when": {
+                  "pick": ["latency"]
+                },
+                "x-example": 180
+              },
+              "url": {
+                "type": "string",
+                "description": "Адрес проверки http:// или https://; без ключа http://cp.cloudflare.com/generate_204.",
+                "x-when": {
+                  "pick": ["latency"]
+                },
+                "x-example": "http://cp.cloudflare.com/generate_204"
+              },
+              "idle_timeout": {
+                "type": "integer",
+                "description": "Сколько секунд без трафика замер не делается; 0 — мерить всегда (телефон — 1800, роутер — 0).",
+                "minimum": 0,
+                "maximum": 86400,
+                "x-when": {
+                  "pick": ["latency"]
+                },
+                "x-example": 0
+              },
+              "weights": {
+                "type": "array",
+                "description": "Вес каждого члена по порядку members: доля новых соединений; без ключа — по 1.",
+                "items": {
+                  "type": "integer",
+                  "minimum": 1,
+                  "maximum": 100
+                },
+                "x-one-or-list": true,
+                "x-when": {
+                  "pick": ["balance"]
+                },
+                "x-example": [2, 1]
+              },
+              "by": {
+                "type": "string",
+                "description": "Чем раздаются соединения: connection — случайно, site — один сайт на одном члене, site_client — сайт каждого устройства на одном члене.",
+                "enum": ["connection", "site", "site_client"],
+                "default": "connection",
+                "x-when": {
+                  "pick": ["balance"]
+                },
+                "x-example": "site"
+              },
+              "exclude": {
+                "type": "array",
+                "description": "Страны (ISO 3166-1), члены которых не берутся; член без известной страны берётся.",
+                "items": {
+                  "type": "string",
+                  "pattern": "^[A-Z][A-Z]$"
+                },
+                "x-one-or-list": true,
+                "x-when": {
+                  "pick": ["latency", "order"]
+                },
+                "x-example": ["RU"]
+              },
+              "only": {
+                "type": "array",
+                "description": "Страны (ISO 3166-1), чьи члены только и берутся.",
+                "items": {
+                  "type": "string",
+                  "pattern": "^[A-Z][A-Z]$"
+                },
+                "x-one-or-list": true,
+                "x-when": {
+                  "pick": ["latency", "order"]
+                },
+                "x-example": ["NL"]
+              }
+            },
+            "x-example": {"kind": "group", "members": ["wg0", "wg1"]},
+            "required": ["kind", "members"],
+            "additionalProperties": false
+          },
+          "warp": {
+            "type": "object",
+            "description": "Cloudflare WARP одной строкой: группа из count туннелей.",
+            "x-spec": {
+              "kind": "warp"
+            },
+            "properties": {
+              "kind": {
+                "type": "string",
+                "description": "Вид выхода.",
+                "enum": ["warp"],
+                "x-example": "warp",
+                "const": "warp"
+              },
+              "transport": {
+                "type": "string",
+                "description": "Транспорт туннелей: awg или MASQUE.",
+                "enum": ["awg", "masque"],
+                "default": "awg",
+                "x-example": "awg"
+              },
+              "count": {
+                "type": "integer",
+                "description": "Сколько туннелей держать: запасные для мгновенного переключения.",
+                "minimum": 1,
+                "maximum": 255,
+                "default": 1,
+                "x-example": 2
+              },
+              "pick": {
+                "type": "string",
+                "description": "Как выбирается туннель: latency — самый быстрый, order — по порядку.",
+                "enum": ["latency", "order"],
+                "default": "latency",
+                "x-example": "latency"
+              },
+              "tolerance": {
+                "type": "integer",
+                "description": "Допуск смены туннеля, мс.",
+                "minimum": 0,
+                "maximum": 60000,
+                "x-when": {
+                  "pick": ["latency"]
+                },
+                "x-example": 50
+              },
+              "interval": {
+                "type": "integer",
+                "description": "Интервал замера, секунды.",
+                "minimum": 5,
+                "maximum": 86400,
+                "default": 600,
+                "x-when": {
+                  "pick": ["latency"]
+                },
+                "x-example": 600
+              },
+              "url": {
+                "type": "string",
+                "description": "Адрес проверки http:// или https://.",
+                "x-when": {
+                  "pick": ["latency"]
+                },
+                "x-example": "http://cp.cloudflare.com/generate_204"
+              },
+              "idle_timeout": {
+                "type": "integer",
+                "description": "Сколько секунд без трафика замер не делается; 0 — мерить всегда.",
+                "minimum": 0,
+                "maximum": 86400,
+                "x-when": {
+                  "pick": ["latency"]
+                },
+                "x-example": 0
+              },
+              "countries": {
+                "type": "array",
+                "description": "Страны (ISO 3166-1) точек входа.",
+                "items": {
+                  "type": "string",
+                  "pattern": "^[A-Z][A-Z]$"
+                },
+                "x-one-or-list": true,
+                "x-example": ["NL"]
+              },
+              "exclude_countries": {
+                "type": "array",
+                "description": "Страны (ISO 3166-1), точки которых не брать.",
+                "items": {
+                  "type": "string",
+                  "pattern": "^[A-Z][A-Z]$"
+                },
+                "x-one-or-list": true,
+                "x-example": ["RU"]
+              },
+              "on_fail": {
+                "type": "string",
+                "description": "Что делать, когда выход не работает.",
+                "enum": ["drop", "direct", "zapret"],
+                "default": "drop",
+                "x-example": "drop"
+              },
+              "over": {
+                "type": "string",
+                "description": "Выход-подложка для туннелей WARP.",
+                "x-ref": {
+                  "section": "outputs"
+                },
+                "x-example": "wg0"
+              },
+              "ipv6": {
+                "type": "string",
+                "description": "IPv6 через WARP: nat — с подменой, off — без IPv6.",
+                "enum": ["nat", "off"],
+                "default": "nat",
+                "x-example": "nat"
+              }
+            },
+            "required": ["kind"],
+            "additionalProperties": false
+          }
+        }
+      },
+      "x-name": {
+        "pattern": "^[A-Za-z0-9_.-]+$",
+        "maxLength": 31
+      },
+      "x-example": {}
+    },
+    "dns": {
+      "type": "object",
+      "description": "Резолвер ядра: режим, кэш, серверы DNS.",
+      "properties": {
+        "mode": {
+          "type": "string",
+          "description": "Режим доменных правил без своего resolve: поддельные адреса или настоящие.",
+          "enum": ["fakeip", "realip"],
+          "default": "fakeip",
+          "x-example": "realip"
+        },
+        "cache": {
+          "type": "integer",
+          "description": "Записей в кэше ответов; 0 — кэша нет.",
+          "minimum": 0,
+          "maximum": 100000,
+          "default": 0,
+          "x-example": 1000
+        },
+        "cache_ttl": {
+          "type": "object",
+          "description": "Пределы жизни записи кэша, секунды.",
+          "properties": {
+            "min": {
+              "type": "integer",
+              "description": "Ответ живёт не меньше, секунд.",
+              "minimum": 0,
+              "maximum": 86400,
+              "default": 10,
+              "x-example": 10
+            },
+            "max": {
+              "type": "integer",
+              "description": "Ответ живёт не дольше, секунд.",
+              "minimum": 1,
+              "maximum": 604800,
+              "default": 3600,
+              "x-example": 3600
+            },
+            "negative": {
+              "type": "integer",
+              "description": "Срок отрицательного ответа (NXDOMAIN, пустой), секунд.",
+              "minimum": 0,
+              "maximum": 86400,
+              "default": 30,
+              "x-example": 30
+            }
+          },
+          "additionalProperties": false,
+          "x-example": {}
+        },
+        "upstream": {
+          "type": "string",
+          "description": "Общий сервер для имён под правилами, у которых своего нет.",
+          "x-ref": {
+            "section": "dns.upstreams"
+          },
+          "x-example": "dns1"
+        },
+        "upstreams": {
+          "type": "object",
+          "description": "Серверы DNS и группы серверов.",
+          "additionalProperties": {
+            "type": "object",
+            "x-variants": {
+              "server": {
+                "type": "object",
+                "properties": {
+                  "url": {
+                    "type": "string",
+                    "description": "Адрес сервера: https://, tls://, quic://, h3://, udp://, tcp://.",
+                    "x-example": "tls://dns.example"
+                  },
+                  "out": {
+                    "type": "string",
+                    "description": "Выход, через который уходит запрос; без ключа или direct — напрямую.",
+                    "x-ref": {
+                      "section": "outputs",
+                      "also": ["direct"]
+                    },
+                    "x-example": "wg0"
+                  },
+                  "ips": {
+                    "type": "array",
+                    "description": "Адреса сервера: имя тогда не разрешается вовсе.",
+                    "items": {
+                      "type": "string"
+                    },
+                    "x-one-or-list": true,
+                    "x-example": ["1.1.1.1"]
+                  },
+                  "bootstrap": {
+                    "type": "array",
+                    "description": "Серверы, которые разрешают имя сервера; без ключа — общие из dns.bootstrap.",
+                    "items": {
+                      "type": "string"
+                    },
+                    "x-one-or-list": true,
+                    "x-example": ["1.1.1.1"]
+                  },
+                  "fragment": {
+                    "type": "boolean",
+                    "description": "Делить ClientHello на две записи TLS; только у tls:// и https://.",
+                    "default": false,
+                    "x-example": true
+                  }
+                },
+                "x-example": {"url": "tls://dns.example", "ips": ["1.1.1.1"]},
+                "required": ["url"],
+                "additionalProperties": false,
+                "description": "Сервер DNS."
+              },
+              "group": {
+                "type": "object",
+                "properties": {
+                  "servers": {
+                    "type": "array",
+                    "description": "Серверы группы по порядку: имена из dns.upstreams.",
+                    "items": {
+                      "type": "string",
+                      "x-ref": {
+                        "section": "dns.upstreams"
+                      }
+                    },
+                    "minItems": 1,
+                    "x-one-or-list": true,
+                    "x-example": ["dns1"]
+                  },
+                  "mode": {
+                    "type": "string",
+                    "description": "failover — по очереди, race — всем сразу, берётся первый годный ответ.",
+                    "enum": ["failover", "race"],
+                    "default": "failover",
+                    "x-example": "race"
+                  }
+                },
+                "required": ["servers"],
+                "additionalProperties": false,
+                "description": "Группа серверов DNS: по очереди или все сразу."
+              }
+            },
+            "x-discriminator": {
+              "has": "servers",
+              "yes": "group",
+              "no": "server"
+            },
+            "description": "Серверы DNS и группы серверов."
+          },
+          "x-name": {
+            "pattern": "^[A-Za-z0-9_.-]+$",
+            "maxLength": 31
+          },
+          "x-example": {}
+        },
+        "other": {
+          "type": "string",
+          "description": "Сервер для имён вне правил; без ключа — прежний путь наверх.",
+          "x-ref": {
+            "section": "dns.upstreams"
+          },
+          "x-example": "dns1"
+        },
+        "bootstrap": {
+          "type": "array",
+          "description": "Адреса серверов обычного DNS, которыми разрешается имя сервера DoT, DoH, DoQ.",
+          "items": {
+            "type": "string"
+          },
+          "x-one-or-list": true,
+          "x-example": ["1.1.1.1"]
+        },
+        "traceroute_hops": {
+          "type": "boolean",
+          "description": "Трассировка через поддельные адреса видит настоящие узлы.",
+          "default": false,
+          "x-example": true
+        },
+        "mesh_clients": {
+          "type": "boolean",
+          "description": "Запросы DNS клиентов mesh-VPN (tailscale, zerotier) заворачиваются на резолвер ядра.",
+          "default": false,
+          "x-example": true
+        }
+      },
+      "additionalProperties": false,
+      "x-example": {}
+    },
+    "rules": {
+      "type": "array",
+      "description": "Правила сверху вниз: выше — сильнее.",
+      "items": {
+        "type": "object",
+        "properties": {
+          "name": {
+            "type": "string",
+            "description": "Подпись правила в status и журнале; без ключа — rule-<номер>.",
+            "pattern": "^[^\"\\\\]+$",
+            "x-example": "kids"
+          },
+          "for": {
+            "type": "array",
+            "description": "Клиенты из clients; lan — клиенты по умолчанию.",
+            "items": {
+              "type": "string",
+              "x-ref": {
+                "section": "clients",
+                "also": ["lan"]
+              }
+            },
+            "x-one-or-list": true,
+            "default": ["lan"],
+            "x-example": ["kids"]
+          },
+          "to": {
+            "type": "array",
+            "description": "Списки из lists; all — весь трафик.",
+            "items": {
+              "type": "string",
+              "x-ref": {
+                "section": "lists",
+                "also": ["all"]
+              }
+            },
+            "minItems": 1,
+            "x-one-or-list": true,
+            "x-example": ["work"]
+          },
+          "out": {
+            "type": "string",
+            "description": "Выход или группа, куда вести трафик.",
+            "x-ref": {
+              "section": "outputs"
+            },
+            "x-example": "wg0"
+          },
+          "resolve": {
+            "type": "string",
+            "description": "Как отвечать на имена правила; без ключа — dns.mode.",
+            "enum": ["fakeip", "realip"],
+            "x-example": "realip"
+          },
+          "dns": {
+            "type": ["string", "object"],
+            "description": "Сервер DNS правила: имя из dns.upstreams или сервер, описанный здесь же.",
+            "x-ref": {
+              "section": "dns.upstreams"
+            },
+            "x-variants": {
+              "server": {
+                "type": "object",
+                "properties": {
+                  "url": {
+                    "type": "string",
+                    "description": "Адрес сервера: https://, tls://, quic://, h3://, udp://, tcp://.",
+                    "x-example": "tls://dns.example"
+                  },
+                  "out": {
+                    "type": "string",
+                    "description": "Выход, через который уходит запрос; без ключа или direct — напрямую.",
+                    "x-ref": {
+                      "section": "outputs",
+                      "also": ["direct"]
+                    },
+                    "x-example": "wg0"
+                  },
+                  "ips": {
+                    "type": "array",
+                    "description": "Адреса сервера: имя тогда не разрешается вовсе.",
+                    "items": {
+                      "type": "string"
+                    },
+                    "x-one-or-list": true,
+                    "x-example": ["1.1.1.1"]
+                  },
+                  "bootstrap": {
+                    "type": "array",
+                    "description": "Серверы, которые разрешают имя сервера; без ключа — общие из dns.bootstrap.",
+                    "items": {
+                      "type": "string"
+                    },
+                    "x-one-or-list": true,
+                    "x-example": ["1.1.1.1"]
+                  },
+                  "fragment": {
+                    "type": "boolean",
+                    "description": "Делить ClientHello на две записи TLS; только у tls:// и https://.",
+                    "default": false,
+                    "x-example": true
+                  }
+                },
+                "x-example": {"url": "tls://dns.example", "ips": ["1.1.1.1"]},
+                "required": ["url"],
+                "additionalProperties": false,
+                "description": "Сервер DNS."
+              },
+              "group": {
+                "type": "object",
+                "properties": {
+                  "servers": {
+                    "type": "array",
+                    "description": "Серверы группы по порядку: имена из dns.upstreams.",
+                    "items": {
+                      "type": "string",
+                      "x-ref": {
+                        "section": "dns.upstreams"
+                      }
+                    },
+                    "minItems": 1,
+                    "x-one-or-list": true,
+                    "x-example": ["dns1"]
+                  },
+                  "mode": {
+                    "type": "string",
+                    "description": "failover — по очереди, race — всем сразу, берётся первый годный ответ.",
+                    "enum": ["failover", "race"],
+                    "default": "failover",
+                    "x-example": "race"
+                  }
+                },
+                "required": ["servers"],
+                "additionalProperties": false,
+                "description": "Группа серверов DNS: по очереди или все сразу."
+              }
+            },
+            "x-discriminator": {
+              "has": "servers",
+              "yes": "group",
+              "no": "server"
+            },
+            "x-example": "dns1"
+          },
+          "enabled": {
+            "type": "boolean",
+            "description": "false — правило лежит в спеке, но не действует.",
+            "default": true,
+            "x-example": false
+          },
+          "scope": {
+            "type": "string",
+            "description": "device — правило на одно устройство, старше глобальных; global — обычное.",
+            "enum": ["device", "global"],
+            "default": "global",
+            "x-needs": {
+              "device": ["for"]
+            },
+            "x-example": "global"
+          },
+          "quic": {
+            "type": "string",
+            "description": "block — UDP/443 к назначениям правила отвергается; allow — не трогать.",
+            "enum": ["block", "allow"],
+            "default": "allow",
+            "x-example": "block"
+          },
+          "family": {
+            "type": "string",
+            "description": "Семейство IP правила: 4, 6 или both.",
+            "enum": ["4", "6", "both"],
+            "default": "both",
+            "x-example": "both"
+          },
+          "on_family_unavailable": {
+            "type": "string",
+            "description": "Что делать, когда выход не несёт IPv6: fallback — остаться по IPv4, block — отказать.",
+            "enum": ["fallback", "block"],
+            "default": "fallback",
+            "x-when": {
+              "family": ["6"]
+            },
+            "x-example": "fallback"
+          }
+        },
+        "required": ["to", "out"],
+        "additionalProperties": false
+      },
+      "x-example": []
+    }
+  },
+  "required": ["version"],
+  "additionalProperties": false
+}

@@ -1,5 +1,6 @@
 #!/bin/sh
-# Собирает один noarch-пакет: бандл интерфейса, точка входа LuCI, rpcd-обёртка.
+# Собирает один noarch-пакет splify2: каркас на LuCI JS, бэкенд rpcd и семя плагинов «из коробки» (в том числе Andromeda — её
+# собирает репозиторий andromeda, см. ANDROMEDA_S2P ниже).
 #
 # Архитектуры тут нет и быть не должно — весь бинарный код живёт в steer. Поэтому
 # пакет один на все роутеры, а зависимость от движка объявлена явно.
@@ -8,7 +9,7 @@ set -eu
 VERSION="$(cat VERSION 2>/dev/null || echo 0.1.0)"
 
 # В VERSION только цифры и точки, и это не педантизм. Этой строкой собираются имя файла
-# пакета (`luci-app-splify2-26.9-1_noarch.apk`), версия для apk/opkg и тег релиза, а ниже она
+# пакета (`splify2-26.9-1_noarch.apk`), версия для apk/opkg и тег релиза, а ниже она
 # подставляется sed-ом внутрь JS (`?v=26.9`). Пробел или буква ломают всё перечисленное, причём
 # по-разному: пакет соберётся с искалеченным именем, а бандл получит битую ссылку на кусок —
 # то есть страница откроется и не заработает.
@@ -25,13 +26,12 @@ case "$VERSION" in
 esac
 OUT=out
 PKG=build/pkg
-RES="$PKG/www/luci-static/resources/splify2"
 
-# Куда уезжает вывод двух самых длинных шагов — сборки интерфейса и упаковки (I-044, R-034).
+# Куда уезжает вывод самых длинных шагов — сборки плагинов семени и упаковки (I-044, R-034).
 #
 # ЗАЧЕМ ФАЙЛ, А НЕ ПРЯМОЙ ВЫВОД. На успехе печатать полтора экрана tsc и vite незачем: сборка
 # зовётся из релизного workflow, и шум там прячет то немногое, что стоит читать. А на провале
-# нужна ровно эта диагностика: без неё человек получал одну строку «сборка интерфейса
+# нужна ровно эта диагностика: без неё человек получал одну строку «сборка
 # провалилась» и запускал сборку во второй раз руками, чтобы узнать причину. Файл даёт оба
 # поведения разом.
 BUILD_LOG=build/build.log
@@ -49,7 +49,7 @@ echo "splify2 $VERSION"
 # Цифра в имени в наборе символов не случайна: без неё `splify2_versions` резался до
 # `splify`, барьер искал в ACL несуществующее имя и валился на верных данных. Заметить
 # это удалось только когда проверка стала запускаться без docker.
-acl=luci/root/usr/share/rpcd/acl.d/luci-app-splify2.json
+acl=luci/root/usr/share/rpcd/acl.d/splify2.json
 methods="$(sed -n '/^list)/,/^    ;;/p' files/usr/libexec/rpcd/splify2 |
            grep -o 'json_add_object [a-z0-9_]*' | awk '{print $2}' | tr '\n' ' ')"
 missing=''
@@ -62,127 +62,47 @@ done
     exit 1
 }
 
-# Третье ребро того же контракта, и до сих пор оно не проверялось ничем. Имена методов
-# заданы строками в ТРЁХ местах: блок `list)` в rpcd, ACL выше и вызовы в интерфейсе
-# (`declare<...>('local_lists')` в ui/src/lib/rpc.ts). Барьер выше сторожит ребро
-# rpcd → ACL, а переименование метода в скрипте оставляет в интерфейсе вызов, который
-# никуда не ведёт: ubus отвечает «Method not found», и отказ ровно того невидимого вида,
-# ради которого барьер выше и написан — сборка проходит, tsc проходит, страница
-# открывается и показывает «нет данных» там, где у вызова есть запасной путь.
-#
-# Направление одно: каждый вызов интерфейса обязан иметь метод. Обратное — метод, который
-# интерфейс не зовёт, — законно: у объекта есть вызовы из страницы протокола и из ssh.
-#
-# Переносы строк убираются до поиска: у половины вызовов тип занимает несколько строк
-# (`declare<{ ... }>(\n    'outbound_probe',`), и построчный grep их не видит вовсе.
-rpc=ui/src/lib/rpc.ts
-unknown=''
-for m in $(tr '\n' ' ' < "$rpc" | grep -oE ">\( *'[a-z0-9_]+'" | tr -d " >('" | sort -u); do
-    case " $methods " in
-        *" $m "*) ;;
-        *) unknown="$unknown $m" ;;
-    esac
-done
-[ -z "$unknown" ] || {
-    echo "интерфейс зовёт методы, которых нет в rpcd ($rpc):$unknown"
-    echo "ubus ответит «Method not found», а страница покажет «нет данных»"
-    exit 1
-}
+# Третье ребро контракта — вызовы интерфейса — переехало вместе с интерфейсом: Andromeda (репозиторий andromeda) сверяет свои
+# вызовы с таблицей методов splify2-api (`methods.tsv` в SDK), а не с исходником этого пакета.
 
 # Docker нужен только для упаковки, поэтому проверяется здесь, а не в шапке. Пока он
 # стоял первым, ни один барьер выше не запускался на машине без docker — то есть ровно
 # там, где правят rpcd и ACL, проверить их было нечем.
 command -v docker >/dev/null 2>&1 || { echo "нужен docker (сборка пакета в alpine)"; exit 1; }
 
-# Цвета в Tailwind называются БЕЗ приставки sp-: `bg-card`, `text-muted-foreground`,
-# `bg-success`. Приставка живёт только у CSS-переменных (--sp-card), из которых конфиг эти
-# цвета и собирает.
-#
-# Написать `bg-sp-card` — значит получить класс, которого нет: Tailwind его не сгенерирует,
-# браузер молча пропустит, и элемент останется без цвета. Ошибка не видна ничем, кроме глаз:
-# сборка проходит, tsc проходит, страница открывается. Так в интерфейсе прожили 219 таких
-# классов — зелёного кружка «Работает» не было вовсе, а карточки стояли без фона, и заметил
-# это человек, а не мы.
-bad="$(grep -rEo '\b(bg|text|border|ring|from|to|via|fill|stroke)-sp-[a-z-]*' ui/src 2>/dev/null | head -5)"
-[ -z "$bad" ] || {
-    echo "в классах есть приставка sp-, таких классов не существует:"
-    printf '%s\n' "$bad"
-    echo "цвета называются без неё: bg-card, text-muted-foreground, bg-success"
-    exit 1
-}
-
-# Размер и вес заголовка утилитой на самом h1–h4 НЕ ЗАДАТЬ, и это не стилистика.
-#
-# Сброс в ui/src/index.css объявляет у h1–h4 `font-size: inherit` и `font-weight: inherit`, и
-# написан он ВНЕ каскадных слоёв (почему — в комментарии к сбросам). Утилиты Tailwind живут в
-# @layer utilities, а неслоёные правила главнее любого слоя, поэтому `text-[26px] font-semibold`
-# на h1 не действует вовсе: получается 14 пикселей и вес 400. Специфичность не спасает —
-# проигрывает слой, а не селектор.
-#
-# Ошибка не видна ничем, кроме глаз: сборка проходит, tsc проходит, стенды на jsdom тоже —
-# jsdom не считает каскад из index.css. Поймано на снимке живого роутера, где вердикт
-# «Маршрутизация работает» оказался ростом с подпись в рельсе. Взамен есть три класса:
-# sp-verdict (26/600), sp-title (22/600), sp-sub (15/600).
-bad="$(grep -rEn --include='*.tsx' '<h[1-6][^>]*className="[^"]*(text-\[[0-9]|text-(xs|sm|base|lg|xl|2xl|3xl)|font-(medium|semibold|bold))' ui/src 2>/dev/null | head -5)"
-[ -z "$bad" ] || {
-    echo "у заголовка задан размер или вес утилитой — она не подействует:"
-    printf '%s\n' "$bad"
-    echo "используйте классы sp-verdict / sp-title / sp-sub (ui/src/index.css)"
-    exit 1
-}
-
-# Приписка к имени выпуска в интерфейсе — «26.9 Andromeda beta 1» — берётся из окружения
-# (SPLIFY_RELEASE_SUFFIX, см. ui/vite.config.ts) и версию пакета не трогает: та из VERSION.
-#
-# NODE СТАРШЕ 20 — ИЛИ ОБРАЗ. vite 8 и vitest 4 на node 18 не запускаются вовсе, и сборка
-# падает строкой про `styleText` из node:util — по ней не догадаться, что дело в версии
-# node. Docker для этого скрипта и так обязателен (проверка выше), поэтому машина со старым
-# node не остаётся без сборки: интерфейс собирается тем же образом, что и стенды
-# (tests/run.sh). Каталог монтируется КОРНЕМ дерева, а не ui/: сборка штампует номер в
-# бандлы и читает build-id рядом.
-ui_build() {
-    _ub_major="$(node -p 'process.versions.node.split(".")[0]' 2>/dev/null || echo 0)"
-    if [ "${_ub_major:-0}" -ge 20 ] 2>/dev/null; then
-        ( cd ui && npm run build )
-        return $?
-    fi
-    docker image inspect node:22-alpine >/dev/null 2>&1 || {
-        echo "нужен node >= 20 (найден $(node --version 2>/dev/null || echo 'нет node'))" >&2
-        echo "либо образ node:22-alpine: docker pull node:22-alpine" >&2
-        return 1
-    }
-    docker run --rm -v "$PWD":/w -w /w/ui node:22-alpine npm run build
-}
-ui_build > "$BUILD_LOG" 2>&1 || {
-    echo "сборка интерфейса провалилась:"
-    cat "$BUILD_LOG"
-    exit 1
-}
-
 rm -rf "$PKG"
-mkdir -p "$RES" "$PKG/etc/init.d" "$PKG/usr/libexec/rpcd" "$PKG/usr/sbin" "$PKG/etc/splify2" \
+mkdir -p "$PKG/etc/init.d" "$PKG/usr/libexec/rpcd" "$PKG/usr/sbin" "$PKG/etc/splify2" \
          "$PKG/lib/netifd/proto" "$PKG/www/luci-static/resources/protocol"
-cp -r ui/dist/* "$RES/"
 cp -r luci/htdocs/luci-static/resources/view "$PKG/www/luci-static/resources/"
 cp -r luci/root/usr/share "$PKG/usr/"
 cp files/usr/libexec/rpcd/splify2 "$PKG/usr/libexec/rpcd/splify2"
-cp files/usr/sbin/splify2-update-lists "$PKG/usr/sbin/splify2-update-lists"
-# Автообновление подписок. Отдельным файлом и отдельным заданием крона: у каждой подписки свой
-# интервал (от получаса до трёх суток), и хвостом суточного обновления списков это не сделать.
-cp files/usr/sbin/splify2-update-subs "$PKG/usr/sbin/splify2-update-subs"
+# Обновление списков переехало в плагин lists-catalog (plugins/lists-catalog, задача update-lists): строка crontab
+# теперь пишется plugin_sync из манифеста плагина, а не postinst пакета.
+# Автообновление подписок переехало в плагин subscriptions (plugins/subscriptions, задача update-subs).
 # Команда полного удаления следов. В postrm её быть НЕ МОЖЕТ: у opkg обновление пакета это
 # удаление плюс установка, поэтому чистка в postrm сносила бы настройки человека при каждом
 # обновлении. Поэтому — отдельная команда, которую зовут осознанно (см. шапку скрипта).
 cp files/usr/sbin/splify2-purge "$PKG/usr/sbin/splify2-purge"
-# Отклик для счётчика роутеров на сайте: своё задание крона раз в час (post-install ниже).
-cp files/usr/sbin/splify2-ping "$PKG/usr/sbin/splify2-ping"
+# Плагины: ссылки и ACL объектов splify2.p.<id> приводит в согласие с менеджером ядра эта команда
+# (postinst и первое открытие вкладки «Плагины»); сам обработчик — один общий файл без расширения,
+# на него указывают ссылки rpcd (plugin-rpcd), поэтому он лежит рядом с библиотеками, а не в libexec.
+cp files/usr/sbin/splify2-plugin-sync "$PKG/usr/sbin/splify2-plugin-sync"
+# Семя плагинов «из коробки» (ниже кладётся в /usr/share/splify2/seed) и команда, которая ставит их через менеджер ядра.
+cp files/usr/sbin/splify2-seed "$PKG/usr/sbin/splify2-seed"
+# ReCheck — обход DPI на прямом трафике: служба запускает движок из отдельного пакета recheck,
+# если тот стоит и обход включён (/etc/splify2/recheck.conf); иначе ничего не делает.
+cp files/etc/init.d/splify2-recheck "$PKG/etc/init.d/splify2-recheck"
+chmod 0755 "$PKG/etc/init.d/splify2-recheck"
 mkdir -p "$PKG/usr/share/splify2"
-# Описание второго издателя списков (itdoginfo/allow-domains): где он живёт, каким ТЕГОМ
-# РЕЛИЗА зафиксирован, что публикует и как его двоичные наборы становятся нашими списками.
-# Едет файлом, а не таблицей в скрипте, по тому же доводу, что каталог резолверов выше; а
-# тег в нём — это версия списков у каждого, кто ничего не настраивал, поэтому поднимать её
-# может только новая сборка пакета, а не роутер сам себе ночью.
-cp files/usr/share/splify2/allow-domains.sh "$PKG/usr/share/splify2/allow-domains.sh"
+# Схема ключей спеки, которой пользуется каркас на LuCI JS, пока ядро не умеет `steer spec-schema`
+# (метод spec_schema: ответ ядра — главный, этот файл — запасной, с пометкой source: bundled).
+cp files/usr/share/splify2/spec-schema.json "$PKG/usr/share/splify2/spec-schema.json"
+# Версии осей совместимости панели для менеджера плагинов ядра (compat.host-api, compat.splify2-api): он сверяет
+# с ними манифест плагина. Источник — те же числа, что отдаёт plugins_list (plugin.sh).
+mkdir -p "$PKG/usr/share/splify2/compat"
+sed -n 's/^PLUGIN_HOST_API="${PLUGIN_HOST_API:-\(.*\)}"$/\1/p' files/usr/lib/splify2/plugin.sh > "$PKG/usr/share/splify2/compat/host-api"
+sed -n 's/^PLUGIN_SPLIFY2_API="${PLUGIN_SPLIFY2_API:-\(.*\)}"$/\1/p' files/usr/lib/splify2/plugin.sh > "$PKG/usr/share/splify2/compat/splify2-api"
+for _a in host-api splify2-api; do test -s "$PKG/usr/share/splify2/compat/$_a" || { echo "нет версии оси $_a в plugin.sh"; exit 1; }; done
 # Общие куски обеих половин: скачивание (fetch.sh) и быстрый путь опроса (fast.sh). Каждый
 # подключается строкой `. /usr/lib/splify2/…`, и забыть любой — значит выкатить пакет, где
 # соответствующая половина не запускается вовсе. Копируется КАТАЛОГ ЦЕЛИКОМ, а не файлы по
@@ -217,11 +137,32 @@ chmod 0755 "$PKG/etc/uci-defaults/99-splify2"
 mkdir -p "$PKG/lib/upgrade/keep.d"
 cp files/lib/upgrade/keep.d/splify2 "$PKG/lib/upgrade/keep.d/splify2"
 chmod 0644 "$PKG/lib/upgrade/keep.d/splify2"
-chmod 0755 "$PKG/usr/libexec/rpcd/splify2" "$PKG/usr/sbin/splify2-update-lists" \
-           "$PKG/usr/sbin/splify2-update-subs" \
-           "$PKG/usr/sbin/splify2-purge" "$PKG/usr/sbin/splify2-ping"
-chmod 0644 "$PKG/usr/share/splify2/allow-domains.sh"
+chmod 0755 "$PKG/usr/libexec/rpcd/splify2" \
+           "$PKG/usr/sbin/splify2-purge"
 chmod 0644 "$PKG"/usr/lib/splify2/*.sh "$PKG"/usr/lib/splify2/rpcd/*.sh
+cp files/usr/lib/splify2/plugin-rpcd "$PKG/usr/lib/splify2/plugin-rpcd"
+chmod 0755 "$PKG/usr/lib/splify2/plugin-rpcd" "$PKG/usr/sbin/splify2-plugin-sync" "$PKG/usr/sbin/splify2-seed"
+# splify2-api (хуки, задачи, события, псевдонимы): таблица методов, запуск задач и раздача событий ядра.
+cp files/usr/lib/splify2/methods.tsv "$PKG/usr/lib/splify2/methods.tsv"
+chmod 0644 "$PKG/usr/lib/splify2/methods.tsv"
+cp files/usr/sbin/splify2-task "$PKG/usr/sbin/splify2-task"
+# Службы хоста для программ плагинов (splify2-api, «Службы хоста»): скачивание, спека, архив настроек каркаса,
+# настройки плагина, применение. Единственный путь плагина к файлам каркаса.
+cp files/usr/sbin/splify2-host "$PKG/usr/sbin/splify2-host"
+chmod 0755 "$PKG/usr/sbin/splify2-host"
+cp files/usr/sbin/splify2-events "$PKG/usr/sbin/splify2-events"
+cp files/etc/init.d/splify2-events "$PKG/etc/init.d/splify2-events"
+chmod 0755 "$PKG/usr/sbin/splify2-task" "$PKG/usr/sbin/splify2-events" "$PKG/etc/init.d/splify2-events"
+
+# Официальные репозитории плагинов splify2 (plugin-sdk/docs/index.md, «Репозитории по умолчанию»): splify2-core-plugins
+# (плагины «из коробки», из него обновляется семя) и splify2-extended-plugins (recheck, tgws, warpbox-ui — по желанию).
+# Оба наши и подписаны ключами splify2 из steer-core (index, plugins), поэтому official; пометку «не официальный» (В6)
+# получают только репозитории, которые человек подключил сам. Репозиторий протоколов (splify2) кладёт steer-core.
+mkdir -p "$PKG/etc/steer/plugins/repos.d"
+for r in splify2-core-plugins splify2-extended-plugins; do
+    cp "files/etc/steer/plugins/repos.d/$r.json" "$PKG/etc/steer/plugins/repos.d/$r.json"
+    chmod 0644 "$PKG/etc/steer/plugins/repos.d/$r.json"
+done
 
 # Протокол xsteer: обработчик netifd и страница LuCI.
 #
@@ -241,26 +182,36 @@ chmod 0755 "$PKG/lib/netifd/proto/xsteer.sh"
 cp luci/htdocs/luci-static/resources/protocol/xsteer.js \
    "$PKG/www/luci-static/resources/protocol/xsteer.js"
 
-# Идентификатор сборки: загрузчик читает его на каждой загрузке страницы и добавляет
-# к URL бандлов. Без него браузер держал бы старый интерфейс после обновления пакета —
-# ровно то, что в splify 1 переживало и обновления, и перезагрузки.
-# Номер СБОРКИ, а не версии. На выпуске они совпадают; сборка из main между выпусками несёт
-# тот же VERSION, что и прошлый выпуск, — и браузер, помнящий `?v=1.2.5`, брал бандл из кеша,
-# то есть после установки свежей сборки на роутере интерфейс оставался прежним (поймано на
-# роутере владельца: пакет заменён, build-id.txt тот же, страница старая). Поэтому вне тега
-# выпуска к версии приписывается ревизия, а к несохранённому дереву — «dirty»: у каждой
-# сборки свой адрес, и загрузчик (view/splify2/home.js) видит разницу через build-id.txt.
-# Версию пакета это не трогает — она из VERSION, как и раньше.
-BUILD_ID="$VERSION"
-if ! git describe --tags --exact-match >/dev/null 2>&1; then
-    _rev="$(git rev-parse --short HEAD 2>/dev/null || true)"
-    [ -n "$_rev" ] && BUILD_ID="$VERSION-$_rev"
-    [ -n "$(git status --porcelain 2>/dev/null)" ] && BUILD_ID="$BUILD_ID-dirty"
+# СЕМЯ ПЛАГИНОВ. Пакет несёт .s2p плагинов «из коробки» (решение владельца: после обновления 26.10.x человек ничего не
+# теряет, а Andromeda — теперь плагин, не часть пакета): плагины из plugins/ этого дерева и Andromeda из её репозитория.
+# Собираются инструментом SDK (`s2p lint --official`, `s2p build`) и ставятся командой splify2-seed в postinst.
+#
+#   S2P_KEY=ключ.sec          — подписать семя ключом официального репозитория (выпуск). Без ключа семя собирается
+#                               неподписанным, в него кладётся файл `unsigned`, и ставится оно с `--unsigned` — для разработки.
+#   ANDROMEDA_S2P=файл.s2p    — архив Andromeda (по умолчанию ../andromeda/out/andromeda-*-all.s2p, сборка репозитория
+#                               andromeda: `sh build.sh`). Без него пакет без панели Andromeda не собирается: человек
+#                               получил бы обновление, после которого привычной панели нет. Осознанно «только каркас» —
+#                               SPLIFY2_SEED_WITHOUT_ANDROMEDA=1.
+SEED_PKG="$PKG/usr/share/splify2/seed"
+SEED_BUILD=build/seed
+rm -rf "$SEED_BUILD"; mkdir -p "$SEED_PKG" "$SEED_BUILD"
+S2P_OUT_DIR="$PWD/$SEED_BUILD" sh plugins/build.sh > "$BUILD_LOG" 2>&1 \
+    || { echo "сборка плагинов семени провалилась:"; cat "$BUILD_LOG"; exit 1; }
+if [ -n "${ANDROMEDA_S2P:-}" ]; then
+    cp "$ANDROMEDA_S2P" "$SEED_BUILD/" || { echo "нет файла ANDROMEDA_S2P=$ANDROMEDA_S2P"; exit 1; }
+else
+    _an="$(ls -1 ../andromeda/out/andromeda-*-all.s2p 2>/dev/null | sort -V | tail -n 1)"
+    if [ -n "$_an" ]; then cp "$_an" "$SEED_BUILD/"
+    elif [ "${SPLIFY2_SEED_WITHOUT_ANDROMEDA:-}" != 1 ]; then
+        echo "нет архива Andromeda: соберите ../andromeda (sh build.sh) или задайте ANDROMEDA_S2P=файл.s2p"
+        echo "(только каркас, без панели: SPLIFY2_SEED_WITHOUT_ANDROMEDA=1)"
+        exit 1
+    fi
 fi
-printf '%s\n' "$BUILD_ID" > "$RES/build-id.txt"
-# И номер сборки нужно проштамповать в сами бандлы: npm build оставляет заглушку ?v=0.0.0,
-# иначе один чанк оказывается доступен по двум URL и preact грузится дважды.
-sed -i -E "s/\?v=[0-9]+\.[0-9]+\.[0-9]+/?v=$BUILD_ID/g" "$RES"/splify-*.js
+cp "$SEED_BUILD"/*.s2p "$SEED_PKG/"
+[ -n "${S2P_KEY:-}" ] || : > "$SEED_PKG/unsigned"
+test -n "$(ls "$SEED_PKG"/*.s2p 2>/dev/null)" || { echo "в семени нет ни одного плагина"; exit 1; }
+chmod 0644 "$SEED_PKG"/*
 
 # ВНЕ каталога пакета: всё, что лежит внутри, попадает в пакет как файл, и такой
 # .post-install приезжает на роутер как /.post-install — где сталкивается с чужим,
@@ -280,54 +231,44 @@ cat > build/scripts/post-install <<'EOF'
 if [ -x /etc/uci-defaults/99-splify2 ]; then
     ( . /etc/uci-defaults/99-splify2 ) >/dev/null 2>&1 && rm -f /etc/uci-defaults/99-splify2
 fi
-if ! grep -q splify2-update-lists /etc/crontabs/root 2>/dev/null; then
-    mkdir -p /etc/crontabs
-    printf '%s 5 * * * /usr/sbin/splify2-update-lists\n' "$(awk "BEGIN{srand();print int(rand()*60)}")" \
-        >> /etc/crontabs/root
-    /etc/init.d/cron enable 2>/dev/null
+# Обновление списков больше не строка этого пакета: его делает плагин lists-catalog (задача update-lists), а строку
+# crontab пишет plugin_sync. Прежняя строка снимается — команды /usr/sbin/splify2-update-lists в пакете нет.
+if grep -q splify2-update-lists /etc/crontabs/root 2>/dev/null; then
+    sed -i '/splify2-update-lists/d' /etc/crontabs/root
     /etc/init.d/cron restart 2>/dev/null
 fi
-# Автообновление подписок: задание смотрит по часам, кому пора, и только у тех, у кого
-# интервал задан. Раз в десять минут, потому что наименьший интервал — полчаса: реже значило
-# бы промахиваться мимо получаса на треть, чаще — будить роутер без дела.
-#
-# МИНУТА ЗДЕСЬ НЕ СЛУЧАЙНАЯ, и это не забывчивость: обращение наружу делает не само задание, а
-# только те подписки, чей срок подошёл, — то есть всплеска в одну секунду у тысячи роутеров не
-# получится при любой минуте. Случайность живёт там, где она нужна: у суточного обновления
-# списков и у отклика для счётчика на сайте.
-if ! grep -q splify2-update-subs /etc/crontabs/root 2>/dev/null; then
-    mkdir -p /etc/crontabs
-    printf '*/10 * * * * /usr/sbin/splify2-update-subs
-' >> /etc/crontabs/root
-    /etc/init.d/cron enable 2>/dev/null
+# Ссылки объектов плагинов, ACL и блок задач crontab приводятся в согласие с тем, что стоит у менеджера плагинов.
+# Автообновление подписок больше не строка этого пакета: его делает плагин subscriptions (задача update-subs), а строку
+# crontab пишет plugin_sync. Прежняя строка снимается — команды /usr/sbin/splify2-update-subs в пакете нет.
+if grep -q splify2-update-subs /etc/crontabs/root 2>/dev/null; then
+    sed -i '/splify2-update-subs/d' /etc/crontabs/root
     /etc/init.d/cron restart 2>/dev/null
 fi
-# Отклик для счётчика роутеров на сайте. Крон зовёт команду раз в час, а отправляет она сама,
-# когда с прошлого отклика прошло 23 часа (после перезагрузки — на ближайшем такте).
-#
-# МИНУТА СЛУЧАЙНАЯ И СВОЯ, чтобы роутеры не стучались в сайт в одну секунду. `srand()` в
-# busybox awk сеет временем, а задания ставятся в одну секунду — поэтому к времени подмешан
-# номер процесса, иначе минута совпала бы с минутой обновления списков.
-#
-# Прежняя почасовая отправка отчёта (splify2-telemetry) убрана вместе со своей строкой.
-if grep -q splify2-telemetry /etc/crontabs/root 2>/dev/null; then
-    sed -i '/splify2-telemetry/d' /etc/crontabs/root
-    /etc/init.d/cron restart 2>/dev/null
-fi
-if ! grep -q splify2-ping /etc/crontabs/root 2>/dev/null; then
-    mkdir -p /etc/crontabs
-    printf '%s * * * * /usr/sbin/splify2-ping\n' \
-        "$(awk -v s=$$ "BEGIN{srand();srand(s+int(rand()*100000));print int(rand()*60)}")" \
-        >> /etc/crontabs/root
-    /etc/init.d/cron enable 2>/dev/null
+# Счётчика установок больше нет: строка крона прежнего отклика (splify2-ping) снимается
+# при обновлении.
+if grep -q 'splify2-ping' /etc/crontabs/root 2>/dev/null; then
+    sed -i '/splify2-ping/d' /etc/crontabs/root
     /etc/init.d/cron restart 2>/dev/null
 fi
 # https-dns-proxy и zapret этот пакет не настраивает и от них не зависит: шифрованный DNS
 # теперь у движка (`dns.upstreams` в спеке), а обход DPI из splify2 убран. Уже стоящие у
 # человека пакеты и их настройки не трогаются.
+# ReCheck: после обновления службу надо поднять заново. opkg обновляет удалением и установкой, и
+# перед удалением служба снята (pre-remove ниже) вместе с таблицей nftables; без этого включённый
+# человеком обход молчал бы до перезагрузки. Только если он включён: иначе незачем.
+if [ -x /etc/init.d/splify2-recheck ] && grep -qx enabled=1 /etc/splify2/recheck.conf 2>/dev/null; then
+    /etc/init.d/splify2-recheck enable 2>/dev/null
+    /etc/init.d/splify2-recheck restart >/dev/null 2>&1
+fi
 # Кеш LuCI обязателен к сбросу: иначе меню и view остаются прежними до перезагрузки.
 rm -f /tmp/luci-indexcache.* 2>/dev/null
 rm -rf /tmp/luci-modulecache/ 2>/dev/null
+# Плагины: ссылки и ACL их объектов ubus (после обновления прошивки плагины на месте, ссылок нет).
+# До перечитки rpcd ниже — одной на всё.
+# Плагины «из коробки» (Andromeda, языки, логика) — из семени пакета, без сети: одно обновление, и привычная панель на месте.
+# Что не встало (ядра ещё нет), повторится по cron; снятое человеком не возвращается (/etc/splify2/seeded).
+[ -x /usr/sbin/splify2-seed ] && /usr/sbin/splify2-seed --no-reload 2>&1 | sed 's/^/splify2: плагин: /'
+[ -x /usr/sbin/splify2-plugin-sync ] && /usr/sbin/splify2-plugin-sync --no-reload >/dev/null 2>&1
 /etc/init.d/rpcd reload 2>/dev/null
 # Перечитка (SIGHUP) снимает объекты обработчиков и регистрирует их заново вызовом `list`; если
 # в этот момент обработчик не ответил, объекта splify2 нет до следующего перезапуска rpcd, и
@@ -372,6 +313,29 @@ exit 0
 EOF
 chmod +x build/scripts/post-install
 
+# Перед снятием пакета служба ReCheck останавливается, а таблица nftables уходит вместе с
+# остановкой. Без этого после `apk del`/`opkg remove` init-скрипта уже нет, а таблица
+# splify2_recheck остаётся и гоняет пакеты в очередь, которую никто не слушает (`bypass`
+# их пропускает, но лишний проход по цепочкам и счётчики живут до перезагрузки). Автозапуск
+# снимается тоже; при обновлении opkg его вернёт post-install, если обход включён.
+cat > build/scripts/pre-remove <<'EOF'
+#!/bin/sh
+[ -n "${IPKG_INSTROOT}" ] && exit 0
+if [ -x /etc/init.d/splify2-recheck ]; then
+    /etc/init.d/splify2-recheck stop >/dev/null 2>&1
+    /etc/init.d/splify2-recheck disable >/dev/null 2>&1
+fi
+nft delete table inet splify2_recheck >/dev/null 2>&1
+# Объекты плагинов указывали на обработчик этого пакета: без него rpcd на каждой перечитке спотыкался
+# бы о ссылки. Обновление (opkg — удаление и установка) вернёт их через post-install.
+for _l in /usr/libexec/rpcd/splify2.p.*; do [ -L "$_l" ] && rm -f "$_l"; done
+rm -f /usr/share/rpcd/acl.d/splify2-p-*.json
+# CGI плагинов (splify2.cgi) выставлял этот пакет; вернёт post-install вместе с объектами.
+for _c in /www/cgi-bin/*; do case "$(readlink "$_c" 2>/dev/null)" in /usr/lib/steer/plugins/*/cgi/*) rm -f "$_c" ;; esac; done
+exit 0
+EOF
+chmod +x build/scripts/pre-remove
+
 # ЧТО ОБЪЯВЛЕНО ЗАВИСИМОСТЬЮ, А ЧТО НЕТ, И ПОЧЕМУ ЭТО РАЗНЫЕ ОТВЕТЫ.
 #
 # https-dns-proxy — НЕ объявлен (прежние выпуски объявляли). Шифрованный DNS теперь делает
@@ -380,9 +344,7 @@ chmod +x build/scripts/post-install
 # пакет, и мы его не трогаем.
 #
 # curl — объявлен. Страну, внешний адрес и отклик выхода мерит outbound_geo запросом curl через
-# устройство выхода (`--interface`; uclient-fetch к устройству не привязывается). Тем же способом
-# отклик для счётчика на сайте (splify2-ping) идёт напрямую по внешнему устройству и через выходы
-# ядра, если напрямую сайт не ответил. До 26.10 curl
+# устройство выхода (`--interface`; uclient-fetch к устройству не привязывается). До 26.10 curl
 # приезжал зависимостью https-dns-proxy, и снятие той зависимости его забрало: на OpenWrt 25.12
 # apk при обновлении пакета вычищает и https-dns-proxy, и curl с libcurl как осиротевшие (снято
 # с QEMU-стенда: 26.9.2 → 26.10.0), а на свежей установке curl не появлялся вовсе — обзор писал
@@ -414,8 +376,10 @@ chmod +x build/scripts/post-install
 # (fetch.sh), про второй такой файл он промолчал бы, а второй появился (fast.sh, быстрый путь
 # опроса). Теперь добавить подключение и забыть укладку нельзя.
 for _need in $(grep -ho '/usr/lib/splify2/[a-z0-9_-]*\.sh' \
-                    files/usr/libexec/rpcd/splify2 files/usr/sbin/splify2-update-lists \
-                    files/usr/sbin/splify2-ping |
+                    files/usr/libexec/rpcd/splify2 files/usr/sbin/splify2-host \
+                    files/etc/init.d/splify2-recheck files/usr/lib/splify2/rpcd/*.sh \
+                    files/usr/lib/splify2/*.sh files/usr/sbin/splify2-task files/usr/sbin/splify2-events \
+                    plugins/*/lib/*.sh plugins/*/bin/* |
                sort -u); do
     test -s "$PKG$_need" || {
         echo "в пакете нет ${_need#/} — подключающая его половина не запустится"; exit 1; }
@@ -426,6 +390,10 @@ for _g in $(sed -n 's/.*) _grp=\([a-z]*\) ;;$/\1/p' files/usr/libexec/rpcd/splif
     test -s "$PKG/usr/lib/splify2/rpcd/m-$_g.sh" || {
         echo "в пакете нет usr/lib/splify2/rpcd/m-$_g.sh — методы группы $_g не ответят"; exit 1; }
 done
+# Общий обработчик объектов плагинов: на него указывают ссылки rpcd, исполняемый, без расширения (его
+# не видит барьер выше по `.sh`).
+test -x "$PKG/usr/lib/splify2/plugin-rpcd" || {
+    echo "в пакете нет исполняемого usr/lib/splify2/plugin-rpcd — методы плагинов не ответят"; exit 1; }
 test -s "$PKG/usr/lib/splify2/rpcd/common.sh" || {
     echo "в пакете нет usr/lib/splify2/rpcd/common.sh — ни один метод объекта не ответит"; exit 1; }
 # Без этой команды следы пакета убрать нечем: зона фаервола, правила прежних версий, ключ
@@ -433,22 +401,24 @@ test -s "$PKG/usr/lib/splify2/rpcd/common.sh" || {
 # автоматически чистить их в postrm нельзя (обновление opkg это удаление плюс установка).
 test -x "$PKG/usr/sbin/splify2-purge" || {
     echo "в пакете нет usr/sbin/splify2-purge — следы пакета убрать будет нечем"; exit 1; }
-# Без этой команды крон зовёт пустоту, а переключатель в интерфейсе включён — обещание,
-# которого пакет не исполняет. Проверяется и бит исполнения.
-test -x "$PKG/usr/sbin/splify2-ping" || {
-    echo "в пакете нет usr/sbin/splify2-ping — отклик для счётчика на сайте не уйдёт"
+# Описание второго издателя списков лежит в плагине lists-catalog (plugins/lists-catalog/lib/allow-domains.sh) и едет
+# в его архиве, а не в пакете каркаса. Зашитый в него тег релиза проверяется здесь: без него версия списков у человека
+# определялась бы тем, когда он нажал кнопку, — плавающей ссылкой.
+grep -qE '^AD_TAG_DEFAULT=\$\{AD_TAG_DEFAULT:-[0-9]' plugins/lists-catalog/lib/allow-domains.sh || {
+    echo "в plugins/lists-catalog/lib/allow-domains.sh не зашит тег релиза — версия списков окажется плавающей"
     exit 1; }
-# Без описания источника второй издатель не работает вовсе, и молча: объект rpcd ответит
-# «пакет собран не целиком», а ночное обновление объявит каждый его список «нет в манифесте,
-# пропущен» — то есть список замрёт последней скачанной копией НАВСЕГДА, без признака
-# ошибки. Проверяется не только наличие, но и зашитый тег: без него версия списков у
-# человека определялась бы тем, когда он нажал кнопку.
-test -s "$PKG/usr/share/splify2/allow-domains.sh" || {
-    echo "в пакете нет usr/share/splify2/allow-domains.sh — списки itdoginfo/allow-domains брать нечем"
+# Каркас на классическом LuCI JS: виды лежат в пакете, без сборки (view/splify2/index.js и view/splify2/core).
+for _need in view/splify2/index.js view/splify2/core/main.js view/splify2/core/autoform.js \
+             view/splify2/core/i18n.js view/splify2/core/strings.json; do
+    test -s "$PKG/www/luci-static/resources/$_need" || {
+        echo "в пакете нет $_need — каркас splify2 не откроется"
+        exit 1; }
+done
+test -s "$PKG/usr/share/splify2/spec-schema.json" || {
+    echo "в пакете нет usr/share/splify2/spec-schema.json — у каркаса не будет схемы ключей на ядре без spec-schema"
     exit 1; }
-grep -qE '^AD_TAG_DEFAULT=\$\{AD_TAG_DEFAULT:-[0-9]' "$PKG/usr/share/splify2/allow-domains.sh" || {
-    echo "в usr/share/splify2/allow-domains.sh не зашит тег релиза — версия списков окажется плавающей"
-    exit 1; }
+test -x "$PKG/usr/sbin/splify2-seed" || {
+    echo "в пакете нет usr/sbin/splify2-seed — плагины «из коробки» поставить будет нечем"; exit 1; }
 mkdir -p "$OUT"
 # `&&` после установки apk-tools, а не `;`. С точкой с запятой провал установки игнорировался
 # и проявлялся командой позже — как отсутствующий `apk mkpkg`, о чём говорилось «упаковка
@@ -456,12 +426,14 @@ mkdir -p "$OUT"
 # называлась вовсе, а она совсем не та, о которой думает читающий это сообщение.
 docker run --rm -v "$PWD":/w -w /w alpine:latest sh -c \
     "apk add --no-cache apk-tools >/dev/null 2>&1 && apk mkpkg \
-       --info name:luci-app-splify2 --info version:$VERSION-r1 \
+       --info name:splify2 --info version:$VERSION-r1 \
+       --info provides:luci-app-splify2 --info replaces:luci-app-splify2 \
        --info description:'splify2: правила, выходы и списки поверх ядра steer' \
-       --info arch:noarch --info depends:'luci-base ip-full curl' \
+       --info arch:noarch --info depends:'luci-base ip-full curl ucode ucode-mod-fs ucode-mod-ubus' \
        --script post-install:build/scripts/post-install \
        --script post-upgrade:build/scripts/post-install \
-       -F $PKG -o $OUT/luci-app-splify2-$VERSION-1_noarch.apk" > "$BUILD_LOG" 2>&1 \
+       --script pre-deinstall:build/scripts/pre-remove \
+       -F $PKG -o $OUT/splify2-$VERSION-1_noarch.apk" > "$BUILD_LOG" 2>&1 \
     || { echo "упаковка apk провалилась:"; cat "$BUILD_LOG"; exit 1; }
 
 # ---- тот же пакет в формате opkg ---------------------------------------------
@@ -498,9 +470,12 @@ fi
 # дереву: иначе служебные файлы уехали бы в полезную нагрузку apk.
 mkdir -p "$PKG/CONTROL"
 cat > "$PKG/CONTROL/control" <<EOF
-Package: luci-app-splify2
+Package: splify2
 Version: $VERSION-1
-Depends: luci-base, ip-full, curl
+Depends: luci-base, ip-full, curl, ucode, ucode-mod-fs, ucode-mod-ubus
+Provides: luci-app-splify2
+Replaces: luci-app-splify2
+Conflicts: luci-app-splify2
 Architecture: all
 Maintainer: xyzmean
 Section: luci
@@ -508,11 +483,13 @@ Description: splify2: правила, выходы и списки поверх 
 EOF
 cp build/scripts/post-install "$PKG/CONTROL/postinst"
 chmod 0755 "$PKG/CONTROL/postinst"
+cp build/scripts/pre-remove "$PKG/CONTROL/prerm"
+chmod 0755 "$PKG/CONTROL/prerm"
 if "$PWD/$IPKG" "$PKG" "$PWD/$OUT" >/dev/null 2>&1; then
     # ipkg-build называет файл через подчёркивания; приводим к тому же виду, что у apk,
     # чтобы в релизе оба формата одного пакета лежали рядом и читались одинаково.
-    mv "$OUT/luci-app-splify2_${VERSION}-1_all.ipk" \
-       "$OUT/luci-app-splify2-${VERSION}-1_all.ipk" 2>/dev/null || true
+    mv "$OUT/splify2_${VERSION}-1_all.ipk" \
+       "$OUT/splify2-${VERSION}-1_all.ipk" 2>/dev/null || true
 else
     echo "упаковка ipk провалилась"; exit 1
 fi

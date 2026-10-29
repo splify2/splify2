@@ -1,9 +1,9 @@
 #!/bin/sh
 # Настройка пакета объявляется системе здесь, а не заводится на первом обращении.
 #
-# ЗАЧЕМ. `uci set splify2.main.<ключ>` в несуществующий файл молча ничего не делает — на этом
-# однажды терялась ссылка подписки: метод отвечал ok, а значение не сохранялось. rpcd с тех
-# пор создаёт файл и секцию сам (см. uci_file), и это правильная оборона — но не то место.
+# ЗАЧЕМ. `uci set splify2.main.<ключ>` в несуществующий файл молча ничего не делает: метод
+# отвечал бы ok, а значение не сохранялось. rpcd создаёт файл и секцию сам (см. uci_file), и это
+# правильная оборона — но не то место.
 # Настройка, которую пакет приносит с собой, объявляется через /etc/uci-defaults: тогда
 # `uci show splify2` отвечает с первой секунды после установки, а не появляется где-то
 # посередине жизни.
@@ -12,14 +12,11 @@
 # обновлении пакета менеджер спрашивает про него или откатывает изменения человека. Скрипт
 # uci-defaults запускается один раз, ничего не перезаписывает и исчезает после успеха.
 #
-# ЧЕГО ЭТОТ ФАЙЛ НЕ ДЕЛАЕТ — и до запуска 65 здесь было написано, что делает. Прежняя
-# редакция утверждала, что настройка «попадает в архив настроек наравне с остальным
-# /etc/config». Это неверно: sysupgrade и «Создать архив» собирают список из conffiles
-# установленных пакетов, /etc/sysupgrade.conf и /lib/upgrade/keep.d/*, и общего правила
-# «сохраняем /etc/config» не существует — соседние файлы там лежат потому, что их объявили
-# ИХ пакеты. Заведённая здесь настройка не была объявлена нигде и терялась при обновлении
-# прошивки молча, вся, включая ссылку подписки. Объявляет её /lib/upgrade/keep.d/splify2 —
-# у keep.d нет ни одного из недостатков conffiles, названных выше.
+# ЧЕГО ЭТОТ ФАЙЛ НЕ ДЕЛАЕТ: не сохраняет настройку при обновлении прошивки. Общего правила
+# «сохраняем /etc/config» не существует: sysupgrade и «Создать архив» собирают список из
+# conffiles установленных пакетов, /etc/sysupgrade.conf и /lib/upgrade/keep.d/*, а соседние
+# файлы лежат там потому, что их объявили ИХ пакеты. Настройку, заведённую здесь, объявляет
+# /lib/upgrade/keep.d/splify2 — у keep.d нет недостатков conffiles, названных выше.
 [ -n "${IPKG_INSTROOT}" ] && exit 0
 
 # Идемпотентно: секция заводится, только если её нет. Значений по умолчанию НЕ ставим —
@@ -57,35 +54,76 @@ if [ "${_rt:-30}" -lt 120 ]; then
     # кнопкой. Тот же приём и по той же причине — в splify2_install (m-engine.sh).
     [ -x /etc/init.d/rpcd ] && ( sleep 2; /etc/init.d/rpcd restart ) >/dev/null 2>&1 &
 fi
-# КЕШ КАТАЛОГА УМОЛЧАНИЯ СБРАСЫВАЕТСЯ ПРИ ОБНОВЛЕНИИ ПАКЕТА.
-#
-# Каталог лежит в /etc/splify2/manifest.json и перечитывается, только когда файла нет, а
-# адрес умолчания сменился (ru-bypass-ipsets → splify2-lists). У роутера с 1.2.5 кеш прежнего
-# издателя доживал до ночного обновления списков: каталог в интерфейсе — старый, а
-# lists_source отвечает новым адресом и «умолчание». Сбрасывается только кеш умолчания: свой
-# адрес человек задал сам, и его каталог никуда не переезжал. Файл восстанавливается при первом
-# обращении к каталогу (m-lists.sh) и при apply (fetch_missing_lists); rm -f, а не скачивание —
-# сети в postinst может не быть, и ждать её здесь нельзя.
-if [ -z "$(uci -q get splify2.main.manifest_url 2>/dev/null)" ]; then
-    rm -f /etc/splify2/manifest.json
-fi
-# Ключи прежнего отчёта о работе (до 26.10): адрес и ключ панели, отметка и причина отказа,
-# адрес сервиса города (`geo_city_url`). Остались согласие (`telemetry`) и идентификатор
-# (`telemetry_id`) — их читает отклик для счётчика на сайте (splify2-ping).
-#
-# И его файлы в /var: город и номер сети провайдера, счётчики отвалов, признак
-# загрузки, отметки внеплановых отправок и падений, недоотправленный пакет. Это память, а не
-# флеш, но лежать им до перезагрузки незачем, а город провайдера после «отчёт убран» — тем более.
-# `SPLIFY2_TEST_ROOT` — корень для стенда (tests/telemetrymatch.sh, tests/pkgmatch.sh); на роутере пуст.
+# Ключи счётчика установок, которого больше нет: согласие (`telemetry`), идентификатор
+# (`telemetry_id`) и адрес для стендов (`ping_url`), и его отметка в /tmp.
+# `SPLIFY2_TEST_ROOT` — корень для стенда (tests/pkgmatch.sh); на роутере пуст.
 _old=""
-for _k in telemetry_url telemetry_key telemetry_at telemetry_error geo_city_url; do
+for _k in telemetry telemetry_id ping_url; do
     uci -q get "splify2.main.$_k" >/dev/null 2>&1 && { uci -q delete "splify2.main.$_k"; _old=1; }
 done
 _r="${SPLIFY2_TEST_ROOT:-}"
-rm -f "$_r/var/lib/splify2/net" "$_r/var/run/splify2-boot-id" "$_r/var/run/splify2-events" \
-      "$_r/var/run/splify2-crash" "$_r/var/run/splify2-telemetry-now" "$_r"/tmp/splify2-telemetry.* \
-      2>/dev/null
+rm -f "$_r/tmp/splify2-ping" 2>/dev/null
 [ -n "$_old" ] && uci -q commit splify2
+# НАСТРОЙКИ КАТАЛОГА СПИСКОВ ПЕРЕЕХАЛИ В ПЛАГИН lists-catalog. Адрес каталога, порог сокращения списка и тег списков
+# второго издателя были полями uci каркаса (splify2.main.manifest_url, list_shrink_factor, allow_domains_tag); теперь это
+# настройки плагина — conf/lists-catalog/settings.json, форма по схеме плагина. Человек, который их менял, не должен
+# потерять выбор при обновлении: значения переносятся один раз (если файла настроек плагина ещё нет), поля uci снимаются.
+# Плагин может быть ещё не поставлен — каталог его настроек менеджер плагинов сохраняет всегда и отдаст плагину как есть.
+# Начало и конец блока размечены для стенда (tests/pkgmatch.sh).
+# >>> перенос настроек каталога списков
+_pc="${SPLIFY2_TEST_ROOT:-}/etc/steer/plugins/conf/lists-catalog"
+_mig=""; _mig_old=""
+for _k in manifest_url list_shrink_factor allow_domains_tag; do
+    _v="$(uci -q get "splify2.main.$_k" 2>/dev/null)"
+    [ -n "$_v" ] || continue
+    _mig_old=1
+    case "$_k" in
+        list_shrink_factor) case "$_v" in *[!0-9]*) continue ;; esac; _mig="${_mig:+$_mig,}\"$_k\":$_v" ;;
+        *) _v="$(printf '%s' "$_v" | sed -e 's/\\/\\\\/g' -e 's/"/\\"/g')"; _mig="${_mig:+$_mig,}\"$_k\":\"$_v\"" ;;
+    esac
+done
+if [ -n "$_mig_old" ]; then
+    if [ -n "$_mig" ] && [ ! -e "$_pc/settings.json" ]; then
+        mkdir -p "$_pc" 2>/dev/null && printf '{%s}\n' "$_mig" > "$_pc/settings.json" 2>/dev/null
+    fi
+    if [ -s "$_pc/settings.json" ] || [ -z "$_mig" ]; then
+        for _k in manifest_url list_shrink_factor allow_domains_tag; do uci -q delete "splify2.main.$_k" 2>/dev/null; done
+        uci -q commit splify2
+    fi
+fi
+# <<< перенос настроек каталога списков
+# РАСПИСАНИЕ ОБНОВЛЕНИЯ ПОДПИСОК ПЕРЕЕХАЛО В ПЛАГИН subscriptions. Интервал был полем uci (splify2.main.sub_auto у первой
+# подписки, splify2.sub_<имя>.auto у остальных), отметка последней попытки — файлом рядом с файлом узлов. Теперь это данные
+# плагина — conf/subscriptions/schedule («имя минуты») и conf/subscriptions/stamps/<имя>. Перенос один раз (если расписания
+# плагина ещё нет): человек не должен потерять интервал при обновлении; поля uci снимаются, отметки перекладываются.
+# >>> перенос расписания подписок
+_pc="${SPLIFY2_TEST_ROOT:-}/etc/steer/plugins/conf/subscriptions"
+_sched=""
+for _n in main $(uci -q show splify2 2>/dev/null | sed -n "s/^splify2\.sub_\([A-Za-z0-9_]*\)=subscription\$/\1/p"); do
+    if [ "$_n" = main ]; then
+        _m="$(uci -q get splify2.main.sub_auto 2>/dev/null)"; _stf="${SPLIFY2_TEST_ROOT:-}/etc/steer/sub.auto"
+    else
+        _m="$(uci -q get "splify2.sub_$_n.auto" 2>/dev/null)"; _stf="${SPLIFY2_TEST_ROOT:-}/etc/steer/subs/$_n.auto"
+    fi
+    [ -n "$_m" ] || continue
+    case "$_m" in *[!0-9]*) continue ;; esac
+    _sched="$_sched$_n $_m
+"
+    if [ ! -e "$_pc/schedule" ] && [ -s "$_stf" ]; then
+        mkdir -p "$_pc/stamps" 2>/dev/null && cp "$_stf" "$_pc/stamps/$_n" 2>/dev/null
+    fi
+done
+if [ -n "$_sched" ]; then
+    [ -e "$_pc/schedule" ] || { mkdir -p "$_pc" 2>/dev/null && printf '%s' "$_sched" > "$_pc/schedule" 2>/dev/null; }
+    if [ -s "$_pc/schedule" ]; then
+        uci -q delete splify2.main.sub_auto 2>/dev/null
+        for _n in $(uci -q show splify2 2>/dev/null | sed -n "s/^splify2\.sub_\([A-Za-z0-9_]*\)=subscription\$/\1/p"); do
+            uci -q delete "splify2.sub_$_n.auto" 2>/dev/null
+        done
+        uci -q commit splify2
+    fi
+fi
+# <<< перенос расписания подписок
 # ПУСТАЯ СПЕКА ПРИ УСТАНОВКЕ — иначе чистый роутер выглядит сломанным.
 #
 # Движок читает настройку из одного файла и без него не отвечает никому: `steer status`
@@ -100,9 +138,7 @@ rm -f "$_r/var/lib/splify2/net" "$_r/var/run/splify2-boot-id" "$_r/var/run/splif
 # правил нет, трафик идёт напрямую. С ней движок отвечает как обычно, служба поднимается, а
 # пульт говорит «Трафику некуда идти» и ведёт к настройке — то есть правду, с дорогой.
 #
-# Форма — спека v2 (`version: 2`): её пишет интерфейс. Прежнюю (`schema`) ядро 2.0 тоже читает
-# и переводит само, но заводить новую в прежней форме незачем: первое же сохранение из
-# интерфейса переписало бы её в v2. Файл создаётся
+# Форма — спека v2 (`version: 2`). Файл создаётся
 # ТОЛЬКО когда нет ни spec.json, ни spec.yaml: переустановка пакета поверх настроенного
 # роутера не смеет тронуть чужую работу, а две спеки рядом движок отвергает целиком.
 #
@@ -115,44 +151,10 @@ rm -f "$_r/var/lib/splify2/net" "$_r/var/run/splify2-boot-id" "$_r/var/run/splif
 # ЯДРО ВЕДЁТ steer-box-connector (podkop, forkop) — спеку не заводим и службу steer не поднимаем:
 # она делила бы с его steerd таблицы и метки, а коннектор отказывается работать рядом со службой
 # steer, у которой своя спека. Признак тот же, что у box_busy в rpcd.
-# Следы DoH и обхода DPI (26.9.x). Эти части убраны в 26.10 (6458af4), а их следы при обновлении
-# оставались: ключи в /etc/config/splify2 и то, что живёт в ядре Linux до перезагрузки, — правило
-# «DoH через туннель» (`ip rule pref 29000 uidrange <nobody> lookup 290` и маршрут в таблице 290)
-# и таблицы nft splify2_doh, splify2_zm (фикс Zapret Manager), splify2_ztest. Снято с QEMU-стенда
-# (26.9.2 → 26.10.0): правило и splify2_zm остались, а ставить их заново больше некому, то есть
-# поведение менялось молча на ближайшей перезагрузке. Снимаем сразу; правило — только своё
-# (pref 29000 с таблицей 290), таблицы — только свои имена. Тот же набор снимает splify2-purge.
-# Начало и конец блока размечены для стенда (tests/pkgmatch.sh).
-# >>> следы DoH и zapret
-_old26=""
-for _k in doh_managed doh_out doh_prev_enabled doh_via_tunnel zapret_autoselect zapret_source zm_fix; do
-    uci -q get "splify2.main.$_k" >/dev/null 2>&1 && { uci -q delete "splify2.main.$_k"; _old26=1; }
-done
-[ -n "$_old26" ] && uci -q commit splify2
-_n=0
-while [ "$_n" -lt 32 ] && ip rule show 2>/dev/null | grep -q '^29000:.* lookup 290'; do
-    ip rule del pref 29000 table 290 2>/dev/null || break
-    _n=$((_n + 1))
-done
-[ "$_n" -gt 0 ] && ip route flush table 290 2>/dev/null
-for _t in splify2_doh splify2_zm splify2_ztest; do
-    nft list table inet "$_t" >/dev/null 2>&1 && nft delete table inet "$_t" 2>/dev/null
-done
-# <<< следы DoH и zapret
-
 # Заведение спеки и служба ядра. Начало и конец блока размечены для стенда (tests/pkgmatch.sh):
-# корень — тот же шов `_r`, что у блока выше, на роутере он пуст.
+# корень — тот же шов `_r`, что у блока телеметрии выше, на роутере он пуст.
 # >>> пустая спека и служба ядра
 SPEC="$_r/etc/steer/spec.json"
-# Откат с 26.11: spec.yaml от перевода панелью (рядом копия spec.json.bak) возвращается в spec.json
-# ядром — эта версия читает только его. Та же логика и условия — fast.sh, spec_rollback.
-if [ ! -s "$SPEC" ] && [ -s "$_r/etc/steer/spec.yaml" ] &&
-   [ -e "$SPEC.bak" ] &&
-   "$_r/usr/sbin/steer" spec convert --json --spec "$_r/etc/steer/spec.yaml" > "$SPEC.new" 2>/dev/null &&
-   [ "$(head -c 1 "$SPEC.new")" = "{" ]; then
-    mv "$SPEC.new" "$SPEC" && mv "$_r/etc/steer/spec.yaml" "$_r/etc/steer/spec.yaml.bak"
-fi
-rm -f "$SPEC.new" 2>/dev/null
 if [ ! -s "$SPEC" ] && [ ! -s "$_r/etc/steer/spec.yaml" ] &&
    ! grep -q steer-box-connector "$_r/etc/init.d/sing-box" 2>/dev/null; then
     mkdir -p "$_r/etc/steer" 2>/dev/null
@@ -182,7 +184,9 @@ fi
 # <<< пустая спека и служба ядра
 
 
-# САМОЛЕЧЕНИЕ СПЕКИ ПРИ УСТАНОВКЕ И ОБНОВЛЕНИИ (spec_heal_ipv6 в rpcd/m-spec.sh). Выходы-интерфейсы
+# САМОЛЕЧЕНИЕ СПЕКИ ПРИ УСТАНОВКЕ И ОБНОВЛЕНИИ (spec_heal_zapret и spec_heal_ipv6 в rpcd/m-spec.sh).
+# Первое убирает выходы `kind: zapret`, которых ядро больше не принимает (правила идут в direct);
+# пакет zapret и его настройку оно не трогает. Второе: выходы-интерфейсы
 # без ключа ipv6, записанные прежней панелью, получают `ipv6: nat` (у устройства есть адрес IPv6)
 # или `ipv6: off` (адреса нет, клиенты идут по IPv4), и диагностика ядра перестаёт просить masq6 у
 # зоны, которую создали мы сами. Тот же шаг делает каждый apply, так что здесь — чтобы исправление

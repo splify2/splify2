@@ -1,0 +1,48 @@
+name: Индекс плагинов
+
+# Переподпись индекса splify2-core-plugins (splify2/splify2-core-plugins, gh-pages; его подключает пакет splify2).
+# Индекс живёт 30 дней, и роутер просроченный не принимает: раз в неделю — новые generated и expires, содержимое
+# прежнее. Секреты S2P_KEY_INDEX, S2P_KEY_PLUGINS и PLUGINS_TOKEN (запись в splify2/splify2-core-plugins).
+on:
+  schedule:
+    - cron: '27 3 * * 1'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: plugins-index
+  cancel-in-progress: false
+
+jobs:
+  refresh:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/setup-go@v5
+        with:
+          go-version: '1.22'
+          cache: false
+      - name: Переподписать индекс
+        env:
+          SDK_REF: ${{ vars.PLUGIN_SDK_REF || 'main' }}
+          S2P_KEY_PLUGINS: ${{ secrets.S2P_KEY_PLUGINS }}
+          S2P_KEY_INDEX: ${{ secrets.S2P_KEY_INDEX }}
+          PUBLISH_TOKEN: ${{ secrets.PLUGINS_TOKEN }}
+        run: |
+          set -eu
+          [ -n "$S2P_KEY_PLUGINS" ] && [ -n "$S2P_KEY_INDEX" ] && [ -n "$PUBLISH_TOKEN" ] || {
+            echo "::error::нужны секреты S2P_KEY_PLUGINS, S2P_KEY_INDEX и PLUGINS_TOKEN"; exit 1; }
+          git clone -q --depth 1 --branch "$SDK_REF" https://github.com/splify2/plugin-sdk "$RUNNER_TEMP/plugin-sdk"
+          ( cd "$RUNNER_TEMP/plugin-sdk" && sh build.sh )
+          K="$RUNNER_TEMP/k"; mkdir -p "$K"
+          ( umask 077; printf '%s\n' "$S2P_KEY_PLUGINS" > "$K/plugins.sec"; printf '%s\n' "$S2P_KEY_INDEX" > "$K/index.sec" )
+          python3 - "$K/plugins.sec" "$K/plugins.pub" <<'PY'
+          import base64, sys
+          raw = base64.b64decode([l for l in open(sys.argv[1]).read().splitlines() if l.strip()][-1])
+          open(sys.argv[2], "w").write("untrusted comment: splify2 plugins key %s\n%s\n"
+              % (raw[32:40].hex(), base64.b64encode(b"Ed" + raw[32:40] + raw[72:104]).decode()))
+          PY
+          S2P="$RUNNER_TEMP/plugin-sdk/bin/s2p" INDEX_SLUG=splify2/splify2-core-plugins INDEX_ID=splify2-core-plugins \
+            INDEX_KEY="$K/index.sec" PUBS="$K/plugins.pub" sh "$RUNNER_TEMP/plugin-sdk/tools/publish-index.sh"

@@ -1,0 +1,221 @@
+#!/bin/sh
+# Довоз файлов, на которые ссылается спека (хуки pre_spec_set и pre_apply, hooks/ensure-lists): списки каталога и
+# наборы второго издателя, которых нет на диске.
+#
+# Зачем хуком, а не кодом каркаса. Ядро умирает на отсутствующем файле списка, и делает это ДВАЖДЫ: при проверке
+# присланной спеки (spec_set) и при настоящем применении. Пока доскачивание стояло только перед применением, выбор
+# нового сервиса не сохранялся вообще: автосохранение гоняло проверку, ядро не находило файл и отвечало «cannot read a
+# channel's list», правка откатывалась, и человек видел ошибку там, где ничего не применял. Момент, когда файл обязан
+# существовать, — любая проверка спеки ядром, поэтому хук стоит перед каждой. Откуда качать, знает только этот плагин,
+# поэтому и хук его.
+#
+# Печатает предупреждения об НЕскачанном (по строке на файл), код возврата всегда 0: недоступность сервера издателя не
+# должна отменять сохранение или применение целиком.
+
+# Описание второго издателя списков (itdoginfo/allow-domains) подключается ЛЕНИВО — только если недостающие файлы
+# вообще есть, и только один раз за вызов: busybox ash разбирает подключённый файл целиком, и платить за его разбор
+# должен тот вызов, которому он нужен.
+AD_SH="${STEER_PLUGIN_DIR:?}/lib/allow-domains.sh"
+
+# Файлы списков, на которые ссылается спека: v2 — `lists.*.prefixes_file|domains_file`, v1 —
+# `channels[].match.*_files`. Перечень (массив) — форма, которую пишет интерфейс; одиночная
+# строка в руками написанной спеке здесь не видна, и такой файл доскачать не выйдет.
+spec_list_files() {  # ФАЙЛ_СПЕКИ -> пути по одному в строке
+    jsonfilter -i "$1" \
+        -e '@.lists[*].prefixes_file[*]' -e '@.lists[*].domains_file[*]' -e '@.lists[*].srs[*]' \
+        -e '@.channels[*].match.prefixes_files[*]' \
+        -e '@.channels[*].match.domains_files[*]' 2>/dev/null
+}
+
+fetch_missing_lists() {  # ПУТЬ_К_СПЕКЕ
+    _spec="$1"
+    # КАТАЛОГА МОЖЕТ НЕ БЫТЬ НА ДИСКЕ ВОВСЕ — и это не редкость: свежий роутер, где вкладку
+    # каталога ещё не открывали, или смена источника (кеш прежнего убирается сразу). Без
+    # каталога доскачивание не знает ни ссылок наборов, ни base_url, и отвечало «манифест не
+    # загружен, скачать нечем» — то есть человек нажимал «Применить», а канал не поднимался
+    # из-за файла, который мы умеем достать. Скачиваем молча и один раз: отказ здесь не
+    # беда, ниже про каждый список скажут отдельно.
+    if [ ! -s "$CATALOG_FILE" ]; then
+        mkdir -p "$(dirname "$CATALOG_FILE")" 2>/dev/null
+        fetch_file "$(catalog_url)" "$CATALOG_FILE" >/dev/null 2>&1 || rm -f "$CATALOG_FILE"
+    fi
+    _base=""
+    if [ -s "$CATALOG_FILE" ]; then
+        _base="$(jsonfilter -i "$CATALOG_FILE" -e '@.base_url')"
+    fi
+    # ОТСУТСТВИЕ МАНИФЕСТА БОЛЬШЕ НЕ ПРЕКРАЩАЕТ РАБОТУ ЦЕЛИКОМ. Прежде функция выходила на
+    # первой же строке, и вместе с первым издателем молча выпадал второй, которому манифест
+    # не нужен вовсе.
+    _ad_ready=0
+    for _f in $(spec_list_files "$_spec" | sort -u); do
+        [ -s "$_f" ] && continue
+        _rel="${_f#"$LISTS_DIR"/}"
+        [ "$_rel" = "$_f" ] && continue     # файл вне каталога списков — не наш
+        _dest="$(local_path "$_rel")" || continue
+        if [ "$_ad_ready" = 0 ] && [ -r "$AD_SH" ]; then
+            . "$AD_SH"
+            # РАЗБОР НАБОРА ЖИВЁТ РОВНО ЭТОТ ВЫЗОВ, и это не уборка ради уборки.
+            #
+            # `ad_get` помнит уже разобранное по ИМЕНИ ФАЙЛА (`<сервис>.dom`/`.pfx`), а не по
+            # тегу релиза, — и правильно помнит: внутри одного прогона тег один, а второй вид
+            # того же сервиса приходит следующим кругом цикла и качать набор заново незачем.
+            # Но умолчание `AD_TMP` — общий путь в /tmp, и разбор, оставленный там прошлым
+            # вызовом, переживает СМЕНУ ТЕГА: файл на месте, значит новый релиз не скачается,
+            # и человек получит список прежней версии, ни разу об этом не услышав.
+            #
+            # Поймано собственным стендом, причём с обратной стороны: проверка «за набором
+            # ходили к его издателю» была ЗЕЛЕНОЙ по неверной причине — набор не качался
+            # вовсе, а брался из разбора, оставленного предыдущим разделом стенда.
+            # Каталог — только mktemp: имя с PID предсказуемо (PID виден в /proc), и чужой
+            # процесс роутера успевал создать его первым — тогда разбор набора лежал бы в его
+            # каталоге и подменялся между проверкой и копированием.
+            if AD_TMP="$(mktemp -d "$RUN_DIR/srs.XXXXXX" 2>/dev/null)"; then _ad_ready=1
+            else echo "$(s2_t tmp.dir_failed_space "Cannot create a temporary directory: no space left")"; _ad_ready=0; fi
+        fi
+        # НАБОР ФАЙЛОМ (`srs` списка) — из записи каталога, от которой он выведен (ad_srs_rel).
+        # Набор, которого в каталоге нет, положен руками: скачать его неоткуда, и ядро само
+        # скажет, что файла нет.
+        case "$_rel" in
+            *.srs) [ "$_ad_ready" = 1 ] && [ -s "$CATALOG_FILE" ] && fetch_missing_set "$_rel" "$_dest"
+                   continue ;;
+        esac
+        if [ "$_ad_ready" = 1 ] && _ad_pair="$(ad_service_of "$_rel")"; then
+            fetch_missing_srs "$_ad_pair" "$_rel" "$_dest"
+            continue
+        fi
+        # НАБОР, НАЗВАННЫЙ КАТАЛОГОМ. Проверяется ДО обычного скачивания: у такой записи своя
+        # ссылка, а `base_url` плюс путь ведёт в никуда — раньше «Применить» честно ходило по
+        # этому несуществующему адресу и сообщало, что список не скачался.
+        if [ "$_ad_ready" = 1 ] && [ -s "$CATALOG_FILE" ] && _cs_url="$(manifest_srs_url "$_rel")"; then
+            fetch_missing_catalog_srs "$_cs_url" "$_rel" "$_dest"
+            continue
+        fi
+
+        [ -n "$_base" ] || { echo "$(s2_t lists.fm_no_manifest "List {path}: the manifest is not loaded, there is nothing to download from" path "$_rel")"; continue; }
+        mkdir -p "$(dirname "$_dest")"
+        if fetch_file "$_base/$_rel" "$_dest"; then
+            [ -n "$FETCH_NOTE" ] && echo "$(s2_t lists.fm_note "List {path}: {note}" path "$_rel" note "$FETCH_NOTE")"
+        else
+            echo "$(s2_t lists.fm_failed "List {path} was not downloaded: the channel that uses it will not come up{why}" path "$_rel" why "${FETCH_NOTE:+ ($FETCH_NOTE)}")"
+        fi
+    done
+    # Разбор убирается ЗДЕСЬ, после цикла: внутри него он ещё нужен второму виду того же
+    # сервиса, а дальше — уже нет, и остаться он права не имеет (см. выше про смену тега).
+    [ "$_ad_ready" = 1 ] && rm -rf "$AD_TMP"
+    return 0
+}
+
+# Доскачать ОДИН недостающий набор второго издателя. Отдельной функцией, потому что три беды
+# здесь дают три разных ответа, и вставлять эту развилку в тело цикла выше значило бы
+# смешать два способа добычи в одном месте.
+#
+# КЛАДЁТСЯ ТОЛЬКО ЗАПРОШЕННЫЙ ВИД, в отличие от list_fetch, который кладёт оба. Разница не
+# случайна: там человек выбирает сервис и вторым видом воспользуется скорее всего; здесь
+# спека уже назвала конкретные файлы, и если второй вид ей нужен, он придёт этим же циклом
+# как отдельная недостающая строка — а разбор набора память прогона переиспользует (ad_get).
+# Ссылка набора по ПУТИ списка — для записей каталога с `format: "srs"`.
+#
+# По пути, а не по id, потому что здесь известен именно путь: доскачивание идёт по файлам,
+# названным в спеке. Спрашиваются оба массива: подсети и домены одного набора — две записи с
+# одной ссылкой.
+manifest_srs_url() {  # ОТН_ПУТЬ
+    _msu="$(jsonfilter -i "$CATALOG_FILE" -e "@.categories[@.file='$1'].url" 2>/dev/null | head -1)"
+    [ -n "$_msu" ] || _msu="$(jsonfilter -i "$CATALOG_FILE" -e "@.domain_lists[@.file='$1'].url" 2>/dev/null | head -1)"
+    [ -n "$_msu" ] || return 1
+    printf '%s' "$_msu"
+}
+
+# Доскачать НАБОР, названный каталогом: своя ссылка, разбор движком, половина по виду пути.
+#
+# ЗАЧЕМ ОТДЕЛЬНО ОТ fetch_missing_srs. Тот берёт набор у зашитого в пакет издателя: знает его
+# тег, строит ссылку сам и ставит отметку версии на диске. Здесь ссылку называет каталог, и
+# отметки нет — версия набора записана в самом каталоге. Разбор при этом общий (ad_get_url),
+# и второй его экземпляр означал бы, что коды отказов надо помнить в двух местах.
+fetch_missing_catalog_srs() {  # ССЫЛКА ОТН_ПУТЬ ПУТЬ_НА_ДИСКЕ
+    case "$2" in
+        */domains/*) _fc_kind=domains ;;
+        *)           _fc_kind=prefixes ;;
+    esac
+    # Имя разбора — от ССЫЛКИ: один набор даёт обе половины, а приходят они разными кругами
+    # цикла; имя от пути качало бы его дважды за один «Применить».
+    _fc_name="$(printf '%s' "$1" | tr -c 'A-Za-z0-9' '_' | tail -c 61)"
+    ad_get_url "$1" "$_fc_name"
+    case "$?" in
+        0) ;;
+        1) echo "$(s2_t lists.fm_set_failed "Set {name} was not downloaded: the channel that uses it will not come up{why}" name "$2" why "${FETCH_NOTE:+ ($FETCH_NOTE)}")"; return 0 ;;
+        2) echo "$(s2_t lists.fm_unsuitable "List {name} does not suit us yet: {note}" name "$2" note "$AD_NOTE")"; return 0 ;;
+        *) echo "$(s2_t lists.fm_corrupt "A corrupted set {name} was downloaded: {note}" name "$2" note "$AD_NOTE")"; return 0 ;;
+    esac
+    _fc_src="$(ad_out_of "$_fc_kind")" || {
+        # Файл называется ОБЯЗАТЕЛЬНО: без него сообщение говорит «в наборе нет доменов» про
+        # неизвестно какой набор, и человеку нечего искать — а искать надо правило, которое
+        # на этот список ссылается.
+        echo "$(s2_t lists.fm_no_kind "{name}: the set has no {what}: the channel that uses it will not come up" name "$2" what "$(ad_kind_ru "$_fc_kind")")"
+        return 0; }
+    mkdir -p "$(dirname "$3")"
+    cp "$_fc_src" "$3.new.$$" && mv "$3.new.$$" "$3" || {
+        rm -f "$3.new.$$"
+        echo "$(s2_t lists.fm_not_saved "List {name} was not saved: no space left" name "$2")"
+        return 0; }
+    [ "$_fc_kind" = prefixes ] && ad_meta_install "$3"
+    [ -n "$FETCH_NOTE" ] && echo "$(s2_t lists.fm_set_note "Set {name}: {note}" name "$2" note "$FETCH_NOTE")"
+    return 0
+}
+
+# Доскачать НАБОР, который правило берёт файлом (`srs`): каталог назвал его, а списком он не
+# выразим (см. list_fetch). Кладётся как есть, без разбора на половины, — но только понятый
+# движком: битый файл на месте набора ядро сочло бы пустым.
+fetch_missing_set() {  # ОТН_ПУТЬ ПУТЬ_НА_ДИСКЕ
+    _fset_url=""
+    for _fset_e in $(ad_srs_entries "$1"); do
+        _fset_url="$(manifest_srs_url "$_fset_e")" && break
+    done
+    [ -n "$_fset_url" ] || return 0
+    _fset_tmp="$AD_TMP/set.$$.srs"
+    if ! fetch_file "$_fset_url" "$_fset_tmp"; then
+        rm -f "$_fset_tmp"
+        echo "$(s2_t lists.fm_set_failed "Set {name} was not downloaded: the channel that uses it will not come up{why}" name "$1" why "${FETCH_NOTE:+ ($FETCH_NOTE)}")"
+        return 0
+    fi
+    if ! ad_srs_ok "$_fset_tmp"; then
+        rm -f "$_fset_tmp"
+        echo "$(s2_t lists.fm_corrupt "A corrupted set {name} was downloaded: {note}" name "$1" note "$AD_NOTE")"
+        return 0
+    fi
+    ad_srs_put "$_fset_tmp" "$2" || echo "$(s2_t lists.fm_set_not_saved "Set {name} was not saved: no space left" name "$1")"
+    rm -f "$_fset_tmp"
+    [ -n "$FETCH_NOTE" ] && echo "$(s2_t lists.fm_set_note "Set {name}: {note}" name "$1" note "$FETCH_NOTE")"
+    return 0
+}
+
+fetch_missing_srs() {  # «СЕРВИС ВИД» ОТН_ПУТЬ ПУТЬ_НА_ДИСКЕ
+    _fs_svc="${1% *}"
+    _fs_kind="${1#* }"
+    ad_tag_resolve
+    ad_get "$_fs_svc"
+    case "$?" in
+        0) ;;
+        # «Не скачалось» винит путь до издателя, «испорченный» — то, что приехало, а «пока не
+        # подходит» не винит никого: набор понят, просто наш канал такого не выражает.
+        1) echo "$(s2_t lists.fm_set_failed "Set {name} was not downloaded: the channel that uses it will not come up{why}" name "$_fs_svc" why "${FETCH_NOTE:+ ($FETCH_NOTE)}")"; return 0 ;;
+        2) echo "$(s2_t lists.fm_unsuitable "List {name} does not suit us yet: {note}" name "$2" note "$AD_NOTE")"; return 0 ;;
+        *) echo "$(s2_t lists.fm_corrupt "A corrupted set {name} was downloaded: {note}" name "$_fs_svc" note "$AD_NOTE")"; return 0 ;;
+    esac
+    _fs_src="$(ad_out_of "$_fs_kind")" || {
+        echo "$(s2_t lists.fm_set_no_kind "The set {name} has no {what}: the channel that uses it will not come up" name "$_fs_svc" what "$(ad_kind_ru "$_fs_kind")")"
+        return 0; }
+    mkdir -p "$(dirname "$3")"
+    # КОПИЕЙ, а не переносом: разбор лежит в памяти прогона и нужен второму виду того же
+    # сервиса, который может прийти следующим кругом цикла. Через «.new» — по той же
+    # причине, что в list_fetch: /tmp это tmpfs, а списки на overlay, и busybox между ФС
+    # копирует, то есть обрыв оставил бы обрубок ровно там, где лежит рабочий список.
+    cp "$_fs_src" "$3.new.$$" && mv "$3.new.$$" "$3" || {
+        rm -f "$3.new.$$"
+        echo "$(s2_t lists.fm_not_saved "List {name} was not saved: no space left" name "$2")"
+        return 0; }
+    [ "$_fs_kind" = prefixes ] && ad_meta_install "$3"
+    ad_stamp_put "$_fs_svc" "$_fs_kind" "$AD_TAG"
+    [ -n "$FETCH_NOTE" ] && echo "$(s2_t lists.fm_set_note "Set {name}: {note}" name "$_fs_svc" note "$FETCH_NOTE")"
+    return 0
+}
+

@@ -20,10 +20,15 @@ set -u
 
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 SCRIPT="$ROOT/files/usr/libexec/rpcd/splify2"
+# Швы, пути и общие функции объекта живут в env.sh (диспетчер подключает его): проверки «этот шов в коде» смотрят туда.
+ENV_SH="$ROOT/files/usr/lib/splify2/env.sh"
 # Объект разнесён по файлам: диспетчер (SCRIPT), общие помощники и группы методов в
 # usr/lib/splify2/rpcd. Проверки по ТЕКСТУ объекта смотрят во все его файлы разом.
 RPCD_DIR="$ROOT/files/usr/lib/splify2/rpcd"
-RPCD_ALL="$SCRIPT $RPCD_DIR/common.sh $RPCD_DIR/m-*.sh"
+# backup и lists-catalog — плагины (plugins/): их код живёт там, и проверки по тексту смотрят и в него.
+RPCD_ALL="$SCRIPT $ROOT/files/usr/lib/splify2/env.sh $RPCD_DIR/*.sh $ROOT/files/usr/sbin/splify2-host"
+# Исходники плагинов: их проверки по тексту смотрят отдельно (plugin_src).
+plugin_src() { cat "$ROOT"/plugins/backup/lib/*.sh "$ROOT"/plugins/lists-catalog/lib/*.sh "$ROOT"/plugins/lists-catalog/bin/*; }
 rpcd_src() { cat $RPCD_ALL; }  # shellcheck disable=SC2086
 T="$(mktemp -d /tmp/rpcdmatch.XXXXXX)"
 trap 'rm -rf "$T"' EXIT INT TERM
@@ -40,6 +45,18 @@ check() {  # ОПИСАНИЕ ОЖИДАЕМОЕ ПОЛУЧЕННОЕ
 }
 
 mkdir -p "$T/bin" "$T/lists/domains" "$T/etc" "$T/var"
+# Официальные плагины (backup, lists-catalog, subscriptions), вынесенные из каркаса: методы backup_*, lists*, sub_auto,
+# sub_quota, sub_rename — их псевдонимы; поля расписания в sub_list и sub_info добавляет хук sub_fields плагина subscriptions.
+# Свой корень $T/off, отдельно от $T/plug (там проверки менеджера плагинов с заглушкой ядра): rpcd_run выбирает
+# корень по имени метода.
+. "$ROOT/tests/stub/plugins-env.sh"
+plugins_provision "$T/off"
+# Каталог списков каталога плагина: перечень (манифест) лежит в conf плагина, а не в каталоге каркаса.
+mkdir -p "$T/off/conf/lists-catalog"
+CAT_MANIFEST="$T/off/conf/lists-catalog/manifest.json"
+# Рабочий каталог плагина backup (память, закрытый): там собирается и принимается архив.
+BK_DIR="$T/off/state/backup"; BK_OUT="$BK_DIR/backup.out"; BK_IN="$BK_DIR/restore.in"
+mkdir -p "$BK_DIR"; chmod 700 "$BK_DIR"
 
 # ---- заглушки внешних команд -------------------------------------------------
 # apk: протоколирует каждый вызов первым словом. Поведение `add` задаётся снаружи,
@@ -64,10 +81,9 @@ case "$1" in
         exit "${APK_ADD_RC:-0}"
         ;;
     list)
-        # APK_LIST — свой перечень установленного (ядро 2.0, прежнее 1.5.9, коннектор); без него —
-        # прежний: steer-extended 0.9.5 и интерфейс.
+        # APK_LIST — свой перечень установленного (ядро, коннектор); без него — ядро 2.1.0 и интерфейс.
         if [ -n "${APK_LIST:-}" ]; then printf '%s\n' "$APK_LIST"; exit 0; fi
-        echo "steer-extended-0.9.5-r1 aarch64_cortex-a53 {steer-extended}"
+        echo "steer-core-2.1.0-r1 aarch64_cortex-a53 {steer-core}"
         echo "luci-app-splify2-0.7.6-r1 all {luci-app-splify2}"
         ;;
     --print-arch) echo "aarch64" ;;
@@ -144,108 +160,7 @@ EOF
 # печатает совпадения по всем. Пока заглушка запоминала только последнее, проверка
 # недоверенной спеки смотрела бы на одно поле из пяти — то есть была бы зелёной по
 # недосмотру заглушки, а не по существу.
-cat > "$T/bin/jsonfilter" <<'EOF'
-#!/bin/sh
-file=""; str=""; exprs=""
-while [ $# -gt 0 ]; do
-    case "$1" in
-        -i) file="$2"; shift 2 ;;
-        -s) str="$2"; shift 2 ;;
-        -e) exprs="$exprs$2
-"; shift 2 ;;
-        *) shift ;;
-    esac
-done
-# Без -i и -s настоящий jsonfilter читает ПОТОК — так его и зовут в скрипте
-# (`steer status | jsonfilter -e ...`). Поток вычитывается здесь, потому что дальше
-# стандартный ввод занят программой python.
-if [ -z "$file" ] && [ -z "$str" ]; then str="$(cat)"; fi
-# Выражения уезжают переменной окружения, а не потоком: программу python читает как раз
-# со стандартного ввода (`python3 -` плюс heredoc), и труба до неё не доходит.
-EXPRS="$exprs" python3 - "$file" "$str" <<'PY'
-import json, os, re, sys
-path, raw = sys.argv[1], sys.argv[2]
-try:
-    d = json.loads(raw) if raw else json.load(open(path, encoding='utf-8'))
-except Exception:
-    sys.exit(1)
-
-def render(v):
-    if isinstance(v, bool):          return 'true' if v else 'false'
-    if isinstance(v, (dict, list)):  return json.dumps(v, ensure_ascii=False)
-    return str(v)
-
-def walk(cur, parts):
-    if not parts:
-        if cur is not None:
-            yield cur
-        return
-    p, rest = parts[0], parts[1:]
-    if p == '*':
-        items = cur if isinstance(cur, list) else list(cur.values()) if isinstance(cur, dict) else []
-        for it in items:
-            yield from walk(it, rest)
-    elif isinstance(cur, list) and p.isdigit():
-        i = int(p)
-        if 0 <= i < len(cur):
-            yield from walk(cur[i], rest)
-    elif isinstance(cur, dict) and p in cur:
-        yield from walk(cur[p], rest)
-
-for expr in os.environ.get('EXPRS', '').splitlines():
-    if not expr:
-        continue
-    m = re.match(r"@\.(categories|domain_lists)\[@\.id='([^']*)'\]\.([a-z_]+)$", expr)
-    if m:
-        for e in d.get(m.group(1), []):
-            if e.get('id') == m.group(2) and m.group(3) in e:
-                print(e[m.group(3)])
-        continue
-    # Фильтр по полю записи любого списка: `@.interface[@.l3_device='pptp-vpn'].interface` — так
-    # из ответа netifd достаётся имя интерфейса по имени его устройства.
-    m = re.match(r"@\.([a-z_]+)\[@\.([a-z_0-9]+)='([^']*)'\]\.([a-z_0-9]+)$", expr)
-    if m and isinstance(d.get(m.group(1)), list):
-        for e in d[m.group(1)]:
-            if isinstance(e, dict) and str(e.get(m.group(2))) == m.group(3) and m.group(4) in e:
-                print(render(e[m.group(4)]))
-        continue
-    # Поле записи, найденной ПО ПУТИ СПИСКА: так доскачивание спрашивает ссылку набора —
-    # ему известен путь из спеки, а не идентификатор.
-    m = re.match(r"@\.(categories|domain_lists)\[@\.file='([^']*)'\]\.([a-z_]+)$", expr)
-    if m:
-        for e in d.get(m.group(1), []):
-            if e.get('file') == m.group(2) and m.group(3) in e:
-                print(e[m.group(3)])
-        continue
-    # Общий обход: точки — шаги пути, [*] — «все элементы массива или все значения
-    # объекта». Ровно тот набор выражений, который встречается в скрипте.
-    # Числовой индекс массива (`@[0].tag_name`) — им читается список релизов GitHub.
-    # Приводится к обычному шагу пути: скобки становятся точками, а walk() ниже понимает
-    # цифровой шаг как индекс в списке.
-    # Грамматика настоящего jsonfilter: голый шаг пути — LABEL [a-zA-Z_][a-zA-Z0-9_]*; имя с
-    # дефисом или точкой годится только в скобках `['имя']`. Заглушка этому раньше не
-    # следовала и делила путь по точкам как угодно — из-за чего стенд не видел, что имя
-    # выхода `de-1` ломает каждый запрос по нему (I-284).
-    norm = expr.replace('@.', '', 1).replace('[*]', '.*')
-    norm = re.sub(r"\[(['\"])([^'\"]*)\1\]", lambda m: '.\x00' + m.group(2), norm)
-    norm = norm.replace('[', '.').replace(']', '')
-    parts = [x for x in norm.split('.') if x and x != '@']
-    bad = False
-    clean = []
-    for x in parts:
-        if x.startswith('\x00'):
-            clean.append(x[1:])
-        elif x == '*' or x.isdigit() or re.match(r'^[A-Za-z_][A-Za-z0-9_]*$', x):
-            clean.append(x)
-        else:
-            bad = True
-    if bad:
-        sys.stderr.write('Syntax error\n')
-        sys.exit(1)
-    for v in walk(d, clean):
-        print(render(v))
-PY
-EOF
+cp "$ROOT/tests/stub/jsonfilter" "$T/bin/jsonfilter"
 
 printf '#!/bin/sh\nexit 0\n' > "$T/bin/logger"
 # uci: маленькое, но НАСТОЯЩЕЕ хранилище — «ключ=значение» в файле песочницы.
@@ -362,7 +277,7 @@ case "${1:-}" in
         else printf '%s=%s\n' "$k" "$v" >> "$S.t"; fi
         mv "$S.t" "$S"
         ;;
-    commit) : ;;
+    commit) [ -z "${UCI_COMMIT_FAIL:-}" ] || exit 1 ;;
 esac
 exit 0
 EOF
@@ -492,17 +407,40 @@ EOF
 # признака пересборки туннелей была бы зелёной при любом поведении скрипта.
 cat > "$T/bin/steer" <<'EOF'
 #!/bin/sh
+# Перевод спеки (`steer spec convert [--json] --spec Ф|-`): заглушка отдаёт тело как есть.
+if [ "${1:-}" = spec ] && [ "${2:-}" = convert ]; then
+    shift 2; _f=""; _json=0
+    while [ $# -gt 0 ]; do case "$1" in --spec) _f="$2"; shift ;; --json) _json=1 ;; esac; shift; done
+    _body="$(if [ "$_f" = - ]; then cat; else cat "$_f"; fi)"
+    # Вход не JSON — YAML: заглушка «разбирает» его так: слово BAD — ошибка с адресом, как у ядра, иначе
+    # печатает JSON-вид. Печать YAML (без --json) отдаёт тело как есть.
+    case "$_body" in
+        '{'*|'') ;;
+        *) case "$_json:$_body" in
+               1:*QUOTE*) echo "steer: stdin:10:1: ошибка YAML: found unexpected end of stream (while scanning a quoted scalar, начало в строке 8)" >&2; exit 2 ;;
+               1:*BLOCK*) echo "steer: stdin:10:3: ошибка YAML: did not find expected key (while parsing a block mapping, начало в строке 3)" >&2; exit 2 ;;
+               1:*BAD*) echo "steer: stdin:5:3: ошибка YAML: did not find expected key" >&2; exit 2 ;;
+               1:*) printf '{"version":2,"from":"yaml"}\n'; exit 0 ;;
+           esac ;;
+    esac
+    printf '%s\n' "$_body"
+    exit 0
+fi
+# Версия ядра: STEER_VERSION пуст — команды «нет»; STEER_VERSION_JSON=1 — `--json` печатает объект.
+if [ "${1:-}" = version ]; then
+    [ -n "${STEER_VERSION:-}" ] || exit 2
+    if [ "${STEER_VERSION_JSON:-0}" = 1 ] && [ "${2:-}" = --json ]; then printf '{"version":"%s"}\n' "$STEER_VERSION"
+    else printf 'steer %s (базовая сборка, ревизия x)\n' "$STEER_VERSION"; fi
+    exit 0
+fi
 echo "$*" >> "$SANDBOX/steer.log"
+# Менеджер плагинов: `steer plugin …` — отдельная заглушка (tests/stub/steer-plugin), общая со стендом
+# pluginmatch; состояние плагинов — в $PLUG.
+if [ "${1:-}" = plugin ]; then shift; exec sh "$STEER_PLUGIN_STUB" "$@"; fi
 [ -n "${STEER_ERR:-}" ] && echo "$STEER_ERR" >&2
 # Проверка узла: движок пишет предупреждения в stderr, а JSON — в stdout. Стенду нужно уметь
 # воспроизводить обе половины сразу: именно их смешение и ломало ответ.
 case "${1:-}" in
-    # spec convert --json (steer 2.0.6+): печатает STEER_SPEC_JSON; ядро без него (2.0.0–2.0.5)
-    # отвечает отказом разбора аргументов. Для отката 26.11 → 26.10.x (I-559).
-    spec)
-        [ -n "${STEER_SPEC_JSON:-}" ] || { echo "steer: неизвестная подкоманда" >&2; exit 2; }
-        printf '%s\n' "$STEER_SPEC_JSON"; exit 0
-        ;;
     # Разбор набора sing-box: движок кладёт домены в --out, подсети в --prefixes-out.
     # Содержимое поданного файла заглушке не важно — важно, что её вообще позвали и что
     # половины разошлись по разным файлам, а не слились в одну.
@@ -523,13 +461,6 @@ case "${1:-}" in
         exit 0
         ;;
     vless-probe|vless-nodes|hysteria2-probe|hysteria2-nodes|proxy-probe|proxy-nodes)
-        # Ядро до --insecure (steer 2.0.0): флага не знает и отвечает так, как ответил бы разбор
-        # аргументов, — кодом 2 и словами «неизвестный флаг».
-        if [ -n "${STEER_NO_INSECURE:-}" ]; then
-            for _a in "$@"; do
-                [ "$_a" = --insecure ] && { echo "steer: неизвестный флаг: --insecure (подсказка: steer $1 --help)" >&2; exit 2; }
-            done
-        fi
         [ -n "${STEER_NOISE:-}" ] && echo "$STEER_NOISE" >&2
         [ -n "${STEER_JSON:-}" ] && printf '%s\n' "$STEER_JSON"
         exit "${STEER_RC:-0}"
@@ -572,6 +503,11 @@ PersistentKeepalive = 25}" ;;
             *) echo "${XS_LINK_ERR:-файл не разобрался}" >&2 ;;
         esac
         exit "${XS_LINK_RC:-0}"
+        ;;
+    # Схема ключей спеки: ядро 2.1 печатает её само; STEER_SCHEMA — файл с ответом, без него команды «нет».
+    spec-schema)
+        [ -n "${STEER_SCHEMA:-}" ] && { cat "$STEER_SCHEMA"; exit 0; }
+        exit 2
         ;;
     # Команды демона (`steer ctl check`): ответ — одна строка JSON, как у настоящего сокета.
     ctl)
@@ -711,7 +647,7 @@ EOF
 chmod +x "$T/bin"/*
 
 # ---- фикстуры ----------------------------------------------------------------
-cat > "$T/etc/manifest.json" <<'EOF'
+cat > "$CAT_MANIFEST" <<'EOF'
 {
   "base_url": "https://example.invalid/lists",
   "categories":   [ { "id": "news", "file": "news.lst" } ],
@@ -814,24 +750,43 @@ rpcd_raw() {  # МЕТОД JSON_ЗАПРОСА
     RPCD_NO_NEWLINE=1 rpcd "$@"
 }
 
-rpcd() {  # МЕТОД [JSON_ЗАПРОСА]  — вызов метода; для перечня методов есть rpcd_list
+# Заглушка ядра печатает «YAML» тем же JSON, а бэкенд пишет спеку в spec.yaml (spec_put). Почти все
+# проверки читают спеку как spec.json, поэтому после вызова файл возвращается на это имя;
+# проверки самого перевода кладут spec.yaml сами и вызывают rpcd_run.
+rpcd() {  # МЕТОД [JSON_ЗАПРОСА]
+    rpcd_run "$@"
+    _rr=$?
+    [ -s "$T/etc/spec.yaml" ] && mv -f "$T/etc/spec.yaml" "$T/etc/spec.json"
+    return $_rr
+}
+
+
+rpcd_run() {  # МЕТОД [JSON_ЗАПРОСА]  — вызов метода; для перечня методов есть rpcd_list
+    case "$1" in
+        # Методы, вынесенные в плагины, видят официальные плагины; остальным нужен менеджер плагинов с заглушкой ядра.
+        backup_get|backup_put|lists|list_*|lists_*|local_lists|allow_domains|fetch_mode|fetch_mode_set|sub_*|steer_versions|steer_install|splify2_versions|splify2_install) _rr_pl="$T/off" ;;
+        *) _rr_pl="$T/plug" ;;
+    esac
+    # Проверка, которой нужны плагины каталога (хуки довоза списков) на методе каркаса, называет корень сама.
+    _rr_pl="${RPCD_PLUGIN_ROOT:-$_rr_pl}"
     if [ "${RPCD_NO_NEWLINE:-0}" = 1 ]; then printf '%s' "${2:-}"; else printf '%s\n' "${2:-}"; fi | env \
         SANDBOX="$T" \
+        SPLIFY2_LOCK_DIR="$T/lock" SPLIFY2_LOCK_WAIT="${SPLIFY2_LOCK_WAIT:-120}" \
         PATH="$T/bin:$PATH" \
         JSHN_SH="$ROOT/tests/stub/jshn.sh" FETCH_SH="$ROOT/files/usr/lib/splify2/fetch.sh" \
         FAST_SH="$ROOT/files/usr/lib/splify2/fast.sh" \
         RPCD_LIB="$ROOT/files/usr/lib/splify2/rpcd" \
-        AD_SH="${AD_SH_FIXTURE:-$ROOT/files/usr/share/splify2/allow-domains.sh}" \
         AD_STAMP="$T/etc/allow-domains.tag" AD_TMP="$T/srs-tmp" \
         AD_BASE="${AD_BASE_FIXTURE:-file://$T/adrel}" AD_TAG_DEFAULT="${AD_TAG_FIXTURE:-2026-08-31_16-18}" \
         SYSNET_STATS="${SYSNET_STATS_FIXTURE:-$T/statnet}" \
         CONNTRACK="${CONNTRACK_FIXTURE:-$T/nf_conntrack}" \
         STEER="$T/bin/steer" \
-        SPEC="$T/etc/spec.json" \
+        SCHEMA_FIXTURE="$ROOT/files/usr/share/splify2/spec-schema.json" \
+        SPEC="$T/etc/spec.json" SPEC_VIEW="$T/spec.view.json" \
         LISTS="$T/lists" \
         SUB="$T/etc/sub.txt" \
         SUBS_DIR="$T/etc/subs" \
-        MANIFEST="$T/etc/manifest.json" \
+        MANIFEST="$CAT_MANIFEST" \
         INITD="$T/bin/initd-steer" \
         STEER_INIT="$T/bin/initd-steer" \
         RPCD_INITD="$T/bin/initd-rpcd" \
@@ -857,10 +812,9 @@ rpcd() {  # МЕТОД [JSON_ЗАПРОСА]  — вызов метода; дл�
         CURL_BODY="${CURL_BODY:-}" \
         CURL_RC="${CURL_RC:-0}" \
         APPLIED="$T/etc/spec.applied.json" \
-        BACKUP_OUT="$T/var/backup.out" \
-        BACKUP_IN="$T/var/backup.in" \
         BACKUP_MAX_BYTES="${BACKUP_MAX_BYTES:-262144}" \
         STEER_RC="${STEER_RC:-0}" \
+        STEER_VERSION="${STEER_VERSION:-}" STEER_VERSION_JSON="${STEER_VERSION_JSON:-0}" \
         GH_BODY="${GH_BODY-}" \
         GH_FAIL="${GH_FAIL-}" \
         GH_CACHE="$T/var/releases.json" \
@@ -873,10 +827,23 @@ rpcd() {  # МЕТОД [JSON_ЗАПРОСА]  — вызов метода; дл�
         UPDATE_LISTS="${UPDATE_LISTS:-$T/bin/update-lists}" \
         ENGINE_ENABLED="${ENGINE_ENABLED:-0}" \
         APK_LIST="${APK_LIST:-}" \
-        MODULE_DIR="${MODULE_DIR_FIXTURE:-$T/mods}" \
+        PLUGIN_SH="$ROOT/files/usr/lib/splify2/plugin.sh" PLUG="$T/plug" \
+        PLUGIN_ROOT="$_rr_pl/lib" PLUGIN_STATE="$_rr_pl/state.json" PLUGIN_STATE_DIR="$_rr_pl/state" PLUGIN_RPCD_DIR="$T/plug/rpcd" \
+        PLUGIN_ACL_DIR="$T/plug/acl" PLUGIN_JOBS="$T/plug/jobs" PLUGIN_RELOAD_DELAY=0 \
+        EXT_REG="$_rr_pl/run/ext.reg" PLUGIN_CONF_DIR="$_rr_pl/conf" \
+        STEER_PLUGIN_STUB="$ROOT/tests/stub/steer-plugin" \
         SINGBOX_INITD="${SINGBOX_INITD_FIXTURE:-$T/box/none}" \
         sh "$SCRIPT" call "$1" 2>"$T/stderr"
 }
+
+# Подписок нет — хук sub_fields плагина subscriptions (запуск его программы) не зовётся: полей некому.
+_sfh="$T/off/lib/subscriptions/hooks/sub-fields"
+mv "$_sfh" "$_sfh.real"
+printf '#!/bin/sh\necho run >> "%s"\nexec "%s" "$@"\n' "$T/subfields.log" "$_sfh.real" > "$_sfh"; chmod +x "$_sfh"
+rm -f "$T/subfields.log"
+check "sub_list без подписок: пустой перечень, хук полей не запускается" "0;no" \
+      "$(rpcd sub_list | python3 -c 'import json,sys; print(len(json.load(sys.stdin)["subs"]))');$([ -f "$T/subfields.log" ] && echo yes || echo no)"
+mv -f "$_sfh.real" "$_sfh"
 
 rpcd_list() {
     env SANDBOX="$T" PATH="$T/bin:$PATH" JSHN_SH="$ROOT/tests/stub/jshn.sh" FETCH_SH="$ROOT/files/usr/lib/splify2/fetch.sh" \
@@ -911,7 +878,7 @@ try: d = json.load(sys.stdin)
 except Exception: print("НЕ JSON"); raise SystemExit
 v = d
 for k in sys.argv[1].split("."):   # вложенное поле — через точку: game.gv
-    v = v.get(k) if isinstance(v, dict) else None
+    v = v.get(k) if isinstance(v, dict) else (v[int(k)] if isinstance(v, list) and k.isdigit() and int(k) < len(v) else None)
 print("" if v is None else json.dumps(v, ensure_ascii=False) if isinstance(v,(list,dict,bool)) else v)' "$1"
 }
 
@@ -952,6 +919,39 @@ custom_domains_path()  { printf '%s/lists/custom/domains/%s.lst' "$T" "$1"; }
 custom_prefixes_path() { printf '%s/lists/custom/%s.lst' "$T" "$1"; }
 
 initd_actions() { grep -Ev '^(enabled|running)$' "$T/initd.log" | awk '{printf "%s ", $1}' | sed 's/ $//'; }
+
+# Плагины (ядро 2.1): состояние — файлы менеджера в $T/plug (tests/stub/steer-plugin). plug_reset чистит
+# всё; plug_put кладёт установленный плагин (манифест и запись в state.json); plug_fixture — что «лежит в
+# каталоге» и ставится install/ensure; plug_calls — журнал вызовов менеджера.
+plug_reset() {
+    rm -rf "$T/plug"
+    mkdir -p "$T/plug/lib" "$T/plug/rpcd" "$T/plug/acl" "$T/plug/jobs" "$T/plug/fixtures"
+    echo '{"schema":1,"plugins":{}}' > "$T/plug/state.json"
+}
+plug_manifest() {  # КАТАЛОГ ID ВЕРСИЯ
+    mkdir -p "$1"
+    printf '{"schema":1,"id":"%s","version":"%s","name":"%s"}\n' "$2" "$3" "$2" > "$1/plugin.json"
+}
+plug_put() {  # ID ВЕРСИЯ [СОСТОЯНИЕ]
+    plug_manifest "$T/plug/lib/$1" "$1" "$2"
+    python3 - "$T/plug/state.json" "$1" "$2" "${3:-enabled}" <<'PY'
+import json, sys
+p, i, v, st = sys.argv[1:5]
+d = json.load(open(p)); d["plugins"][i] = {"version": v, "state": st, "repo": "splify2"}
+json.dump(d, open(p, "w"))
+PY
+}
+plug_fixture() {  # ID ВЕРСИЯ
+    plug_manifest "$T/plug/fixtures/$1" "$1" "$2"
+}
+plug_iface() {  # ID ВЕРСИЯ [СОСТОЯНИЕ] — плагин-интерфейс (splify2.luci.interface, splify2-api 1.1)
+    plug_put "$1" "$2" "${3:-enabled}"
+    printf '{"schema":1,"id":"%s","version":"%s","name":"%s","compat":{"splify2-api":"^1.1"},"splify2":{"luci":{"interface":"luci/home.js"}}}\n' \
+        "$1" "$2" "$1" > "$T/plug/lib/$1/plugin.json"
+    mkdir -p "$T/plug/lib/$1/luci"; echo "return view.extend({});" > "$T/plug/lib/$1/luci/home.js"
+}
+plug_calls() { cat "$T/plug/manager.log" 2>/dev/null | tr '\n' '|' | sed 's/|$//'; }
+plug_reset
 
 # ---- сам скрипт вообще запускается --------------------------------------------
 # Первая проверка стенда — про стенд: пока она красная, все остальные бессмысленны.
@@ -998,7 +998,7 @@ if ! printf '%s' "$out" | python3 -c 'import json,sys; json.load(sys.stdin)' >/d
 fi
 
 # ---- I-049: установка не должна снимать работающий пакет ----------------------
-# Сценарий: стоит рабочий 0.9.5-extended, ставим 0.9.6-extended, apk отказывает.
+# Сценарий: стоит рабочее ядро, ставим новое, apk отказывает.
 # На роутере `apk del` уже запустил pre-deinstall, а тот остановил и ОТКЛЮЧИЛ сервис
 # и снёс таблицу nft. Значит роутер остаётся без маршрутизации, и перезагрузка не спасёт.
 cat > "$T/etc/openwrt_release" <<'EOF'
@@ -1015,12 +1015,12 @@ echo "overlay 100000 10 ${DF_AVAIL_KB:-9999999} 1% /overlay"
 DFEOF
 chmod +x "$T/bin/df"
 reset_logs
-out="$(DF_AVAIL_KB=50 rpcd steer_install '{"version":"0.9.6","extended":true}')"
+out="$(DF_AVAIL_KB=50 rpcd steer_install '{"version":"2.1.0"}')"
 check "мало места на флеше: отказ до apk" "false" "$(printf '%s' "$out" | jget ok)"
 check "мало места на флеше: apk не вызывался" "" "$(grep -c '^add' "$T/apk.log" 2>/dev/null | sed 's/^0$//')"
 check "мало места на флеше: причина названа числами" "1" "$(printf '%s' "$out" | jget error | grep -c 'свободно')"
 reset_logs
-out="$(DF_AVAIL_KB=50 rpcd steer_install '{"version":"2.0.0"}')"
+out="$(DF_AVAIL_KB=50 rpcd steer_install '{"version":"2.1.0"}')"
 check "ядро 2.x, мало места: отказ до apk" "false" "$(printf '%s' "$out" | jget ok)"
 check "ядро 2.x, мало места: apk не вызывался" "" "$(grep -c '^add' "$T/apk.log" 2>/dev/null | sed 's/^0$//')"
 
@@ -1028,8 +1028,8 @@ check "ядро 2.x, мало места: apk не вызывался" "" "$(gre
 # packages», что и про конфликт, — поэтому по одному этому тексту снимать работающий
 # движок нельзя, и проверка сторожит именно это различие.
 reset_logs
-out="$(APK_ADD_RC=1 APK_ADD_OUT='ERROR: unable to select packages: steer-extended-0.9.6-r1: required package nftables missing' \
-       rpcd steer_install '{"version":"0.9.6","extended":true}')"
+out="$(APK_ADD_RC=1 APK_ADD_OUT='ERROR: unable to select packages: steer-core-2.1.0-r1: required package nftables missing' \
+       rpcd steer_install '{"version":"2.1.0"}')"
 
 check "при отказе установки первым вызовом apk идёт add, а не del (I-049)" \
       "add" "$(awk 'NR==1{print $1}' "$T/apk.log")"
@@ -1043,22 +1043,11 @@ check "при отказе установки ответ отрицательн�
 # Успешное обновление в пределах одного варианта — самый частый путь. Через удаление
 # он проходить не должен вовсе: окна без маршрутизации не возникает.
 reset_logs
-out="$(rpcd steer_install '{"version":"0.9.6","extended":true}')"
+out="$(rpcd steer_install '{"version":"2.1.0"}')"
 check "обновление того же варианта не проходит через apk del (I-049)" \
       "" "$(grep -c '^del' "$T/apk.log" | sed 's/^0$//')"
 check "успешная установка отчитывается положительно" \
       "true" "$(printf '%s' "$out" | jget ok)"
-
-# Смена варианта: базовый и расширенный владеют одним /usr/sbin/steer, apk отвергает
-# такое по конфликту. Вот здесь удаление законно — но только после того, как apk отказал,
-# и с обязательной повторной попыткой.
-reset_logs
-out="$(APK_ADD_RC=1 APK_ADD_OUT='ERROR: package steer conflicts with steer-extended' \
-       rpcd steer_install '{"version":"0.9.6","extended":false}')"
-check "на конфликте вариантов: add, потом del, потом add ещё раз (I-049)" \
-      "add del del add" "$(awk '{printf "%s ", $1}' "$T/apk.log" | sed 's/ $//')"
-check "если и повторная установка не удалась, ответ говорит про снятый пакет (I-049)" \
-      "yes" "$(printf '%s' "$out" | jget error | grep -qi 'снят\|удал' && echo yes || echo no)"
 
 # ---- I-050: архитектура пакетов, а не архитектура apk -------------------------
 # На роутере верный источник — DISTRIB_ARCH. Фолбэк на `apk --print-arch` отдаёт
@@ -1126,13 +1115,17 @@ check "engine видит снятый автозапуск (R-017)" \
 out="$(rpcd engine)"
 check "engine называет минимальную версию движка (цифры и точки)" "yes" \
       "$(printf '%s' "$out" | jget min_version | grep -qE '^[0-9]+(\.[0-9]+)+$' && echo yes || echo no)"
-check "минимум — та константа, что объявлена в m-engine.sh" \
-      "$(sed -n 's/^STEER_MIN_VERSION=//p' "$ROOT/files/usr/lib/splify2/rpcd/m-engine.sh")" \
+check "минимум — та константа, что объявлена в pkg-lib.sh" \
+      "$(sed -n 's/^STEER_MIN_VERSION=//p' "$ROOT/files/usr/lib/splify2/rpcd/pkg-lib.sh")" \
       "$(printf '%s' "$out" | jget min_version)"
-# Интерфейс пишет спеку v2 (ui/src/lib/specv2.ts), а её читает только ядро 2.0: 1.5.x отвечает
-# на неё отказом, и минимум младше 2.0.0 одобрял бы ядро, на котором не применится ничего.
-check "минимум — не младше 2.0.0: спеку v2 читает только ядро 2.0" "2.0.0" \
-      "$(printf '%s\n%s\n' "$(printf '%s' "$out" | jget min_version)" 2.0.0 | sort -V | head -n 1)"
+# Минимум обновления, который каркас оставляет у себя (решение О-2 открыто): метод engine отдаёт страницу выпусков и команду
+# установщика — интерфейс показывает их там, где плагина updater нет.
+check "engine: страница выпусков и команда установщика" "https://github.com/splify2/splify2/releases/latest;yes" \
+      "$(printf '%s' "$out" | python3 -c 'import json,sys; print(json.load(sys.stdin)["update"]["url"])');$(printf '%s' "$out" | python3 -c 'import json,sys; print("yes" if "install.sh" in json.load(sys.stdin)["update"]["command"] else "no")')"
+# Интерфейс читает спеку JSON-видом ядра (`steer spec convert --json`, с 2.1.0): минимум младше
+# 2.1.0 одобрял бы ядро, на котором не прочтётся и не запишется ни одна правка.
+check "минимум — не младше 2.1.0" "2.1.0" \
+      "$(printf '%s\n%s\n' "$(printf '%s' "$out" | jget min_version)" 2.1.0 | sort -V | head -n 1)"
 
 # ---- версия интерфейса — без сети, вместе с ядром ---------------------------------------
 # «Сейчас: luci-app-splify2 …» и подпись рельса брались только из splify2_versions, а он перед
@@ -1149,32 +1142,27 @@ mv "$T/bin/steer.away" "$T/bin/steer"
 check "ядра нет — версия интерфейса всё равно названа" "false;0.7.6" \
       "$(printf '%s' "$out" | jget present);$(printf '%s' "$out" | jget ui_version)"
 
-# ---- модули ядра 2.0: перечень с proxy, VLESS — по модулю ------------------------------
-# Модули — бинарники steer-<модуль> рядом с steerd (MODULE_DIR на стенде). steer-proxy (trojan,
-# shadowsocks, socks, http, vmess) — такой же модуль, как остальные: без него в перечне выход
-# прокси выглядел бы так, будто модуля нет, хотя он стоит.
-mkdir -p "$T/mods"
-for m in vless proxy; do printf '#!/bin/sh\n' > "$T/mods/steer-$m"; chmod +x "$T/mods/steer-$m"; done
-CORE_LIST="steer-core-2.0.0-r1 aarch64_cortex-a53 {steer-core}
-steer-vless-2.0.0-r1 aarch64_cortex-a53 {steer-vless}
-steer-proxy-2.0.0-r1 aarch64_cortex-a53 {steer-proxy}"
+# ---- протоколы ядра 2.1 — плагины: перечень с proxy, VLESS — по плагину vless --------------
+# Протокол доступен, когда включён плагин (state.json менеджера). Плагин proxy (trojan, shadowsocks,
+# socks, http, vmess) — такой же, как остальные: без него в перечне выход прокси выглядел бы так, будто
+# протокола нет, хотя он стоит. Пакетов steer-<модуль> в 2.1 нет, база пакетов о них не спрашивается.
+plug_reset
+plug_put vless 2.1.0; plug_put proxy 2.1.0
+CORE_LIST="steer-core-2.1.0-r1 aarch64_cortex-a53 {steer-core}"
 out="$(APK_LIST="$CORE_LIST" rpcd engine)"
-check "engine называет модуль proxy среди стоящих" '["vless", "proxy"]' "$(printf '%s' "$out" | jget modules)"
-check "VLESS — по модулю steer-vless" "true" "$(printf '%s' "$out" | jget vless)"
-# Без модуля steer-vless ядро 2.0 VLESS не умеет, что бы ни печатал его отказ: признак — файл
-# модуля, а не подстрока «steer-extended» в тексте `steer vless ''` (заглушка там молчит, и
-# прежний разбор принимал молчание за «умеет»).
-rm -f "$T/mods/steer-vless"
+check "engine называет плагин proxy среди стоящих" '["vless", "proxy"]' "$(printf '%s' "$out" | jget modules)"
+check "VLESS — по плагину vless" "true" "$(printf '%s' "$out" | jget vless)"
+# Выключенный плагин протокола не даёт: ядро его не регистрирует, и выходы вида ушли бы в on_fail.
+plug_put vless 2.1.0 disabled
 : > "$T/steer.log"
 out="$(APK_LIST="$CORE_LIST" rpcd engine)"
-check "ядро 2.0 без steer-vless VLESS не умеет" "false" "$(printf '%s' "$out" | jget vless)"
+check "выключенный плагин vless — VLESS недоступен" "false;[\"proxy\"]" \
+      "$(printf '%s' "$out" | jget vless);$(printf '%s' "$out" | jget modules)"
 check "и отказ ядра для этого не спрашивали" "0" "$(grep -c '^vless' "$T/steer.log" 2>/dev/null || true)"
-# Прежнее ядро 1.x — один бинарник: клиент VLESS вшит в пакет steer-extended.
-out="$(APK_LIST="steer-extended-1.5.9-r1 aarch64_cortex-a53 {steer-extended}" rpcd engine)"
-check "ядро 1.x: VLESS — по пакету steer-extended" "true" "$(printf '%s' "$out" | jget vless)"
-out="$(APK_LIST="steer-1.5.9-r1 aarch64_cortex-a53 {steer}" rpcd engine)"
-check "ядро 1.x без steer-extended VLESS не умеет" "false" "$(printf '%s' "$out" | jget vless)"
-rm -rf "$T/mods"
+rm -rf "$T/plug/lib/vless"
+out="$(APK_LIST="$CORE_LIST" rpcd engine)"
+check "плагин, положенный в state без файлов, — и тот выключен" "false" "$(printf '%s' "$out" | jget vless)"
+plug_reset
 
 # ---- steer-box-connector: ядро занято podkop/forkop -----------------------------------
 # Коннектор ставит свою службу /etc/init.d/sing-box и держит steerd сам. splify2 видит его по
@@ -1200,7 +1188,7 @@ out="$(SINGBOX_INITD_FIXTURE="$T/box/sing-box" rpcd apply)"
 check "коннектор: применение спеки отвергнуто" "false" "$(printf '%s' "$out" | jget ok)"
 check "и steer apply не звали" "0" "$(grep -c '^apply' "$T/steer.log")"
 reset_logs
-out="$(SINGBOX_INITD_FIXTURE="$T/box/sing-box" rpcd steer_install '{"version":"2.0.0"}')"
+out="$(SINGBOX_INITD_FIXTURE="$T/box/sing-box" rpcd steer_install '{"version":"2.1.0"}')"
 check "коннектор: установка ядра отвергнута до скачивания" "false;0" \
       "$(printf '%s' "$out" | jget ok);$(cat "$T/wget.log" "$T/curl.log" 2>/dev/null | grep -c .)"
 printf '#!/bin/sh\n' > "$T/box/podkop"
@@ -1330,10 +1318,15 @@ out="$(rpcd splify2_install '{"version":"0.7.7"}')"
 # Журнал теперь curl.log, а не wget.log: пакеты качаются общей download() (splify2#15),
 # у которой есть обход закрытого githubusercontent — своим wget этот метод больше не ходит.
 check "качается noarch-пакет интерфейса (R-042)" \
-      "https://github.com/splify2/splify2/releases/download/v0.7.7/luci-app-splify2-0.7.7-1_noarch.apk" \
-      "$(grep 'luci-app-splify2' "$T/curl.log" | head -1)"
+      "https://github.com/splify2/splify2/releases/download/v0.7.7/splify2-0.7.7-1_noarch.apk" \
+      "$(grep "splify2-[0-9]" "$T/curl.log" | head -1)"
 check "установка интерфейса идёт тем же порядком: add первым (R-042)" \
       "add" "$(awk 'NR==1{print $1}' "$T/apk.log")"
+# Перезапуск отложен на две секунды и идёт в фоне, а ответ метода уходит сразу: подоболочка не держит
+# вывод вызова (прежде держала — rpcd не видел конца ответа, пока она спала). Ждём его здесь.
+_w=0; while [ "$_w" -lt 6 ] && ! grep -q restart "$T/rpcd-initd.log" 2>/dev/null; do sleep 1; _w=$((_w + 1)); done
+check "ответ установки пришёл раньше перезапуска rpcd (вывод вызова не удерживался)" "yes" \
+      "$([ "$_w" -ge 1 ] && echo yes || echo no)"
 check "после установки rpcd перезапускается, иначе новый ACL не подхватится (R-042)" \
       "yes" "$(grep -q restart "$T/rpcd-initd.log" 2>/dev/null && echo yes || echo no)"
 check "установка интерфейса отчитывается положительно (R-042)" \
@@ -1347,7 +1340,7 @@ check "при отказе по версии ничего не качалось 
       "" "$(cat "$T/wget.log" "$T/curl.log" 2>/dev/null | grep -c . | sed 's/^0$//')"
 
 # ---- I-255: конфликт, в котором названного пакета нет, его не снимает --------
-# Ветка снятия заведена под замену steer ↔ steer-extended: там менеджер называет
+# Ветка снятия заведена под замену пакета: там менеджер называет
 # мешающий пакет по имени, и снять его — это и есть смысл. У splify2_install имя для
 # снятия одно — сам luci-app-splify2, и конфликт ip-full ↔ ip-tiny (26.9 требует
 # ip-full, на роутере стоит ip-tiny) к нему отношения не имеет: повторная попытка
@@ -1373,7 +1366,7 @@ check "чужой конфликт: причина отказа доезжает
 # работающий steer — это ровно I-049, но по другой ветке разбора.
 reset_logs
 out="$(APK_ADD_RC=1 APK_ADD_OUT='ERROR: package ip-tiny conflicts with ip-full' \
-       rpcd steer_install '{"version":"0.9.6","extended":false}')"
+       rpcd steer_install '{"version":"2.1.0"}')"
 check "чужой конфликт не снимает движок (I-255)" \
       "" "$(grep -c '^del' "$T/apk.log" | sed 's/^0$//')"
 
@@ -1406,8 +1399,8 @@ doc = {"schema": 1, "updated": "2026-10-02T10:17:36Z", "products": {
                          v("steer", "1.5.8-rc1", "splify2/steer", [f"steer-1.5.8-rc1-1_{A}.apk"]),
                          v("steer", "1.5.7", "splify2/steer", [f"steer-extended-1.5.7-1_{A}.apk"], name="1.5.7 Vega")]},
   "splify2": {"title": "splify2", "repo": "splify2/splify2", "stable": "26.9.2", "prerelease": None,
-              "versions": [v("splify2", "26.9.2", "splify2/splify2", ["luci-app-splify2-26.9.2-1_noarch.apk"]),
-                           v("splify2", "26.9.1", "splify2/splify2", ["luci-app-splify2-26.9.1-1_noarch.apk"])]}}}
+              "versions": [v("splify2", "26.9.2", "splify2/splify2", ["splify2-26.9.2-1_noarch.apk"]),
+                           v("splify2", "26.9.1", "splify2/splify2", ["splify2-26.9.1-1_noarch.apk"])]}}}
 json.dump(doc, open(out, "w"), ensure_ascii=False, indent=1)
 PY
 }
@@ -1461,33 +1454,51 @@ out="$(GH_FAIL=1 CURL_BODY='1.2.9' rpcd steer_versions)"
 check "молчат и version.json, и api.github.com — VERSION ветки dist, как раньше" '["1.2.9"]' \
       "$(printf '%s' "$out" | jget versions)"
 
+mkrel2() {  # ФАЙЛ SHA256
+    python3 - "$1" "$2" <<'PY2'
+import json, sys
+out, s = sys.argv[1], sys.argv[2]
+A = "aarch64_cortex-a53"
+mods = ["core", "vless", "hysteria2", "proxy", "xsteer", "obfs", "tgws"]
+def v(ver):
+    tag = f"steer-v{ver}"
+    return {"version": ver, "channel": "stable", "tag": tag,
+            "assets": [{"name": f"steer-{m}-{ver}-1_{A}.apk", "size": 8, "sha256": s,
+                        "urls": [f"https://github.com/splify2/releases/releases/download/{tag}/steer-{m}-{ver}-1_{A}.apk",
+                                 f"https://github.com/splify2/steer/releases/download/v{ver}/steer-{m}-{ver}-1_{A}.apk"]}
+                       for m in mods]}
+doc = {"schema": 1, "products": {"steer": {"stable": "2.1.1", "prerelease": None,
+       "versions": [v("2.1.1"), v("2.1.0")]}}}
+json.dump(doc, open(out, "w"))
+PY2
+}
 # ---- установка: адреса из version.json, сверка sha256 -----------------------------------
-EXT=steer-extended-1.5.9-1_aarch64_cortex-a53.apk
+EXT=steer-core-2.1.1-1_aarch64_cortex-a53.apk
 relclean; reset_logs
-mkrel "$T/rel-raw.json" "$(relsum "$T/body-rel")"
+mkrel2 "$T/rel-raw.json" "$(relsum "$T/body-rel")"
 printf 'splify2/releases/releases/download\t%s\nsplify2/steer/releases/download\t%s\n' "$T/body-rel" "$T/body-src" > "$T/curl.serve"
-out="$(rpcd steer_install '{"version":"1.5.9","extended":true}')"
+out="$(rpcd steer_install '{"version":"2.1.1"}')"
 check "ядро качается с первого адреса version.json — выпуска в splify2/releases" \
-      "https://github.com/splify2/releases/releases/download/steer-v1.5.9/$EXT" \
+      "https://github.com/splify2/releases/releases/download/steer-v2.1.1/$EXT" \
       "$(grep "$EXT" "$T/curl.log" | head -1)"
 check "сумма сошлась — второй адрес не спрашивали, установка удалась" "1;true" \
       "$(grep -c "$EXT" "$T/curl.log");$(printf '%s' "$out" | jget ok)"
 
 relclean; reset_logs
-mkrel "$T/rel-raw.json" "$(relsum "$T/body-src")"
+mkrel2 "$T/rel-raw.json" "$(relsum "$T/body-src")"
 printf 'splify2/releases/releases/download\t%s\nsplify2/steer/releases/download\t%s\n' "$T/body-rel" "$T/body-src" > "$T/curl.serve"
-out="$(rpcd steer_install '{"version":"1.5.9","extended":true}')"
+out="$(rpcd steer_install '{"version":"2.1.1"}')"
 check "сумма первого не сошлась — взят второй адрес, установка удалась" \
-      "https://github.com/splify2/steer/releases/download/v1.5.9/$EXT;true" \
+      "https://github.com/splify2/steer/releases/download/v2.1.1/$EXT;true" \
       "$(grep "$EXT" "$T/curl.log" | sed -n 2p);$(printf '%s' "$out" | jget ok)"
 check "о несовпадении сказано в via" "yes" \
       "$(printf '%s' "$out" | jget via | grep -q 'контрольная сумма' && echo yes || echo no)"
 
 relclean; reset_logs
-mkrel "$T/rel-raw.json" "$(printf 'другое\n' | sha256sum | cut -d' ' -f1)"
+mkrel2 "$T/rel-raw.json" "$(printf 'другое\n' | sha256sum | cut -d' ' -f1)"
 printf 'splify2/releases/releases/download\t%s\nsplify2/steer/releases/download\t%s\n' "$T/body-rel" "$T/body-src" > "$T/curl.serve"
 printf 'gitlab.com\napi.github.com\ncodeload.github.com\n' > "$T/curl.fail"
-out="$(rpcd steer_install '{"version":"1.5.9","extended":true}')"
+out="$(rpcd steer_install '{"version":"2.1.1"}')"
 check "сумма не сошлась нигде — не ставится" "false;0" \
       "$(printf '%s' "$out" | jget ok);$(grep -c '^add' "$T/apk.log")"
 
@@ -1496,83 +1507,61 @@ mkrel "$T/rel-raw.json" "$(relsum "$T/body-rel")"
 printf 'splify2/releases/releases/download\t%s\n' "$T/body-rel" > "$T/curl.serve"
 out="$(rpcd splify2_install '{"version":"26.9.2"}')"
 check "интерфейс качается с первого адреса version.json" \
-      "https://github.com/splify2/releases/releases/download/splify2-v26.9.2/luci-app-splify2-26.9.2-1_noarch.apk" \
-      "$(grep 'luci-app-splify2' "$T/curl.log" | head -1)"
+      "https://github.com/splify2/releases/releases/download/splify2-v26.9.2/splify2-26.9.2-1_noarch.apk" \
+      "$(grep "splify2-[0-9]" "$T/curl.log" | head -1)"
 
 # Версии нет в version.json (ушла из перечня) — прежний адрес выпуска проекта первым.
 relclean; reset_logs
 mkrel "$T/rel-raw.json" "$(relsum "$T/body-rel")"
 out="$(rpcd splify2_install '{"version":"26.8"}')"
 check "версии нет в version.json — прямой адрес выпуска, как раньше" \
-      "https://github.com/splify2/splify2/releases/download/v26.8/luci-app-splify2-26.8-1_noarch.apk" \
-      "$(grep 'luci-app-splify2' "$T/curl.log" | head -1)"
+      "https://github.com/splify2/splify2/releases/download/v26.8/splify2-26.8-1_noarch.apk" \
+      "$(grep "splify2-[0-9]" "$T/curl.log" | head -1)"
 relclean; reset_logs
 
-# ---- ядро 2.0: steer-core и модули одной транзакцией, переход с 1.5.9 ------------------
-# В 2.0 пакета steer нет: ядро — steer-core, протоколы — модули steer-<модуль>, каждый зависит от
-# steer-core точной версии. Значит, обновление ставит ядро и ВСЕ стоящие модули одной версией и
-# одной `apk add`, добавляя то, что нужно спеке; переход с steer-extended 1.5.9 не теряет вшитое в
-# него (vless, xsteer, obfs, tgws), а прежний пакет заменяется мета-пакетом steer-extended 2.0 в той же
-# транзакции: запись 1.x не остаётся в базе, и её prerm позже не погасит службу (pkg_del).
-mkrel2() {  # ФАЙЛ SHA256
-    python3 - "$1" "$2" <<'PY2'
-import json, sys
-out, s = sys.argv[1], sys.argv[2]
-A = "aarch64_cortex-a53"
-mods = ["core", "vless", "hysteria2", "proxy", "xsteer", "obfs", "tgws", "extended"]
-def v(ver):
-    tag = f"steer-v{ver}"
-    return {"version": ver, "channel": "stable", "tag": tag,
-            "assets": [{"name": f"steer-{m}-{ver}-1_{A}.apk", "size": 8, "sha256": s,
-                        "urls": [f"https://github.com/splify2/releases/releases/download/{tag}/steer-{m}-{ver}-1_{A}.apk"]}
-                       for m in mods]}
-doc = {"schema": 1, "products": {"steer": {"stable": "2.0.1", "prerelease": None,
-       "versions": [v("2.0.1"), v("2.0.0")]}}}
-json.dump(doc, open(out, "w"))
-PY2
-}
-apk_adds() { grep '^add' "$T/apk.log" | sed 's|/tmp/steer-\([a-z0-9]*\)-[0-9.]*-1_aarch64_cortex-a53.apk|\1|g; s/^add add //; s/^--allow-untrusted --force-overwrite //'; }
+# ---- ядро: steer-core одним пакетом, плагины — менеджером ---------------------------------
+# Ядро — пакет steer-core, протоколы — плагины (ядро 2.1): модулей-пакетов steer-<модуль> нет. После
+# установки метод доводит менеджером (`steer plugin ensure`) просимые плагины и нужные спеке.
+apk_adds() { grep '^add' "$T/apk.log" | sed 's|[^ ]*/steer-\([a-z0-9]*\)-[0-9.]*-1_aarch64_cortex-a53.apk|\1|g; s/^add add //; s/^--allow-untrusted --force-overwrite //'; }
 spec_keep="$T/etc/spec.json.keep2"; cp "$T/etc/spec.json" "$spec_keep" 2>/dev/null || rm -f "$spec_keep"
 rm -f "$T/etc/spec.json"
 relclean; reset_logs
 mkrel2 "$T/rel-raw.json" "$(relsum "$T/body-rel")"
 printf 'splify2/releases/releases/download\t%s\n' "$T/body-rel" > "$T/curl.serve"
-out="$(APK_LIST="steer-extended-1.5.9-r1 aarch64_cortex-a53 {steer-extended}" rpcd steer_install '{"version":"2.0.1"}')"
-check "1.5.9 extended → 2.0: ядро, вшитые модули и мета-пакет 2.0 одной apk add, без снятия" \
-      "core vless xsteer obfs tgws extended;0" "$(apk_adds);$(grep -c '^del' "$T/apk.log")"
-check "  ответ: ok, ядро, состав модулей" 'true;steer-core 2.0.1;["vless", "xsteer", "obfs", "tgws"]' \
-      "$(printf '%s' "$out" | jget ok);$(printf '%s' "$out" | jget installed);$(printf '%s' "$out" | jget modules)"
 
-reset_logs
+reset_logs; plug_reset
+plug_fixture hysteria2 2.1.1; plug_fixture proxy 2.1.1; plug_fixture obfs 2.1.1
 printf '{"version":2,"outputs":{"direct":{"kind":"direct"},"t":{"kind":"tunnel","protocol":"trojan","subscription":"s"},"o":{"kind":"interface","device":"wg0","obfs":{"server":"a:1","listen":"b:2"}}}}\n' > "$T/etc/spec.json"
-out="$(APK_LIST="steer-1.5.9-r1 aarch64_cortex-a53 {steer}" rpcd steer_install '{"version":"2.0.1","modules":"hysteria2"}')"
-check "1.5.9 basic → 2.0: просимый модуль и нужные спеке (proxy, obfs)" "steer|core hysteria2 proxy obfs" \
-      "$(apk_adds | tr '\n' '|' | sed 's/|$//')"
-check "  имя steer снято с закрепления до и убрано из world после" "del steer" "$(grep '^del' "$T/apk.log")"
-check "  после установки служба перезапущена (спека есть)" "true" "$(printf '%s' "$out" | jget restarted)"
+out="$(APK_LIST="steer-core-2.1.0-r1 aarch64_cortex-a53 {steer-core}" rpcd steer_install '{"version":"2.1.1","modules":"hysteria2"}')"
+check "ядро одним пакетом — модулей-пакетов нет" "core;0" \
+      "$(apk_adds | tr '\n' ' ' | sed 's/ $//');$(grep -c '^del' "$T/apk.log")"
+check "  плагины доведены менеджером: просимый и нужные спеке (proxy, obfs)" "ensure hysteria2 proxy obfs" "$(plug_calls)"
+check "  ответ: ok, ядро, состав плагинов, служба перезапущена (спека есть)" 'true;steer-core 2.1.1;["hysteria2", "proxy", "obfs"];true' \
+      "$(printf '%s' "$out" | jget ok);$(printf '%s' "$out" | jget installed);$(printf '%s' "$out" | jget modules);$(printf '%s' "$out" | jget restarted)"
+check "  плагины встали и включены" "enabled enabled enabled" \
+      "$(for m in hysteria2 proxy obfs; do PATH="$T/bin:$PATH" jsonfilter -i "$T/plug/state.json" -e "@.plugins['$m'].state"; done | tr '\n' ' ' | sed 's/ $//')"
+check "  версия ниже минимума отвергается" "yes" \
+      "$(rpcd steer_install '{"version":"2.0.1"}' | grep -q 'не старше 2.1.0' && echo yes || echo no)"
 
-reset_logs
-mkdir -p "$T/mods"; for m in vless proxy; do printf '#!/bin/sh\n' > "$T/mods/steer-$m"; chmod +x "$T/mods/steer-$m"; done
+# Отказ менеджера плагинов ядро не отменяет: оно уже встало, о плагинах говорит ensure_error.
+reset_logs; plug_reset
+printf 'нужно 1,8 МБ, свободно 0,9 МБ\n' > "$T/plug/fail.ensure"
+out="$(APK_LIST="steer-core-2.1.0-r1 aarch64_cortex-a53 {steer-core}" rpcd steer_install '{"version":"2.1.1","modules":"vless"}')"
+check "менеджер отказал — ядро встало, отказ назван (ensure_error)" "true;нужно 1,8 МБ, свободно 0,9 МБ" \
+      "$(printf '%s' "$out" | jget ok);$(printf '%s' "$out" | jget ensure_error)"
+
+# Без просимых и без нужных спеке плагинов менеджер не зовётся вовсе: сам steer-core ставит их при установке.
+reset_logs; plug_reset
 rm -f "$T/etc/spec.json"
-out="$(APK_LIST="$CORE_LIST" rpcd steer_install '{"version":"2.0.1"}')"
-check "2.0.0 → 2.0.1: ядро и все стоящие модули одной версией, без снятий" "core vless proxy;" \
-      "$(apk_adds);$(grep -c '^del' "$T/apk.log" | sed 's/^0$//')"
-check "  без спеки служба не перезапускается" "false" "$(printf '%s' "$out" | jget restarted)"
+out="$(APK_LIST="$CORE_LIST" rpcd steer_install '{"version":"2.1.1"}')"
+check "2.1.0 → 2.1.1 без спеки: одно ядро, менеджер не зовут" "core;;false" \
+      "$(apk_adds);$(plug_calls);$(printf '%s' "$out" | jget restarted)"
 
-reset_logs
-printf 'steer-proxy-2.0.1\n' > "$T/curl.fail"
-out="$(APK_LIST="$CORE_LIST" rpcd steer_install '{"version":"2.0.1"}')"
-check "модуль не скачался — не ставится ничего" "false;0" \
-      "$(printf '%s' "$out" | jget ok);$(grep -c '^add' "$T/apk.log")"
-check "  отказ называет файл" "yes" \
-      "$(printf '%s' "$out" | jget error | grep -q 'steer-proxy-2.0.1-1_aarch64_cortex-a53.apk' && echo yes || echo no)"
-check "  скачанное до отказа убрано из /tmp" "0" "$(ls /tmp/steer-core-2.0.1-1_aarch64_cortex-a53.apk 2>/dev/null | grep -c .)"
-rm -f "$T/curl.fail"
-out="$(rpcd steer_install '{"version":"2.0.1","modules":"vless wireguard"}')"
-check "неизвестный модуль отвергается до скачивания" "неизвестный модуль: wireguard" "$(printf '%s' "$out" | jget error)"
+out="$(rpcd steer_install '{"version":"2.1.1","modules":"vless wireguard"}')"
+check "неизвестный плагин отвергается до скачивания" "неизвестный модуль: wireguard" "$(printf '%s' "$out" | jget error)"
 
-# opkg: мета-пакет 2.0 с тем же именем обновляет запись 1.x на месте — отдельного снятия нет.
-rm -rf "$T/mods"; rm -f "$T/opkg.log"; : > "$T/opkg.lists"
+# opkg: одна установка ядра и модулей, ничего не снимается.
+rm -f "$T/opkg.log"; : > "$T/opkg.lists"
 cp "$T/bin/opkg" "$T/bin/opkg.orig"
 cat > "$T/bin/opkg" <<'EOF2'
 #!/bin/sh
@@ -1580,28 +1569,30 @@ echo "$*" >> "$SANDBOX/opkg.log"
 case "$1" in
     install)
         exit 0 ;;
-    list-installed) echo "steer-extended - 1.5.9-1" ;;
+    list-installed) echo "steer-core - 2.1.0-1" ;;
 esac
 exit 0
 EOF2
 chmod +x "$T/bin/opkg"
-out="$(PM_FIXTURE=opkg rpcd steer_install '{"version":"2.0.1"}')"
-check "opkg 1.5.9 extended → 2.0: один install, прежний не снимается (его prerm гасит службу)" \
+out="$(PM_FIXTURE=opkg rpcd steer_install '{"version":"2.1.1"}')"
+check "opkg: один install, ничего не снимается" \
       "install" "$(awk '$1 != "list-installed" {print $1}' "$T/opkg.log" | tr '\n' '|' | sed 's/|$//')"
-check "  в установке — ядро, вшитые модули и мета-пакет steer-extended (ipk)" "6" \
-      "$(grep '^install' "$T/opkg.log" | head -1 | tr ' ' '\n' | grep -c '2.0.1-1_aarch64_cortex-a53.ipk')"
-check "  установка удалась" "true" "$(printf '%s' "$out" | jget ok)"
-check "  в установке именно steer-extended 2.0.1" "1" \
-      "$(grep '^install' "$T/opkg.log" | head -1 | tr ' ' '\n' | grep -c '/tmp/steer-extended-2.0.1-1_aarch64_cortex-a53.ipk')"
+check "  установка удалась, в ней steer-core 2.1.1 (ipk)" "true;1" \
+      "$(printf '%s' "$out" | jget ok);$(grep '^install' "$T/opkg.log" | head -1 | tr ' ' '\n' | grep -c 'off/state/updater/steer-core-2.1.1-1_aarch64_cortex-a53.ipk')"
 mv "$T/bin/opkg.orig" "$T/bin/opkg"; rm -f "$T/opkg.lists" "$T/opkg.log"
-rm -rf "$T/mods"; relclean; reset_logs
+plug_reset; relclean; reset_logs
 [ -f "$spec_keep" ] && mv "$spec_keep" "$T/etc/spec.json"
 
-# ---- модули ядра 2.0: перечень, установка и снятие одного --------------------------------
-# Карточка модулей в «О ПО»: что стоит и какой версии, что нужно спеке. Модуль ставится той же
-# версией, что steer-core; снять нужный спеке нельзя — отказ называет выходы.
+# ---- прежняя карточка модулей над менеджером плагинов: перечень, установка и снятие одного -------
+# Карточка в «О ПО» осталась ради прежнего интерфейса: что стоит и в каком состоянии, что нужно спеке.
+# Ставит и снимает менеджер ядра; снять нужный спеке плагин нельзя — отказ называет выходы.
 spec_keep="$T/etc/spec.json.keep3"; cp "$T/etc/spec.json" "$spec_keep" 2>/dev/null || rm -f "$spec_keep"
-mkdir -p "$T/mods"; for m in vless proxy; do printf '#!/bin/sh\n' > "$T/mods/steer-$m"; chmod +x "$T/mods/steer-$m"; done
+plug_reset; plug_put vless 2.1.1; plug_put proxy 2.1.1 failed
+python3 - "$T/plug/state.json" <<'PY'
+import json, sys
+p = sys.argv[1]; d = json.load(open(p)); d["plugins"]["proxy"]["why"] = "помощник не поднялся"
+json.dump(d, open(p, "w"), ensure_ascii=False)
+PY
 printf '{"version":2,"outputs":{"nl":{"kind":"tunnel","protocol":"vless","subscription":"s"},"t":{"kind":"tunnel","protocol":"trojan","subscription":"s"},"t2":{"kind":"tunnel","protocol":"vmess","subscription":"s"}}}\n' > "$T/etc/spec.json"
 out="$(APK_LIST="$CORE_LIST" rpcd steer_modules)"
 mod_field() {  # МОДУЛЬ ПОЛЕ < JSON
@@ -1611,63 +1602,53 @@ for m in d.get("modules", []):
     if m.get("name")==sys.argv[1]:
         v=m.get(sys.argv[2]); print("" if v is None else json.dumps(v, ensure_ascii=False) if isinstance(v,bool) else v)' "$1" "$2"
 }
-check "steer_modules: версия ядра" "2.0.0" "$(printf '%s' "$out" | jget core)"
+check "steer_modules: версия ядра" "2.1.0" "$(printf '%s' "$out" | jget core)"
 check "steer_modules: шесть модулей по порядку" "vless hysteria2 proxy xsteer obfs tgws" \
       "$(printf '%s' "$out" | python3 -c 'import json,sys; print(" ".join(m["name"] for m in json.load(sys.stdin)["modules"]))')"
-check "  proxy стоит, версия пакета, нужен выходам t и t2" "true;2.0.0;true;t, t2" \
-      "$(printf '%s' "$out" | mod_field proxy installed);$(printf '%s' "$out" | mod_field proxy version);$(printf '%s' "$out" | mod_field proxy needed);$(printf '%s' "$out" | mod_field proxy outputs)"
+check "  vless включён, версия плагина, нужен выходу nl" "true;2.1.1;enabled;true;nl" \
+      "$(printf '%s' "$out" | mod_field vless installed);$(printf '%s' "$out" | mod_field vless version);$(printf '%s' "$out" | mod_field vless state);$(printf '%s' "$out" | mod_field vless needed);$(printf '%s' "$out" | mod_field vless outputs)"
+check "  proxy стоит, но не работает: состояние и причина названы, нужен выходам t и t2" "true;failed;помощник не поднялся;t, t2" \
+      "$(printf '%s' "$out" | mod_field proxy installed);$(printf '%s' "$out" | mod_field proxy state);$(printf '%s' "$out" | mod_field proxy why);$(printf '%s' "$out" | mod_field proxy outputs)"
 check "  hysteria2 не стоит и не нужен" "false;false" \
       "$(printf '%s' "$out" | mod_field hysteria2 installed);$(printf '%s' "$out" | mod_field hysteria2 needed)"
 
-relclean; reset_logs
-mkrel2 "$T/rel-raw.json" "$(relsum "$T/body-rel")"
-printf 'splify2/releases/releases/download\t%s\n' "$T/body-rel" > "$T/curl.serve"
+reset_logs; plug_reset; plug_fixture hysteria2 2.1.1
 out="$(APK_LIST="$CORE_LIST" rpcd steer_module_add '{"module":"hysteria2"}')"
-check "модуль ставится версией стоящего ядра, один файл" "hysteria2" "$(apk_adds)"
-check "  ответ: ok и что встало" "true;steer-hysteria2 2.0.0" \
+check "плагин ставит менеджер ядра, пакетный менеджер не зовут" "install hysteria2;0" \
+      "$(plug_calls);$(grep -c '^add' "$T/apk.log")"
+check "  ответ: ok и что встало" "true;hysteria2 2.1.1" \
       "$(printf '%s' "$out" | jget ok);$(printf '%s' "$out" | jget installed)"
 out="$(APK_LIST="steer-extended-1.5.9-r1 x {steer-extended}" rpcd steer_module_add '{"module":"hysteria2"}')"
-check "без steer-core модуль ставить некуда" "нет ядра steer-core" "$(printf '%s' "$out" | jget error)"
-
-reset_logs
-out="$(APK_LIST="$CORE_LIST" rpcd steer_module_del '{"module":"proxy"}')"
-check "снять модуль, нужный спеке, нельзя — названы выходы" "false;модуль нужен выходам: t, t2" \
+check "без steer-core плагин ставить некуда" "нет ядра steer-core" "$(printf '%s' "$out" | jget error)"
+plug_reset; plug_fixture hysteria2 2.1.1
+printf 'нужно 1,8 МБ, свободно 0,9 МБ\n' > "$T/plug/fail.install"
+out="$(APK_LIST="$CORE_LIST" rpcd steer_module_add '{"module":"hysteria2"}')"
+check "отказ менеджера доходит его словами" "false;нужно 1,8 МБ, свободно 0,9 МБ" \
       "$(printf '%s' "$out" | jget ok);$(printf '%s' "$out" | jget error)"
-check "  и пакет не трогали" "0" "$(grep -c '^del' "$T/apk.log")"
-out="$(APK_LIST="$CORE_LIST
-steer-xsteer-2.0.0-r1 x {steer-xsteer}" rpcd steer_module_del '{"module":"hysteria2"}')"
-check "ненужный спеке модуль снимается" "del steer-hysteria2" "$(grep '^del' "$T/apk.log")"
-reset_logs
-out="$(APK_LIST="$CORE_LIST
-steer-extended-2.0.0-r1 x {steer-extended}" rpcd steer_module_del '{"module":"hysteria2"}')"
-check "мета-пакет steer-extended снимается вместе с модулем" "del steer-extended|del steer-hysteria2" \
-      "$(grep '^del' "$T/apk.log" | tr '\n' '|' | sed 's/|$//')"
-# Мета-пакет мог быть единственным в /etc/apk/world (apk add steer-extended из репозитория): `apk del`
-# мета-пакета снёс бы и остальные его зависимости, не названные в world. Ядро и остающиеся модули
-# закрепляются ДО снятия мета-пакета.
-reset_logs
-out="$(APK_LIST="$CORE_LIST
-steer-hysteria2-2.0.0-r1 x {steer-hysteria2}
-steer-xsteer-2.0.0-r1 x {steer-xsteer}
-steer-extended-2.0.0-r1 x {steer-extended}" rpcd steer_module_del '{"module":"hysteria2"}')"
-check "снятие модуля при мета-пакете: ядро и остальные модули закреплены в world до снятия" \
-      "add add steer-core|add add steer-vless|add add steer-proxy|add add steer-xsteer|del steer-extended|del steer-hysteria2" \
-      "$(grep '^add\|^del' "$T/apk.log" | tr '\n' '|' | sed 's/|$//')"
-reset_logs
-out="$(APK_LIST="$CORE_LIST
-steer-hysteria2-2.0.0-r1 x {steer-hysteria2}" rpcd steer_module_del '{"module":"hysteria2"}')"
-check "без мета-пакета ничего не закрепляется" "del steer-hysteria2" "$(grep '^add\|^del' "$T/apk.log" | tr '\n' '|' | sed 's/|$//')"
+
+reset_logs; plug_reset; plug_put vless 2.1.1; plug_put proxy 2.1.1; plug_put hysteria2 2.1.1
+out="$(APK_LIST="$CORE_LIST" rpcd steer_module_del '{"module":"proxy"}')"
+check "снять плагин, нужный спеке, нельзя — названы выходы" "false;модуль нужен выходам: t, t2" \
+      "$(printf '%s' "$out" | jget ok);$(printf '%s' "$out" | jget error)"
+check "  и менеджер не звали" "" "$(plug_calls)"
+out="$(APK_LIST="$CORE_LIST" rpcd steer_module_del '{"module":"hysteria2"}')"
+check "ненужный спеке плагин снимает менеджер" "true;remove hysteria2;" \
+      "$(printf '%s' "$out" | jget ok);$(plug_calls);$(ls "$T/plug/lib/hysteria2" 2>/dev/null)"
+printf 'выходы x — вида tunnel:hysteria2\n' > "$T/plug/fail.remove"
+out="$(APK_LIST="$CORE_LIST" rpcd steer_module_del '{"module":"xsteer"}')"
+check "отказ менеджера при снятии доходит его словами" "false;выходы x — вида tunnel:hysteria2" \
+      "$(printf '%s' "$out" | jget ok);$(printf '%s' "$out" | jget error)"
 out="$(rpcd steer_module_add '{"module":"../x"}')"
 check "незнакомый модуль отвергается" "false" "$(printf '%s' "$out" | jget ok)"
 mkdir -p "$T/box"; printf '# steer-box-connector\n' > "$T/box/sing-box"
-reset_logs
+reset_logs; plug_reset; plug_fixture hysteria2 2.1.1
 out="$(SINGBOX_INITD_FIXTURE="$T/box/sing-box" APK_LIST="$CORE_LIST" rpcd steer_module_add '{"module":"hysteria2"}')"
-check "коннектор: модули не трогаются" "false;0" "$(printf '%s' "$out" | jget ok);$(grep -c . "$T/apk.log")"
-rm -rf "$T/box" "$T/mods"; relclean; reset_logs
+check "коннектор: плагины не трогаются" "false;0;" "$(printf '%s' "$out" | jget ok);$(grep -c . "$T/apk.log");$(plug_calls)"
+rm -rf "$T/box"; plug_reset; relclean; reset_logs
 rm -f "$T/etc/spec.json"; [ -f "$spec_keep" ] && mv "$spec_keep" "$T/etc/spec.json"
 for m in steer_modules steer_module_add steer_module_del; do
     check "метод $m в перечне и в ACL" "yes;yes" \
-          "$(rpcd_list | grep -q "\"$m\"" && echo yes || echo no);$(grep -q "\"$m\"" "$ROOT/luci/root/usr/share/rpcd/acl.d/luci-app-splify2.json" && echo yes || echo no)"
+          "$(rpcd_list | grep -q "\"$m\"" && echo yes || echo no);$(grep -q "\"$m\"" "$ROOT/luci/root/usr/share/rpcd/acl.d/splify2.json" && echo yes || echo no)"
 done
 
 # ---- R-037: свои списки доменов и адресов -------------------------------------
@@ -1827,7 +1808,7 @@ out="$( { printf '%s\n' '{"name":"bytes","kind":"prefixes","offset":0}'; } | env
     JSHN_SH="$ROOT/tests/stub/jshn.sh" FETCH_SH="$ROOT/files/usr/lib/splify2/fetch.sh" \
     FAST_SH="$ROOT/files/usr/lib/splify2/fast.sh" \
     STEER="$T/bin/steer" SPEC="$T/etc/spec.json" LISTS="$T/lists" \
-    SUB="$T/etc/sub.txt" MANIFEST="$T/etc/manifest.json" RPCD_LIB="$RPCD_DIR" \
+    SUB="$T/etc/sub.txt" MANIFEST="$CAT_MANIFEST" RPCD_LIB="$RPCD_DIR" \
     LIST_CHUNK=11 sh "$SCRIPT" call list_get 2>/dev/null)"
 check "первый кусок ровно в предел и с переводом строки на конце" "10.0.0.0/8" \
       "$(printf '%s' "$out" | jget text | tr -d '\n')"
@@ -1853,10 +1834,10 @@ check "запись о происхождении удалена вместе с
       "$([ -f "$T/lists/custom/fromfile.lst.src" ] && echo есть || echo нет)"
 
 # Метод, которого нет в ACL, вызвать из LuCI нельзя — метод есть, а кнопка не работает.
-acl="$ROOT/luci/root/usr/share/rpcd/acl.d/luci-app-splify2.json"
+acl="$ROOT/luci/root/usr/share/rpcd/acl.d/splify2.json"
 check "правка списков разрешена в ACL на чтение" "yes" \
       "$(python3 -c 'import json,sys
-r = json.load(open(sys.argv[1]))["luci-app-splify2"]["read"]["ubus"]["splify2"]
+r = json.load(open(sys.argv[1]))["splify2"]["read"]["ubus"]["splify2"]
 print("yes" if "list_custom" in r and "list_get" in r else "no")' "$acl")"
 
 # Метод, которого нет в списке методов, ubus не покажет вовсе.
@@ -1871,10 +1852,10 @@ d = json.load(sys.stdin)
 print("yes" if "engine_stop" in d and "engine_start" in d else "no")')"
 
 # Метод, которого нет в ACL, вызвать из LuCI нельзя — метод есть, а кнопка не работает.
-acl="$ROOT/luci/root/usr/share/rpcd/acl.d/luci-app-splify2.json"
+acl="$ROOT/luci/root/usr/share/rpcd/acl.d/splify2.json"
 check "оба метода разрешены в ACL на запись (R-017)" \
       "yes" "$(python3 -c 'import json,sys
-w = json.load(open(sys.argv[1]))["luci-app-splify2"]["write"]["ubus"]["splify2"]
+w = json.load(open(sys.argv[1]))["splify2"]["write"]["ubus"]["splify2"]
 print("yes" if "engine_stop" in w and "engine_start" in w else "no")' "$acl")"
 
 # ---- путь из манифеста издателя не выходит за каталог списков -----------------
@@ -1886,7 +1867,7 @@ print("yes" if "engine_stop" in w and "engine_start" in w else "no")' "$acl")"
 # list_remove удалял любой файл.
 #
 # Для СВОИХ списков эта мысль додумана давно (list_put проверяет имя), для чужих не была.
-cat > "$T/etc/manifest.json" <<'EOF'
+cat > "$CAT_MANIFEST" <<'EOF'
 {
   "base_url": "https://example.invalid/lists",
   "categories":   [ { "id": "evil", "file": "../../../trav-probe/cron.txt" },
@@ -2014,30 +1995,10 @@ check "vless_probe: флаг вместо имени выхода — отказ
 out="$(rpcd outbound_probe '{"output":"a/b"}')"
 check "outbound_probe: имя с косой — отказ" "false" "$(printf '%s' "$out" | jget ok)"
 
-# БЕЗ curl страна и отклик выходов не меряются вовсе, и обзор молча оставлял пустые строки
-# (splify2#32): «выход молчит» и «мерить нечем» выглядели одинаково. Ответ обязан сказать
-# второе полем curl=false — и не говорить его там, где curl есть.
-export GEO_CURL=/nonexistent/curl
-out="$(rpcd outbound_geo '{"output":"vless"}')"
-check "outbound_geo без curl: так и сказано" "false" "$(printf '%s' "$out" | jget curl)"
-out="$(rpcd outbound_geo '{"output":"vless","fresh":true}')"
-check "outbound_geo без curl, свежий запрос: так и сказано" "false" "$(printf '%s' "$out" | jget curl)"
-unset GEO_CURL
-out="$(rpcd outbound_geo '{"output":"vless"}')"
-check "outbound_geo с curl: поля curl нет" "" "$(printf '%s' "$out" | jget curl)"
-
-# ФОНОВЫЙ ЗАМЕР — НЕ НА КАЖДЫЙ ОПРОС. Пока у выхода нет ни одного удачного замера, каждый опрос
-# страницы запускал в фоне curl через выход: на узле, который не отвечает, замер не удаётся
-# никогда, запуски шли на каждом опросе и накладывались, и каждый тянул ядро открыть соединение
-# с узлом (чат splify2: «дикий флуд tcp на vless-инбаунд, почти каждые 0,02 с, хоть он и не в
-# правиле»). Теперь — не чаще раза в GEO_RETRY на выход. Фоновый замер виден по вызову
-# `steer status` (им geo_refresh ищет устройство выхода).
-export GEO_DIR="$T/geo"; rm -rf "$GEO_DIR"
-: > "$T/steer.log"
-for _i in 1 2 3 4 5; do rpcd outbound_geo '{"output":"vless"}' >/dev/null; done
-sleep 1
-check "outbound_geo: пять опросов подряд без замера — один фоновый замер" "1" "$(grep -c '^status' "$T/steer.log")"
-unset GEO_DIR
+# Страна выхода (outbound_geo), её кэш, фоновое обновление и пределы — плагин node-check (tests/nodecheckmatch.sh); здесь
+# остаётся отклик выхода (outbound_probe) и его машинное слово исхода.
+out="$(rpcd outbound_probe '{"output":"vless"}')"
+check "outbound_probe: исход назван машинным словом code" "yes" "$(printf '%s' "$out" | jget code | grep -qE '^(ok|no_answer|no_device)$' && echo yes || echo no)"
 
 # ИМЯ ПОДПИСКИ НЕ ЛАТИНИЦЕЙ. sub_slug оставлял от «Дом» пустоту (tr побайтно превращал каждый
 # байт UTF-8 в подчёркивание, sed снимал хвост), а sub_use на пустом имени подставлял main —
@@ -2159,19 +2120,22 @@ check "размер отсутствующего файла считается �
       "$(sh -c 'echo "$(wc -c 2>/dev/null < /nonexistent/nope || echo 0)"')"
 
 check "путь файла настройки — шов, а не литерал" "1" \
-      "$(grep -c '^UCI_SPLIFY2=' "$SCRIPT")"
+      "$(grep -c '^UCI_SPLIFY2=' "$ENV_SH")"
 check "прямых путей /etc/config/splify2 в коде не осталось" "1" \
-      "$(grep -c '/etc/config/splify2' "$SCRIPT")"
+      "$(grep -c '/etc/config/splify2' "$ENV_SH")"
+# (Остальные места — в службе хоста для плагинов: режим скачивания и восстановление полей uci; настройки самих плагинов
+# хост пишет в conf плагина, не в uci.)
 # Десять мест: sub_set, sub_put (ключи подписок), ветка настроек, ui_get|ui_set,
 # fetch_mode|fetch_mode_set, lists_source|lists_source_set, zm_fix|zm_fix_set, doh_tunnel_set,
-# telemetry_set и sub_auto. Число растёт вместе с методами, которые пишут в uci, — и это ровно
+# и sub_auto (telemetry_set убран вместе со счётчиком установок). Число растёт вместе с методами, которые пишут в uci, — и это ровно
 # тот случай, когда барьер должен ломаться: новый метод обязан заводить файл той же функцией.
+# Десятым стал sub_rename (R-115): пишет название подписки, и файл заводит той же функцией. Позже sub_auto и sub_rename
+# переехали в плагин subscriptions (sub_rename пишет название службой хоста `sub title`, которая заводит файл той же функцией).
+# Следом — prefs_set каркаса на LuCI JS (выбор главной страницы).
 #
-# Девятым telemetry_set стал не потому, что метод новый, а потому, что он единственный звал
-# uci_file БЕЗ проверки — как и `uci set` с `uci commit` рядом. Ответ `ok 1` у него значил не
-# «согласие записано», а «дошли до конца функции»: на роутере с заполненным флешем ползунок
-# переезжал, страница показывала успех, а в конфигурации оставалось прежнее значение.
-check "файл заводится одной функцией на все места" "8" \
+# Ответ `ok 1` обязан значить «записано», а не «дошли до конца функции»: на роутере с заполненным
+# флешем ползунок переезжал, страница показывала успех, а в конфигурации оставалось прежнее.
+check "файл заводится одной функцией на все места" "7" \
       "$(rpcd_src | grep -c '^ *uci_file ||')"
 check "перенаправлением файл больше не заводится" "0" \
       "$(rpcd_src | grep -c ': > "\?/etc/config')"
@@ -2235,6 +2199,27 @@ check "название от панели взято движком и сохр�
 out="$(STEER_SUB_JSON='{"ok":true,"url":"https://panel.invalid/s","usable":1,"title":"Панель"}' \
        rpcd sub_set '{"url":"https://panel.invalid/s","title":"моё"}')"
 check "своё название сильнее панельного" "моё" "$(uci_get splify2.main.sub_title)"
+
+# R-115: имя, которое вписал человек, сильнее названия опознанного продавца — подписку можно
+# переименовать. Продавец подставляется вместо ПУСТОГО имени (и вместо слова панели при добавлении).
+out="$(STEER_SUB_JSON='{"ok":true,"url":"https://t.me/StressKVN_bot","usable":1,"title":"Панель"}' \
+       rpcd sub_set '{"name":"brand1","url":"https://panel.invalid/StressKVN_bot/s"}')"
+check "продавец без своего имени: название продавца" "☢️ StressKVN❤️" \
+      "$(rpcd sub_list | python3 -c 'import json,sys
+print(next(s["title"] for s in json.load(sys.stdin)["subs"] if s["name"]=="brand1"))')"
+out="$(rpcd sub_rename '{"name":"brand1","title":"Мой друг"}')"
+check "sub_rename: ответ" "Мой друг" "$(printf '%s' "$out" | jget title)"
+check "sub_list: своё имя сильнее названия продавца" "Мой друг" \
+      "$(rpcd sub_list | python3 -c 'import json,sys
+print(next(s["title"] for s in json.load(sys.stdin)["subs"] if s["name"]=="brand1"))')"
+check "sub_list: ссылка на продавца при своём имени осталась" "https://t.me/StressKVN_bot" \
+      "$(rpcd sub_list | python3 -c 'import json,sys
+print(next(s.get("link","") for s in json.load(sys.stdin)["subs"] if s["name"]=="brand1"))')"
+out="$(rpcd sub_rename '{"name":"brand1","title":""}')"
+check "sub_rename: пустое имя возвращает название продавца" "☢️ StressKVN❤️" "$(printf '%s' "$out" | jget title)"
+out="$(rpcd sub_rename '{"name":"nope","title":"x"}')"
+check "sub_rename: нет такой подписки — отказ" "false" "$(printf '%s' "$out" | jget ok)"
+rpcd sub_del '{"name":"brand1"}' >/dev/null
 
 # Слово панели про устройство доходит до человека дословно. Что именно она сказала — решает
 # движок по своим заголовкам; объект обязан не потерять это по дороге.
@@ -2304,16 +2289,27 @@ check "интервал дольше трёх суток отвергнут" "fa
 out="$(rpcd sub_auto '{"name":"auto1","minutes":"каждый час"}')"
 check "интервал не числом отвергнут" "false" "$(printf '%s' "$out" | jget ok)"
 
-rm -f "$T/etc/subs/auto1.auto"
+# Расписание — данные плагина subscriptions: conf/subscriptions/schedule и отметки попыток stamps/<имя>.
+SUBCONF="$T/off/conf/subscriptions"
+rm -rf "$SUBCONF"
 out="$(rpcd sub_auto '{"name":"auto1","minutes":60}')"
 check "час принят" "true;60" "$(printf '%s' "$out" | jget ok);$(printf '%s' "$out" | jget auto)"
-check "отметка времени поставлена сразу" "yes"       "$([ -s "$T/etc/subs/auto1.auto" ] && echo yes || echo no)"
+check "отметка времени поставлена сразу" "yes"       "$([ -s "$SUBCONF/stamps/auto1" ] && echo yes || echo no)"
 check "перечень называет интервал" "60"       "$(rpcd sub_list | python3 -c 'import json,sys
 print(next(d.get("auto") for d in json.load(sys.stdin)["subs"] if d["name"]=="auto1"))')"
 
 # Отметка ставится ОТ МОМЕНТА НАСТРОЙКИ, а не от давно просроченного прошлого: иначе выбор
 # «раз в трое суток» обновлял бы подписку немедленно, при первом же тике расписания.
-check "сразу после настройки обновлять не пора" "yes"       "$(now=$(date -u +%s); at=$(cat "$T/etc/subs/auto1.auto"); [ $((now - at)) -lt 60 ] && echo yes || echo no)"
+check "сразу после настройки обновлять не пора" "yes"       "$(now=$(date -u +%s); at=$(cat "$SUBCONF/stamps/auto1"); [ $((now - at)) -lt 60 ] && echo yes || echo no)"
+
+# Отказ записи интервала — отказ, а не «ok» (I-329: `A && x || y` запускал вторую ветку): расписание записать нельзя.
+chmod 500 "$SUBCONF"
+out="$(rpcd sub_auto '{"name":"auto1","minutes":90}')"
+chmod 700 "$SUBCONF"
+if [ "$(id -u)" != 0 ]; then
+    check "sub_auto: отказ записи интервала назван отказом" "false" "$(printf '%s' "$out" | jget ok)"
+fi
+check "и прежний интервал остался" "auto1 60" "$(grep '^auto1 ' "$SUBCONF/schedule")"
 
 out="$(rpcd sub_auto '{"name":"auto1","minutes":0}')"
 check "ноль выключает обновление" "true;0"       "$(printf '%s' "$out" | jget ok);$(printf '%s' "$out" | jget auto)"
@@ -2321,6 +2317,36 @@ check "ноль выключает обновление" "true;0"       "$(print
 out="$(rpcd sub_set '{"url":"vless://k@h:443#n","name":"hand1"}')"
 out="$(rpcd sub_auto '{"name":"hand1","minutes":60}')"
 check "ссылкам vless:// интервал не назначить" "false" "$(printf '%s' "$out" | jget ok)"
+
+# Первая подписка (main): интервал живёт в СВОЁМ ключе splify2.main.sub_auto. Прежде sub_uci_key для
+# main отдавал на любое поле, кроме url и kind, ключ sub_title: интервал затирал название, а
+# название «60» читалось обратно интервалом.
+out="$(rpcd sub_set '{"url":"https://panel.invalid/sub/mainauto","title":"Моя подписка"}')"
+out="$(rpcd sub_auto '{"minutes":60}')"
+check "main: интервал принят" "true;60" "$(printf '%s' "$out" | jget ok);$(printf '%s' "$out" | jget auto)"
+check "main: интервал лёг в расписание плагина под именем main" "main 60" "$(grep '^main ' "$SUBCONF/schedule")"
+check "и в uci каркаса его нет" "" "$(uci_get splify2.main.sub_auto)"
+check "main: название не тронуто" "Моя подписка" "$(uci_get splify2.main.sub_title)"
+check "main: перечень называет интервал и название" "60;Моя подписка" "$(rpcd sub_list | python3 -c 'import json,sys
+d=next(d for d in json.load(sys.stdin)["subs"] if d["name"]=="main")
+print("%s;%s" % (d.get("auto"), d.get("title")))')"
+out="$(rpcd sub_auto '{"minutes":0}')"
+check "main: ноль снимает интервал" "true;;Моя подписка" "$(printf '%s' "$out" | jget ok);$(grep '^main ' "$SUBCONF/schedule");$(uci_get splify2.main.sub_title)"
+rpcd sub_auto '{"minutes":90}' >/dev/null
+out="$(rpcd sub_del '{"name":"main"}')"
+check "main: удаление подписки снимает ссылку и название" ";" "$(uci_get splify2.main.sub_url);$(uci_get splify2.main.sub_title)"
+
+# Источник сменился на ссылки: остаток трафика и интервал прежней панели уходят вместе с нею.
+out="$(rpcd sub_set '{"url":"https://panel.invalid/sub/swap","name":"swap1"}')"
+rpcd sub_auto '{"name":"swap1","minutes":60}' >/dev/null
+printf 'total=100\nat=1\n' > "$T/etc/subs/swap1.userinfo"
+out="$(rpcd sub_set '{"url":"vless://k@h:443#n","name":"swap1"}')"
+check "ссылки вместо панели: остатка трафика больше нет" "no;no" \
+      "$([ -e "$T/etc/subs/swap1.userinfo" ] && echo yes || echo no);$(printf '%s' "$out" | grep -q '"quota"' && echo yes || echo no)"
+# Интервал остаётся в расписании плагина, но для подписки из ссылок он не действует: хук sub_fields отдаёт auto 0.
+check "и интервал обновления для неё не действует" "0" "$(rpcd sub_list | python3 -c 'import json,sys
+print(next(d.get("auto") for d in json.load(sys.stdin)["subs"] if d["name"]=="swap1"))')"
+rpcd sub_del '{"name":"swap1"}' >/dev/null
 
 # Обновление по сохранённой ссылке. Узлы прежние — туннель не трогаем.
 # Первое обновление узлы МЕНЯЕТ (в файле лежал образец от sub_set) — журнал вызовов движка
@@ -2379,16 +2405,51 @@ out="$(UCI_SET_FAIL=splify2.main.sub_url rpcd sub_set '{"url":"https://second.in
 check "sub_set: отказ записи ссылки не стирает прежнюю" "https://panel.invalid/sub/main" \
       "$(uci_get splify2.main.sub_url)"
 
-# Панель молчит — отметка всё равно свежая: повторять поход каждые десять минут при мёртвой
-# панели значит стучаться к ней 144 раза в сутки вместо одного-двух.
-printf '0\n' > "$T/etc/subs/auto1.auto"
+# dns_probe: адрес сервера не флаг ядра (ведущий «-»), а IPv6 в скобках — законный адрес. Разбор
+# массива идёт через json_is_a, которого в заглушке jshn нет, поэтому проверка — по тексту шва.
+check "dns_probe: адрес с «-» впереди отвергается, IPv6 в скобках допустим" "1" \
+      "$(grep -cF "''|-*|*[!]A-Za-z0-9:/._=,%@?+[-]*) fail" "$ROOT/files/usr/lib/splify2/rpcd/m-state.sh")"
+
+# list_put: отказ на любом шаге не оставляет временных файлов в /tmp (прежде — по одному на попытку).
+_pb="$(ls /tmp | grep -c '^splify2-put\.')"
+rpcd list_put '{"name":"tmpleak","kind":"prefixes","url":"ftp://x/y"}' >/dev/null
+rpcd list_put '{"name":"tmpleak","kind":"prefixes","text":""}' >/dev/null
+rpcd list_put '{"name":"tmpleak","kind":"prefixes","text":"не подсеть"}' >/dev/null
+check "list_put: после трёх отказов в /tmp ничего не осталось" "$_pb" "$(ls /tmp | grep -c '^splify2-put\.')"
+
+# explain: значение с дефиса ядро разобрало бы как флаг — отказ здесь, до вызова ядра.
+out="$(rpcd explain '{"address":"--spec"}')"
+check "explain: «--флаг» вместо адреса отвергнут" "false;это не адрес и не имя" "$(printf '%s' "$out" | jget ok);$(printf '%s' "$out" | jget error)"
+
+# Отказ `uci commit` (нет места на флеше) — отказ метода, а не «ok»: иначе сохранённое исчезло бы
+# после перезагрузки при зелёном ответе страницы.
+out="$(UCI_COMMIT_FAIL=1 rpcd ui_set '{"state":"{\"a\":1}"}')"
+check "ui_set: отказ commit назван отказом" "false" "$(printf '%s' "$out" | jget ok)"
+out="$(UCI_COMMIT_FAIL=1 rpcd fetch_mode_set '{"mode":"always"}')"
+check "fetch_mode_set: отказ commit назван отказом" "false" "$(printf '%s' "$out" | jget ok)"
+out="$(UCI_COMMIT_FAIL=1 rpcd sub_rename '{"name":"auto1","title":"Имя"}')"
+check "sub_rename: отказ commit назван отказом" "false" "$(printf '%s' "$out" | jget ok)"
+rpcd fetch_mode_set '{"mode":"off"}' >/dev/null
+rpcd ui_set '{"state":"{\"setup\":1}"}' >/dev/null
+rpcd sub_rename '{"name":"auto1","title":""}' >/dev/null
+rpcd sub_auto '{"name":"auto1","minutes":0}' >/dev/null
+
+# Память мастера ограничена (I-329): без предела в настройку роутера клали сколько угодно. Отказ
+# называет число; обычная запись проходит.
+out="$(rpcd ui_set '{"state":"{\"setup\":1}"}')"
+check "ui_set: обычная память записана" "true;{\"setup\":1}" "$(printf '%s' "$out" | jget ok);$(uci_get splify2.main.wizard)"
+big="$(python3 -c 'print("x" * 70000)')"
+out="$(rpcd ui_set "{\"state\":\"$big\"}")"
+check "ui_set: слишком большая память отвергнута" "false" "$(printf '%s' "$out" | jget ok)"
+check "и отказ называет предел в КБ" "yes" "$(printf '%s' "$out" | jget error | grep -q '64 КБ' && echo yes || echo no)"
+check "и прежняя память осталась" "{\"setup\":1}" "$(uci_get splify2.main.wizard)"
+
+# Панель молчит — обновление названо отказом. Отметку попытки ставит расписание плагина (subsmatch.sh), а не метод.
 out="$(STEER_SUB_RC=1 rpcd sub_refresh '{"name":"auto1"}')"
 check "неудача обновления названа отказом" "false" "$(printf '%s' "$out" | jget ok)"
-check "и отметка попытки всё равно обновлена" "yes"       "$(now=$(date -u +%s); at=$(cat "$T/etc/subs/auto1.auto" 2>/dev/null || echo 0); [ $((now - at)) -lt 60 ] && echo yes || echo no)"
 
 rpcd sub_del '{"name":"auto1"}' >/dev/null 2>&1
 rpcd sub_del '{"name":"hand1"}' >/dev/null 2>&1
-check "удаление подписки уносит и отметку" "no"       "$([ -e "$T/etc/subs/auto1.auto" ] && echo yes || echo no)"
 
 # ---- несколько подписок ------------------------------------------------------
 #
@@ -2551,19 +2612,8 @@ rpcd hysteria2_nodes "{\"sub\":\"$T/etc/subs/green.txt\",\"insecure\":true}" > /
 rpcd vless_nodes '{"output":"vl","insecure":true}' > /dev/null
 check "без insecure, у hysteria2 и по имени выхода — флага нет" "0" "$(grep -c -- '--insecure' "$T/steer.log")"
 : > "$T/steer.log"
-out="$(STEER_NO_INSECURE=1 STEER_JSON='{"output":"","sub_file":"old","nodes":[]}' \
-       rpcd vless_nodes "{\"sub\":\"$T/etc/subs/green.txt\",\"insecure\":true}")"
-check "ядро без --insecure: спрошено ещё раз без флага, ответ — его" \
-      "2;vless-nodes $T/etc/subs/green.txt --spec $T/etc/spec.json;old" \
-      "$(wc -l < "$T/steer.log" | tr -d ' ');$(tail -1 "$T/steer.log");$(printf '%s' "$out" | jget sub_file)"
-: > "$T/steer.log"
-out="$(STEER_NO_INSECURE=1 STEER_JSON='{"output":"","results":[],"working":-1}' \
-       rpcd proxy_probe "{\"sub\":\"$T/etc/subs/green.txt\",\"node\":0,\"insecure\":true}")"
-check "и у проверки узла" "2;proxy-probe $T/etc/subs/green.txt --node 0 --timeout 6 --spec $T/etc/spec.json;-1" \
-      "$(wc -l < "$T/steer.log" | tr -d ' ');$(tail -1 "$T/steer.log");$(printf '%s' "$out" | jget working)"
-: > "$T/steer.log"
 out="$(STEER_RC=2 STEER_ERR='steer: vless-nodes: подписка пуста' rpcd vless_nodes "{\"sub\":\"$T/etc/subs/green.txt\",\"insecure\":true}")"
-check "другой отказ ядра кодом 2 — без повтора, словами ядра" "1;false" \
+check "отказ ядра кодом 2 — без повтора, словами ядра" "1;false" \
       "$(wc -l < "$T/steer.log" | tr -d ' ');$(printf '%s' "$out" | jget ok)"
 check "insecure объявлен у vless_nodes, vless_probe, proxy_nodes, proxy_probe" "4" \
       "$(rpcd_list | python3 -c 'import json,sys; d=json.load(sys.stdin); print(sum(1 for m in ("vless_nodes","vless_probe","proxy_nodes","proxy_probe") if "insecure" in d.get(m,{})))')"
@@ -2679,7 +2729,7 @@ check "и сказано, почему" "yes" \
 check "sub_quota объявлен в перечне методов" "yes" \
       "$(rpcd_list | grep -q '"sub_quota"' && echo yes || echo no)"
 check "sub_quota разрешён в ACL" "yes" \
-      "$(grep -q '"sub_quota"' "$ROOT/luci/root/usr/share/rpcd/acl.d/luci-app-splify2.json" && echo yes || echo no)"
+      "$(grep -q '"sub_quota"' "$ROOT/luci/root/usr/share/rpcd/acl.d/splify2.json" && echo yes || echo no)"
 
 # И обратное свойство: за СПИСКАМИ идентификатор устройства не уходит. Издателю списков
 # незачем знать, какой у человека роутер, — это другой сервер и другая надобность.
@@ -2697,35 +2747,44 @@ rm -f "$T/var/vless-dirty" "$T/var/obfs-dirty"
 # звало spec_set, dry-run падал с «cannot read a channel's list», правка откатывалась — и
 # человек видел ошибку применения там, где ничего не применял. Проверяется поэтому не наличие
 # загрузки, а её место: перед каждой проверкой.
-check "доскачивание вынесено в общую функцию" "yes" \
-      "$(rpcd_src | grep -q '^fetch_missing_lists()' && echo yes || echo no)"
-# Мест стало три: к spec_set и apply добавилось восстановление из архива (backup_put) —
-# оно тоже проверяет спеку компилятором, а на чистом роутере зеркал категорий ещё нет, и в
-# архив они намеренно не едут. Проверка на число, а не на перечень имён: имена ниже.
-check "функция вызывается трижды: spec_set, apply, backup_put" "3" \
-      "$(rpcd_src | grep -c 'fetch_missing_lists "')"
-# spec_set и apply живут в группе spec, восстановление — в группе backup.
-set_line=$(grep -n 'set_warn="$(fetch_missing_lists' "$RPCD_DIR/m-spec.sh" | cut -d: -f1)
+# Довозом занимается плагин lists-catalog: хуки pre_spec_set и pre_apply (hooks/ensure-lists), у каркаса своего довоза нет.
+check "доскачивание вынесено в общую функцию плагина" "yes" \
+      "$(grep -q '^fetch_missing_lists()' "$ROOT/plugins/lists-catalog/lib/fetch-missing.sh" && echo yes || echo no)"
+check "у каркаса своего довоза списков нет" "0" \
+      "$(rpcd_src | grep -c 'fetch_missing_lists')"
+# Мест, откуда довоз зовётся, три — те же, что были: проверка присланной спеки (хук pre_spec_set в spec_set), применение
+# (хук pre_apply в apply) и восстановление из архива (хук pre_spec_set в службе хоста `state import`: архив тоже проверяет
+# спеку ядром, а на чистом роутере зеркал категорий ещё нет, и в архив они намеренно не едут).
+check "хуки довоза объявлены: pre_spec_set и pre_apply" "hooks/ensure-lists;hooks/ensure-lists" \
+      "$(python3 -c 'import json,sys
+h = json.load(open(sys.argv[1]))["splify2"]["hooks"]
+print(h["pre_spec_set"]["prog"] + ";" + h["pre_apply"]["prog"])' "$ROOT/plugins/lists-catalog/plugin.json")"
+set_line=$(grep -n 'ext_pre_spec_set "$tmp"' "$RPCD_DIR/m-spec.sh" | cut -d: -f1)
 dry_line=$(grep -n 'engine_check "$tmp"' "$RPCD_DIR/m-spec.sh" | cut -d: -f1)
-check "в spec_set загрузка идёт ДО проверки движком" "yes" \
+check "в spec_set довоз идёт ДО проверки движком" "yes" \
       "$([ -n "$set_line" ] && [ -n "$dry_line" ] && [ "$set_line" -lt "$dry_line" ] && echo yes || echo no)"
-# Порядок ищется ВНУТРИ ветки, а не по всему файлу: `fetch_warn=` встречается и в apply, и
-# в backup_put, и общий `grep -n` отдал бы два номера строк, на которых `[` спотыкается о
-# «Illegal number». Расхождение такого рода стенд однажды уже прятал.
+# Порядок ищется ВНУТРИ ветки, а не по всему файлу: общий `grep -n` отдал бы несколько номеров строк, на которых `[`
+# спотыкается о «Illegal number». Расхождение такого рода стенд однажды уже прятал.
 apply_body="$(sed -n '/^    apply)/,/^        ;;/p' "$RPCD_DIR/m-spec.sh")"
-apply_fetch=$(printf '%s\n' "$apply_body" | grep -n 'fetch_missing_lists' | head -1 | cut -d: -f1)
-apply_run=$(printf '%s\n' "$apply_body" | grep -n 'apply --spec "$SPEC" 8>&- 2>&1)"; rc=' | head -1 | cut -d: -f1)
-check "в apply загрузка идёт ДО применения" "yes" \
+apply_fetch=$(printf '%s\n' "$apply_body" | grep -n 'ext_gate pre_apply' | head -1 | cut -d: -f1)
+apply_run=$(printf '%s\n' "$apply_body" | grep -n 'apply --spec "$SPEC" 2>&1)"; rc=' | head -1 | cut -d: -f1)
+check "в apply довоз идёт ДО применения" "yes" \
       "$([ -n "$apply_fetch" ] && [ -n "$apply_run" ] && [ "$apply_fetch" -lt "$apply_run" ] && echo yes || echo no)"
-put_body="$(sed -n '/^    backup_put)/,/^        ;;/p' "$RPCD_DIR/m-backup.sh")"
-put_fetch=$(printf '%s\n' "$put_body" | grep -n 'fetch_missing_lists' | head -1 | cut -d: -f1)
-put_dry=$(printf '%s\n' "$put_body" | grep -n 'apply --dry-run --spec "$D/spec"' | head -1 | cut -d: -f1)
-check "в восстановлении загрузка идёт ДО проверки движком" "yes" \
+host_src="$ROOT/files/usr/sbin/splify2-host"
+put_fetch=$(grep -n 'ext_pre_spec_set "$_i_tmp"' "$host_src" | head -1 | cut -d: -f1)
+put_dry=$(grep -n 'engine_check "$_i_tmp"' "$host_src" | head -1 | cut -d: -f1)
+check "в восстановлении довоз идёт ДО проверки движком" "yes" \
       "$([ -n "$put_fetch" ] && [ -n "$put_dry" ] && [ "$put_fetch" -lt "$put_dry" ] && echo yes || echo no)"
-# Сообщение об отказе обязано называть ПРИЧИНУ, а не только следствие: «cannot read a
-# channel's list» отправляет искать испорченный файл, которого никогда не было.
-check "при неудачной загрузке причина ставится перед ошибкой движка" "yes" \
-      "$(rpcd_src | grep -q 'fail "${set_warn:+$set_warn; }' && echo yes || echo no)"
+# Разделы плагинов (свои списки, на которые ссылается спека из архива) восстанавливаются ДО спеки: ядро при проверке читает
+# их с диска.
+put_plug=$(grep -n 'backup_ext_each "$D" restore' "$ROOT/plugins/backup/lib/archive.sh" | head -1 | cut -d: -f1)
+put_state=$(grep -n 'state import "$D"' "$ROOT/plugins/backup/lib/archive.sh" | head -1 | cut -d: -f1)
+check "в восстановлении разделы плагинов идут ДО настроек каркаса" "yes" \
+      "$([ -n "$put_plug" ] && [ -n "$put_state" ] && [ "$put_plug" -lt "$put_state" ] && echo yes || echo no)"
+# Сообщение об отказе обязано называть ПРИЧИНУ, а не только следствие: «cannot read a channel's list» отправляет искать
+# испорченный файл, которого никогда не было.
+check "при неудачной загрузке причина ставится перед ошибкой движка" "yes;yes" \
+      "$(grep -q 'fail "${hook_warn:+$hook_warn; }' "$RPCD_DIR/m-spec.sh" && echo yes || echo no);$(grep -q 'fail "${_i_hook:+$_i_hook; }' "$host_src" && echo yes || echo no)"
 
 # ДОСКАЧИВАНИЕ ЗНАЕТ ПРО НАБОРЫ КАТАЛОГА. Качальщиков в продукте три — кнопка в каталоге,
 # ночное обновление и вот это доскачивание перед проверкой спеки, — и научить надо было все
@@ -2733,7 +2792,7 @@ check "при неудачной загрузке причина ставитс�
 # адресу `base_url` плюс путь и сообщало, что список не скачался; снято с живого роутера:
 # «raw.githubusercontent.com не ответил ни напрямую, ни через выход wg0» на файле
 # itdoginfo/domains/geoblock.srs.lst.
-cat > "$T/etc/manifest.json" <<'MF'
+cat > "$CAT_MANIFEST" <<'MF'
 {
   "base_url": "https://example.invalid/lists",
   "categories": [
@@ -2755,7 +2814,7 @@ cat > "$T/etc/spec.json" <<SPEC
     "match": { "prefixes_files": ["$T/lists/cat/tg.srs.lst"],
                "domains_files":  ["$T/lists/cat/domains/tg.srs.lst"] } } ] }
 SPEC
-out="$(rpcd apply)"
+out="$(RPCD_PLUGIN_ROOT="$T/off" rpcd apply)"
 check "набор каталога скачан по своей ссылке" "1" \
       "$(grep -c '/releases/download/2026-01-01/tg.srs$' "$T/curl.log")"
 check "и по base_url за ним не ходили" "0" \
@@ -2827,16 +2886,13 @@ awk 'BEGIN { for (i = 0; i < 1200; i++) printf "host%d.example\n", i }' > "$(cus
 # XSTEER_DIR экспортируется, а не стоит в общем списке швов у rpcd(): список общий для всех
 # разделов стенда, а этот каталог нужен одному — архиву.
 export XSTEER_DIR="$T/etc/steer-xsteer"
-mkdir -p "$XSTEER_DIR" "$T/etc/steer-zapret" "$T/etc/subs"
-# Стратегия обхода лежит на диске (её мог поставить прежний выпуск), но в архив больше не
-# едет: обход DPI из splify2 убран, и файл принадлежит тому, кто его положил.
+mkdir -p "$XSTEER_DIR" "$T/etc/subs"
 printf '%s\n' '[Interface]' \
   'PrivateKey = 6Gtidge6FqhO/0LhrAWpRiyYaKdLZF/gib/HePLC9GU=' \
   'Address = 10.77.0.5/24' 'SNI = www.microsoft.com' '' '[Peer]' \
   'PublicKey = QYkH5bWOsEOCgIMldHPATSG7yvNyJ8st7o/HMelWKxs=' \
   'Endpoint = 198.51.100.9:8443' 'AllowedIPs = 10.77.0.0/24, 192.168.9.0/24' \
   > "$XSTEER_DIR/home.conf"
-printf '%s\n' '#v1' '--filter-tcp=443' '--dpi-desync=fake,split2' > "$T/etc/steer-zapret/yt.opts"
 printf 'vless://k2@h2:443#second\n' > "$T/etc/subs/work.txt"
 # Выбор у групп «вручную» — файл ядра рядом со спекой. Чужая строка в нём в архив не едет:
 # разборщик восстановления отверг бы из-за неё архив целиком.
@@ -2844,55 +2900,45 @@ printf '%s\n' 'eu wg1' 'мусор; reboot' > "$T/etc/select"
 uci_set splify2.sub_work subscription
 uci_set splify2.sub_work.url 'https://panel.example.net/sub/2'
 uci_set splify2.sub_work.kind url
-# Все восемь полей, а не три: перечень получается тем же способом, каким его находят в
-# коде, — `grep -rhoE 'splify2\.(main|sub_[a-z_]*)\.[a-z_]+' files/`.
+# Все шесть полей каркаса, а не три: перечень получается тем же способом, каким его находят в коде, —
+# `grep -rhoE 'splify2\.(main|sub_[a-z_]*)\.[a-z_]+' files/`. Адрес каталога и порог сокращения списка — настройки
+# плагина lists-catalog (его conf/settings.json), они едут его разделом `settings`.
 for _kv in 'sub_url=https://panel.example.net/sub/1' 'sub_kind=url' 'wizard=step3' \
-           'sub_title=Моя панель' 'manifest_url=https://example.net/categories.json' \
-           'fetch_via_tunnel=always' 'list_shrink_factor=4' 'geo_url=https://example.net/trace'; do
+           'sub_title=Моя панель' 'fetch_via_tunnel=always' 'geo_url=https://example.net/trace'; do
     uci_set "splify2.main.${_kv%%=*}" "${_kv#*=}"
 done
-
-# ui_set: состояние мастера непрозрачно, но длина ограничена (I-329) — отказ называет число и
-# прежнее значение не трогает.
-_big="$(head -c 5000 /dev/zero | tr '\0' x)"
-out="$(rpcd ui_set "{\"state\":\"$_big\"}")"
-check "ui_set: состояние длиннее 4096 — отказ" "false" "$(printf '%s' "$out" | jget ok)"
-check "ui_set: отказ называет число" "yes" "$(printf '%s' "$out" | grep -q 4096 && echo yes || echo no)"
-check "ui_set: прежнее состояние не тронуто" "step3" "$(rpcd ui_get | jget state)"
-out="$(rpcd ui_set '{"state":"step4"}')"
-check "ui_set: обычное состояние пишется" "true" "$(printf '%s' "$out" | jget ok)"
-check "ui_set: и читается" "step4" "$(rpcd ui_get | jget state)"
-rpcd ui_set '{"state":"step3"}' >/dev/null
+printf '{"manifest_url":"https://example.net/categories.json","list_shrink_factor":4}\n' > "$T/off/conf/lists-catalog/settings.json"
 
 # АРХИВ НАСТРОЕК С ПРИВАТНЫМИ КЛЮЧАМИ СОБИРАЕТСЯ ЗАКРЫТЫМ, ДАЖЕ ЕСЛИ ФАЙЛ ПОДЛОЖИЛИ. umask действует
 # только при создании: чужой процесс, создавший /tmp/splify2-backup.out заранее с правами 0644,
 # читал архив (ключи xsteer, ссылки vless с ключами) весь срок выгрузки, а fs.protected_regular на
 # роутере выключен. Файл обязан пересоздаваться и после сборки иметь наши права.
-rm -f "$T/var/backup.out"; : > "$T/var/backup.out"; chmod 644 "$T/var/backup.out"
+rm -f "$BK_OUT"; : > "$BK_OUT"; chmod 644 "$BK_OUT"
 out="$(rpcd backup_get '{"offset":0}')"
-check "архив: подложенный открытый файл пересоздан закрытым" "600" "$(stat -c %a "$T/var/backup.out" 2>/dev/null)"
-rm -f "$T/var/backup.out"
+check "архив: подложенный открытый файл пересоздан закрытым" "600" "$(stat -c %a "$BK_OUT" 2>/dev/null)"
+rm -f "$BK_OUT"
 
 doc="$(backup_doc)"
 check "архив приезжает несколькими кусками и склеивается" "yes" \
       "$([ "$(cat "$T/doc-parts")" -gt 1 ] && echo yes || echo no)"
 check "склеенный архив не потерял ни строки на границах кусков" "1200" \
-      "$(printf '%s\n' "$doc" | grep -c '^host[0-9]*\.example$')"
-check "архив начинается своим заголовком с версией" "splify2-backup 3" \
+      "$(printf '%s\n' "$doc" | grep -c '^ host[0-9]*\.example$')"
+# Своих списков каркас в архив больше не кладёт: они едут разделами плагина lists-catalog, а архив с разделами плагинов — формат 4.
+check "архив начинается своим заголовком с версией" "splify2-backup 4" \
       "$(printf '%s\n' "$doc" | head -1)"
 check "в архиве есть спека, подписка и оба своих списка" "yes" \
       "$(printf '%s\n' "$doc" | grep -q '^\[spec\]$' &&
          printf '%s\n' "$doc" | grep -q '^\[sub\]$' &&
-         printf '%s\n' "$doc" | grep -q '^\[list prefixes mine-a\]$' &&
-         printf '%s\n' "$doc" | grep -q '^\[list domains mine-d\]$' && echo yes || echo no)"
+         printf '%s\n' "$doc" | grep -q '^\[plugin lists-catalog list_prefixes_mine_da\]$' &&
+         printf '%s\n' "$doc" | grep -q '^\[plugin lists-catalog list_domains_mine_dd\]$' && echo yes || echo no)"
 # Главное свойство экспорта: 284 КБ зеркал категорий издателя в него не едут. Проверяется не
 # размер, а состав — списка издателя нет ни заголовком, ни содержимым.
 check "зеркал категорий издателя в архиве нет (284 КБ, I-037)" "no" \
-      "$(printf '%s\n' "$doc" | grep -qE '^(\[list (prefixes|domains) news\]|10\.0\.0\.0/8|example\.org)$' && echo yes || echo no)"
+      "$(printf '%s\n' "$doc" | grep -qE '^(\[plugin lists-catalog list_(prefixes|domains)_news\]| ?10\.0\.0\.0/8| ?example\.org)$' && echo yes || echo no)"
 check "выбор у групп «вручную» уезжает в архив, чужая строка — нет" "yes;no" \
       "$(printf '%s\n' "$doc" | grep -q '^\[select\]$' && printf '%s\n' "$doc" | grep -qx 'eu wg1' && echo yes || echo no);$(printf '%s\n' "$doc" | grep -q 'reboot' && echo yes || echo no)"
 check "в архиве есть и большой свой список, и оба маленьких" "yes" \
-      "$(printf '%s\n' "$doc" | grep -q '^\[list domains mine-big\]$' && echo yes || echo no)"
+      "$(printf '%s\n' "$doc" | grep -q '^\[plugin lists-catalog list_domains_mine_dbig\]$' && echo yes || echo no)"
 
 # Приватный ключ пира — то, без чего восстановленный роутер туннель не поднимает вовсе.
 # Содержимое едет ДОСЛОВНО, вместе со своими строками в квадратных скобках: файл читает
@@ -2902,16 +2948,17 @@ check "ключи xsteer уезжают в архив дословно" "yes" \
       "$(printf '%s\n' "$doc" | grep -q '^\[xsteer home\]$' &&
          printf '%s\n' "$doc" | grep -q '^\[Interface\]$' &&
          printf '%s\n' "$doc" | grep -q '^PrivateKey = 6Gtidge6' && echo yes || echo no)"
-check "стратегии обхода DPI в архив больше не уезжают" "no" \
-      "$(printf '%s\n' "$doc" | grep -q '^\[zapret ' && echo yes || echo no)"
 # Вторая подписка — это файл И ссылка на панель: без ссылки восстановленную подписку нечем
 # обновить, то есть она приезжает мёртвой.
 check "именованная подписка уезжает и файлом, и ссылкой" "yes" \
       "$(printf '%s\n' "$doc" | grep -q '^\[sub work\]$' &&
          printf '%s\n' "$doc" | grep -qx 'sub_work.url=https://panel.example.net/sub/2' &&
          printf '%s\n' "$doc" | grep -qx 'sub_work.kind=url' && echo yes || echo no)"
-check "в архив уезжают все восемь полей uci, а не три" "8" \
-      "$(printf '%s\n' "$doc" | grep -cE '^(sub_url|sub_kind|wizard|sub_title|manifest_url|fetch_via_tunnel|list_shrink_factor|geo_url)=')"
+check "в архив уезжают все шесть полей uci, а не три" "6" \
+      "$(printf '%s\n' "$doc" | grep -cE '^(sub_url|sub_kind|wizard|sub_title|fetch_via_tunnel|geo_url)=')"
+check "настройки плагина каталога уезжают его разделом settings" "yes" \
+      "$(printf '%s\n' "$doc" | grep -q '^\[plugin lists-catalog settings\]$' &&
+         printf '%s\n' "$doc" | grep -q '^ {.*"manifest_url":"https://example.net/categories.json"' && echo yes || echo no)"
 # Шапка архива предупреждала про ссылки vless://. С приватными ключами туннелей это верно
 # сильнее, и сказать об этом обязана сама шапка: файл человек уносит на флешке и в переписке.
 check "шапка предупреждает и о приватных ключах" "yes" \
@@ -2924,15 +2971,15 @@ check "шапка предупреждает и о приватных ключа
 printf '#!/bin/sh\necho "sh: stat: not found" >&2\nexit 127\n' > "$T/bin/stat"; chmod +x "$T/bin/stat"
 out="$(rpcd backup_get '{"offset":0}')"
 check "архив выгружается и без stat (busybox OpenWrt 25.12)" "true" "$(printf '%s' "$out" | jget ok)"
-rm -f "$T/var/backup.out"
+rm -f "$BK_OUT"
 out="$(printf '%s\n' 'splify2-backup 3' '[select]' 'eu wg1' | backup_put)"
 check "архив восстанавливается и без stat" "true" "$(printf '%s' "$out" | jget ok)"
 rm -f "$T/bin/stat"
-: > "$T/var/backup.out"; chmod 644 "$T/var/backup.out"
+: > "$BK_OUT"; chmod 644 "$BK_OUT"
 out="$(rpcd backup_get '{"offset":0}')"
 check "подложенный открытый файл и без stat пересоздаётся закрытым" "600" \
-      "$(stat -c %a "$T/var/backup.out" 2>/dev/null)"
-rm -f "$T/var/backup.out"
+      "$(stat -c %a "$BK_OUT" 2>/dev/null)"
+rm -f "$BK_OUT"
 
 # Экспорт не отдаёт файл, который его же импорт откажется принять: иначе человек узнал бы
 # об этом в тот день, когда бекап понадобился.
@@ -3014,8 +3061,37 @@ out="$(printf '%s\n' 'splify2-backup 1' '[sub]' 'trojan://p@h:443#t' 'ss://YWVzL
 check "подписка из ссылок прокси в архиве принимается" "no" \
       "$(printf '%s' "$out" | jget error | grep -q 'подписка: ждём' && echo yes || echo no)"
 
+# Подписка в виде JSON (движок кладёт её так при запросе с /json) в архиве принимается, в том числе
+# массивом со строкой, начинающейся с `[` — разборщик архива не должен принять её за заголовок
+# раздела (I-329); негодный JSON и обрубок отвергаются.
+out="$(printf '%s\n' 'splify2-backup 1' '[sub]' '{"outbounds":[{"type":"vless","server":"h"}]}' | backup_put)"
+check "подписка JSON-объектом принимается" "no" \
+      "$(printf '%s' "$out" | jget error | grep -q 'подписка' && echo yes || echo no)"
+out="$(printf '%s\n' 'splify2-backup 1' '[sub]' '[' '  {"type":"vless","server":"h"}' ']' | backup_put)"
+check "подписка JSON-массивом по строкам принимается" "no" \
+      "$(printf '%s' "$out" | jget error | grep -qE 'подписка|раздел' && echo yes || echo no)"
+out="$(printf '%s\n' 'splify2-backup 1' '[sub]' '{"outbounds":[' | backup_put)"
+check "оборванный JSON подпиской не считается" "false" "$(printf '%s' "$out" | jget ok)"
+check "и называется подпиской в виде JSON" "yes" \
+      "$(printf '%s' "$out" | jget error | grep -q 'в виде JSON' && echo yes || echo no)"
+
 out="$(printf '%s\n' 'splify2-backup 1' '[options]' 'sub_url=https://x/$(reboot)' | backup_put)"
 check "ссылка подписки с подстановкой отвергается" "false" "$(printf '%s' "$out" | jget ok)"
+
+# Ссылка с `&` в запросе — обычная ссылка панели, и sub_set её принимает; архив с ней обязан
+# возвращаться на роутер, а не отвергаться как «недопустимые символы».
+out="$(printf '%s\n' 'splify2-backup 1' '[options]' 'sub_url=https://panel.invalid/sub?token=abc&format=json' \
+        'sub_auto=60' 'sub_work.url=https://w.invalid/s?a=1&b=2' 'sub_work.auto=120' | backup_put)"
+# Интервалы автообновления — данные плагина subscriptions: архив формата 3 несёт их полями uci, плагин backup переводит их в
+# раздел плагина, а каркас полей `auto` больше не знает.
+check "ссылка с & принимается из архива, интервалы уезжают в расписание плагина" "true;https://panel.invalid/sub?token=abc&format=json;main 60,work 120;;" \
+      "$(printf '%s' "$out" | jget ok);$(uci_get splify2.main.sub_url);$(tr '\n' ',' < "$SUBCONF/schedule" | sed 's/,$//');$(uci_get splify2.main.sub_auto);$(uci_get splify2.sub_work.auto)"
+out="$(printf '%s\n' 'splify2-backup 1' '[options]' 'sub_auto=2' | backup_put)"
+check "интервал вне пределов плагина отвергается" "false" "$(printf '%s' "$out" | jget ok)"
+out="$(printf '%s\n' 'splify2-backup 1' '[options]' 'sub_work.auto=часто' | backup_put)"
+check "интервал не числом отвергается" "false" "$(printf '%s' "$out" | jget ok)"
+check "и экспорт несёт интервалы обратно разделом плагина" "yes;yes" \
+      "$(backup_doc | grep -q '^ main 60$' && echo yes || echo no);$(backup_doc | grep -q '^ work 120$' && echo yes || echo no)"
 
 out="$(printf '%s\n' 'splify2-backup 1' '[options]' 'root_password=x' | backup_put)"
 check "неизвестное поле настроек отвергается" "yes" \
@@ -3047,7 +3123,7 @@ check "предел считается по накопленному, а не п
       "$(printf '%s' "$out" | jget error | grep -q 'больше' && echo yes || echo no)"
 
 # ---- годный архив восстанавливается -------------------------------------------
-rm -f "$T/var/backup.in" "$T/etc/spec.applied.json" "$T/var/vless-dirty"
+rm -f "$BK_IN" "$T/etc/spec.applied.json" "$T/var/vless-dirty"
 : > "$T/steer.log"
 printf '{"schema":1,"outputs":{},"channels":[]}\n' > "$T/etc/spec.json"
 out="$(printf '%s\n' \
@@ -3085,7 +3161,25 @@ check "восстановление ничего не применяет" "0" "$
 check "снимок применённого снят с ПРЕЖНЕЙ спеки" "yes" \
       "$([ -s "$T/etc/spec.applied.json" ] && ! grep -q 'br-lan' "$T/etc/spec.applied.json" && echo yes || echo no)"
 check "накопленный файл убран за собой" "no" \
-      "$([ -f "$T/var/backup.in" ] && echo yes || echo no)"
+      "$([ -f "$BK_IN" ] && echo yes || echo no)"
+
+# Восстановление подписки в виде JSON: файл ложится на место байт в байт, строка с `[` в начале —
+# его содержимое (I-329).
+rm -f "$BK_IN" "$T/etc/spec.applied.json" "$T/var/vless-dirty" "$T/etc/sub.txt"
+printf '{"schema":1,"outputs":{},"channels":[]}\n' > "$T/etc/spec.json"
+out="$(printf '%s\n' \
+  'splify2-backup 1' \
+  '[spec]' \
+  '{"schema":1,"lan_device":"br-lan","outputs":{"direct":{"kind":"direct"}},"channels":[]}' \
+  '[sub]' \
+  '[' \
+  '  {"type":"vless","server":"h","server_port":443}' \
+  ']' \
+  '[options]' \
+  'sub_kind=links' | backup_put)"
+check "архив с подпиской-массивом JSON принимается" "true" "$(printf '%s' "$out" | jget ok)"
+check "подписка JSON легла на место целиком" "[;  {\"type\":\"vless\",\"server\":\"h\",\"server_port\":443};]" \
+      "$(tr '\n' ';' < "$T/etc/sub.txt" | sed 's/;$//')"
 # Заголовок у архива выше — намеренно ПРЕЖНЕЙ версии: у людей уже лежат файлы, собранные
 # до появления ключей и стратегий, и обновление пакета не имеет права превратить их в
 # нечитаемые. Проверка отдельной строкой, чтобы отказ читался как «сломали старые архивы»,
@@ -3095,8 +3189,8 @@ check "архив прежнего формата (1) по-прежнему пр
 # ---- формат 2: ключи туннелей, стратегии обхода и именованные подписки ------------
 # Проверяется методом целиком: присланный архив → файлы на диске и поля в uci. Каталоги
 # перед этим сносятся, иначе «восстановлено» было бы не отличить от «лежало и раньше».
-rm -f "$T/var/backup.in"
-rm -rf "$XSTEER_DIR" "$T/etc/steer-zapret" "$T/etc/subs"
+rm -f "$BK_IN"
+rm -rf "$XSTEER_DIR" "$T/etc/subs"
 : > "$T/uci.store"
 : > "$T/steer.log"
 out="$(printf '%s\n' \
@@ -3111,14 +3205,10 @@ out="$(printf '%s\n' \
   '[Peer]' \
   'PublicKey = QYkH5bWOsEOCgIMldHPATSG7yvNyJ8st7o/HMelWKxs=' \
   'Endpoint = 198.51.100.9:8443' \
-  '[zapret yt]' \
-  '#v1' \
-  '--filter-tcp=443' \
   '[sub work]' \
   'vless://k2@h2:443#second' \
   '[options]' \
   'sub_title=Моя панель' \
-  'zm_fix=0' \
   'list_shrink_factor=4' \
   'geo_url=https://example.net/trace' \
   'sub_work.url=https://panel.example.net/sub/2' \
@@ -3131,14 +3221,16 @@ check "приватный ключ туннеля лёг на место дос�
 # закрытым, и восстановление не имеет права раскрыть его шире, чем создало бы само.
 check "восстановленный ключ закрыт от чужих глаз" "600" \
       "$(stat -c %a "$XSTEER_DIR/home.conf" 2>/dev/null)"
-check "раздел стратегии обхода из старого архива принят и не восстановлен" "no" \
-      "$([ -e "$T/etc/steer-zapret/yt.opts" ] && echo yes || echo no)"
 check "именованная подписка легла своим файлом" "yes" \
       "$(grep -qx 'vless://k2@h2:443#second' "$T/etc/subs/work.txt" && echo yes || echo no)"
 check "ссылка именованной подписки легла в свою секцию uci" "https://panel.example.net/sub/2;url;subscription" \
       "$(uci_get splify2.sub_work.url);$(uci_get splify2.sub_work.kind);$(uci_get splify2.sub_work)"
-check "остальные поля uci восстановлены, а не только три прежних; поле фикса Zapret Manager отброшено" "Моя панель;;4;https://example.net/trace" \
-      "$(uci_get splify2.main.sub_title);$(uci_get splify2.main.zm_fix);$(uci_get splify2.main.list_shrink_factor);$(uci_get splify2.main.geo_url)"
+check "остальные поля uci восстановлены, а не только три прежних" "Моя панель;https://example.net/trace" \
+      "$(uci_get splify2.main.sub_title);$(uci_get splify2.main.geo_url)"
+# Порог сокращения списка в архивах формата 2 лежал полем uci. Теперь это настройка плагина lists-catalog, и поле из
+# старого архива переезжает в его conf (раздел settings плагина).
+check "порог сокращения из старого архива лёг настройкой плагина каталога" "4" \
+      "$(python3 -c 'import json,sys; print(json.load(open(sys.argv[1])).get("list_shrink_factor", ""))' "$T/off/conf/lists-catalog/settings.json" 2>/dev/null)"
 check "в ответе сказано, что именно восстановлено" "1;1" \
       "$(printf '%s' "$out" | jget xsteer);$(printf '%s' "$out" | jget subs)"
 
@@ -3180,10 +3272,9 @@ check "нечисловое значение выключателя отверг
 out="$(printf '%s\n' 'splify2-backup 2' '[sub work]' 'http://example.org/list' | backup_put)"
 check "именованная подписка не из vless:// отвергается" "false" "$(printf '%s' "$out" | jget ok)"
 
-# Раздел стратегии обхода из архива прежнего выпуска сам по себе ничего не восстанавливает:
-# в архиве больше нечего принимать, и отказ говорит об этом словами.
+# Обход DPI (zapret) не поддерживается: раздел стратегии из старого архива — незнакомый раздел.
 out="$(printf '%s\n' 'splify2-backup 2' '[zapret yt]' | backup_put)"
-check "архив только со стратегией обхода не годится" "false" "$(printf '%s' "$out" | jget ok)"
+check "раздел стратегии обхода отвергается как незнакомый" "false" "$(printf '%s' "$out" | jget ok)"
 
 # Восстановление продолжается там, где остановились: следующие проверки этого раздела ждут
 # спеку и подписку на месте.
@@ -3211,7 +3302,7 @@ check "свой же архив принимается обратно (круг 
 # иначе карточка движка показывает пустую версию, а «Установить» возвращает пустую
 # ошибку (apk нет, rc 127, вывод пуст).
 check "бэкенд определяет менеджер пакетов" "yes" \
-      "$(grep -q 'elif command -v opkg' "$SCRIPT" && echo yes || echo no)"
+      "$(grep -q 'elif command -v opkg' "$ENV_SH" && echo yes || echo no)"
 check "версия пакета читается обоими способами" "yes" \
       "$(rpcd_src | grep -q 'opkg list-installed' && echo yes || echo no)"
 pkg_src="$(grep -l '^pkg_install()' $RPCD_ALL | head -1)"
@@ -3311,7 +3402,7 @@ mkdir -p "$T/etc"
 # зашитого издателя отвечала на любую чужую приставку отказом, каталог показывал список, а
 # «Загрузить» говорило «неизвестный источник» — поймано на живом роутере.
 printf '{"base_url":"https://example.invalid/l","categories":[{"id":"other:x","file":"other/x.lst"}],"domain_lists":[]}\n' \
-    > "$T/etc/manifest.json"
+    > "$CAT_MANIFEST"
 out="$(rpcd list_fetch '{"id":"other:x","kind":"prefixes"}')"
 check "чужая приставка не отвергается сходу" "no" \
       "$(printf '%s' "$out" | grep -q 'неизвестный источник' && echo yes || echo no)"
@@ -3351,37 +3442,34 @@ check "правил в ней нет — это точная запись тог
       "$(printf '%s' "$out" | python3 -c 'import json,sys; print(len(json.load(sys.stdin).get("rules", [])))')"
 check "и это спека v2, а не прежняя" "2" \
       "$(printf '%s' "$out" | python3 -c 'import json,sys; print(json.load(sys.stdin)["version"])')"
-# Рядом лежит spec.yaml — спека ведётся руками: второй файл не заводится вовсе, и запись через
-# интерфейс отвергается словами (движок при двух спеках не читает ни одну).
+# РЕВИЗИЯ СПЕКИ (D-P2.7). spec_get несёт `rev` — md5 файла; spec_set со старой ревизией отказывает
+# (conflict) и ничего не пишет, с верной — пишет и отдаёт новую, без `rev` — пишет как прежде.
+printf '{"version":2,"outputs":{"direct":{"kind":"direct"}}}\n' > "$T/etc/spec.json"
+out="$(rpcd spec_get)"
+rev0="$(printf '%s' "$out" | jget rev)"
+check "spec_get: ревизия — md5 файла спеки" "$(md5sum < "$T/etc/spec.json" | cut -c1-32)" "$rev0"
+check "spec_get: и спека при ней целая" "2" \
+      "$(printf '%s' "$out" | python3 -c 'import json,sys; print(json.load(sys.stdin)["version"])')"
+out="$(rpcd spec_set '{"spec":"{\"version\":2,\"outputs\":{\"direct\":{\"kind\":\"direct\"}},\"rules\":[]}","rev":"'"$rev0"'"}')"
+check "spec_set с верной ревизией пишет" "true" "$(printf '%s' "$out" | jget ok)"
+rev1="$(printf '%s' "$out" | jget rev)"
+check "  и отдаёт новую ревизию — ту, что увидит spec_get" "$rev1" "$(rpcd spec_get | jget rev)"
+check "  отличную от прежней" "no" "$([ "$rev1" = "$rev0" ] && echo yes || echo no)"
+before="$(md5sum < "$T/etc/spec.json")"
+out="$(rpcd spec_set '{"spec":"{\"version\":2,\"outputs\":{\"direct\":{\"kind\":\"direct\"}},\"rules\":[{}]}","rev":"'"$rev0"'"}')"
+check "spec_set со старой ревизией отказывает" "false" "$(printf '%s' "$out" | jget ok)"
+check "  признаком conflict" "true" "$(printf '%s' "$out" | jget conflict)"
+check "  называя текущую ревизию" "$rev1" "$(printf '%s' "$out" | jget rev)"
+check "  и файл не тронут" "$before" "$(md5sum < "$T/etc/spec.json")"
+out="$(rpcd spec_set '{"spec":"{\"version\":2,\"outputs\":{\"direct\":{\"kind\":\"direct\"}}}"}')"
+check "spec_set без ревизии пишет, как прежде" "true" "$(printf '%s' "$out" | jget ok)"
+# Спека лежит только в spec.yaml: чтение отдаёт её JSON-вид, второй файл не заводится.
 rm -f "$T/etc/spec.json"
-printf 'version: 2\n' > "$T/etc/spec.yaml"
-rpcd spec_get >/dev/null
-check "при spec.yaml рядом второй файл не заводится" "no" "$([ -s "$T/etc/spec.json" ] && echo yes || echo no)"
-# Чтение при одном лишь spec.yaml — отказ, а не пустая заготовка: пустая спека на экране
-# выглядела бы точной записью, и правка поверх неё затёрла бы настоящую.
-out="$(rpcd spec_get 2>/dev/null)"; rc=$?
-check "spec.yaml без spec.json: чтение отказывает" "1" "$rc"
-check "и пустой спеки не отдаёт" "" "$out"
-rm -f "$T/etc/spec.yaml"
-# ОТКАТ С 26.11 (I-559): spec.yaml остался от перевода панелью (рядом spec.json.bak), а spec.json нет.
-# Эта панель читает только spec.json — ядро печатает его само (convert --json), и спека читается целиком.
-printf 'version: 2\n' > "$T/etc/spec.yaml"; printf '{"version":2,"old":1}\n' > "$T/etc/spec.json.bak"
-out="$(STEER_SPEC_JSON='{"version":2,"outputs":{"direct":{"kind":"direct"},"wg":{"kind":"interface"}}}' rpcd spec_get 2>/dev/null)"; rc=$?
-check "откат: spec.yaml с копией панели — чтение отдаёт спеку" "0;direct,wg" \
-      "$rc;$(printf '%s' "$out" | python3 -c 'import json,sys; print(",".join(sorted(json.load(sys.stdin)["outputs"])))')"
-check "  spec.json лёг, а spec.yaml ушёл в spec.yaml.bak (две спеки ядро не читает)" "yes;no;yes" \
-      "$([ -s "$T/etc/spec.json" ] && echo yes || echo no);$([ -e "$T/etc/spec.yaml" ] && echo yes || echo no);$([ -s "$T/etc/spec.yaml.bak" ] && echo yes || echo no)"
-rm -f "$T/etc/spec.json" "$T/etc/spec.yaml.bak"
-# Ядро без convert --json: спека не тронута, чтение отказывает, как прежде.
-printf 'version: 2\n' > "$T/etc/spec.yaml"
-out="$(rpcd spec_get 2>/dev/null)"; rc=$?
-check "откат на ядре без convert --json: чтение отказывает, spec.yaml цел" "1;yes;no" \
-      "$rc;$([ -s "$T/etc/spec.yaml" ] && echo yes || echo no);$([ -e "$T/etc/spec.json" ] && echo yes || echo no)"
-# Без копии панели spec.yaml — рукописная спека человека: не переписываем даже при умелом ядре.
-rm -f "$T/etc/spec.json.bak"
-out="$(STEER_SPEC_JSON='{"version":2}' rpcd spec_get 2>/dev/null)"; rc=$?
-check "рукописный spec.yaml (копии панели нет) не переводится" "1;yes;no" \
-      "$rc;$([ -s "$T/etc/spec.yaml" ] && echo yes || echo no);$([ -e "$T/etc/spec.json" ] && echo yes || echo no)"
+printf '{"version":2,"outputs":{"direct":{"kind":"direct"}}}\n' > "$T/etc/spec.yaml"
+out="$(rpcd_run spec_get)"
+check "spec.yaml без spec.json: чтение отдаёт спеку" "2" \
+      "$(printf '%s' "$out" | python3 -c 'import json,sys; print(json.load(sys.stdin)["version"])')"
+check "при spec.yaml второй файл не заводится" "no" "$([ -s "$T/etc/spec.json" ] && echo yes || echo no)"
 rm -f "$T/etc/spec.yaml"
 # Ядро ведёт steer-box-connector: своя спека не заводится и служба steer не поднимается — иначе
 # открытие страницы ставило бы службу steer со своей спекой рядом с ядром коннектора, а сам
@@ -3397,19 +3485,15 @@ check "коннектор: чтение отдаёт пустую спеку" "2
 SINGBOX_INITD_FIXTURE="$T/box/sing-box" rpcd live >/dev/null
 check "коннектор: круг опроса спеку не заводит" "no" "$([ -s "$T/etc/spec.json" ] && echo yes || echo no)"
 rm -rf "$T/box"
-printf 'version: 2\n' > "$T/etc/spec.yaml"
-out="$(rpcd spec_set '{"spec":"{\"version\":2}"}')"
-check "запись спеки при двух файлах отвергается" "false" "$(printf '%s' "$out" | jget ok)"
-check "и причина названа" "yes" "$(printf '%s' "$out" | jget error | grep -q 'spec.yaml' && echo yes || echo no)"
 rm -f "$T/etc/spec.yaml"
 printf '{"version":2}\n' > "$T/etc/spec.json"
-# Прежняя v1 перед заменой на v2 остаётся копией рядом — один раз, старейшая.
+# Прежняя v1 перед заменой на v2 остаётся копией рядом (spec_put) — одна, старейшая.
 printf '{"schema":1,"outputs":{},"channels":[]}\n' > "$T/etc/spec.json"
-rm -f "$T/etc/spec.json.v1.bak"
+rm -f "$T/etc/spec.json.bak" "$T/etc/spec.yaml"
 out="$(rpcd spec_set '{"spec":"{\"version\":2}"}')"
-check "v1 перед заменой на v2 сохранена копией" "yes" "$(grep -q schema "$T/etc/spec.json.v1.bak" && echo yes || echo no)"
+check "v1 перед заменой на v2 сохранена копией" "yes" "$(grep -q schema "$T/etc/spec.json.bak" && echo yes || echo no)"
 out="$(rpcd spec_set '{"spec":"{\"version\":2,\"outputs\":{}}"}')"
-check "а вторая замена копию не затирает" "yes" "$(grep -q schema "$T/etc/spec.json.v1.bak" && echo yes || echo no)"
+check "а вторая замена копию не затирает" "yes" "$(grep -q schema "$T/etc/spec.json.bak" && echo yes || echo no)"
 printf '{"schema":1,"outputs":{},"channels":[{"name":"чужой","out":"vl","match":{"any":true}}]}\n' \
     > "$T/etc/spec.json"
 rpcd spec_get >/dev/null
@@ -3451,7 +3535,7 @@ reset_logs
 # рядом. У opkg зависимости локального файла ищутся в СПИСКАХ ПАКЕТОВ, а на свежей прошивке
 # их нет — списки не переживают перезагрузку.
 rm -f "$T/opkg.lists" "$T/opkg.log"
-out="$(PM_FIXTURE=opkg rpcd steer_install '{"version":"1.2.4","extended":false}')"
+out="$(PM_FIXTURE=opkg rpcd steer_install '{"version":"2.1.0"}')"
 check "после отказа по зависимости списки обновляются" "1" \
       "$(grep -c '^update' "$T/opkg.log")"
 check "и установка повторяется" "2" "$(grep -c '^install' "$T/opkg.log")"
@@ -3465,7 +3549,7 @@ check "человеку сказано, что списки были пусты"
 # зависимостей две (https-dns-proxy, ip-full), у 1.2.5 не было ни одной, так что до этого
 # выпуска ветка apk просто не встречала отказа.
 rm -f "$T/apk.index" "$T/apk.log"
-out="$(PM_FIXTURE=apk APK_NEED_INDEX=1 rpcd steer_install '{"version":"1.2.4","extended":false}')"
+out="$(PM_FIXTURE=apk APK_NEED_INDEX=1 rpcd steer_install '{"version":"2.1.0"}')"
 check "apk: после отказа по зависимости индексы обновляются" "1" \
       "$(grep -c '^update' "$T/apk.log")"
 check "apk: и установка повторяется" "2" "$(grep -c '^add' "$T/apk.log")"
@@ -4023,7 +4107,7 @@ for m in allow_domains; do
     check "метод $m объявлен в списке ubus" "yes" \
           "$(rpcd_list | grep -q "\"$m\"" && echo yes || echo no)"
     check "метод $m назван в ACL" "yes" \
-          "$(grep -q "\"$m\"" "$ROOT/luci/root/usr/share/rpcd/acl.d/luci-app-splify2.json" \
+          "$(grep -q "\"$m\"" "$ROOT/luci/root/usr/share/rpcd/acl.d/splify2.json" \
              && echo yes || echo no)"
 done
 
@@ -4041,7 +4125,7 @@ for m in xsteer_state xsteer_link xsteer_link_put; do
     check "метод $m объявлен в списке ubus" "yes" \
           "$(rpcd_list | grep -q "\"$m\"" && echo yes || echo no)"
     check "метод $m назван в ACL" "yes" \
-          "$(grep -q "\"$m\"" "$ROOT/luci/root/usr/share/rpcd/acl.d/luci-app-splify2.json" \
+          "$(grep -q "\"$m\"" "$ROOT/luci/root/usr/share/rpcd/acl.d/splify2.json" \
              && echo yes || echo no)"
 done
 
@@ -4061,7 +4145,7 @@ done
 # панели прячут и сообщения, и логины) и внешний адрес роутера. Отчёт, который нельзя
 # показать людям, не выполняет своей задачи вовсе — поэтому проверки на секреты стоят
 # рядом с проверками на состав, а не «когда-нибудь потом».
-mkdir -p "$T/etc/subs" "$T/zapret" "$T/etc/config"
+mkdir -p "$T/etc/subs" "$T/etc/config"
 
 # Прошивка и архитектура: обе строки из одного файла описания системы. DISTRIB_DESCRIPTION
 # берётся ради версии OpenWrt — до этого метода её не спрашивал никто.
@@ -4071,9 +4155,8 @@ DISTRIB_RELEASE='24.10.0'
 DISTRIB_DESCRIPTION='OpenWrt 24.10.0 r28427-6df0e3d02a'
 EOF
 
-# Номер сборки интерфейса — тот же файл, который читает загрузчик страницы на каждой
-# загрузке (luci/.../view/splify2/home.js).
-printf '26.9-ab12cd\n' > "$T/etc/build-id.txt"
+# Интерфейс страницы — плагин (Andromeda): отчёт называет его и версию из менеджера плагинов.
+plug_reset; plug_iface andromeda 26.9.9
 
 # Спека: выход-туннель, выход-локация подписки и «напрямую», плюс два правила — адресное и
 # доменное. Из неё же заглушка движка собирает `status`, поэтому состояние выходов и
@@ -4120,7 +4203,7 @@ check "фикстура: приватный ключ туннеля лежит �
 SR_JSON='{"output":"nl","sub_file":"'"$T"'/etc/sub.txt","node":-1,"usable":3,"skipped":1,"foreign":0,
 "nodes":[{"name":"🇩🇪 Germania-login-pupkin","host":"203.0.113.9","uuid":"8f14e45f-ceea-467a-9fb2-1111deadbeef"}]}'
 
-out="$(BUILD_ID_FILE="$T/etc/build-id.txt" ZP_NFQWS_FIXTURE="$T/bin/nfqws" \
+out="$(ZP_NFQWS_FIXTURE="$T/bin/nfqws" \
        STEER_JSON="$SR_JSON" STEER_NOISE='steer[warn]: узел 2 не ответил' \
        rpcd support_report)"
 rep="$(printf '%s' "$out" | jget text)"
@@ -4136,15 +4219,15 @@ check "отчёт — один готовый к копированию текс
 check "модель роутера названа" "yes" "$(has 'Xiaomi AX3000T')"
 check "версия OpenWrt названа" "yes" "$(has '24.10.0')"
 check "архитектура пакетов названа" "yes" "$(has 'aarch64_cortex-a53')"
-check "версия пакета интерфейса названа" "yes" "$(has '26.9-ab12cd')"
-check "версия пакета движка названа" "yes" "$(has '0.9.5')"
-check "вариант сборки движка назван словом, а не признаком" "yes" "$(has 'расширенн')"
-check "состояние службы движка названо" "yes" "$(has 'автозапуск')"
+check "плагин-интерфейс и его версия названы" "yes" "$(has 'splify2 interface plugins: andromeda 26.9.9')"
+check "версия пакета ядра названа" "yes" "$(has '2.1.0')"
+check "наличие модуля VLESS названо словом, а не признаком" "yes" "$(has 'VLESS module')"
+check "состояние службы движка названо" "yes" "$(has 'autostart')"
 
 # ---- состав: приговоры diag по-русски, а не JSON ----
 check "приговоры diag попали в отчёт читаемым видом" "yes" "$(has 'таблица на месте')"
 check "и не JSON'ом" "no" "$(has '"verdict"')"
-check "итог проверок назван числом" "yes" "$(has 'провалов 0')"
+check "итог проверок назван числом" "yes" "$(has 'failures 0')"
 
 # ---- состав: выходы и правила ----
 check "выход-туннель назван" "yes" "$(has 'vpn')"
@@ -4153,20 +4236,20 @@ check "выход-туннель назван" "yes" "$(has 'vpn')"
 # движка печатает в `status` только kind/up/mark/table, поэтому имени устройства в стенде
 # взяться неоткуда, а на роутере его печатает движок (контракт steer §2: состояние выхода —
 # это его запись в спеке плюс поля состояния).
-check "устройство выхода названо отдельным словом" "yes" "$(has 'устройство не создано')"
-check "состояние выхода названо словом" "yes" "$(has 'поднят')"
+check "устройство выхода названо отдельным словом" "yes" "$(has 'device not created')"
+check "состояние выхода названо словом" "yes" "$(has 'up')"
 check "выход-локация подписки назван своим видом" "yes" "$(has 'vless')"
 check "правила из спеки перечислены" "yes" "$(has 'Новости')"
 check "и второе правило тоже" "yes" "$(has 'Соцсети')"
 
 # ---- состав: DNS ----
-check "резолвер доменов движка описан" "yes" "$(has 'резолвер доменов ядра')"
+check "резолвер доменов движка описан" "yes" "$(has 'domain resolver of the core')"
 check "чужой https-dns-proxy в отчёте не читается" "no" "$(has 'https-dns-proxy')"
 check "и обход DPI в отчёте не упоминается" "no" "$(has 'обход DPI')"
 
 # ---- состав: подписка ----
-check "подписка: сказано, что она есть" "yes" "$(has 'подписка')"
-check "подписка: число пригодных узлов названо" "yes" "$(has 'пригодных узлов: 3')"
+check "подписка: сказано, что она есть" "yes" "$(has 'subscription')"
+check "подписка: число пригодных узлов названо" "yes" "$(has 'usable nodes: 3')"
 
 # ---- ГЛАВНОЕ: секретов в отчёте нет -------------------------------------------------
 check "в отчёте нет ссылок узлов" "no" "$(has 'vless://')"
@@ -4181,21 +4264,21 @@ check "в отчёте нет адреса узла" "no" "$(has '203.0.113.9')"
 check "в отчёте нет внешнего адреса роутера" "no" "$(has '46.42.17.15')"
 # И отдельно — что отчёт сам говорит человеку, чего в нём нет: он вставляет текст в общий
 # чат и вправе это знать, не читая наш исходник.
-check "отчёт сам говорит, что секретов в нём нет" "yes" "$(has 'не попали')"
+check "отчёт сам говорит, что секретов в нём нет" "yes" "$(has 'Left out of the report')"
 
 # ---- ребра контракта: список ubus и ACL ---------------------------------------------
 check "метод support_report объявлен в списке ubus" "yes" \
       "$(rpcd_list | grep -q '"support_report"' && echo yes || echo no)"
 check "метод support_report назван в ACL" "yes" \
-      "$(grep -q '"support_report"' "$ROOT/luci/root/usr/share/rpcd/acl.d/luci-app-splify2.json" \
+      "$(grep -q '"support_report"' "$ROOT/luci/root/usr/share/rpcd/acl.d/splify2.json" \
          && echo yes || echo no)"
 # Отчёт только читает состояние, поэтому он в группе read: попав в write, он потребовал бы
 # от вызывающего прав, которых у страницы обзора нет.
 check "и назван он именно в разделе read" "yes" \
       "$(python3 -c 'import json,sys
-d = json.load(open(sys.argv[1]))["luci-app-splify2"]
+d = json.load(open(sys.argv[1]))["splify2"]
 print("yes" if "support_report" in d["read"]["ubus"]["splify2"] else "no")' \
-        "$ROOT/luci/root/usr/share/rpcd/acl.d/luci-app-splify2.json")"
+        "$ROOT/luci/root/usr/share/rpcd/acl.d/splify2.json")"
 
 # ---- отчёт на сломанном роутере ------------------------------------------------------
 # Отчёт собирают ИМЕННО ТОГДА, когда что-то не работает, поэтому он обязан собираться и без
@@ -4203,25 +4286,25 @@ print("yes" if "support_report" in d["read"]["ubus"]["splify2"] else "no")' \
 # единственного, что он мог показать помогающему.
 mv "$T/bin/steer" "$T/bin/steer.off"
 printf '{"schema":1,"outputs":{},"channels":[]}\n' > "$T/etc/spec.json"
-out="$(BUILD_ID_FILE="$T/etc/build-id.txt" rpcd support_report)"
+out="$(rpcd support_report)"
 rep="$(printf '%s' "$out" | jget text)"
 check "без движка отчёт всё равно собирается" "true" "$(printf '%s' "$out" | jget ok)"
-check "и говорит, что движка нет" "yes" "$(has 'ядро steer: НЕ УСТАНОВЛЕНО')"
+check "и говорит, что движка нет" "yes" "$(has 'steer core: NOT INSTALLED')"
 # Незнание называется незнанием: «движок не ответил» и «движка нет» — разные диагнозы, и
 # второй уводит помогающего чинить не то.
-check "и не выдаёт молчание diag за исправность" "yes" "$(has 'не ответило на diag')"
+check "и не выдаёт молчание diag за исправность" "yes" "$(has 'did not answer diag')"
 check "модель и прошивка при этом на месте — их знает не движок" "yes" "$(has 'Xiaomi AX3000T')"
 check "пустая спека — это «правил нет», а не пустой раздел" "yes" \
-      "$(has 'правил нет')"
+      "$(has 'no rules')"
 mv "$T/bin/steer.off" "$T/bin/steer"
 
 # Подписки нет вовсе — тоже состояние, а не пустое место: с него начинается половина
 # обращений («поставил, а интернета нет»).
 rm -f "$T/etc/sub.txt" "$T/etc/subs"/*.txt
 uci_set splify2.main.sub_url ''
-out="$(BUILD_ID_FILE="$T/etc/build-id.txt" rpcd support_report)"
+out="$(rpcd support_report)"
 rep="$(printf '%s' "$out" | jget text)"
-check "отсутствие подписки названо словами" "yes" "$(has 'подписок нет')"
+check "отсутствие подписки названо словами" "yes" "$(has 'no subscriptions')"
 
 # ---- источники трафика: свой исходящий туннель источником быть не может ---------------
 # Перечень сетей клиентов (splify2#16, выше по файлу) отдавал ВСЁ, что нашлось в /sys, кроме
@@ -4434,26 +4517,26 @@ uci_set 'firewall.@forwarding[0]' forwarding; uci_set 'firewall.@forwarding[0].s
 printf '%s\n' '{"schema":1,"lan_devices":["br-lan","tailscale0"],"outputs":{"direct":{"kind":"direct"},"vpn":{"kind":"interface","device":"wg0","on_fail":"direct"}},"channels":[]}' > "$T/etc/spec.json"
 out="$(rpcd apply)"
 check "apply с устройством клиентов из чужой зоны прошёл" "true" "$(printf '%s' "$out" | jget ok)"
-check "проброс в зону туннелей заведён и из lan, и из зоны tailscale0" "lan ts" "$(fwd_srcs steer_iface)"
+check "проброс в зону туннелей заведён и из lan, и из зоны tailscale0" "lan ts" "$(fwd_srcs steer_zone)"
 check "проброс из чужой зоны записан за нами" "yes" \
-      "$(grep -qx 'fwd steer_iface ts' "$T/etc/fw-owned" 2>/dev/null && echo yes || echo no)"
+      "$(grep -qx 'fwd steer_zone ts' "$T/etc/fw-owned" 2>/dev/null && echo yes || echo no)"
 check "и назван в ответе apply" "yes" \
-      "$(printf '%s' "$out" | grep -q 'проброс ts -> steer_iface' && echo yes || echo no)"
+      "$(printf '%s' "$out" | grep -q 'проброс ts -> steer_zone' && echo yes || echo no)"
 # Повторный apply ничего не дублирует.
 out="$(rpcd apply)"
-check "второй apply проброс не дублирует" "lan ts" "$(fwd_srcs steer_iface)"
+check "второй apply проброс не дублирует" "lan ts" "$(fwd_srcs steer_zone)"
 # Устройство из зоны ts ушло из спеки — наш проброс убирается, расписка снимается, lan остаётся.
 printf '%s\n' '{"schema":1,"lan_devices":["br-lan"],"outputs":{"direct":{"kind":"direct"},"vpn":{"kind":"interface","device":"wg0","on_fail":"direct"}},"channels":[]}' > "$T/etc/spec.json"
 out="$(rpcd apply)"
-check "устройств из зоны ts в спеке нет — наш проброс убран" "lan" "$(fwd_srcs steer_iface)"
+check "устройств из зоны ts в спеке нет — наш проброс убран" "lan" "$(fwd_srcs steer_zone)"
 check "и расписка снята" "no" \
-      "$(grep -qx 'fwd steer_iface ts' "$T/etc/fw-owned" 2>/dev/null && echo yes || echo no)"
+      "$(grep -qx 'fwd steer_zone ts' "$T/etc/fw-owned" 2>/dev/null && echo yes || echo no)"
 # Зона объявлена через network, а не device: интерфейс tailscale с устройством tailscale0.
 uci_set 'network.tailscale' interface; uci_set 'network.tailscale.device' 'tailscale0'
 uci_set 'firewall.@zone[2].device' ''; uci_set 'firewall.@zone[2].network' 'tailscale'
 printf '%s\n' '{"schema":1,"lan_devices":["br-lan","tailscale0"],"outputs":{"direct":{"kind":"direct"},"vpn":{"kind":"interface","device":"wg0","on_fail":"direct"}},"channels":[]}' > "$T/etc/spec.json"
 out="$(rpcd apply)"
-check "зона, заданная через network, тоже узнаётся" "lan ts" "$(fwd_srcs steer_iface)"
+check "зона, заданная через network, тоже узнаётся" "lan ts" "$(fwd_srcs steer_zone)"
 # Зона — ИМЕНОВАННАЯ секция (`config zone 'ts'`): так её пишут руками по руководствам, и uci
 # зовёт её не «@zone[N]», а именем. До правки такая зона для нас не существовала: устройство
 # клиентов считалось ничьим, проброс не заводился — то есть H-206 для неё не работал вовсе.
@@ -4464,23 +4547,23 @@ uci_set 'firewall.ts' zone;        uci_set 'firewall.ts.name' ts;        uci_set
 uci_set 'firewall.ts_rule' rule;   uci_set 'firewall.ts_rule.name' ts;   uci_set 'firewall.ts_rule.src' ts
 printf '%s\n' '{"schema":1,"lan_devices":["br-lan","tailscale0"],"outputs":{"direct":{"kind":"direct"},"vpn":{"kind":"interface","device":"wg0","on_fail":"direct"}},"channels":[]}' > "$T/etc/spec.json"
 out="$(rpcd apply)"
-check "именованная зона с устройством клиентов узнаётся — проброс заведён" "lan ts" "$(fwd_srcs steer_iface)"
+check "именованная зона с устройством клиентов узнаётся — проброс заведён" "lan ts" "$(fwd_srcs steer_zone)"
 # Проброс в нашу зону человек дописал сам именованной секцией — второго не заводим и чужой не трогаем.
 rm -f "$T/uci.store" "$T/etc/fw-owned"; : > "$T/uci.store"
 uci_set 'firewall.@zone[0]' zone;  uci_set 'firewall.@zone[0].name' lan; uci_set 'firewall.@zone[0].device' 'br-lan'
 uci_set 'firewall.ts' zone;        uci_set 'firewall.ts.name' ts;        uci_set 'firewall.ts.device' 'tailscale0'
-uci_set 'firewall.@zone[1]' zone;  uci_set 'firewall.@zone[1].name' steer_iface; uci_set 'firewall.@zone[1].device' 'wg0'
-uci_set 'firewall.ts2vpn' forwarding; uci_set 'firewall.ts2vpn.src' ts; uci_set 'firewall.ts2vpn.dest' steer_iface
+uci_set 'firewall.@zone[1]' zone;  uci_set 'firewall.@zone[1].name' steer_zone; uci_set 'firewall.@zone[1].device' 'wg0'
+uci_set 'firewall.ts2vpn' forwarding; uci_set 'firewall.ts2vpn.src' ts; uci_set 'firewall.ts2vpn.dest' steer_zone
 out="$(rpcd apply)"
 check "чужой именованный проброс ts -> зона туннелей не дублируется" "1" \
-      "$(grep -c '^firewall\.[^.]*\.dest=steer_iface$' "$T/uci.store" | { read -r n; echo $((n - $(grep -c '^firewall\.@forwarding\[[0-9]*\]\.src=lan$' "$T/uci.store"))); })"
+      "$(grep -c '^firewall\.[^.]*\.dest=steer_zone$' "$T/uci.store" | { read -r n; echo $((n - $(grep -c '^firewall\.@forwarding\[[0-9]*\]\.src=lan$' "$T/uci.store"))); })"
 check "и за нами не записан" "no" \
-      "$(grep -qx 'fwd steer_iface ts' "$T/etc/fw-owned" 2>/dev/null && echo yes || echo no)"
+      "$(grep -qx 'fwd steer_zone ts' "$T/etc/fw-owned" 2>/dev/null && echo yes || echo no)"
 # Оба устройства в lan — лишних пробросов нет.
 rm -f "$T/uci.store" "$T/etc/fw-owned"; : > "$T/uci.store"
 uci_set 'firewall.@zone[0]' zone;  uci_set 'firewall.@zone[0].name' lan; uci_set 'firewall.@zone[0].device' 'br-lan tailscale0'
 out="$(rpcd apply)"
-check "оба устройства в lan — проброс один" "lan" "$(fwd_srcs steer_iface)"
+check "оба устройства в lan — проброс один" "lan" "$(fwd_srcs steer_zone)"
 rm -f "$T/uci.store"; : > "$T/uci.store"
 
 # ---- устройство клиентов БЕЗ ЗОНЫ ВОВСЕ: зону заводим мы -----------------------------------
@@ -4524,8 +4607,8 @@ check "forward ACCEPT — иначе смысла в зоне нет" "ACCEPT" "
 check "NAT у зоны клиентов не включается" "0" "$(uci_get "firewall.$(zone_id_by_name steer_clients).masq")"
 # Пробросы — ИЗ зоны: в зону туннелей (её заводит синхронизация той зоны) и в wan, без которого
 # всё, что не названо в правилах, продолжало бы молча падать.
-check "из зоны клиентов пробрасывается и в туннель, и в wan" "steer_iface wan" "$(fwd_dests steer_clients)"
-check "в зону туннелей пробрасывается и из lan, и из зоны клиентов" "lan steer_clients" "$(fwd_srcs steer_iface)"
+check "из зоны клиентов пробрасывается и в туннель, и в wan" "steer_zone wan" "$(fwd_dests steer_clients)"
+check "в зону туннелей пробрасывается и из lan, и из зоны клиентов" "lan steer_clients" "$(fwd_srcs steer_zone)"
 # Обратных пробросов не заводим ВОВСЕ: `lan -> зона клиентов` открыл бы локальной сети доступ
 # к пирам чужого туннеля, а об этом нас никто не просил.
 check "в зону клиентов не пробрасывается ниоткуда" "" "$(fwd_srcs steer_clients)"
@@ -4534,14 +4617,14 @@ check "зона и проброс в wan записаны за нами" "yes" \
          grep -qx 'fwd wan steer_clients' "$T/etc/fw-owned" 2>/dev/null && echo yes || echo no)"
 # Повторный apply ничего не дублирует.
 out="$(rpcd apply)"
-check "второй apply зону и пробросы не дублирует" "steer_iface wan" "$(fwd_dests steer_clients)"
+check "второй apply зону и пробросы не дублирует" "steer_zone wan" "$(fwd_dests steer_clients)"
 # Устройство ушло из спеки — зона уходит вместе с ОБОИМИ пробросами. Оставленный проброс с
 # `src` на удалённую зону fw4 отвергает так же, как с `dest`, — роутер остался бы без фаервола.
 printf '%s\n' '{"schema":1,"lan_devices":["br-lan"],"outputs":{"direct":{"kind":"direct"},"vpn":{"kind":"interface","device":"wg0","on_fail":"direct"}},"channels":[]}' > "$T/etc/spec.json"
 out="$(rpcd apply)"
 check "устройства беззонных клиентов ушли — зоны нет" "" "$(zone_id_by_name steer_clients)"
 check "и ни одного проброса, её касающегося" "" "$(fwd_dests steer_clients)$(fwd_srcs steer_clients)"
-check "а проброс lan -> зона туннелей остался" "lan" "$(fwd_srcs steer_iface)"
+check "а проброс lan -> зона туннелей остался" "lan" "$(fwd_srcs steer_zone)"
 # Человек положил tailscale0 в свою зону — своей мы больше не заводим, только проброс.
 rm -f "$T/uci.store" "$T/etc/fw-owned"; : > "$T/uci.store"
 uci_set 'firewall.@zone[0]' zone;  uci_set 'firewall.@zone[0].name' lan; uci_set 'firewall.@zone[0].device' 'br-lan'
@@ -4550,7 +4633,7 @@ uci_set 'firewall.ts' zone;        uci_set 'firewall.ts.name' ts;        uci_set
 printf '%s\n' '{"schema":1,"lan_devices":["br-lan","tailscale0"],"outputs":{"direct":{"kind":"direct"},"vpn":{"kind":"interface","device":"wg0","on_fail":"direct"}},"channels":[]}' > "$T/etc/spec.json"
 out="$(rpcd apply)"
 check "у устройства есть своя зона — нашей не появляется" "" "$(zone_id_by_name steer_clients)"
-check "ему хватает проброса из его зоны" "lan ts" "$(fwd_srcs steer_iface)"
+check "ему хватает проброса из его зоны" "lan ts" "$(fwd_srcs steer_zone)"
 rm -f "$T/uci.store"; : > "$T/uci.store"
 
 # ---- спека v2: бэкенд читает её так же, как прежнюю v1 ------------------------------------
@@ -4565,8 +4648,8 @@ cat > "$T/etc/spec.json" <<EOF
  "rules":[{"name":"Новости","to":["a"],"out":"nl"},{"name":"Всё","to":"all","out":"direct","enabled":false}]}
 EOF
 rm -f "$T/lists/domains/v2only.lst" "$T/lists/v2pfx.lst"
-printf '{"categories":[],"domain_lists":[],"base_url":"https://example.invalid/l"}\n' > "$T/etc/manifest.json"
-out="$(rpcd apply)"
+printf '{"categories":[],"domain_lists":[],"base_url":"https://example.invalid/l"}\n' > "$CAT_MANIFEST"
+out="$(RPCD_PLUGIN_ROOT="$T/off" rpcd apply)"
 check "доскачивание видит файлы списков спеки v2" "yes;yes" \
       "$([ -s "$T/lists/domains/v2only.lst" ] && echo yes || echo no);$([ -s "$T/lists/v2pfx.lst" ] && echo yes || echo no)"
 check "подписка выхода tunnel найдена по ключу subscription" "1;2" \
@@ -4575,7 +4658,7 @@ d=[d for d in json.load(sys.stdin)["subs"] if d["name"]=="v2"]
 print("%s;%s" % (d[0]["used"], d[0]["used_nodes"]) if d else "нет")')"
 rep="$(rpcd support_report | jget text)"
 check "отчёт читает правила v2 с видом списка" "yes;yes;yes" \
-      "$(printf '%s' "$rep" | grep -q 'Новости -> nl (доменные списки)' && echo yes || echo no);$(printf '%s' "$rep" | grep -q 'Всё -> direct (весь трафик) \[ВЫКЛЮЧЕНО\]' && echo yes || echo no);$(printf '%s' "$rep" | grep -q 'vless://' && echo no || echo yes)"
+      "$(printf '%s' "$rep" | grep -q 'Новости -> nl (domain lists)' && echo yes || echo no);$(printf '%s' "$rep" | grep -q 'Всё -> direct (all traffic) \[OFF\]' && echo yes || echo no);$(printf '%s' "$rep" | grep -q 'vless://' && echo no || echo yes)"
 # Архив со спекой v2 принимается восстановлением.
 out="$(printf '%s\n' 'splify2-backup 2' '[spec]' '{"version":2,"outputs":{"direct":{"kind":"direct"}},"rules":[{"name":"x","to":"all","out":"direct"}]}' | backup_put)"
 check "архив со спекой v2 принимается" "true" "$(printf '%s' "$out" | jget ok)"
@@ -4585,6 +4668,10 @@ out="$(printf '%s\n' 'splify2-backup 2' '[spec]' '{"version":2,"lists":{"a":{"do
 check "список вне каталога списков в v2 отвергается" "false" "$(printf '%s' "$out" | jget ok)"
 out="$(printf '%s\n' 'splify2-backup 2' '[spec]' '{"version":2,"dns":{"upstreams":{"g":{"url":"file:///etc/shadow"}}}}' | backup_put)"
 check "чужая схема в адресе DNS отвергается" "false" "$(printf '%s' "$out" | jget ok)"
+out="$(printf '%s\n' 'splify2-backup 2' '[spec]' '{"version":2,"dns":{"upstreams":{"a":{"url":"h3://dns.adguard-dns.com/dns-query","ips":["94.140.14.14"]},"b":{"url":"https://dns.google/dns-query","ips":["8.8.8.8"],"fragment":true}}}}' | backup_put)"
+check "архив с адресом h3:// и fragment у DoH принимается" "true" "$(printf '%s' "$out" | jget ok)"
+out="$(printf '%s\n' 'splify2-backup 2' '[spec]' '{"version":2,"dns":{"upstreams":{"g":{"url":"h3://x;reboot"}}}}' | backup_put)"
+check "адрес h3:// с разделителем команд отвергается" "false" "$(printf '%s' "$out" | jget ok)"
 out="$(printf '%s\n' 'splify2-backup 2' '[spec]' '{"version":2,"outputs":{"t":{"kind":"awg","conf":"/etc/shadow"}}}' | backup_put)"
 check "файл настройки вне каталога движка отвергается" "false" "$(printf '%s' "$out" | jget ok)"
 
@@ -4630,17 +4717,52 @@ uci_set 'firewall.@zone[1]' zone;  uci_set 'firewall.@zone[1].name' wan; uci_set
 out="$(rpcd apply)"
 check "apply со спекой прокси прошёл" "true" "$(printf '%s' "$out" | jget ok)"
 check "устройства hysteria2 и прокси — в зоне туннелей ядра, без NAT" "hy ss9 tr vl;0" \
-      "$(zone_devs steer_vless);$(uci_get "firewall.$(zone_id_by_name steer_vless).masq")"
+      "$(zone_devs steer_zone);$(uci_get "firewall.$(zone_id_by_name steer_zone).masq")"
 check "строка зон purge та же, что у объекта rpcd" \
-      "$(sed -n 's/^FW_ZONES="\(.*\)"$/\1/p' "$SCRIPT")" \
+      "$(sed -n 's/^FW_ZONES="\(.*\)"$/\1/p' "$ENV_SH")" \
       "$(sed -n 's/^FW_ZONES=${FW_ZONES:-"\(.*\)"}$/\1/p' "$ROOT/files/usr/sbin/splify2-purge")"
+
+# ---- миграция прежних зон steer_vless и steer_iface в steer_zone ------------------------------
+# Заведённые нами (есть расписка) убираются с пробросами и расписками, устройства уходят в
+# steer_zone, ни одно не стоит в двух зонах; одноимённая зона человека остаётся нетронутой.
+rm -f "$T/uci.store" "$T/etc/fw-owned"; : > "$T/uci.store"
+uci_set 'firewall.@zone[0]' zone;  uci_set 'firewall.@zone[0].name' lan; uci_set 'firewall.@zone[0].device' 'br-lan'
+uci_set 'firewall.@zone[1]' zone;  uci_set 'firewall.@zone[1].name' wan; uci_set 'firewall.@zone[1].device' 'eth1'
+uci_set 'firewall.@zone[2]' zone;  uci_set 'firewall.@zone[2].name' steer_vless; uci_set 'firewall.@zone[2].device' 'hy tr'
+uci_set 'firewall.@zone[3]' zone;  uci_set 'firewall.@zone[3].name' steer_iface; uci_set 'firewall.@zone[3].device' 'wgold'; uci_set 'firewall.@zone[3].masq' 1
+uci_set 'firewall.@forwarding[0]' forwarding; uci_set 'firewall.@forwarding[0].src' lan; uci_set 'firewall.@forwarding[0].dest' steer_vless
+uci_set 'firewall.@forwarding[1]' forwarding; uci_set 'firewall.@forwarding[1].src' lan; uci_set 'firewall.@forwarding[1].dest' steer_iface
+printf '%s\n' 'zone steer_vless' 'dev steer_vless hy' 'dev steer_vless tr' 'zone steer_iface' 'dev steer_iface wgold' > "$T/etc/fw-owned"
+out="$(rpcd apply)"
+check "миграция: apply прошёл" "true" "$(printf '%s' "$out" | jget ok)"
+check "миграция: заведённые нами steer_vless и steer_iface убраны" ";" "$(zone_id_by_name steer_vless);$(zone_id_by_name steer_iface)"
+check "миграция: устройства переехали в steer_zone, без masq" "hy ss9 tr vl;0" \
+      "$(zone_devs steer_zone);$(uci_get "firewall.$(zone_id_by_name steer_zone).masq")"
+check "миграция: пробросов в прежние зоны не осталось, в steer_zone — lan" "0;lan" \
+      "$(grep -c '^firewall\.[^.]*\.dest=steer_\(vless\|iface\)$' "$T/uci.store");$(fwd_srcs steer_zone)"
+check "миграция: расписок о прежних зонах нет" "0" "$(grep -c 'steer_vless\|steer_iface' "$T/etc/fw-owned")"
+check "миграция: ни одно устройство не стоит в двух зонах" "" \
+      "$(sed -n 's/^firewall\.[^.]*\.device=//p' "$T/uci.store" | tr -d "'" | tr ' ' '\n' | grep . | sort | uniq -d | tr '\n' ' ')"
+out="$(rpcd apply)"
+check "миграция: повторный apply ничего не меняет" "hy ss9 tr vl" "$(zone_devs steer_zone)"
+# Зоны человека с теми же именами (расписки нет, есть чужое устройство) — не трогаем.
+rm -f "$T/uci.store" "$T/etc/fw-owned"; : > "$T/uci.store"
+uci_set 'firewall.@zone[0]' zone;  uci_set 'firewall.@zone[0].name' lan; uci_set 'firewall.@zone[0].device' 'br-lan'
+uci_set 'firewall.@zone[1]' zone;  uci_set 'firewall.@zone[1].name' wan; uci_set 'firewall.@zone[1].device' 'eth1'
+uci_set 'firewall.@zone[2]' zone;  uci_set 'firewall.@zone[2].name' steer_vless; uci_set 'firewall.@zone[2].device' 'eth9'
+uci_set 'firewall.@zone[3]' zone;  uci_set 'firewall.@zone[3].name' steer_iface; uci_set 'firewall.@zone[3].device' 'eth8'; uci_set 'firewall.@zone[3].masq' 1
+uci_set 'firewall.@forwarding[0]' forwarding; uci_set 'firewall.@forwarding[0].src' lan; uci_set 'firewall.@forwarding[0].dest' steer_vless
+out="$(rpcd apply)"
+check "чужие steer_vless и steer_iface остались с устройствами" "eth9;eth8" "$(zone_devs steer_vless);$(zone_devs steer_iface)"
+check "и проброс человека в его зону цел" "1" "$(grep -c '^firewall\.[^.]*\.dest=steer_vless$' "$T/uci.store")"
+check "наши устройства — в steer_zone" "hy ss9 tr vl" "$(zone_devs steer_zone)"
 rm -f "$T/uci.store" "$T/etc/fw-owned"; : > "$T/uci.store"
 printf '{"schema":1,"outputs":{},"channels":[]}\n' > "$T/etc/spec.json"
 
 # ---- самолечение: ключ ipv6 выходу-интерфейсу без ключа в нашей зоне — по адресу IPv6 --------
 #
 # Обращение: «при добавлении выхода варпа s2 жалуется на созданный им самим интерфейс без
-# параметра IPv6 Masquerading». Зона steer_iface создаётся с masq (IPv4) без masq6, и ядро просит
+# параметра IPv6 Masquerading». Зона steer_zone создаётся без masq и без masq6 (IPv4 подменяет ядро), и ядро просит
 # включить masq6 — у зоны, которую завели мы. Подмену IPv6 ставит само ядро по `ipv6: nat`;
 # apply (spec_heal_ipv6) дописывает ключ выходам, записанным прежней панелью, архивом или руками.
 #
@@ -4682,7 +4804,7 @@ line_has() {  # ТЕКСТ ОБРАЗЕЦ_СТРОКИ СЛОВО...
 # менять перечень туннелей, на который смотрят проверки выше.
 OUT_HEAL="$T/outnet-heal"
 rm -rf "$OUT_HEAL"; mkdir -p "$OUT_HEAL"
-for _d in warp wglate wgv4 wgpfx wgll wg_r wg_o wg_n wgp1 wgp2 wgnet wg_d wg_f wg_i; do mkdir -p "$OUT_HEAL/$_d"; done
+for _d in warp wgv4 wgpfx wgll wg_r wg_o wg_n wgp1 wgp2 wgnet wg_d wg_f wg_i; do mkdir -p "$OUT_HEAL/$_d"; done
 heal_apply() { OUT_SYSNET_FIXTURE="$OUT_HEAL" rpcd "$@"; }
 # Живые адреса: warp — один global (ULA), wgll — только link-local (адресом выхода не считается).
 printf '%s\n' \
@@ -4708,7 +4830,6 @@ heal_spec() {
   "wgcfg":{"kind":"interface","device":"wgcfg"},
   "wgdown":{"kind":"interface","device":"wgdown"},
   "ghost":{"kind":"interface","device":"ghost"},
-  "late":{"kind":"interface","device":"wglate"},
   "pfx":{"kind":"interface","device":"wgpfx"},
   "ll":{"kind":"interface","device":"wgll"},
   "keep_routed":{"kind":"interface","device":"wg_r","ipv6":"routed"},
@@ -4762,8 +4883,8 @@ heal_zones() {  # [masq6]
     uci_set 'firewall.vpni' zone;      uci_set 'firewall.vpni.name' vpni;    uci_set 'firewall.vpni.network' 'old_vpn'
     heal_net
     if [ -n "${1:-}" ]; then
-        uci_set 'firewall.@zone[2]' zone; uci_set 'firewall.@zone[2].name' steer_iface
-        uci_set 'firewall.@zone[2].device' 'warp wgv4 wgcfg wgdown ghost wglate wgpfx wgll wg_r wg_o wg_n amn amn4 amn_def wgp1 wgp2'
+        uci_set 'firewall.@zone[2]' zone; uci_set 'firewall.@zone[2].name' steer_zone
+        uci_set 'firewall.@zone[2].device' 'warp wgv4 wgcfg wgdown ghost wgpfx wgll wg_r wg_o wg_n amn amn4 amn_def wgp1 wgp2'
         uci_set 'firewall.@zone[2].masq6' 1
     fi
 }
@@ -4787,7 +4908,6 @@ check "heal: awg, где IPv6 только в закомментированно
 # --- решать не нам ---
 check "heal: у интерфейса задан ip6prefix — человек раздаёт префикс, ключ не пишется" "-" "$(v6of pfx)"
 check "heal: устройства нет нигде — ничего не известно, ключ не пишется" "-" "$(v6of ghost)"
-check "heal: устройство есть, адреса и настройки нет (DHCPv6 придёт позже) — off навсегда не пишется" "-" "$(v6of late)"
 # --- явное остаётся ---
 check "heal: явный routed не тронут" "routed" "$(v6of keep_routed)"
 check "heal: явный off не тронут" "off" "$(v6of keep_off)"
@@ -4798,12 +4918,12 @@ check "heal: устройство в чужой зоне (list network, имя =
 check "heal: устройство в чужой зоне (list network, опция device) не тронуто" "-" "$(v6of foreign_d)"
 check "heal: устройство в чужой зоне (list network, прежняя опция ifname) не тронуто" "-" "$(v6of foreign_i)"
 check "heal: устройство в чужой зоне (list network, имя выводит netifd) не тронуто" "-" "$(v6of foreign_u)"
-check "heal: чужие устройства в нашу зону не добавлены" "" "$(in_zone steer_iface wg_f wgnet wg_d wg_i pptp-vpn)"
-check "heal: и не записаны за нами" "0" "$(grep -c 'dev steer_iface \(wg_f\|wgnet\|wg_d\|wg_i\|pptp-vpn\)$' "$T/etc/fw-owned" 2>/dev/null)"
+check "heal: чужие устройства в нашу зону не добавлены" "" "$(in_zone steer_zone wg_f wgnet wg_d wg_i pptp-vpn)"
+check "heal: и не записаны за нами" "0" "$(grep -c 'dev steer_zone \(wg_f\|wgnet\|wg_d\|wg_i\|pptp-vpn\)$' "$T/etc/fw-owned" 2>/dev/null)"
 check "heal: об оставленных чужих устройствах сказано в ответе apply" "yes" \
       "$(line_has "$txt" 'уже в своих зонах' wg_f wgnet wg_d wg_i pptp-vpn)"
 check "heal: свои устройства в нашей зоне на месте" "warp wgv4 wgcfg wgdown ghost wgpfx wgll wg_r amn amn4 amn_def wgp1 wgp2" \
-      "$(in_zone steer_iface warp wgv4 wgcfg wgdown ghost wgpfx wgll wg_r amn amn4 amn_def wgp1 wgp2)"
+      "$(in_zone steer_zone warp wgv4 wgcfg wgdown ghost wgpfx wgll wg_r amn amn4 amn_def wgp1 wgp2)"
 # --- пул: ключ у каждого члена по его устройству ---
 check "heal: члены пула — по устройству каждого" "nat off" "$(v6of pm.a) $(v6of pm.b)"
 check "heal: группа и туннель без изменений" "- -" "$(v6of pm) $(v6of tun)"
@@ -4813,11 +4933,11 @@ check "heal: кроме вставок, ни один байт не измени
       "$(sed -E 's/"ipv6":"(nat|off)",//g' "$T/etc/spec.json" > "$T/spec.stripped"; sed -E 's/"ipv6":"(nat|off)",//g' "$T/spec.before" | cmp -s - "$T/spec.stripped" && echo yes || echo no)"
 # --- ответ apply: какой ключ и каким выходам ---
 check "heal: ответ apply называет nat и его выходы" "yes" \
-      "$(line_has "$txt" 'записан ipv6: nat' warp wgcfg amn amn_def pm.a)"
+      "$(line_has "$txt" 'got ipv6: nat' warp wgcfg amn amn_def pm.a)"
 check "heal: и в строке nat нет выходов, которым записан off" "nonono" \
-      "$(line_has "$txt" 'записан ipv6: nat' wgv4)$(line_has "$txt" 'записан ipv6: nat' pm.b)$(line_has "$txt" 'записан ipv6: nat' ll)"
+      "$(line_has "$txt" 'got ipv6: nat' wgv4)$(line_has "$txt" 'got ipv6: nat' pm.b)$(line_has "$txt" 'got ipv6: nat' ll)"
 check "heal: ответ apply называет off и его выходы" "yes" \
-      "$(line_has "$txt" 'записан ipv6: off' wgv4 wgdown ll amn4 pm.b)"
+      "$(line_has "$txt" 'got ipv6: off' wgv4 wgdown ll amn4 pm.b)"
 check "heal: apply применил уже исправленную спеку (снимок содержит ключи)" "nat off" \
       "$(python3 -c 'import json,sys; o=json.load(open(sys.argv[1]))["outputs"]; print(o["warp"].get("ipv6","-"), o["wgv4"].get("ipv6","-"))' "$T/etc/spec.applied.json")"
 # Интерфейс после apply перечитывает spec_get и applied_get и берёт то, что лежит на роутере
@@ -4826,32 +4946,57 @@ check "heal: apply применил уже исправленную спеку (
 # первая правка записала бы поверх роутерной спеку без вылеченных ключей.
 check "heal: spec_get после apply отдаёт исправленную спеку" "nat off" \
       "$(rpcd spec_get | python3 -c 'import json,sys; o=json.load(sys.stdin)["outputs"]; print(o["warp"].get("ipv6","-"), o["wgv4"].get("ipv6","-"))')"
-check "heal: applied_get после apply отдаёт то же, что spec_get" "$(rpcd spec_get | cksum)" "$(rpcd applied_get | cksum)"
+# Прежнее применённое остаётся рядом (D-P2.4): откат руками — положить spec.prev.json на место спеки.
+# Тут спека уже применена дважды подряд (вылеченная apply) — копия равна одному из снимков.
+check "apply: spec.prev.json лежит рядом со снимком" "yes" "$([ -s "$T/etc/spec.prev.json" ] && echo yes || echo no)"
+cp "$T/etc/spec.applied.json" "$T/etc/spec.applied.before"
+rpcd apply >/dev/null
+check "apply без правок прежнее применённое не затирает" "yes" \
+      "$(cmp -s "$T/etc/spec.applied.before" "$T/etc/spec.applied.json" && echo yes || echo no)"
+# `rev` у spec_get — не часть спеки (D-P2.7), поэтому сравнивается без него.
+norev() { python3 -c 'import json,sys; d=json.load(sys.stdin); d.pop("rev", None); print(json.dumps(d, sort_keys=True))'; }
+check "heal: applied_get после apply отдаёт то же, что spec_get" "$(rpcd spec_get | norev)" "$(rpcd applied_get | norev)"
 # Строки самолечения интерфейс в тосте не показывает и узнаёт их по началу (applyText в pending.ts;
 # его проверка читает исходник бэкенда): по две строки, nat и off, обе с этим началом.
 check "heal: обе строки самолечения начинаются так, как их узнаёт интерфейс" "2" \
-      "$(printf '%s\n' "$txt" | grep -c '^splify2: выходам без ключа ipv6 записан ')"
+      "$(printf '%s\n' "$txt" | grep -c '^splify2: outputs without an ipv6 key got ')"
 sum1="$(cksum < "$T/etc/spec.json")"
 out="$(heal_apply apply)"
 check "heal: второй apply спеку не меняет (идемпотентно)" "$sum1" "$(cksum < "$T/etc/spec.json")"
-check "heal: и не сообщает о правке" "no" "$(printf '%s' "$out" | jget output | grep -q 'записан ipv6' && echo yes || echo no)"
-check "heal: чужие устройства и после второго apply вне нашей зоны" "" "$(in_zone steer_iface wg_f wgnet wg_d wg_i pptp-vpn)"
-# v2 со словом «schema» где-то в тексте (выход так назван) — всё равно v2: лечится, и копии v1 нет.
+check "heal: и не сообщает о правке" "no" "$(printf '%s' "$out" | jget output | grep -q 'got ipv6' && echo yes || echo no)"
+check "heal: чужие устройства и после второго apply вне нашей зоны" "" "$(in_zone steer_zone wg_f wgnet wg_d wg_i pptp-vpn)"
+# v2 со словом «schema» где-то в тексте (выход так назван) — всё равно v2: лечится.
 heal_spec; heal_zones
 sed -i 's/"warp":{/"schema":{/' "$T/etc/spec.json"
 rm -f "$T/etc/spec.json.v1.bak"
 out="$(heal_apply apply)"
 check "heal: выход с именем schema в спеке v2 лечится" "nat" "$(v6of schema)"
-heal_spec
-sed -i 's/"warp":{/"schema":{/' "$T/etc/spec.json"
-out="$(heal_apply spec_set '{"spec":"{\"version\":2,\"outputs\":{\"schema\":{\"kind\":\"direct\"}}}"}')"
-check "spec_set: спека v2 со словом schema копией v1 не сохраняется" "no" "$([ -e "$T/etc/spec.json.v1.bak" ] && echo yes || echo no)"
 # masq6 у зоны уже включён — жалобы нет, спеку не трогаем.
 heal_spec; heal_zones 1
 out="$(heal_apply apply)"
 check "heal: у зоны masq6=1 — выход без ключа остаётся без ключа" "-" "$(v6of warp)"
 check "heal: и туннель без IPv6 тоже" "-" "$(v6of wgv4)"
 check "heal: и пул тоже" "- -" "$(v6of pm.a) $(v6of pm.b)"
+# Правка ДО ПЕРВОГО apply: снимок применённого заводится из прежней спеки, и пилюля «Применить · N»
+# переживает перезагрузку страницы (applied_get больше не отдаёт новую спеку под видом применённой).
+heal_spec; heal_zones
+rm -f "$T/etc/spec.applied.json"
+cp "$T/etc/spec.json" "$T/spec.before"
+out="$(heal_apply spec_set '{"spec":"{\"version\":2,\"outputs\":{\"direct\":{\"kind\":\"direct\"},\"newone\":{\"kind\":\"direct\"}},\"channels\":[]}"}')"
+check "spec_set без снимка: ответ ok" "true" "$(printf '%s' "$out" | jget ok)"
+check "spec_set без снимка: снимок — прежняя спека" "$(cksum < "$T/spec.before")" "$(cksum < "$T/etc/spec.applied.json")"
+check "spec_set без снимка: applied_get не равен новой спеке" "no" \
+      "$([ "$(rpcd applied_get | cksum)" = "$(rpcd spec_get | cksum)" ] && echo yes || echo no)"
+cp "$T/etc/spec.applied.json" "$T/applied.keep"
+heal_apply spec_set '{"spec":"{\"version\":2,\"outputs\":{\"direct\":{\"kind\":\"direct\"}},\"channels\":[]}"}' >/dev/null
+check "spec_set со снимком: снимок не двигается" "$(cksum < "$T/applied.keep")" "$(cksum < "$T/etc/spec.applied.json")"
+# spec_heal не применяет неприменённые правки человека: снимок есть, но спека от него отличается.
+heal_spec; heal_zones
+printf '{"version":2,"outputs":{"direct":{"kind":"direct"}},"channels":[]}\n' > "$T/etc/spec.applied.json"
+: > "$T/steer.log"
+out="$(heal_apply spec_heal)"
+check "spec_heal: есть неприменённые правки — apply не зовётся" "no" \
+      "$(grep -q '^apply --spec' "$T/steer.log" && echo yes || echo no)"
 # Метод для установки: лечит спеку, а применённую заново применяет; неприменявшуюся не применяет.
 heal_spec; heal_zones
 rm -f "$T/etc/spec.applied.json"; : > "$T/steer.log"
@@ -4876,38 +5021,61 @@ check "spec_heal: повторно — healed=false, apply не зовётся" 
 heal_zones; printf '%s\n' '{"schema":1,"outputs":{"warp":{"kind":"interface","device":"warp"}},"channels":[]}' > "$T/etc/spec.json"
 heal_apply apply >/dev/null
 check "heal: спека v1 не правится (ключ ей неизвестен)" "-" "$(v6of warp)"
-# I-473: писатели спеки под замком. Чужой держатель замка (flock в фоне) — spec_set ждёт и не
-# пишет, пока замок не отпущен; после отпускания запись проходит. Повторный вход (spec_heal ->
-# apply) замок заново не берёт и не виснет.
-if command -v flock >/dev/null 2>&1; then
-    export SPEC_LOCK="$T/spec.lock"
-    heal_spec
-    _before="$(cksum < "$T/etc/spec.json")"
-    ( flock 9; sleep 2 ) 9>"$SPEC_LOCK" &
-    _holder=$!
-    sleep 0.5
-    heal_apply spec_set '{"spec":"{\"version\":2,\"outputs\":{\"lockw\":{\"kind\":\"direct\"}}}"}' > "$T/lock-w.out" &
-    _writer=$!
-    sleep 0.7
-    check "замок спеки: пока замок у другого, spec_set спеку не меняет" "$_before" "$(cksum < "$T/etc/spec.json")"
-    wait "$_holder"; wait "$_writer"
-    check "замок спеки: после отпускания spec_set записал" "yes" \
-          "$(grep -q lockw "$T/etc/spec.json" && echo yes || echo no)"
-    heal_spec; heal_zones
-    heal_apply apply >/dev/null
-    heal_spec
-    : > "$T/steer.log"
-    out="$(heal_apply spec_heal)"
-    check "замок спеки: spec_heal зовёт apply без зависания" "true;yes" \
-          "$(printf '%s' "$out" | jget ok);$(grep -q '^apply --spec' "$T/steer.log" && echo yes || echo no)"
-    unset SPEC_LOCK
-fi
+# ---- выходы kind: zapret убраны: ядро отвергает такую спеку, и apply/spec_heal её приводят ----
+zspec() {
+    cat > "$T/etc/spec.json" <<EOF2
+{
+  "version": 2,
+  "outputs": {
+    "dpi": { "kind": "zapret", "strategy": "x.opts", "on_fail": "drop" },
+    "nl": { "kind": "tunnel", "protocol": "vless", "subscription": "s", "on_fail": "zapret" },
+    "dpi2": { "kind": "zapret" }
+  },
+  "dns": { "upstreams": [ { "name": "u", "url": "https://dns.example/dns-query", "out": "dpi" } ] },
+  "rules": [
+    { "name": "yt", "to": ["yt"], "out": "dpi" },
+    { "name": "rest", "to": "all", "out": "nl" },
+    { "name": "z2", "to": ["z2"], "out": "dpi2" }
+  ]
+}
+EOF2
+}
+zspec; rm -f "$T/etc/spec.json.zapret.bak" "$T/etc/spec.applied.json"
+out="$(heal_apply apply)"
+check "zapret: apply ответил и назвал убранные выходы" "yes" "$(printf '%s' "$out" | jget output | grep -q 'убраны выходы dpi dpi2, правил переведено в direct: 3' && echo yes || echo no)"
+zv() { python3 -c 'import json,sys
+d = json.load(open(sys.argv[1]))
+print(";".join([",".join(sorted(d["outputs"])),
+  ",".join(r["out"] for r in d["rules"]), d["dns"]["upstreams"][0]["out"], d["outputs"]["nl"].get("on_fail","-"),
+  str(any(o["kind"] == "zapret" for o in d["outputs"].values()))]))' "$T/etc/spec.json"; }
+check "zapret: выходов zapret нет, direct заведён, правила и DNS — в direct, on_fail: zapret -> direct" \
+      "direct,nl;direct,nl,direct;direct;direct;False" "$(zv)"
+check "zapret: прежняя спека сохранена копией" "yes" "$([ -s "$T/etc/spec.json.zapret.bak" ] && grep -q dpi2 "$T/etc/spec.json.zapret.bak" && echo yes || echo no)"
+sum1="$(cksum < "$T/etc/spec.json")"
+out="$(heal_apply apply)"
+check "zapret: повторный apply спеку не меняет (идемпотентно)" "$sum1" "$(cksum < "$T/etc/spec.json")"
+check "zapret: и о правке не сообщает" "no" "$(printf '%s' "$out" | jget output | grep -q 'zapret' && echo yes || echo no)"
+# direct уже был, zapret последним и единственным в outputs, без запятых вокруг.
+cat > "$T/etc/spec.json" <<'EOF2'
+{"version":2,"outputs":{"direct":{"kind":"direct"},"dpi":{"kind":"zapret"}},"rules":[{"name":"a","to":["a"],"out":"dpi"}]}
+EOF2
+rm -f "$T/etc/spec.applied.json"
+out="$(heal_apply spec_heal)"
+check "zapret: spec_heal чинит спеку, ответ healed и текст" "true;yes" "$(printf '%s' "$out" | jget healed);$(printf '%s' "$out" | jget zapret | grep -q 'убраны выходы dpi' && echo yes || echo no)"
+check "zapret: последний член убран без висячей запятой, direct не задвоен" "direct;direct" \
+      "$(python3 -c 'import json,sys; d=json.load(open(sys.argv[1])); print(",".join(d["outputs"])+";"+d["rules"][0]["out"])' "$T/etc/spec.json")"
+# Спека без zapret — байт в байт.
+heal_spec; sumh="$(cksum < "$T/etc/spec.json")"
+heal_apply spec_heal >/dev/null
+check "zapret: спеку без таких выходов лечение zapret не трогает" "yes" "$(grep -q zapret "$T/etc/spec.json" && echo no || echo yes)"
+heal_zones; rm -f "$T/etc/spec.json.zapret.bak"
+
 # Перечень устройств для выхода: панель получает ту же подсказку, что пишет самолечение, и пишет
 # её новому выходу сама — так спека в памяти страницы и на диске не расходится с лечением при
 # apply, и лечить такому выходу уже нечего. (Расхождение у выходов без подсказки страница после
 # apply снимает сама, перечитывая спеку: ui/src/lib/pending.ts, refresh.)
 rm -rf "$T/outnet-v6"; mkdir -p "$T/outnet-v6"
-for _d in wgA wgB wgC wgD; do
+for _d in wgA wgB wgC wgD wgE; do
     mkdir -p "$T/outnet-v6/$_d"
     printf '65534\n' > "$T/outnet-v6/$_d/type"; printf 'up\n' > "$T/outnet-v6/$_d/operstate"
     printf 'DEVTYPE=wireguard\n' > "$T/outnet-v6/$_d/uevent"
@@ -4917,6 +5085,8 @@ rm -f "$T/uci.store"; : > "$T/uci.store"
 uci_set 'network.wgB' interface; uci_set 'network.wgB.proto' wireguard; uci_set 'network.wgB.addresses' '10.1.0.2/24'
 uci_set 'network.wgC' interface; uci_set 'network.wgC.proto' wireguard; uci_set 'network.wgC.addresses' '10.2.0.2/24'
 uci_set 'network.wgC.ip6prefix' '2001:db8:2::/56'
+# wgE: IPv6 поднимет DHCPv6 позже — сейчас адреса нет, но «off» навсегда ему не писать (I-474).
+uci_set 'network.wgE' interface; uci_set 'network.wgE.proto' dhcpv6; uci_set 'network.wgE.device' wgE
 heal_spec
 out="$(OUT_SYSNET_FIXTURE="$T/outnet-v6" rpcd devices)"
 d6of() {  # УСТРОЙСТВО < JSON -> значение ipv6 у устройства ('-' — поля нет)
@@ -4929,7 +5099,8 @@ else: print("НЕТ УСТРОЙСТВА")' "$1"
 check "devices: у устройства с живым адресом IPv6 подсказка nat" "nat" "$(printf '%s' "$out" | d6of wgA)"
 check "devices: у туннеля с одним IPv4 подсказка off" "off" "$(printf '%s' "$out" | d6of wgB)"
 check "devices: при ip6prefix подсказки нет — решать человеку" "-" "$(printf '%s' "$out" | d6of wgC)"
-check "devices: устройство есть, а адреса нет нигде (DHCPv6 может прийти позже) — подсказки нет" "-" "$(printf '%s' "$out" | d6of wgD)"
+check "devices: адрес придёт по DHCPv6 — подсказки нет, а не off навсегда (I-474)" "-" "$(printf '%s' "$out" | d6of wgE)"
+check "devices: устройство есть, а адреса нет нигде — off" "off" "$(printf '%s' "$out" | d6of wgD)"
 check "devices: устройству, которое поднимает ядро, подсказка не нужна" "-" "$(printf '%s' "$out" | d6of tun)"
 # Клиенты: интерфейс WireGuard (устройство называется как интерфейс) в зоне человека списком
 # network — не беззонный, своей зоны клиентов ему не заводим; нужен только проброс из его зоны.
@@ -4941,7 +5112,7 @@ uci_set 'network.wg_srv' interface; uci_set 'network.wg_srv.proto' wireguard
 printf '%s\n' '{"version":2,"lan":{"devices":["br-lan","wg_srv"]},"outputs":{"direct":{"kind":"direct"},"vpn":{"kind":"interface","device":"wg0","on_fail":"direct"}},"channels":[]}' > "$T/etc/spec.json"
 out="$(rpcd apply)"
 check "клиент — интерфейс WireGuard в чужой зоне через network: зоны клиентов не заводим" "" "$(zone_id_by_name steer_clients)"
-check "и ему хватает проброса из его зоны" "lan vpnsrv" "$(fwd_srcs steer_iface)"
+check "и ему хватает проброса из его зоны" "lan vpnsrv" "$(fwd_srcs steer_zone)"
 rm -rf "$T/outnet-heal" "$T/outnet-v6" "$T/etc/awg" "$T/etc/amn.conf" "$T/etc/amn4.conf"
 rm -f "$T/uci.store" "$T/etc/fw-owned"; : > "$T/uci.store"
 printf '{"schema":1,"outputs":{},"channels":[]}\n' > "$T/etc/spec.json"
@@ -5001,6 +5172,212 @@ poison
 check "opkg: world не существует, лечение ничего не трогает" \
       "ok" "$(PM_FIXTURE=opkg rpcd splify2_install '{"version":"26.9"}' >/dev/null 2>&1; grep -q 'steer-core><QnEW' "$T/apk.world" && echo ok || echo changed)"
 
+
+# ---- purge: «удалить splify2» кнопкой (план и отсоединённый запуск) -----------
+# Настоящий splify2-purge подменён заглушкой: стенд проверяет метод, а не удаление.
+cat > "$T/bin/purge-stub" <<'EOF'
+#!/bin/sh
+echo "$*" >> "$SANDBOX/purge.log"
+if [ "${1:-}" = "--yes" ]; then
+    echo "splify2-purge: служба ядра останавливается"; exit 0
+fi
+echo "splify2-purge: @plan таблица nftables inet steer удаляется"
+echo "splify2-purge: @plan /etc/steer удаляется — вместе со спекой"
+echo "splify2-purge: интерфейсы с протоколом xsteer остаются в настройке сети: wg1"
+echo "splify2-purge: @hint пакеты этот скрипт не снимает. Чтобы снять:  apk del steer"
+echo "splify2-purge: @hint ничего не удалено. Чтобы удалить: splify2-purge --yes"
+EOF
+chmod +x "$T/bin/purge-stub"
+export PURGE_BIN="$T/bin/purge-stub" PURGE_DELAY=0 PURGE_LOG="$T/purge-job.log"
+
+reset_logs; rm -f "$T/purge.log"
+out="$(rpcd purge '{"plan":true}')"
+check "purge plan: ok" "true" "$(printf '%s' "$out" | jget ok)"
+check "purge plan: пункты плана по строкам" "2" \
+      "$(printf '%s' "$out" | python3 -c 'import json,sys; print(len(json.load(sys.stdin)["items"]))')"
+check "purge plan: пункт без приставки" "таблица nftables inet steer удаляется" \
+      "$(printf '%s' "$out" | python3 -c 'import json,sys; print(json.load(sys.stdin)["items"][0])')"
+check "purge plan: примечание про чужое осталось, служебные строки нет" "1" \
+      "$(printf '%s' "$out" | python3 -c 'import json,sys; print(len(json.load(sys.stdin)["notes"]))')"
+check "purge plan: пакеты к снятию названы" "steer-core luci-app-splify2" \
+      "$(printf '%s' "$out" | python3 -c 'import json,sys; print(" ".join(json.load(sys.stdin)["packages"]))')"
+mkdir -p "$T/box"; printf '# steer-box-connector\n' > "$T/box/sing-box"
+out="$(SINGBOX_INITD_FIXTURE="$T/box/sing-box" rpcd purge '{"plan":true}')"
+check "purge plan: при коннекторе пакеты ядра и сам коннектор не снимаются" "luci-app-splify2" \
+      "$(printf '%s' "$out" | python3 -c 'import json,sys; print(" ".join(json.load(sys.stdin)["packages"]))')"
+check "purge plan: ничего не выполнено (без --yes, пакеты на месте)" "" \
+      "$(cat "$T/purge.log" | grep -- '--yes'; cat "$T/apk.log")"
+
+reset_logs; rm -f "$T/purge.log"
+rpcd purge '{"plan":true,"keep_config":true}' >/dev/null
+check "purge plan: keep_config доходит до команды" "--keep-config" "$(cat "$T/purge.log")"
+
+reset_logs; rm -f "$T/purge.log" "$T/purge-job.log"
+out="$(rpcd purge '{"keep_config":true}')"
+check "purge: ответ сразу — «началось»" "true" "$(printf '%s' "$out" | jget started)"
+n=0; while [ $n -lt 50 ] && [ ! -s "$T/rpcd-initd.log" ]; do sleep 0.1; n=$((n + 1)); done
+check "purge: отсоединённое задание вызвало команду с --yes --keep-config" "--yes --keep-config" \
+      "$(sed 's/ *$//' "$T/purge.log")"
+check "purge: затем сняты пакеты — модуль раньше интерфейса" "del steer-core del luci-app-splify2" \
+      "$(awk '{printf "%s ", $0}' "$T/apk.log" | sed 's/ $//')"
+check "purge: rpcd перезапущен последним" "restart" "$(cat "$T/rpcd-initd.log")"
+check "purge: файл задания убран" "0" "$(ls /tmp/splify2-purge-job.*  2>/dev/null | wc -l | tr -d ' ')"
+unset PURGE_BIN PURGE_DELAY PURGE_LOG
+
+check "purge объявлен в list и разрешён в ACL на запись" "yes" \
+      "$(rpcd_list | python3 -c 'import json,sys
+d = json.load(sys.stdin)
+w = json.load(open(sys.argv[1]))["splify2"]["write"]["ubus"]["splify2"]
+print("yes" if "purge" in d and "purge" in w else "no")' "$ROOT/luci/root/usr/share/rpcd/acl.d/splify2.json")"
+
+
+# ---- замок на правку спеки, подписок и архива (I-546) --------------------------------------
+# Пока кто-то держит замок «state», spec_set не пишет и отвечает отказом по сроку; отпустили —
+# работает. Без замка оба вызова шли бы параллельно и затирали бы друг друга.
+mkdir -p "$T/lock"
+if command -v flock >/dev/null 2>&1; then
+    ( exec 8>"$T/lock/splify2-state.lock"; flock 8; sleep 4 ) &
+    _lp=$!
+    sleep 0.5
+    out="$(SPLIFY2_LOCK_WAIT=1 rpcd spec_set "$(spec_req "$(vless_spec)")")"
+    check "замок занят: spec_set отказывает по сроку, а не пишет" "false" "$(printf '%s' "$out" | jget ok)"
+    check "и отказ говорит словами" "yes" \
+          "$(printf '%s' "$out" | grep -q 'ещё идёт' && echo yes || echo no)"
+    wait "$_lp"
+    out="$(rpcd spec_set "$(spec_req "$(vless_spec)")")"
+    check "замок свободен: spec_set пишет" "true" "$(printf '%s' "$out" | jget ok)"
+    ( exec 8>"$T/lock/splify2-state.lock"; flock 8; sleep 3 ) &
+    _lp=$!
+    sleep 0.5
+    out="$(SPLIFY2_LOCK_WAIT=1 rpcd list_remove '{"name":"x","kind":"prefixes"}')"
+    check "замок не мешает методам, которым общий файл не нужен" "no" \
+          "$(printf '%s' "$out" | grep -q 'ещё идёт' && echo yes || echo no)"
+    wait "$_lp"
+fi
+
+# ---- каркас на LuCI JS: spec_schema, spec_check, prefs_get / prefs_set ----------------------
+# Каркас рисует формы по схеме ключей, которую печатает ядро (`steer spec-schema --json`). Ядро до 2.1
+# команды не знает — тогда схема берётся из пакета и называется bundled, чтобы экран мог об этом сказать.
+out="$(rpcd spec_schema)"
+check "spec_schema: ядро без команды — схема из пакета, source bundled" "true;bundled;object" \
+      "$(printf '%s' "$out" | jget ok);$(printf '%s' "$out" | jget source);$(printf '%s' "$out" | python3 -c 'import json,sys; print(json.load(sys.stdin)["schema"]["type"])')"
+printf '{"type":"object","properties":{"version":{"const":2}},"x-marker":"core"}\n' > "$T/core-schema.json"
+out="$(STEER_SCHEMA="$T/core-schema.json" rpcd spec_schema)"
+check "spec_schema: ответ ядра идёт как есть, source core" "true;core;core" \
+      "$(printf '%s' "$out" | jget ok);$(printf '%s' "$out" | jget source);$(printf '%s' "$out" | python3 -c 'import json,sys; print(json.load(sys.stdin)["schema"]["x-marker"])')"
+check "spec_schema: вызвана команда ядра с --json" "yes" "$(grep -q '^spec-schema --json$' "$T/steer.log" && echo yes || echo no)"
+out="$(STEER_SCHEMA="$T/core-schema.json" SCHEMA_FIXTURE=/nonexistent rpcd spec_schema)"
+check "spec_schema: ответ ядра важнее пакета даже без файла пакета" "true;core" "$(printf '%s' "$out" | jget ok);$(printf '%s' "$out" | jget source)"
+echo 'не схема' > "$T/core-schema.json"
+check "spec_schema: ядро ответило не схемой — запасная из пакета" "bundled" \
+      "$(STEER_SCHEMA="$T/core-schema.json" rpcd spec_schema | jget source)"
+
+# spec_check — проверка без записи: тот же судья, что у spec_set, файла на диске не остаётся и спека не меняется.
+rm -f "$T/etc/spec.json"; : > "$T/steer.log"
+n_etc="$(ls "$T"/etc/spec.json* 2>/dev/null | wc -l | tr -d ' ')"
+out="$(rpcd spec_check '{"spec":"{\"version\":2}"}')"
+check "spec_check: годная спека — ok" "true" "$(printf '%s' "$out" | jget ok)"
+check "spec_check: проверка шла ядром (apply --dry-run) по файлу рядом со спекой" "yes" \
+      "$(grep -q "^apply --dry-run --spec $T/etc/spec.json.chk\." "$T/steer.log" && echo yes || echo no)"
+check "spec_check: ничего не записано — ни спеки, ни временного файла" "$n_etc" "$(ls "$T"/etc/spec.json* 2>/dev/null | wc -l | tr -d ' ')"
+check "spec_check: самой спеки на диске по-прежнему нет" "no" "$([ -e "$T/etc/spec.json" ] && echo yes || echo no)"
+out="$(STEER_RC=1 STEER_ERR='unknown key frobnicate' rpcd spec_check '{"spec":"{\"version\":2}"}')"
+check "spec_check: ядро отвергло — ok false и его слова" "false;unknown key frobnicate" \
+      "$(printf '%s' "$out" | jget ok);$(printf '%s' "$out" | jget error)"
+check "spec_check: пустой вход — отказ" "false" "$(rpcd spec_check '{}' | jget ok)"
+check "spec_check: после отказа временного файла нет" "$n_etc" "$(ls "$T"/etc/spec.json* 2>/dev/null | wc -l | tr -d ' ')"
+
+# Спека для человека — YAML. spec_yaml печатает её ядром (`spec convert` без --json); spec_check и spec_set
+# принимают YAML: ядро переводит его в JSON и, если не разобрало, называет строку и колонку (line, col).
+rm -f "$T/etc/spec.json" "$T/etc/spec.yaml"; : > "$T/steer.log"
+printf 'version: 2\noutputs: {}\n' > "$T/etc/spec.yaml"
+out="$(rpcd spec_yaml)"
+check "spec_yaml: YAML от ядра и ревизия" "true;version: 2;yes" \
+      "$(printf '%s' "$out" | jget ok);$(printf '%s' "$out" | jget yaml | head -1);$([ -n "$(printf '%s' "$out" | jget rev)" ] && echo yes || echo no)"
+check "spec_yaml: ядро позвано без --json" "yes" "$(grep -q 'convert' "$T/steer.log" || echo yes)"
+out="$(rpcd spec_check '{"spec":"version: 2\noutputs: {}\n"}')"
+check "spec_check: YAML принят" "true" "$(printf '%s' "$out" | jget ok)"
+check "spec_check: по файлу YAML ядру ушёл JSON-перевод" "yes" \
+      "$(grep -q "^apply --dry-run --spec $T/etc/spec.json.chk\." "$T/steer.log" && echo yes || echo no)"
+out="$(rpcd spec_check '{"spec":"version: 2\noutputs: [BAD\n"}')"
+check "spec_check: ошибка разбора — слова ядра без адреса, строка и колонка отдельно" "false;ошибка YAML: did not find expected key;5;3" \
+      "$(printf '%s' "$out" | jget ok);$(printf '%s' "$out" | jget error);$(printf '%s' "$out" | jget line);$(printf '%s' "$out" | jget col)"
+# Адрес libyaml для незакрытой кавычки — конец текста (10), а ошибка на строке 8: человеку называется строка 8.
+out="$(rpcd spec_check '{"spec":"version: 2\nk: \"QUOTE\n\n"}')"
+check "spec_check: незакрытая кавычка — строка, где она началась (8), а не где ядро заметило (10)" "false;8;1" \
+      "$(printf '%s' "$out" | jget ok);$(printf '%s' "$out" | jget line);$(printf '%s' "$out" | jget col)"
+out="$(rpcd spec_check '{"spec":"version: 2\nBLOCK\n"}')"
+check "spec_check: ошибка блока — адрес ядра как есть (10:3)" "false;10;3" \
+      "$(printf '%s' "$out" | jget ok);$(printf '%s' "$out" | jget line);$(printf '%s' "$out" | jget col)"
+check "spec_check: после отказа разбора временных файлов нет" "" "$(ls "$T"/etc | grep -E 'spec\.(json|yaml)\.(chk|new)\.')"
+out="$(STEER_RC=1 STEER_ERR='steer: /x/spec.json.chk.1:3:1: unknown key frobnicate' rpcd spec_check '{"spec":"version: 2\n"}')"
+check "spec_check: отказ проверки — без адреса временного файла, строки нет (она в чужом JSON)" "false;unknown key frobnicate;" \
+      "$(printf '%s' "$out" | jget ok);$(printf '%s' "$out" | jget error);$(printf '%s' "$out" | jget line)"
+out="$(rpcd spec_check '{"spec":"{\"version\":2}"}')"
+check "spec_check: JSON по-прежнему принимается" "true" "$(printf '%s' "$out" | jget ok)"
+# spec_set: YAML ложится в spec.yaml переводом ядра (в заглушке — тело как есть), разбор не вышел — ничего не тронуто.
+out="$(rpcd spec_set '{"spec":"version: 2\noutputs: [BAD\n"}')"
+check "spec_set: ошибка разбора YAML — отказ со строкой и колонкой" "false;5;3" \
+      "$(printf '%s' "$out" | jget ok);$(printf '%s' "$out" | jget line);$(printf '%s' "$out" | jget col)"
+check "spec_set: после отказа разбора спека прежняя, временных нет" "version: 2|" \
+      "$(head -1 "$T/etc/spec.json")|$(ls "$T"/etc | grep -E 'spec\.(json|yaml)\.(chk|new)\.')"
+out="$(rpcd spec_set '{"spec":"version: 2\noutputs: {}\nlists: {}\n"}')"
+check "spec_set: YAML принят" "true" "$(printf '%s' "$out" | jget ok)"
+check "spec_set: YAML прошёл через ядро (в JSON) до записи на диск" '{"version":2,"from":"yaml"}' "$(cat "$T/etc/spec.json")"
+
+# Менеджер плагинов — с ядра 2.1. Старое ядро: код core_too_old и числа, а не слова «нет такой команды»;
+# версию спрашивают у ядра (`version --json`, у старого — первая строка `steer X.Y.Z`), текст отказа не разбирается.
+plug_reset
+echo 'steer: нет такой команды: plugin' > "$T/plug/fail.list"
+out="$(STEER_VERSION=2.0.5 rpcd plugins_list)"
+check "plugins_list на ядре 2.0.5 (без --json): core_too_old, стоит 2.0.5, нужно 2.1" "false;core_too_old;2.0.5;2.1" \
+      "$(printf '%s' "$out" | jget ok);$(printf '%s' "$out" | jget code);$(printf '%s' "$out" | jget installed);$(printf '%s' "$out" | jget need)"
+out="$(STEER_VERSION=2.0.5 STEER_VERSION_JSON=1 rpcd plugins_list)"
+check "plugins_list: версия из version --json" "core_too_old;2.0.5" "$(printf '%s' "$out" | jget code);$(printf '%s' "$out" | jget installed)"
+out="$(STEER_VERSION=2.1.0 rpcd plugins_list)"
+check "plugins_list: ядро 2.1 отказало — слова менеджера, не core_too_old" "failed" "$(printf '%s' "$out" | jget code)"
+out="$(rpcd plugins_list)"
+check "plugins_list: версия ядра неизвестна — слова менеджера" "failed" "$(printf '%s' "$out" | jget code)"
+echo 'steer: нет такой команды: plugin' > "$T/plug/fail.enable"
+out="$(STEER_VERSION=2.0.5 rpcd plugin_enable '{"id":"vless"}')"
+check "plugin_enable на ядре 2.0.5: тот же код" "core_too_old" "$(printf '%s' "$out" | jget code)"
+rm -f "$T/plug/fail.list" "$T/plug/fail.enable"
+plug_reset
+
+# prefs: что открывать главной страницей. Без выбора — Andromeda, если её плагин стоит и включён, иначе каркас.
+rm -f "$T/etc/config/splify2"
+plug_reset
+out="$(rpcd prefs_get)"
+check "prefs_get: плагина Andromeda нет — basic по умолчанию" "basic;false;false;0" \
+      "$(printf '%s' "$out" | jget interface);$(printf '%s' "$out" | jget interface_set);$(printf '%s' "$out" | jget andromeda);$(printf '%s' "$out" | jget interfaces | tr -dc '{' | wc -c | tr -d ' ')"
+plug_iface andromeda 26.11.0
+out="$(rpcd prefs_get)"
+check "prefs_get: плагин Andromeda включён — andromeda по умолчанию, выбор не сделан" "andromeda;false;true" \
+      "$(printf '%s' "$out" | jget interface);$(printf '%s' "$out" | jget interface_set);$(printf '%s' "$out" | jget andromeda)"
+check "prefs_get: interfaces называет вид плагина для L.require" "andromeda;view.splify2.p-andromeda.home" \
+      "$(printf '%s' "$out" | jget 'interfaces.0.id');$(printf '%s' "$out" | jget 'interfaces.0.view')"
+plug_iface andromeda 26.11.0 disabled
+check "prefs_get: плагин Andromeda отключён — basic" "basic;false" \
+      "$(rpcd prefs_get | jget interface);$(rpcd prefs_get | jget andromeda)"
+plug_iface andromeda 26.11.0
+check "prefs_set: basic записан" "true;basic" "$(rpcd prefs_set '{"interface":"basic"}' | jget ok);$(rpcd prefs_get | jget interface)"
+check "prefs_get: выбор помечен сделанным" "true" "$(rpcd prefs_get | jget interface_set)"
+check "prefs_set: id плагина-интерфейса принимается" "true" "$(rpcd prefs_set '{"interface":"my-ui"}' | jget ok)"
+check "prefs_set: заглавные и пробелы — отказ" "false;false" \
+      "$(rpcd prefs_set '{"interface":"Basic View"}' | jget ok);$(rpcd prefs_set '{}' | jget ok)"
+
+# paths (splify2-api 1.1): каталоги, которые интерфейс иначе зашивал бы сам.
+out="$(rpcd paths)"
+check "paths: каталог списков, каталог спеки, каталог подписок и ядро — от швов хоста" "true;$T/lists;$T/etc;$T/etc/subs;$T/bin/steer" \
+      "$(printf '%s' "$out" | jget ok);$(printf '%s' "$out" | jget lists);$(printf '%s' "$out" | jget spec_dir);$(printf '%s' "$out" | jget subs_dir);$(printf '%s' "$out" | jget steer)"
+
+# Строки самолечения ipv6, которые узнаёт Andromeda (ui/tests/apply-refetch.test.ts держит их копией: интерфейс
+# не читает исходник бэкенда). Разошлись бы — человек увидел бы «записан ipv6: nat» в тосте.
+check "строки самолечения ipv6, которые узнаёт Andromeda, — в бэкенде дословно" "2" \
+      "$(grep -cF -e "splify2: outputs without an ipv6 key got ipv6: nat (the tunnel has an IPv6 address): %s" -e "splify2: outputs without an ipv6 key got ipv6: off (the tunnel has no IPv6 address, clients use IPv4): %s" "$ROOT/files/usr/lib/splify2/rpcd/m-spec.sh")"
+check "prefs_set: отказ не затронул выбранное" "my-ui" "$(rpcd prefs_get | jget interface)"
+printf 'luci.main.lang=ru\n' >> "$T/uci.store"
+check "prefs_get: язык LuCI" "ru" "$(rpcd prefs_get | jget lang)"
 
 printf '\n%s\n' "$([ "$fails" -eq 0 ] && echo 'все проверки прошли' || echo "ЕСТЬ ПРОВАЛЫ: $fails")"
 [ "$fails" -eq 0 ]

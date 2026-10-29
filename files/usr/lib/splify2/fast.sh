@@ -29,6 +29,9 @@
 
 STEER="${STEER:-/usr/sbin/steer}"
 SPEC="${SPEC:-/etc/steer/spec.json}"
+# /usr/lib/splify2/spec.sh — рядом с этим файлом (стенды подставляют FAST_SH).
+_spec_lib="${FAST_SH:-/usr/lib/splify2/fast.sh}"
+. "${SPEC_SH:-${_spec_lib%/*}/spec.sh}"
 
 # Спека по умолчанию — ровно то, что пишет /etc/uci-defaults/99-splify2 при установке.
 #
@@ -42,35 +45,6 @@ SPEC="${SPEC:-/etc/steer/spec.json}"
 # Спека v2 (`version`), не v1: движок 2.0 прежнюю форму не читает. Пустая v2 без правил —
 # законная спека («движок настроен и ничего не направляет»).
 SPEC_EMPTY='{"version":2,"outputs":{"direct":{"kind":"direct"}}}'
-
-# ОТКАТ С 26.11 / steer 2.1: spec.yaml → spec.json.
-#
-# Панель 26.11 переводит спеку в spec.yaml, а прежний spec.json оставляет копией рядом
-# (spec.json.bak). Эта панель (26.10.x) читает только spec.json:
-# на одном spec.yaml открывалась лишь «Главная», остальное — «не загрузилось». Ядро же читает
-# оба формата, а JSON печатает само (`steer spec convert --json`, steer 2.0.6+ и 2.1). Поэтому
-# при откате спеку возвращаем в spec.json ядром, а не учим каждого читателя (rpcd, fast.sh,
-# splify2-update-lists, fetch.sh) разбирать YAML: так остаётся один формат и одно чтение.
-#
-# ТОЛЬКО СВОЮ СПЕКУ. Признак — копия, оставшаяся от перевода панелью: без неё spec.yaml
-# написал человек (комментарии, якоря), и переписывать его в JSON — чужая настройка. Сам
-# spec.yaml остаётся как spec.yaml.bak: ядро читает лишь spec.json/spec.yaml, а при 26.11
-# повторный перевод ляжет поверх. Ядро без `convert --json` (2.0.0–2.0.5) или упавшее —
-# ничего не меняем: спека цела, чтение откажет словами, как прежде.
-spec_rollback() {
-    [ -s "$SPEC" ] && return 0
-    _sr_y="${SPEC%/*}/spec.yaml"
-    [ -s "$_sr_y" ] || return 0
-    [ -e "$SPEC.bak" ] || return 0
-    _sr_t="$SPEC.new.$$"
-    if "$STEER" spec convert --json --spec "$_sr_y" > "$_sr_t" 2>/dev/null &&
-            [ "$(head -c 1 "$_sr_t")" = "{" ]; then
-        mv "$_sr_t" "$SPEC" && mv "$_sr_y" "$_sr_y.bak"
-    else
-        rm -f "$_sr_t"
-    fi
-    return 0
-}
 
 # Завести спеку, если её нет. Печатает только ошибку, ответа не даёт.
 #
@@ -91,12 +65,8 @@ spec_rollback() {
 # спека появляется в первую же секунду после открытия страницы. Проверка стоит одну встроенную
 # `test`: файл на месте — выходим, ничего не запуская.
 spec_ensure() {
-    [ -s "$SPEC" ] && return 0
-    spec_rollback
-    [ -s "$SPEC" ] && return 0
-    # Рядом лежит spec.yaml — спека ведётся руками; движок при двух файлах отказывается
-    # читать обе, и заводить второй нельзя.
-    [ -s "${SPEC%/*}/spec.yaml" ] && return 0
+    # Спека есть — в spec.json или spec.yaml (spec.sh); второй файл рядом ядро не прочтёт.
+    spec_have && return 0
     # Ядро ведёт steer-box-connector (podkop, forkop) — тот же признак, что box_busy в
     # rpcd/common.sh. Своей спеки тогда не заводим и службу steer не поднимаем: она делила бы с
     # его steerd таблицы и метки, а сам коннектор при следующем запуске отказался бы работать
@@ -190,14 +160,22 @@ fast_net() {
     # Время работы движка. procd отдаёт pid, а начало жизни процесса лежит в /proc: 22-е
     # поле stat — тики с загрузки системы. Спрашиваем именно так, а не «когда применили»:
     # применение туннель не перезапускает, и человек спрашивает про процесс.
+    #
+    # ПРОЦЕСС — ДЕМОН ЯДРА (`steerd daemon`), а не помощник. С 2.0 `steer vless` — клиент одного
+    # выхода: он перезапускается при любой правке этого выхода и вовсе отсутствует, если выходов
+    # VLESS нет, — «время работы» на обзоре тогда обнулялось на работающем ядре или не показывалось.
+    # Разбор stat и uptime — встроенным `read`, без awk и cut: счётчик опрашивают каждые пять секунд.
     _up=0
-    _pid="$(pgrep -f "$STEER vless" 2>/dev/null | head -1)"
-    [ -z "$_pid" ] && _pid="$(pgrep -f 'steer vless' 2>/dev/null | head -1)"
-    if [ -n "$_pid" ] && [ -r "/proc/$_pid/stat" ]; then
-        _start="$(awk '{print $22}' "/proc/$_pid/stat" 2>/dev/null)"
-        _btime="$(awk '{print $1}' /proc/uptime 2>/dev/null | cut -d. -f1)"
+    _pid="$(pgrep -f 'steerd daemon' 2>/dev/null | head -1)"
+    if [ -n "$_pid" ] && read -r _stat 2>/dev/null < "/proc/$_pid/stat"; then
+        # После `)` — поле 3 (состояние); 22-е поле — 20-е слово остатка. Имя процесса в скобках может
+        # содержать пробелы, поэтому режем по ПОСЛЕДНЕЙ скобке.
+        set -- ${_stat##*) }
+        _start="${20:-}"
+        read -r _btime _ 2>/dev/null < /proc/uptime || _btime=""
+        _btime="${_btime%%.*}"
         _hz=100                      # CONFIG_HZ на всех целях OpenWrt, где мы собираемся
-        [ -n "$_start" ] && [ -n "$_btime" ] && _up=$((_btime - _start / _hz))
+        case "$_start$_btime" in ''|*[!0-9]*) ;; *) _up=$((_btime - _start / _hz)) ;; esac
         [ "$_up" -lt 0 ] && _up=0
     fi
 
@@ -327,15 +305,12 @@ fast_live() {
     # смешивать в одном ответе память и измерение — значит отдать снимок, которого не было.
     if [ "$_fast" = 1 ]; then
         _st="$("$STEER" status --spec "$SPEC" --fast 2>/dev/null)"
-        # Движок старее ключа: он отвергает неизвестный флаг кодом 2 и ничего не печатает.
-        # Тогда спрашиваем как раньше — молча, потому что человеку показывать нечего.
-        case "$_st" in '{'*) ;; *) _st="$("$STEER" status --spec "$SPEC" 2>/dev/null)" ;; esac
     else
         _st="$("$STEER" status --spec "$SPEC" 2>/dev/null)"
     fi
     case "$_st" in
         '{'*) ;;
-        *) printf '{"ok":false,"error":"ядро не ответило"}\n'; return 0 ;;
+        *) . "${I18N_SH:-${_spec_lib%/*}/i18n.sh}"; s2_fail_doc core.no_answer "The core did not respond"; return 0 ;;
     esac
 
     _dev="$(fast_devices)"
@@ -363,12 +338,22 @@ fast_live() {
 # и снимок применённого): 246 мс из которых 250 — плата за разбор объекта. Отсюда и переезд.
 fast_spec_get() {
     spec_ensure
-    [ -s "$SPEC" ] && { cat "$SPEC"; return; }
-    # Спека ведётся руками в spec.yaml — spec.json нет, а пустую заготовку отдавать нельзя:
+    _fs="$(spec_json)"
+    if [ -s "$_fs" ]; then
+        # Ревизия едет полем `rev` в начале объекта (spec_rev, spec.sh): спека — уже JSON, и
+        # вставка сразу после `{` не требует ни разбора, ни пересборки. Файл не с `{` или пустой
+        # объект — ревизии нет, отдаётся как есть: клиент без `rev` пишет без сверки.
+        case "$(head -c 2 "$_fs")" in
+            '{'[!}]) printf '{"rev":"%s",' "$(spec_rev)"; tail -c +2 "$_fs" ;;
+            *) cat "$_fs" ;;
+        esac
+        return
+    fi
+    # spec.yaml есть, а ядро JSON-ом её не напечатало — пустую заготовку отдавать нельзя:
     # экран показал бы «выходов нет, правил нет» про роутер с настоящей настройкой. Отказ
     # (код 1) экран показывает как «не загрузилось» и ничего не пишет.
-    if [ -s "${SPEC%/*}/spec.yaml" ]; then
-        echo "спека ведётся в spec.yaml, spec.json нет" >&2
+    if spec_is_yaml; then
+        echo "the core could not read spec.yaml" >&2
         return 1
     fi
     printf '%s\n' "$SPEC_EMPTY"
@@ -417,7 +402,7 @@ fast_diag_spec() {
 fast_applied_get() {
     spec_ensure
     if [ -s "${APPLIED:-/etc/steer/spec.applied.json}" ]; then cat "${APPLIED:-/etc/steer/spec.applied.json}"
-    elif [ -s "$SPEC" ]; then cat "$SPEC"
+    elif [ -s "$(spec_json)" ]; then cat "$(spec_json)"
     else printf '%s\n' "$SPEC_EMPTY"
     fi
 }

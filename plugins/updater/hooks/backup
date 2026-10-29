@@ -1,0 +1,58 @@
+#!/bin/sh
+# Хук backup_sections: настройки плагина в архиве настроек — раздел `settings` (JSON одной строкой). Операции ctx.op:
+# export, check (ничего не меняет), restore.
+. "${STEER_PLUGIN_DIR:?программа запускается хостом splify2 (нет STEER_PLUGIN_DIR)}/lib/base.sh"
+input="$(cat)"
+json_load "$input" 2>/dev/null || s2_fail_code req.unparsable "Unparsable request"
+json_select ctx 2>/dev/null || s2_fail_code req.no_context "There is no context"
+json_get_var op op
+case "$op" in
+export)
+    json_init
+    json_add_boolean ok 1
+    json_add_object sections
+    [ -s "$CONF_DIR/settings.json" ] && json_add_string settings "$(tr -d '\n\r' < "$CONF_DIR/settings.json")"
+    json_close_object
+    json_dump
+    ;;
+check|restore)
+    json_select sections 2>/dev/null || { echo '{"ok":true}'; exit 0; }
+    settings_text=''
+    json_get_keys keys
+    for key in $keys; do
+        json_get_var text "$key"
+        case "$key" in
+            settings) settings_text="$text" ;;
+            *) s2_fail_code backup.bad_section "The section \"{name}\" is not understood" name "$key" ;;
+        esac
+    done
+    [ -z "$settings_text" ] || json_load "$settings_text" 2>/dev/null || s2_fail_code backup.settings_unparsable "The plugin settings in the archive cannot be parsed"
+    [ "$op" = check ] && { echo '{"ok":true}'; exit 0; }
+    warns=""
+    if [ -n "$settings_text" ]; then
+        json_load "$settings_text"
+        json_get_keys skeys
+        for sk in $skeys; do
+            json_get_var sv "$sk"
+            "$SPLIFY2_HOST" settings set "$sk" "$sv" >/dev/null 2>&1 ||
+                warns="${warns:+$warns
+}$(s2_t backup.setting_not_saved "Setting {key} was not saved" key "$sk")"
+        done
+    fi
+    json_init
+    json_add_boolean ok 1
+    json_add_array restored
+    json_close_array
+    if [ -n "$warns" ]; then
+        json_add_array warn
+        while IFS= read -r line; do json_add_string "" "$line"; done <<EOT
+$warns
+EOT
+        json_close_array
+    fi
+    json_dump
+    ;;
+*)
+    echo '{"ok":true}'
+    ;;
+esac

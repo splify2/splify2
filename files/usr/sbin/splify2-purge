@@ -21,7 +21,7 @@
 #
 # ЧЕГО ЭТОТ СКРИПТ НЕ ДЕЛАЕТ. Он не снимает сами пакеты — это дело apk/opkg, и человек мог
 # позвать чистку до снятия, чтобы посмотреть. И он не трогает ничего, чего мы не заводили:
-# чужая зона фаервола, чужой конфиг https-dns-proxy, устройство, положенное в нашу зону
+# чужая зона фаервола, устройство, положенное в нашу зону
 # руками, интерфейс с протоколом xsteer — всё это остаётся на месте, и о каждом таком случае
 # печатается строка. Молчаливо оставленный мусор ничем не лучше молчаливо удалённой настройки:
 # человек должен уйти отсюда, зная, что осталось и почему.
@@ -37,18 +37,17 @@ SPLIFY2_DIR=${SPLIFY2_DIR:-/etc/splify2}
 FW_OWNED=${FW_OWNED:-$SPLIFY2_DIR/fw-owned}
 STEER_DIR=${STEER_DIR:-/etc/steer}
 UCI_SPLIFY2=${UCI_SPLIFY2:-/etc/config/splify2}
-DOH_CONF=${DOH_CONF:-/etc/config/https-dns-proxy}
 CRONTAB=${CRONTAB:-/etc/crontabs/root}
 # По этому образцу узнаются НАШИ записи в crontab — ровно те, что ставит скрипт установки
-# пакета: обновление списков, автообновление подписок и отклик для счётчика на сайте; и строка
-# прежнего почасового отчёта (splify2-telemetry, до 26.10) — её снимает установка новой версии,
-# но чистку зовут и там, где обновления не было.
+# пакета: обновление списков и автообновление подписок; и строка прежнего отклика для счётчика
+# (splify2-ping): счётчика установок больше нет, строки снимает установка новой версии, но чистку зовут и там, где
+# обновления не было.
 #
 # Образец — регулярное выражение (grep -E ниже), а не подстрока: два имени одним `grep -q` и
 # одним `grep -v` иначе не выбрать, а разводить их в два прохода значит завести второе место,
 # где перечислено, что здесь наше. Забытая строка — не мелочь: она зовёт каждый час команду,
 # которой на роутере уже нет.
-CRON_MARK=${CRON_MARK:-splify2-update-lists|splify2-ping|splify2-update-subs|splify2-telemetry}
+CRON_MARK=${CRON_MARK:-splify2-update-lists|splify2-ping|splify2-update-subs|splify2-task|splify2-plugins}
 CRON_INITD=${CRON_INITD:-/etc/init.d/cron}
 INITD=${INITD:-/etc/init.d/steer}
 FW_INITD=${FW_INITD:-/etc/init.d/firewall}
@@ -56,31 +55,41 @@ FW_INITD=${FW_INITD:-/etc/init.d/firewall}
 # «имя:виды:masq». Виды и masq здесь не нужны — удалять зону можно, не зная, чем её наполняли,
 # — но формат оставлен общим нарочно: строку правят в одном месте и переносят сюда как есть,
 # без перевода, на котором и теряются такие правки.
-FW_ZONES=${FW_ZONES:-"steer_clients:clients:0 steer_vless:vless,hysteria2,trojan,shadowsocks,socks,http,vmess,xsteer:0 steer_iface:interface,awg:1"}
-# Таблицы nftables, которые ставим МЫ: правило «DoH через туннель», фикс Zapret Manager и
-# изоляция проверки стратегий. Четвёртая, `inet steer`, принадлежит движку и в обычном порядке
-# уходит сама: её сносит остановка службы, которая идёт первым делом. Она перечислена здесь
+FW_ZONES=${FW_ZONES:-"steer_clients:clients:0 steer_zone:vless,hysteria2,trojan,shadowsocks,socks,http,vmess,xsteer,warp-masque,interface,awg:0"}
+# Зоны прежних версий: steer_vless и steer_iface слиты в steer_zone. Заведённые нами (по расписке)
+# убираются так же, как текущие: после обновления без единого apply они ещё могут стоять.
+FW_LEGACY_ZONES=${FW_LEGACY_ZONES:-"steer_vless steer_iface"}
+# Таблицы nftables: `splify2_recheck` ставим МЫ, а `inet steer`, принадлежит движку и в обычном
+# порядке уходит сама: её сносит остановка службы, которая идёт первым делом. Она перечислена здесь
 # ЗАТЕМ, что чистку зовут и на роутере, с которого пакеты уже сняты, — а вместе с пакетом ушёл
 # и init-скрипт, то есть снять таблицу больше нечем, и она осталась бы метить трафик в никуда
-# до перезагрузки. Существование каждой таблицы проверяется перед удалением, так что лишнего
-# здесь не происходит.
-NFT_TABLES=${NFT_TABLES:-"splify2_doh splify2_zm splify2_ztest steer"}
-# Таблица маршрутов и приоритет правила для «DoH через туннель» — те же числа, что в
-# common.sh (doh_rules_sync), иначе снималось бы не то, что ставилось.
-DOH_RT=${DOH_RT:-290}
-DOH_RULE_PREF=${DOH_RULE_PREF:-29000}
+# до перезагрузки. Существование каждой таблицы проверяется перед удалением.
+NFT_TABLES=${NFT_TABLES:-"splify2_recheck steer"}
 # Срок вызова rpcd, который ставит /etc/uci-defaults/99-splify2. Снимается ТОЛЬКО это
 # значение: другое поставил администратор, и оно не наше.
 RPCD_TIMEOUT=${RPCD_TIMEOUT:-120}
 # Состояние и признаки в /var: чьей-либо настройкой они не являются и переживать чистку им
 # незачем. Каталог движка (/var/lib/steer) и готовые конфигурации туннелей (/var/run/xsteer)
 # тоже здесь: пакеты снимают вместе, и половина следов — это не «убрано».
-STATE_PATHS=${STATE_PATHS:-"/var/lib/splify2 /var/lib/steer /var/run/xsteer \
-/var/run/splify2-vless-dirty /var/run/splify2-obfs-dirty /var/run/splify2-zapret-dirty \
-/var/run/splify2-zapret-autoselect.progress /var/run/splify2-zapret-autoselect.pid \
+STATE_PATHS=${STATE_PATHS:-"/var/lib/splify2 /var/run/splify2 /var/lib/steer /var/run/xsteer \
 /tmp/splify2-ping \
-/var/run/splify2-boot-id /var/run/splify2-events /var/run/splify2-crash /var/run/splify2-telemetry-now \
-/var/lock/splify2-update.lock /var/lock/splify2-zapret-autoselect.lock"}
+/var/lock/splify2-update.lock"}
+
+# Тексты для человека на языке каркаса (i18n.sh). Подключается сразу, пока библиотека на месте: чистку зовут и
+# после снятия пакетов. Нет библиотеки — английский умолчаний.
+I18N_SH=${I18N_SH:-/usr/lib/splify2/i18n.sh}
+[ -r "$I18N_SH" ] && . "$I18N_SH"
+if ! command -v s2_t >/dev/null 2>&1; then
+    s2_t() {  # КОД ТЕКСТ [ИМЯ ЗНАЧЕНИЕ]...
+        _t="$2"; shift 2
+        while [ $# -ge 2 ]; do
+            _o=""
+            while case "$_t" in *"{$1}"*) true ;; *) false ;; esac; do _o="$_o${_t%%"{$1}"*}$2"; _t="${_t#*"{$1}"}"; done
+            _t="$_o$_t"; shift 2
+        done
+        printf '%s' "$_t"
+    }
+fi
 
 DO=0     # 0 — только показать; 1 — делать
 KEEP=0   # 1 — настройки человека оставить
@@ -88,15 +97,14 @@ FOUND=0  # нашлось ли вообще хоть что-нибудь
 
 usage() {
     cat <<'USAGE'
-splify2-purge — убрать с роутера следы splify2 после снятия пакетов.
+splify2-purge - remove the traces of splify2 from the router after the packages are removed.
 
-    splify2-purge                       показать, что будет удалено (ничего не делает)
-    splify2-purge --yes                 удалить
-    splify2-purge --yes --keep-config   удалить правила, зоны и расписание,
-                                        но оставить /etc/steer и /etc/config/splify2
+    splify2-purge                       show what would be removed (does nothing)
+    splify2-purge --yes                 remove
+    splify2-purge --yes --keep-config   remove the rules, zones and schedule,
+                                        but keep /etc/steer and /etc/config/splify2
 
-Убирается только то, что заводили мы: чужая зона фаервола, чужой конфиг https-dns-proxy и
-устройство, положенное в нашу зону руками, остаются на месте.
+Only what we created is removed: a foreign firewall zone and a device put into our zone by hand stay in place.
 USAGE
 }
 
@@ -106,25 +114,38 @@ while [ $# -gt 0 ]; do
         --keep-config) KEEP=1 ;;
         -h|--help)     usage; exit 0 ;;
         # Опечатка в ключе не должна читаться как согласие: `--yes-please` — это не «да».
-        *) printf 'splify2-purge: неизвестный ключ: %s\n\n' "$1" >&2; usage >&2; exit 2 ;;
+        *) printf 'splify2-purge: unknown option: %s\n\n' "$1" >&2; usage >&2; exit 2 ;;
     esac
     shift
 done
 
 say() { printf 'splify2-purge: %s\n' "$*"; }
+# The closing lines (what to run next) - for the rpcd method they carry a mark, so it can leave them out of the notes.
+hint() { if [ -n "${PURGE_MARK:-}" ]; then printf 'splify2-purge: @hint %s\n' "$*"; else say "$*"; fi; }
 
 # Одна и та же строка в двух наклонениях: показ и работа не могут разойтись описанием, потому
 # что описание у них общее. Расхождение здесь читалось бы как «показал одно, сделал другое», а
 # это худшее, что может сделать команда удаления.
 plan() {  # ОПИСАНИЕ
     FOUND=1
-    if [ "$DO" = 1 ]; then say "$1"; else say "будет сделано: $1"; fi
+    if [ "$DO" = 1 ]; then say "$1"
+    elif [ -n "${PURGE_MARK:-}" ]; then printf 'splify2-purge: @plan %s\n' "$1"
+    else say "$(s2_t purge.will_do "will do: {what}" what "$1")"; fi
 }
 
 # ---- движок ------------------------------------------------------------------------
+# Ядро ведёт steer-box-connector (podkop, forkop): его служба sing-box держит свой steerd, свою таблицу
+# nftables `inet steer` и метки. Это не наше — ядро, его таблица и пакеты остаются, о чём сказано.
+BOX_INITD=${BOX_INITD:-/etc/init.d/sing-box}
+box_present() { grep -q steer-box-connector "$BOX_INITD" 2>/dev/null; }
+
 purge_engine() {
+    if box_present; then
+        say "$(s2_t purge.box "The core is run by steer-box-connector: the steer service, its nftables table and the core packages stay, they are not ours")"
+        return 0
+    fi
     [ -x "$INITD" ] || return 0
-    plan "служба ядра останавливается и снимается с автозапуска ($INITD)"
+    plan "$(s2_t purge.engine_stop "The core service is stopped and removed from autostart ({service})" service "$INITD")"
     [ "$DO" = 1 ] || return 0
     # ПЕРВЫМ ДЕЛОМ и до удаления спеки: останавливаясь, движок сам сносит свою таблицу
     # nftables и вычищает свои ip rule, а читает он это из спеки. Убрав спеку раньше, мы
@@ -181,10 +202,10 @@ purge_zone() {  # ИМЯ_ЗОНЫ
         fw_noted "dev $_z $_d" || _alien="$_alien $_d"
     done
     if [ -n "$_alien" ]; then
-        say "зону $_z заводили не мы — в ней есть устройства$_alien; сама зона и проброс в неё остаются"
+        say "$(s2_t purge.zone_alien "Zone {zone} was not created by us and holds devices{devices}: the zone and the forwarding into it stay" zone "$_z" devices "$_alien")"
         for _d in $(zone_devices "$_idx"); do
             fw_noted "dev $_z $_d" || continue
-            plan "устройство $_d выносится из зоны $_z"
+            plan "$(s2_t purge.zone_device "Device {device} is taken out of zone {zone}" device "$_d" zone "$_z")"
             [ "$DO" = 1 ] || continue
             uci -q del_list "firewall.$_idx.device"="$_d" && FW_CHANGED=1
         done
@@ -195,9 +216,9 @@ purge_zone() {  # ИМЯ_ЗОНЫ
     for _f in $(zone_forwardings "$_z"); do
         # Стороны называются по факту, а не подставляются «lan -> зона»: у зоны клиентов
         # проброс ведёт ИЗ неё, и прежняя подпись называла бы удаляемое неверно.
-        plan "правило проброса $_f ($(uci -q get "firewall.$_f.src" 2>/dev/null) -> $(uci -q get "firewall.$_f.dest" 2>/dev/null)) удаляется"
+        plan "$(s2_t purge.forwarding "The forwarding rule {rule} ({from} -> {to}) is removed" rule "$_f" from "$(uci -q get "firewall.$_f.src" 2>/dev/null)" to "$(uci -q get "firewall.$_f.dest" 2>/dev/null)")"
     done
-    plan "зона фаервола $_z удаляется"
+    plan "$(s2_t purge.zone "The firewall zone {zone} is removed" zone "$_z")"
     [ "$DO" = 1 ] || return 0
 
     # СНАЧАЛА ПРАВИЛА ПРОБРОСА, ПОТОМ САМА ЗОНА, и порядок здесь не вкусовой: forwarding,
@@ -228,51 +249,52 @@ purge_firewall() {
     for _z in $FW_ZONES; do
         purge_zone "${_z%%:*}"
     done
+    for _z in $FW_LEGACY_ZONES; do
+        purge_zone "$_z"
+    done
     [ "$FW_CHANGED" = 1 ] || return 0
     # Перезагрузка ОДНА на все зоны: fw4 перестраивает набор целиком, и звать её на каждую
     # зону значило бы дважды уронить транзит (тот же довод, что у fw_sync).
-    say "правила фаервола перезагружаются"
+    say "$(s2_t purge.fw_reload "The firewall rules are reloaded")"
     fw4 reload >/dev/null 2>&1 || "$FW_INITD" reload >/dev/null 2>&1
     return 0
 }
 
-# ---- таблицы nftables и маршрутизация DoH ------------------------------------------
+# ---- ReCheck ------------------------------------------------------------------------
+# Служба splify2-recheck и её движок (пакет recheck сам по себе не запускается). Таблица уходит
+# с остановкой службы, а без init-скрипта — в purge_nft; процесс без таблицы пакетов не получает,
+# но и висеть ему незачем.
+RECHECK_INITD=${RECHECK_INITD:-/etc/init.d/splify2-recheck}
+purge_recheck() {
+    if [ -x "$RECHECK_INITD" ] && "$RECHECK_INITD" enabled 2>/dev/null; then
+        plan "$(s2_t purge.recheck_service "The splify2-recheck service is turned off")"
+        [ "$DO" = 1 ] && { "$RECHECK_INITD" stop >/dev/null 2>&1; "$RECHECK_INITD" disable >/dev/null 2>&1; }
+    fi
+    if pidof steer-dpi-live >/dev/null 2>&1; then
+        plan "$(s2_t purge.recheck_engine "The ReCheck engine is stopped")"
+        [ "$DO" = 1 ] && killall steer-dpi-live 2>/dev/null
+    fi
+    return 0
+}
+
+# ---- таблицы nftables --------------------------------------------------------------
 purge_nft() {
     for _t in $NFT_TABLES; do
         # Существование проверяется ДО показа: обещать удалить таблицу, которой нет, значит
         # заставить человека искать её потом руками, чтобы понять, удалилась ли она.
         nft list table inet "$_t" >/dev/null 2>&1 || continue
-        plan "таблица nftables inet $_t удаляется"
+        [ "$_t" = steer ] && box_present && continue
+        plan "$(s2_t purge.nft_table "The nftables table inet {table} is removed" table "$_t")"
         [ "$DO" = 1 ] || continue
         nft delete table inet "$_t" 2>/dev/null
     done
     return 0
 }
 
-purge_doh_rules() {
-    if ip rule show 2>/dev/null | grep -q "^$DOH_RULE_PREF:"; then
-        plan "правило маршрутизации pref $DOH_RULE_PREF (DoH через туннель) снимается"
-        if [ "$DO" = 1 ]; then
-            # Копий может накопиться несколько: `ip rule add` дубликаты не проверяет. Предел
-            # витков — оттуда же, откуда и правило (doh_rules_down в common.sh).
-            _n=0
-            while [ "$_n" -lt 32 ] && ip rule del pref "$DOH_RULE_PREF" 2>/dev/null; do
-                _n=$((_n + 1))
-            done
-        fi
-    fi
-    if [ -n "$(ip route show table "$DOH_RT" 2>/dev/null)" ]; then
-        plan "таблица маршрутов $DOH_RT очищается"
-        [ "$DO" = 1 ] && ip route flush table "$DOH_RT" 2>/dev/null
-    fi
-    return 0
-}
-
-# ---- расписание --------------------------------------------------------------------
 purge_cron() {
     [ -f "$CRONTAB" ] || return 0
     grep -qE "$CRON_MARK" "$CRONTAB" 2>/dev/null || return 0
-    plan "наши записи расписания убираются из $CRONTAB (обновление списков и подписок, отклик для счётчика)"
+    plan "$(s2_t purge.cron "Our schedule entries are removed from {file} (list and subscription updates, the former counter callback)" file "$CRONTAB")"
     [ "$DO" = 1 ] || return 0
     # Код возврата grep здесь не проверяется НАРОЧНО: пустой результат законен — это случай,
     # когда наши строки в crontab единственные, и тогда файл должен остаться пустым, а не
@@ -289,71 +311,31 @@ purge_cron() {
 purge_rpcd_timeout() {
     _t="$(uci -q get rpcd.@rpcd[0].timeout 2>/dev/null || true)"
     [ "${_t:-}" = "$RPCD_TIMEOUT" ] || return 0
-    plan "срок вызова rpcd ($RPCD_TIMEOUT с) снимается — вернётся штатный"
+    plan "$(s2_t purge.rpcd_timeout "The rpcd call timeout ({seconds} s) is removed: the standard one returns" seconds "$RPCD_TIMEOUT")"
     [ "$DO" = 1 ] || return 0
     uci -q delete rpcd.@rpcd[0].timeout
     uci -q commit rpcd
     # RPCD ОТСЮДА НЕ ПЕРЕЗАПУСКАЕТСЯ, и это не забывчивость: скрипт могли позвать через ubus,
     # то есть из процесса, которого rpcd и запустил, — перезапуск убил бы чистку на середине.
     # Значение он читает при старте, поэтому просто говорим, когда оно подействует.
-    say "новый срок начнёт действовать после перезапуска rpcd или перезагрузки"
+    say "$(s2_t purge.rpcd_restart "The new timeout takes effect after rpcd restarts or the router reboots")"
     return 0
 }
 
-purge_zapret() {
-    _v="$(uci -q get zapret.config.run_on_boot 2>/dev/null || true)"
-    [ "${_v:-}" = 0 ] || return 0
-    plan "zapret.config.run_on_boot возвращается в 1 — ноль там ставили мы"
-    [ "$DO" = 1 ] || return 0
-    # Ключ принадлежит ЧУЖОМУ пакету, поэтому он не удаляется, а возвращается к значению, с
-    # которым zapret приезжает. Ноль в нём — это наше «обход выключен» с нашей вкладки
-    # (zp_zapret_off в zapret.sh); уйти, оставив его, значило бы забрать у человека автозапуск
-    # обхода — обёртка remittor при run_on_boot = 0 отвечает «service blocked».
-    uci -q set zapret.config.run_on_boot=1
-    uci -q commit zapret
-    return 0
-}
-
-purge_doh_conf() {
-    [ -s "$DOH_CONF" ] || return 0
-    # ПРИЗНАК «ФАЙЛ ПИСАЛИ МЫ» — МЕТКА КОПИИ, а не значение force_dns.
-    #
-    # Прежний признак (`option force_dns '0'`) казался надёжным: у пакета умолчание 1, и
-    # Zapret Manager пишет 1, ноль — наше решение. Но он ломается ровно там, где менеджер
-    # стоит рядом: тот правит ключ в 1 в любой момент, и после его правки purge сказал бы
-    # «писали не мы» и оставил НАШУ настройку на роутере навсегда. Метка копии
-    # (`option splify2_state` в секции splify2_backup) — единственный след, который ставим
-    # только мы, и его никто снаружи не трогает.
-    if ! grep -q "option splify2_state" "$DOH_CONF"; then
-        say "$DOH_CONF писали не мы — оставлен как есть"
-        return 0
-    fi
-    # НАСТРОЙКУ https-dns-proxy ЭТА КОМАНДА БОЛЬШЕ НЕ ВОССТАНАВЛИВАЕТ. Файл переписывала
-    # прежняя версия splify2 (с копией чужой редакции внутри), а в этой версии ни писателя,
-    # ни читателя этого файла нет: шифрованный DNS теперь у движка (`dns.upstreams` в
-    # спеке). Настройка прокси с этого момента принадлежит человеку — как любая чужая, — и
-    # молча переписать её чужим кодом, которого здесь уже нет, значило бы ровно то, чего
-    # эта команда призвана не делать. Говорим об этом и оставляем файл как есть.
-    say "$DOH_CONF записывала прежняя версия splify2 — оставлен как есть; вернуть чужую редакцию можно из секции splify2_backup в том же файле"
-    return 0
-}
-
-# ---- отклик для счётчика на сайте -------------------------------------------------
+# ---- следы прежнего счётчика установок --------------------------------------------
 #
-# РАБОТАЕТ И ПРИ --keep-config: без него файл настройки уходит целиком и шаг ничего не
-# меняет, а с ним человек просил сохранить СВОИ настройки. Идентификатор и адрес для стендов
-# (`ping_url`) — наше состояние, а не его настройка. Ключи прежнего отчёта (до 26.10) — тоже.
-#
-# СОГЛАСИЕ (`telemetry`) НЕ ТРОГАЕТСЯ: пустой ключ читается как «включено», и чистка, стерев
-# ноль, сама включила бы отклик человеку, который его выключил.
+# Счётчика больше нет, а ключи прежних версий в настройке могли остаться. РАБОТАЕТ И ПРИ
+# --keep-config: без него файл настройки уходит целиком и шаг ничего не меняет, а с ним человек
+# просил сохранить СВОИ настройки; идентификатор, согласие и адрес для стендов — наше
+# состояние, а не его настройка.
 purge_telemetry() {
     _tk=""
-    for _k in telemetry_id ping_url telemetry_url telemetry_key telemetry_at telemetry_error geo_city_url; do
+    for _k in telemetry telemetry_id ping_url; do
         [ -n "$(uci -q get "splify2.main.$_k" 2>/dev/null || true)" ] || continue
         _tk="$_tk $_k"
     done
     [ -n "$_tk" ] || return 0
-    plan "идентификатор отклика в настройке снимается:$_tk (согласие остаётся как есть)"
+    plan "$(s2_t purge.counter "Traces of the former install counter are removed from the settings:{keys}" keys "$_tk")"
     [ "$DO" = 1 ] || return 0
     for _k in $_tk; do uci -q delete "splify2.main.$_k" 2>/dev/null; done
     uci -q commit splify2 2>/dev/null
@@ -364,18 +346,18 @@ purge_telemetry() {
 purge_paths() {
     for _p in $STATE_PATHS; do
         [ -e "$_p" ] || continue
-        plan "$_p удаляется"
+        plan "$(s2_t purge.path "{path} is removed" path "$_p")"
         [ "$DO" = 1 ] && rm -rf "$_p"
     done
     # Каталог с распиской фаервола, манифестом и отметкой набора опций протокола. Настройкой
     # человека здесь не является ничто: манифест скачивается заново, расписка без своей зоны
     # бессмысленна, — поэтому он уходит и при --keep-config.
     if [ -e "$SPLIFY2_DIR" ]; then
-        plan "$SPLIFY2_DIR удаляется"
+        plan "$(s2_t purge.path "{path} is removed" path "$SPLIFY2_DIR")"
         [ "$DO" = 1 ] && rm -rf "$SPLIFY2_DIR"
     fi
     if [ "$KEEP" = 1 ]; then
-        say "$STEER_DIR и $UCI_SPLIFY2 оставлены — просили сохранить настройки"
+        say "$(s2_t purge.kept "{dir} and {file} are kept: you asked to keep the settings" dir "$STEER_DIR" file "$UCI_SPLIFY2")"
         return 0
     fi
     # А это уже настройка человека: спека, снимок применённого, подписки, списки и uci. Ради
@@ -384,11 +366,11 @@ purge_paths() {
         # Содержимое перечисляется по именам, а не одним каталогом: «/etc/steer удаляется»
         # человек читает как «какие-то служебные файлы», а «spec.json» — как свою работу за
         # полгода. По показу решают, звать ли команду с --yes, и решают по этой строке.
-        plan "$STEER_DIR удаляется — вместе со спекой spec.json, подписками и списками"
+        plan "$(s2_t purge.steer_dir "{dir} is removed together with the spec (spec.json or spec.yaml), the subscriptions and the lists" dir "$STEER_DIR")"
         [ "$DO" = 1 ] && rm -rf "$STEER_DIR"
     fi
     if [ -e "$UCI_SPLIFY2" ]; then
-        plan "$UCI_SPLIFY2 удаляется — настройка пакета (ссылка подписки и прочее)"
+        plan "$(s2_t purge.uci "{file} is removed: the package settings (the subscription link and the rest)" file "$UCI_SPLIFY2")"
         [ "$DO" = 1 ] && rm -rf "$UCI_SPLIFY2"
     fi
     return 0
@@ -402,8 +384,8 @@ warn_xsteer() {
     _ifs="$(uci show network 2>/dev/null |
         sed -n "s/^network\.\([^.]*\)\.proto='xsteer'$/\1/p" | tr '\n' ' ')"
     [ -n "$_ifs" ] || return 0
-    say "интерфейсы с протоколом xsteer остаются в настройке сети: $_ifs"
-    say "их заводили не мы, поэтому не трогаем — но без обработчика протокола они не поднимутся"
+    say "$(s2_t purge.xsteer_left "Interfaces with the xsteer protocol stay in the network settings: {ifaces}" ifaces "$_ifs")"
+    say "$(s2_t purge.xsteer_note "We did not create them, so we leave them alone, but without the protocol handler they will not come up")"
     return 0
 }
 
@@ -431,34 +413,51 @@ say_packages() {
     [ -n "$_sp_have" ] || return 0
     FOUND=1
     if command -v apk >/dev/null 2>&1; then
-        say "пакеты этот скрипт не снимает. Чтобы снять:  apk del$_sp_have"
+        hint "$(s2_t purge.packages_apk "This script does not remove the packages. To remove them:  apk del{packages}" packages "$_sp_have")"
     else
-        say "пакеты этот скрипт не снимает. Чтобы снять:  opkg remove$_sp_have"
+        hint "$(s2_t purge.packages_opkg "This script does not remove the packages. To remove them:  opkg remove{packages}" packages "$_sp_have")"
     fi
     return 0
 }
 
+# ---- плагины splify2 -----------------------------------------------------------------
+# Хук purge (splify2-api): каждый включённый плагин, подключивший его, называет свои следы (при показе) или убирает
+# их и называет сделанное (с --yes). Всё, что хук сказал, идёт строками общего плана. Хуки зовутся в подоболочке с
+# библиотеками каркаса: если пакета уже нет (чистку зовут и после снятия), библиотек тоже нет, и этот шаг молчит.
+EXT_LIB_SH=${EXT_LIB_SH:-/usr/lib/splify2/ext.sh}
+purge_plugins() {
+    [ -r "$EXT_LIB_SH" ] || return 0
+    _pp_out="$( set +u
+        . "${JSHN_SH:-/usr/share/libubox/jshn.sh}" 2>/dev/null || exit 0
+        . "${PLUGIN_SH:-/usr/lib/splify2/plugin.sh}"
+        . "$EXT_LIB_SH"
+        ext_purge "$DO" "$KEEP" )"
+    [ -n "$_pp_out" ] || return 0
+    printf '%s\n' "$_pp_out" | while IFS= read -r _pp_l; do plan "$_pp_l"; done
+    FOUND=1
+    return 0
+}
+
 purge_engine
+purge_plugins
+purge_recheck
 purge_firewall
 purge_nft
-purge_doh_rules
 purge_cron
 purge_rpcd_timeout
-purge_zapret
-purge_doh_conf
 purge_telemetry
 purge_paths
 warn_xsteer
 say_packages
 
 if [ "$FOUND" = 0 ]; then
-    say "следов не найдено — убирать нечего"
+    hint "$(s2_t purge.nothing "No traces found: there is nothing to remove")"
     exit 0
 fi
 if [ "$DO" = 1 ]; then
-    say "готово: следы убраны, пакеты остались (см. строку про снятие пакетов выше)"
+    hint "$(s2_t purge.done "Done: the traces are removed, the packages remain (see the line about removing packages above)")"
 else
-    say "ничего не удалено. Чтобы удалить: splify2-purge --yes"
-    say "чтобы удалить, но оставить настройки: splify2-purge --yes --keep-config"
+    hint "$(s2_t purge.dry_run "Nothing was removed. To remove: splify2-purge --yes")"
+    hint "$(s2_t purge.dry_run_keep "To remove but keep the settings: splify2-purge --yes --keep-config")"
 fi
 exit 0

@@ -1,0 +1,16 @@
+#!/bin/sh
+# Хук support_report: раздел отчёта поддержки — что стоит, итог последней проверки. Без адресов.
+. "${STEER_PLUGIN_DIR:?программа запускается хостом splify2 (нет STEER_PLUGIN_DIR)}/lib/base.sh"
+cat >/dev/null
+pkg_info
+text="steer-core: ${V_STEER:-none}, splify2: ${V_SPLIFY2:-none}, arch: ${PKG_ARCH:-?}
+check: $("$SPLIFY2_HOST" settings get check 2>/dev/null), channel: $("$SPLIFY2_HOST" settings get channel 2>/dev/null)"
+[ -s "$STATUS" ] && text="$text
+last check: $(tr -d '\n' < "$STATUS")"
+json_init
+json_add_boolean ok 1
+json_add_object section
+json_add_string title "updater"
+json_add_string text "$text"
+json_close_object
+json_dump

@@ -1,0 +1,26 @@
+{
+  "schema": 1,
+  "id": "lang-ru",
+  "version": "1.0.0",
+  "type": "language",
+  "name": "Русский",
+  "description": "Русский язык для каркаса splify2 и панели Andromeda",
+  "homepage": "https://github.com/splify2/splify2",
+  "license": "MIT",
+  "compat": {
+    "host-api": "^1.0"
+  },
+  "arch": "all",
+  "i18n": {
+    "languages": [
+      "ru",
+      "en"
+    ],
+    "host": {
+      "ru": {
+        "file": "i18n/host/ru.json",
+        "name": "Русский"
+      }
+    }
+  }
+}

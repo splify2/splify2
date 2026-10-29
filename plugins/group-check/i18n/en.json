@@ -1,0 +1,4 @@
+{
+  "plugin.name": "Group check",
+  "plugin.description": "Checks the members of output groups: a verdict for each member, failure history, a hint when a member is dead"
+}

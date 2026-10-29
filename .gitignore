@@ -1,4 +1,3 @@
-ui/node_modules/
-ui/dist/
 out/
 build/
+plugins/dist/

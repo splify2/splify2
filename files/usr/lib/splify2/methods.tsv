@@ -1,0 +1,105 @@
+# splify2-api 1.1: методы объекта rpcd splify2 и их вид для расширений.
+# Колонки через табуляцию: имя, вид, плагин.
+#   frame — метод каркаса: можно обернуть или заменить (methods.override), имя занять нельзя;
+#   fast — быстрый путь опроса (live, spec_get, applied_get): диспетчер отвечает на них до чтения реестра, поэтому
+#          заменить или обернуть их нельзя, как и занять имя;
+#   final — plugin_*, plugins_*, repo_*, repos_*, prefs_*: ни заменить, ни обернуть, ни взять имя;
+#   moved — метод вынесен в плагин (третья колонка); без плагина отвечает отказом «нужен плагин», с плагином
+#           его имя берёт `methods.alias` ТОЛЬКО этого плагина и только из официального репозитория.
+# Файл — часть splify2-api: изменение строк без новой версии SDK и новой строки compat-matrix.json не проходит
+# проверку (tests/exttest.sh сверяет таблицу с диспетчером и с копией в plugin-sdk).
+status	frame
+live	fast
+spec_get	fast
+applied_get	fast
+spec_set	frame
+apply	frame
+spec_heal	frame
+explain	frame
+lists	moved	lists-catalog
+list_fetch	moved	lists-catalog
+devices	frame
+client_nets	frame
+local_lists	moved	lists-catalog
+allow_domains	moved	lists-catalog
+lists_update	moved	lists-catalog
+list_remove	moved	lists-catalog
+list_put	moved	lists-catalog
+list_custom	moved	lists-catalog
+list_get	moved	lists-catalog
+list_peek	moved	lists-catalog
+list_srs_put	moved	lists-catalog
+engine	frame
+sub_set	frame
+sub_info	frame
+sub_list	frame
+sub_del	frame
+sub_rename	moved	subscriptions
+sub_quota	moved	subscriptions
+sub_auto	moved	subscriptions
+sub_refresh	frame
+backup_get	moved	backup
+backup_put	moved	backup
+dev_stats	frame
+diag	frame
+support_report	frame
+net_info	frame
+outbound_probe	frame
+dns_probe	frame
+outbound_geo	moved	node-check
+leases	frame
+engine_state	frame
+ui_get	frame
+ui_set	frame
+xsteer_state	frame
+xsteer_link	frame
+xsteer_link_put	frame
+lists_source	moved	lists-catalog
+lists_source_set	moved	lists-catalog
+fetch_mode	moved	lists-catalog
+fetch_mode_set	moved	lists-catalog
+vless_nodes	frame
+vless_probe	frame
+hysteria2_nodes	frame
+hysteria2_probe	frame
+proxy_nodes	frame
+proxy_probe	frame
+dns_log	frame
+conns	frame
+helper	frame
+purge	frame
+engine_stop	frame
+engine_start	frame
+splify2_versions	moved	updater
+splify2_install	moved	updater
+steer_versions	moved	updater
+steer_install	moved	updater
+steer_modules	frame
+recheck_info	frame
+recheck_set	frame
+steer_module_add	frame
+steer_module_del	frame
+plugins_list	final
+plugins_search	final
+repos_list	final
+plugin_status	final
+plugin_job	final
+plugin_install	final
+plugin_update	final
+plugin_remove	final
+plugin_enable	final
+plugin_disable	final
+plugin_autoupdate	final
+repo_key	final
+repo_add	final
+repo_del	final
+plugin_call	final
+spec_schema	frame
+spec_check	frame
+spec_yaml	frame
+prefs_get	final
+prefs_set	final
+i18n_get	frame
+plugin_settings_get	final
+plugin_settings_set	final
+paths	frame

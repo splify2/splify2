@@ -1,0 +1,200 @@
+#!/bin/sh
+# Программа rpc плагина node-check: $1 — метод, параметры — JSON в stdin, ответ — объект JSON.
+#
+#   outbound_geo {output, fresh?}   где выходит трафик выхода: страна и адрес, как их видит внешняя сторона
+#   nodes_check {sub, insecure?}    запустить перебор узлов подписки на роутере (задание в фоне)
+#   nodes_result {sub}              ход и итог перебора: сколько проверено, ответивших, лучший, причина отказа, узлы
+#   nodes_best {sub}                самый быстрый из ответивших узлов
+#   nodes_cancel {sub}              остановить перебор
+. "${STEER_PLUGIN_DIR:?программа запускается хостом splify2 (нет STEER_PLUGIN_DIR)}/lib/base.sh"
+METHOD="${1:?нет метода}"
+read -r input 2>/dev/null || true
+[ -n "$input" ] || input='{}'
+json_load "$input" 2>/dev/null || s2_fail_code req.unparsable "Unparsable request"
+output=''; fresh=''; sub=''; insecure=''
+json_get_var output output; json_get_var fresh fresh; json_get_var sub sub; json_get_var insecure insecure
+case "$insecure" in 1|true) insecure=1 ;; *) insecure=0 ;; esac
+# Подписку страница называет путём к файлу узлов, скрипты — именем: оба годятся, дальше работаем с именем.
+case "$sub" in
+    */*) _row="$(sub_row "$sub")"; sub="$(jsonfilter -s "$_row" -e '@.name' 2>/dev/null)" ;;
+esac
+
+# Выход не в сети и нечем мерить — не то же, что «выход молчит»: человеку нужно знать, что поставить.
+outbound_geo() {
+    output_ok "$output" || s2_fail_code req.bad_output "Invalid output name"
+    f="$GEO_CACHE/geo-$output"
+    at=0; cc=''; ip=''; id=''; ms=''
+    if [ -s "$f" ]; then
+        read -r at cc ip id ms < "$f"
+        at="$(num_or "$at" 0)"
+        [ "$cc" = "-" ] && cc=''
+        # Выход пересоздали (движок меняет TUN при смене узла) — значит, и выходим мы теперь в другом месте: прежнее
+        # измерение не отдаём вовсе, «Эстония» рядом с только что выбранной Польшей хуже пустоты.
+        if [ -n "$id" ]; then
+            cur="$("$SPLIFY2_HOST" probe ident "$output" 2>/dev/null | jsonfilter -e '@.ident' 2>/dev/null)"
+            [ "$id" = "${cur:-none}" ] || { at=0; cc=''; ip=''; ms=''; }
+        fi
+    fi
+    ttl="$(setting_num geo_ttl_s 900)"
+    age=$(( $(now) - at ))
+    curl_missing=0
+    "$SPLIFY2_HOST" probe ident "$output" 2>/dev/null | jsonfilter -e '@.curl' 2>/dev/null | grep -qx false && curl_missing=1
+
+    if [ "$fresh" != 1 ] && [ "$fresh" != true ]; then
+        # БЕЗ fresh метод не ходит в сеть вовсе: LuCI складывает вызовы страницы в один запрос к ubus и выполняет их подряд,
+        # и медленный вызов задерживает все остальные. Устаревшее измерение обновляется в фоне, и приедет к следующему
+        # опросу; не чаще geo_retry_s на выход — у узла, который не отвечает, замер не удаётся никогда, и без паузы
+        # запуски шли бы на каждом опросе.
+        if [ "$at" -le 0 ] || [ "$age" -ge "$ttl" ]; then
+            try="$GEO_CACHE/geo-$output.try"
+            last="$(num_or "$(cat "$try" 2>/dev/null)" 0)"
+            if [ $(( $(now) - last )) -ge "$(setting_num geo_retry_s 60)" ]; then
+                mkdir -p "$GEO_CACHE"
+                now > "$try" 2>/dev/null
+                "$STEER_PLUGIN_DIR/bin/geo-refresh" "$output" >/dev/null 2>&1 </dev/null &
+            fi
+        fi
+        json_init
+        json_add_string output "$output"
+        [ "$curl_missing" = 1 ] && json_add_boolean curl 0
+        [ -n "$ip" ] && json_add_string ip "$ip"
+        [ -n "$cc" ] && json_add_string cc "$cc"
+        [ "$(num_or "$ms" 0)" -gt 0 ] && json_add_int ms "$ms"
+        [ "$at" -gt 0 ] && json_add_int at "$at"
+        json_add_boolean cached 1
+        json_dump
+        return
+    fi
+    json_init
+    json_add_string output "$output"
+    [ "$curl_missing" = 1 ] && json_add_boolean curl 0
+    if sh "$STEER_PLUGIN_DIR/bin/geo-refresh" "$output"; then
+        read -r at cc ip id ms < "$f"
+        [ "$cc" = "-" ] && cc=''
+        json_add_string ip "$ip"
+        [ -n "$cc" ] && json_add_string cc "$cc"
+        [ "$(num_or "$ms" 0)" -gt 0 ] && json_add_int ms "$ms"
+        json_add_int at "$at"
+        json_add_boolean cached 0
+    else
+        # Измерить не вышло: прежнее измерение всё равно отдаём — «где выходили в прошлый раз» полезнее пустоты.
+        [ -n "$ip" ] && json_add_string ip "$ip"
+        [ -n "$cc" ] && json_add_string cc "$cc"
+        [ "$(num_or "$ms" 0)" -gt 0 ] && json_add_int ms "$ms"
+        [ "$at" -gt 0 ] && json_add_int at "$at"
+        json_add_string why "$(s2_t nodes.no_answer "No answer through the output: it is not up, curl is missing or the check address is silent")"
+    fi
+    json_dump
+}
+
+# Перебор узлов подписки в фоне. Один перебор на подписку: идёт — второй не стартует.
+nodes_check() {
+    subname_ok "$sub" || s2_fail_code sub.none_given "No subscription given"
+    row="$(sub_row "$sub")"
+    [ -n "$row" ] || s2_fail_code sub.not_exists "There is no subscription \"{name}\"" name "$sub"
+    path="$(jsonfilter -s "$row" -e '@.path' 2>/dev/null)"
+    [ "$(jsonfilter -s "$row" -e '@.present' 2>/dev/null)" = true ] || s2_fail_code sub.not_downloaded "The subscription has not been downloaded yet"
+    d="$CHECK_DIR/$sub"
+    if [ -e "$d/pid" ] && kill -0 "$(cat "$d/pid" 2>/dev/null)" 2>/dev/null; then
+        echo '{"ok":true,"started":false,"running":true}'; return
+    fi
+    mkdir -p "$CHECK_DIR"
+    "$STEER_PLUGIN_DIR/bin/check-job" "$sub" "$path" "$insecure" >/dev/null 2>&1 </dev/null &
+    echo '{"ok":true,"started":true,"running":true}'
+}
+
+# Ход и итог: считается из файлов задания.
+nodes_result() {
+    subname_ok "$sub" || s2_fail_code sub.none_given "No subscription given"
+    d="$CHECK_DIR/$sub"
+    [ -s "$d/started" ] || { echo '{"ok":true,"state":"none"}'; return; }
+    running=0
+    if [ ! -e "$d/done" ]; then
+        if [ -e "$d/pid" ] && kill -0 "$(cat "$d/pid" 2>/dev/null)" 2>/dev/null; then running=1; fi
+    fi
+    total="$(num_or "$(cat "$d/total" 2>/dev/null)" 0)"
+    json_init
+    json_add_boolean ok 1
+    if [ "$running" = 1 ]; then json_add_string state running
+    elif [ -e "$d/done" ]; then json_add_string state done
+    else json_add_string state stopped; fi
+    json_add_int started "$(num_or "$(cat "$d/started" 2>/dev/null)" 0)"
+    [ -e "$d/done" ] && json_add_int finished "$(num_or "$(cat "$d/done" 2>/dev/null)" 0)"
+    json_add_int total "$total"
+    done_n=0; ok_n=0; best_ms=''; best_name=''; best_proto=''; best_idx=''; why=''
+    # Узлы и результаты — одним проходом, строка узла N ↔ файл res.N.
+    : > "$d/view.tmp"
+    n=0
+    while IFS="$(printf '\t')" read -r proto method idx nm; do
+        n=$((n + 1))
+        [ -s "$d/res.$n" ] || { printf '%s\t%s\t%s\t%s\t-\t0\t\n' "$proto" "$idx" "$n" "$nm" >> "$d/view.tmp"; continue; }
+        IFS="$(printf '\t')" read -r rok rms rwhy < "$d/res.$n"
+        done_n=$((done_n + 1))
+        if [ "$rok" = 1 ]; then
+            ok_n=$((ok_n + 1))
+            if [ -z "$best_ms" ] || [ "$rms" -lt "$best_ms" ]; then best_ms="$rms"; best_name="$nm"; best_proto="$proto"; best_idx="$idx"; fi
+        else
+            [ -n "$why" ] || why="$rwhy"
+        fi
+        printf '%s\t%s\t%s\t%s\t%s\t%s\t%s\n' "$proto" "$idx" "$n" "$nm" "$([ "$rok" = 1 ] && echo 1 || echo 0)" "$rms" "$rwhy" >> "$d/view.tmp"
+    done < "$d/nodes.tsv" 2>/dev/null
+    json_add_int done "$done_n"
+    json_add_int ok_count "$ok_n"
+    if [ -n "$best_ms" ]; then
+        json_add_object best
+        json_add_string name "$best_name"; json_add_string proto "$best_proto"
+        json_add_int index "$best_idx"; json_add_int ms "$best_ms"
+        json_close_object
+    fi
+    [ -n "$why" ] && json_add_string why "$why"
+    json_add_array nodes
+    while IFS="$(printf '\t')" read -r proto idx n nm rok rms rwhy; do
+        [ -n "$proto" ] || continue
+        json_add_object ""
+        json_add_string proto "$proto"; json_add_int index "$idx"; json_add_string name "$nm"
+        if [ "$rok" = "-" ]; then json_add_boolean checked 0
+        else
+            json_add_boolean checked 1
+            json_add_boolean ok "$rok"
+            [ "$rok" = 1 ] && json_add_int ms "$rms"
+            [ -n "$rwhy" ] && json_add_string why "$rwhy"
+        fi
+        json_close_object
+    done < "$d/view.tmp"
+    json_close_array
+    rm -f "$d/view.tmp"
+    json_dump
+}
+
+nodes_best() {
+    out="$(sh "$0" nodes_result <<EOT
+{"sub":"$sub"}
+EOT
+)"
+    [ "$(jsonfilter -s "$out" -e '@.state' 2>/dev/null)" = done ] || [ "$(jsonfilter -s "$out" -e '@.state' 2>/dev/null)" = running ] ||
+        s2_fail_code nodes.not_started "The node search has not been started"
+    b="$(jsonfilter -s "$out" -e '@.best' 2>/dev/null)"
+    if [ -z "$b" ]; then echo '{"ok":true,"found":false}'; return; fi
+    json_init
+    json_add_boolean ok 1
+    json_add_boolean found 1
+    json_add_string name "$(jsonfilter -s "$b" -e '@.name' 2>/dev/null)"
+    json_add_string proto "$(jsonfilter -s "$b" -e '@.proto' 2>/dev/null)"
+    json_add_int index "$(num_or "$(jsonfilter -s "$b" -e '@.index' 2>/dev/null)" 0)"
+    json_add_int ms "$(num_or "$(jsonfilter -s "$b" -e '@.ms' 2>/dev/null)" 0)"
+    json_add_boolean complete "$([ "$(jsonfilter -s "$out" -e '@.state' 2>/dev/null)" = done ] && echo 1 || echo 0)"
+    json_dump
+}
+
+nodes_cancel() {
+    subname_ok "$sub" || s2_fail_code sub.none_given "No subscription given"
+    d="$CHECK_DIR/$sub"
+    if [ -e "$d/pid" ] && kill -0 "$(cat "$d/pid" 2>/dev/null)" 2>/dev/null; then
+        : > "$d/stop"; echo '{"ok":true,"cancelled":true}'
+    else echo '{"ok":true,"cancelled":false}'; fi
+}
+
+case "$METHOD" in
+    outbound_geo|nodes_check|nodes_result|nodes_best|nodes_cancel) "$METHOD" ;;
+    *) echo "no such method: $METHOD" >&2; exit 2 ;;
+esac

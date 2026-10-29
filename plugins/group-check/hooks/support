@@ -1,0 +1,15 @@
+#!/bin/sh
+# Хук support_report: раздел отчёта поддержки — настройки и приговоры по группам без имён выходов.
+. "${STEER_PLUGIN_DIR:?программа запускается хостом splify2 (нет STEER_PLUGIN_DIR)}/lib/base.sh"
+cat >/dev/null
+g="$(ls -d "$STATE_DIR"/*/ 2>/dev/null | grep -c .)"
+dead="$(cat "$STATE_DIR"/*/members/* 2>/dev/null | grep -c '^dead ')"
+text="schedule: $([ "$(setting enabled)" = false ] && echo off || echo on), every $(setting_num interval 5) min, dead after $(setting_num dead_after 3)
+groups checked: ${g:-0}, dead members: ${dead:-0}"
+json_init
+json_add_boolean ok 1
+json_add_object section
+json_add_string title "group-check"
+json_add_string text "$text"
+json_close_object
+json_dump

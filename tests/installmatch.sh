@@ -198,7 +198,7 @@ doc = {"schema": 1, "updated": "2026-10-02T10:17:36Z", "products": {
             "versions": [v("steer", "1.5.9", "splify2/steer", ["steer-1.5.9-1_x86_64.apk", "steer-extended-1.5.9-1_x86_64.apk", "steer-extended-1.5.9-1_x86_64.ipk"]),
                          v("steer", "1.5.8", "splify2/steer", ["steer-extended-1.5.8-1_x86_64.apk"])]},
   "splify2": {"title": "splify2", "repo": "splify2/splify2", "stable": "26.9.2", "prerelease": None,
-              "versions": [v("splify2", "26.9.2", "splify2/splify2", ["luci-app-splify2-26.9.2-1_noarch.apk"])]}}}
+              "versions": [v("splify2", "26.9.2", "splify2/splify2", ["splify2-26.9.2-1_noarch.apk"])]}}}
 with open(out, "w") as f:
     json.dump(doc, f, ensure_ascii=False, indent=ind if ind else None)
     f.write("\n")
@@ -444,7 +444,7 @@ rm -f "$V1BOX/etc/init.d/splify" "$SB/nftset"
 # Единственное, что установщик снимает, — прежние пакеты СВОЕГО ядра при переходе на steer-core
 # (pm_drop_old у opkg, pm_forget_old — уборка world у apk), и только по своим именам.
 check "установщик ничего не удаляет (кроме прежнего своего ядра)" "0" \
-    "$(sed '/^pm_drop_old() {/,/^}/d; /^pm_forget_old() {/,/^}/d' "$ROOT/install.sh" | grep -c 'apk del\|opkg remove\|rm -rf /etc\|uci -q delete')"
+    "$(sed '/^pm_drop_old() {/,/^}/d; /^pm_forget_old() {/,/^}/d; /^pm_drop_old_ui() {/,/^}/d' "$ROOT/install.sh" | grep -c 'apk del\|opkg remove\|rm -rf /etc\|uci -q delete')"
 check "снимаются только имена прежнего ядра" "2" \
     "$(sed -n '/^pm_drop_old() {/,/^}/p; /^pm_forget_old() {/,/^}/p' "$ROOT/install.sh" | grep -c 'steer|steer-extended|libsteer|libsteer-wolfssl)')"
 
@@ -481,7 +481,7 @@ check "README ведёт на docs/guide.md" "да" \
 # Вариантов «базовый/расширенный» больше нет: ядро — steer-core, протоколы — модули. Состав
 # установки: выбор человека (умолчание — vless, hysteria2, proxy), уже стоящие модули и, при
 # переходе со steer-extended 1.x, вшитые в него vless, xsteer, obfs, tgws.
-eval "$(sed -n '/^REPO_STEER=/p; /^pm_names() {/,/^}/p; /^pm_has() {/,/^}/p; /^STEER_MODULES=/p; /^STEER_DEFAULT_MODULES=/p; /^steer_mods() {/,/^}/p; /^steer_version() {/,/^}/p; /^BOX_INITD=/p; /^box_busy() {/,/^}/p' "$ROOT/install.sh")"
+eval "$(sed -n '/^REPO_STEER=/p; /^pm_names() {/,/^}/p; /^pm_has() {/,/^}/p; /^STEER_MODULES=/p; /^STEER_DEFAULT_MODULES=/p; /^steer_mods() {/,/^}/p; /^ver_ok() {/,/^}/p; /^steer_version() {/,/^}/p; /^BOX_INITD=/p; /^box_busy() {/,/^}/p' "$ROOT/install.sh")"
 check "функция steer_mods достана из install.sh" "steer_mods" "$(command -v steer_mods >/dev/null && echo steer_mods)"
 check "умолчание к первой установке — vless hysteria2 proxy" "vless hysteria2 proxy" "$STEER_DEFAULT_MODULES"
 : > "$SB/pkglist"
@@ -497,15 +497,15 @@ check "стоящий модуль входит в состав" "vless obfs" "$
 : > "$SB/pkglist"
 
 # Версия ядра: стабильная 1.5.9 этому интерфейсу не годится (он пишет спеку v2) — тогда
-# предварительная из перечня, если она 2.0 или новее.
+# предварительная из перечня, если она 2.1 или новее.
 relreset
 mkrel "$SB/resp-rel-raw"
-sed -i 's/"prerelease": null/"prerelease": "2.0.0"/' "$SB/resp-rel-raw"
-check "стабильная 1.x — берётся предварительная 2.0.0" "2.0.0" "$(steer_version 2>/dev/null | tail -1)"
+sed -i 's/"prerelease": null/"prerelease": "2.1.0"/' "$SB/resp-rel-raw"
+check "стабильная младше 2.1 — берётся предварительная 2.1.0" "2.1.0" "$(steer_version 2>/dev/null | tail -1)"
 relreset
 mkrel "$SB/resp-rel-raw"
 check "предварительной нет — версия как есть (установщик откажет словами)" "1.5.9" "$(steer_version 2>/dev/null | tail -1)"
-check "отказ на ядре старше 2.0 назван" "1" "$(grep -c 'этому интерфейсу нужно ядро 2.0 или новее' "$ROOT/install.sh")"
+check "отказ на ядре старше 2.1 назван" "1" "$(grep -c 'этому интерфейсу нужно ядро 2.1 или новее' "$ROOT/install.sh")"
 relreset
 
 # Пакеты 2.0: ядро и модули — одной транзакцией, прежнее ядро — в ней же (`!имя`).
@@ -528,11 +528,8 @@ check "при коннекторе служба steer не включается"
 
 # Модули перечислены одинаково в установщике, бэкенде и интерфейсе.
 check "перечень модулей установщика = бэкенда" \
-    "$(sed -n 's/^STEER_MODULES="\(.*\)"/\1/p' "$ROOT/files/usr/lib/splify2/rpcd/m-engine.sh")" "$STEER_MODULES"
-check "перечень модулей установщика = интерфейса" "$STEER_MODULES" \
-    "$(sed -n "s/^export const STEER_MODULES = \[\(.*\)\]/\1/p" "$ROOT/ui/src/lib/engine.ts" | tr -d "'," )"
-check "умолчание установщика = интерфейса" "$STEER_DEFAULT_MODULES" \
-    "$(sed -n "s/^export const DEFAULT_MODULES = \[\(.*\)\]/\1/p" "$ROOT/ui/src/lib/engine.ts" | tr -d "'," )"
+    "$(sed -n 's/^STEER_MODULES="\(.*\)"/\1/p' "$ROOT/files/usr/lib/splify2/rpcd/pkg-lib.sh")" "$STEER_MODULES"
+# Перечень модулей в интерфейсе (Andromeda, репозиторий andromeda) сверяет её собственный стенд tests/frame-sync.sh.
 
 # ---- установка файла пакета: пустые списки/индексы не валят установку ------------------
 # У 26.9 две зависимости (https-dns-proxy, ip-full), у 1.2.5 не было ни одной, поэтому

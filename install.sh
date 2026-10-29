@@ -391,7 +391,7 @@ elif [ -t 0 ]; then
   xsteer     XSTEER
   obfs       WireGuard поверх TCP
   tgws       мост Telegram
-  Остальные можно поставить и снять потом: Настройки → О ПО → Модули ядра.
+  Остальные можно поставить и снять потом: вкладка «Плагины».
 TXT
     printf '  Через пробел [%s]: ' "$STEER_DEFAULT_MODULES"
     read -r ans || ans=""
@@ -673,15 +673,20 @@ EOF
 }
 
 # ---- ядро ---------------------------------------------------------------------
-# Последняя стабильная версия; если она старше 2.0 (этот интерфейс пишет спеку v2, а её читает
-# только ядро 2.0) — предварительная из перечня выпусков, если она 2.0 или новее.
+# Версия не младше 2.1.0 (этот интерфейс читает спеку JSON-видом ядра, а его печатает только ядро 2.1).
+ver_ok() {  # ВЕРСИЯ
+    case "$1" in ''|*[!0-9.]*) return 1 ;; esac
+    [ "$(printf '%s\n2.1.0\n' "$1" | sort -V | head -n 1)" = 2.1.0 ]
+}
+
+# Последняя стабильная версия; если она старше 2.1.0 — предварительная из перечня выпусков, если
+# она 2.1.0 или новее.
 steer_version() {
     _sv="$(latest "$REPO_STEER")"
-    case "${_sv%%.*}" in ''|0|1)
+    if ! ver_ok "$_sv"; then
         _sp="$(rel_get && rel_val products/steer/prerelease || true)"
-        case "$_sp" in ''|*[!0-9.]*) ;; *) case "${_sp%%.*}" in 0|1) ;; *) _sv="$_sp" ;; esac ;; esac
-        ;;
-    esac
+        ver_ok "$_sp" && _sv="$_sp"
+    fi
     printf '%s\n' "$_sv"
 }
 
@@ -695,6 +700,13 @@ pm_drop_old() {  # ИМЕНА
 
 # Убрать из /etc/apk/world запреты `!имя` и имя steer после перехода: пакетов они уже не
 # касаются (прежние сняты в транзакции, steer-core называет себя steer сам).
+# Прежний пакет интерфейса (luci-app-splify2) — единственное, что установщик снимает сверх ядра.
+pm_drop_old_ui() {
+    pm_has luci-app-splify2 || return 0
+    info "прежний пакет luci-app-splify2 заменяется пакетом splify2"
+    if [ "$PM" = apk ]; then apk del luci-app-splify2 >/dev/null 2>&1 || true
+    else opkg remove --force-depends luci-app-splify2 >/dev/null 2>&1 || true; fi
+}
 pm_forget_old() {  # ИМЕНА
     for _d in "$@"; do
         case "$_d" in steer|steer-extended|libsteer|libsteer-wolfssl) apk del "$_d" >/dev/null 2>&1 || true ;; esac
@@ -704,7 +716,7 @@ pm_forget_old() {  # ИМЕНА
 if ! box_busy && [ "$HAVE_CORE" = no ]; then
     SV="$(steer_version)"
     [ -n "$SV" ] || die "не удалось узнать версию ядра: не ответили ни перечень выпусков splify2/releases, ни api.github.com, ни raw.githubusercontent.com, ни зеркало на gitlab.com. Пакеты можно поставить руками с https://github.com/$REPO_STEER/releases"
-    case "${SV%%.*}" in 0|1) die "последний выпуск ядра — $SV, а этому интерфейсу нужно ядро 2.0 или новее. Пакеты steer-core и модули можно поставить руками с https://github.com/$REPO_STEER/releases" ;; esac
+    ver_ok "$SV" || die "последний выпуск ядра — $SV, а этому интерфейсу нужно ядро 2.1 или новее. Пакеты steer-core и модули можно поставить руками с https://github.com/$REPO_STEER/releases"
     MODS="$(steer_mods "$WANT_MODULES")"
     say ""
     say "Ядро steer $SV${MODS:+ · модули: $MODS}"
@@ -745,11 +757,15 @@ fi
 # ---- интерфейс ----------------------------------------------------------------
 UV="$(latest "$REPO_UI")"
 [ -n "$UV" ] || die "не удалось узнать версию интерфейса: не ответили ни перечень выпусков splify2/releases, ни api.github.com, ни raw.githubusercontent.com, ни зеркало на gitlab.com. Пакет можно поставить руками с https://github.com/$REPO_UI/releases"
-UI_PKG="luci-app-splify2-${UV}-1_$(pm_suffix)"
+UI_PKG="splify2-${UV}-1_$(pm_suffix)"
 say ""
 say "Интерфейс splify2 $UV"
 info "$UI_PKG"
 fetch_pkg splify2 "$UV" "$UI_PKG" "$TMP/$UI_PKG" "$REPO_UI"
+# До переименования пакет назывался luci-app-splify2. Новый (splify2) объявляет его provides/replaces,
+# но apk всё равно отказывает в установке рядом с прежним (конфликт одноимённых поставщиков) — прежний
+# снимается заранее; настройки и спека лежат вне пакета и остаются.
+pm_drop_old_ui
 pm_add "$TMP/$UI_PKG" || die "интерфейс не установился"
 info "установлен"
 

@@ -187,7 +187,7 @@ return network.registerProtocol('xsteer', {
 	 * интерфейса, то есть этого пакета. Отдельный третий пакет означал бы третью версию,
 	 * третий барьер релиза и третий способ поставить половину. */
 	getPackageName: function() {
-		return 'luci-app-splify2';
+		return 'splify2';
 	},
 
 	isFloating: function() {

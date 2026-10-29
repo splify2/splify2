@@ -1,0 +1,13 @@
+#!/bin/sh
+# Отложенное применение: ждёт паузу и применяет, если за это время новой правки не было (метка в PENDING та же).
+# $1 — метка. Запускает хук spec-saved; сам по себе не зовётся.
+. "${STEER_PLUGIN_DIR:?программа запускается хостом splify2 (нет STEER_PLUGIN_DIR)}/lib/base.sh"
+token="${1:?нет метки}"
+sleep "$(pause_s)"
+read -r cur _ < "$PENDING" 2>/dev/null || exit 0
+[ "$cur" = "$token" ] || exit 0           # была новая правка: применит её worker
+rm -f "$PENDING"
+is_on enabled || exit 0
+unapplied || exit 0                         # применять нечего
+do_apply pause
+exit 0

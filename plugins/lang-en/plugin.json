@@ -1,0 +1,26 @@
+{
+  "schema": 1,
+  "id": "lang-en",
+  "version": "1.0.0",
+  "type": "language",
+  "name": "English",
+  "description": "English for the splify2 frame and the Andromeda panel",
+  "homepage": "https://github.com/splify2/splify2",
+  "license": "MIT",
+  "compat": {
+    "host-api": "^1.0"
+  },
+  "arch": "all",
+  "i18n": {
+    "languages": [
+      "ru",
+      "en"
+    ],
+    "host": {
+      "en": {
+        "file": "i18n/host/en.json",
+        "name": "English"
+      }
+    }
+  }
+}

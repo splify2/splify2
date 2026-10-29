@@ -1,0 +1,32 @@
+#!/bin/sh
+# Хук pre_spec_set и pre_apply: довезти списки, на которые ссылается спека, но которых нет на диске.
+#
+# Ядро умирает на отсутствующем файле списка, поэтому довоз идёт перед каждой проверкой спеки (pre_spec_set — присланная
+# спека во временном файле) и перед применением (pre_apply — спека на диске). Недоступность издателя ничего не отменяет:
+# ответ `ok` с предупреждением по строке на список, который не скачался. Режим хука — warn (plugin.json).
+. "${STEER_PLUGIN_DIR:?программа запускается хостом splify2 (нет STEER_PLUGIN_DIR)}/lib/base.sh"
+. "$STEER_PLUGIN_DIR/lib/fetch-missing.sh"
+
+input="$(cat)"
+json_load "$input" 2>/dev/null || { echo '{"ok":true}'; exit 0; }
+json_select ctx 2>/dev/null
+spec=""
+json_get_var spec spec_tmp
+[ -n "$spec" ] || json_get_var spec spec
+[ -f "$spec" ] || { echo '{"ok":true}'; exit 0; }
+
+lists_init
+warn="$(fetch_missing_lists "$spec")"
+
+json_init
+json_add_boolean ok 1
+if [ -n "$warn" ]; then
+    json_add_array warn
+    while IFS= read -r line; do
+        [ -n "$line" ] && json_add_string "" "$line"
+    done <<EOT
+$warn
+EOT
+    json_close_array
+fi
+json_dump

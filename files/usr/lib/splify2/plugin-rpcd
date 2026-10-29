@@ -1,0 +1,55 @@
+#!/bin/sh
+# Общий обработчик rpcd для методов плагинов: объект ubus `splify2.p.<id>`.
+#
+# На каждый включённый плагин с `rpc` в манифесте splify2 держит ссылку
+# /usr/libexec/rpcd/splify2.p.<id> -> этот файл (plugin_sync в /usr/lib/splify2/plugin.sh). Имя объекта
+# rpcd берёт из имени файла, а id плагина этот скрипт — из имени, под которым его запустили ($0).
+#
+#   plugin-rpcd list          — методы плагина из манифеста (rpc.methods)
+#   plugin-rpcd call МЕТОД    — запустить <плагин>/<rpc.prog> МЕТОД; параметры — JSON на stdin, ответ —
+#                               JSON на stdout; срок и признак задания — из манифеста
+#
+# Права (read/write) — ACL группы splify2-p-<id> из тех же `access`: rpcd проверяет их до вызова.
+# Метод неустановленного или выключенного плагина отвечает отказом с понятным текстом и кодом
+# (not_installed, disabled), а не «Method not found».
+
+# Чужие дескрипторы закрываются первым делом — тот же довод, что в /usr/libexec/rpcd/splify2: rpcd
+# создаёт трубы вызовов без O_CLOEXEC, и ребёнок наследует трубы соседних вызовов.
+if ( exec 3>/dev/null; eval 'exec 10>&3'; eval 'exec 10>&-' ) 2>/dev/null; then _fd_wide=1; else _fd_wide=0; fi
+for _fd in /proc/$$/fd/*; do
+    _fd="${_fd##*/}"
+    [ "$_fd" -gt 2 ] 2>/dev/null || continue
+    [ "$_fd" -le 9 ] || [ "$_fd_wide" = 1 ] || continue
+    [ "/proc/$$/fd/$_fd" -ef "$0" ] && continue
+    eval "exec $_fd>&-" 2>/dev/null
+done
+unset _fd _fd_wide
+
+. "${JSHN_SH:-/usr/share/libubox/jshn.sh}"
+. "${PLUGIN_SH:-/usr/lib/splify2/plugin.sh}"
+
+STEER="${STEER:-/usr/sbin/steer}"
+
+_self="${PLUGIN_SELF:-${0##*/}}"
+_id="${_self#splify2.p.}"
+
+case "${1:-}" in
+list)
+    plugin_id_ok "$_id" || exit 1
+    # Методы выключенного или снятого плагина не перечисляются: объекта у него быть не должно, а
+    # если ссылка осталась до очередной перечитки rpcd, пустой список честнее устаревшего.
+    json_init
+    if plugin_installed "$_id" && [ "$(plugin_state_of "$_id")" = enabled ] && plugin_rpc_methods "$_id"; then
+        json_init
+        for _m in $PLUGIN_RPC_READ $PLUGIN_RPC_WRITE; do
+            json_add_object "$_m"; json_close_object
+        done
+    fi
+    json_dump
+    ;;
+call)
+    read -r _input
+    plugin_invoke "$_id" "${2:-}" "$_input"
+    exit 0
+    ;;
+esac

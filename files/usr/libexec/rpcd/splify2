@@ -79,415 +79,11 @@ esac
 # что на роутере ветка `:-` не выбирается никогда. Без шва tests/rpcdmatch.sh не может
 # запустить настоящий скрипт: libubox на машине разработчика нет, а подменить путь,
 # зашитый в `.`, нечем.
-. "${JSHN_SH:-/usr/share/libubox/jshn.sh}"
-
-STEER="${STEER:-/usr/sbin/steer}"
-SPEC="${SPEC:-/etc/steer/spec.json}"
-# Снимок спеки в момент apply. По нему интерфейс считает «сколько ещё не применено»:
-# сравнение с ним переживает перезагрузку страницы, чего память браузера не может.
-APPLIED="${APPLIED:-/etc/steer/spec.applied.json}"
-LISTS="${LISTS:-/etc/steer/lists}"
-# Подписка VLESS. Один файл на роутер, а не по файлу на выход: узлы в подписке уже
-# перечислены списком, и выход выбирает из них номером. Два выхода на одну подписку — это
-# два узла одного провайдера, и держать для этого две копии файла было бы странно.
-SUB="${SUB:-/etc/steer/sub.txt}"
-# Остаток трафика подписки, как его назвала панель. Рядом с подпиской, а не в uci: числа
-# меняются при каждом обращении к панели, а `uci commit` — это запись в overlay-раздел
-# роутера, и держать там счётчик значило бы тереть флеш ради показа на обзоре.
-#
-# Имя выведено из имени подписки, чтобы при переопределённом SUB оба файла остались рядом.
-# Этот же путь перечислен в keep.d движка (steer, /lib/upgrade/keep.d/steer): без него
-# обновление прошивки «с сохранением настроек» уносило бы остаток, и обзор показывал бы
-# «панель не сообщает остаток» на подписке, которая его сообщает.
-SUB_INFO="${SUB_INFO:-${SUB%.txt}.userinfo}"
-# Состояние туннелей xsteer: движок пишет по файлу на туннель, «по файлу», а не «по запросу
-# процесса», потому что спросить процесс — это запустить процесс, а состояние опрашивают раз в
-# пять секунд (см. steer/docs/xsteer.md, раздел про файл состояния). Каталог тот же, что у
-# --state-dir движка.
-XS_STATE_DIR="${XS_STATE_DIR:-/var/lib/steer}"
-# Готовая конфигурация туннеля, собранная обработчиком протокола из uci. Единственный источник,
-# из которого печатается ссылка: собирать её здесь во второй раз значило бы завести два места,
-# которые превращают uci в настройку, и однажды они разошлись бы.
-XS_RUN="${XS_RUN:-/var/run/xsteer}"
-# Остальные подписки. Их может быть несколько: у человека бывает две панели, и локации из
-# обеих он складывает в один пул. Первая (та, что уже стоит на роутерах) осталась на прежнем
-# месте — /etc/steer/sub.txt, — потому что на этот путь ссылаются выходы в спеках, а сдвинуть
-# их значило бы сломать маршрутизацию ради переезда файла.
-SUBS_DIR="${SUBS_DIR:-/etc/steer/subs}"
-
-SUB_MAIN="$SUB"
-SUB_NAME=main
-
-MANIFEST="${MANIFEST:-/etc/splify2/manifest.json}"
-# Где выходит трафик выхода: страна и адрес, как их видит внешняя сторона. Хранится по файлу
-# на выход и переживает перезагрузку страницы — интерфейс рисует запомненное сразу, не дожидаясь
-# ответа из сети.
-#
-# В /var/lib, а не в /etc: это измерение, а не настройка, и переписывается оно чаще, чем стоит
-# трогать overlay-раздел. Переживать перезагрузку РОУТЕРА ему незачем — узел мог смениться.
-GEO_DIR="${GEO_DIR:-/var/lib/splify2}"
-# Кто отвечает на вопрос «какой у меня адрес и в какой он стране». cdn-cgi/trace выбран за
-# три вещи: отвечает любой узел Cloudflare (то есть ближайший), не требует ни ключа, ни
-# учётной записи, и отдаёт две строки простого текста вместо JSON — разбирать его в shell
-# нечем и не нужно. Адрес переопределяется: `uci set splify2.main.geo_url=...`.
-#
-# АДРЕСОМ 1.1.1.1, А НЕ ИМЕНЕМ. По имени сервер на той стороне туннеля (Xray со sniffing
-# destOverride) сам ищет адрес сайта и уходит по IPv6, если он у него есть, — и «внешний адрес»
-# выхода показывал IPv6 сервера (2a01:…), хотя трафик клиентов выходит и по IPv4. Без имени
-# подменять нечего: ответ — тот IPv4, которым выход ходит наружу. Сертификат 1.1.1.1 выдан на
-# сам адрес, проверка TLS проходит.
-GEO_URL_DEFAULT="https://1.1.1.1/cdn-cgi/trace"
-# Чем мерить. Шов для стенда: на машине разработчика curl есть всегда, и роутер без него иначе
-# не воспроизвести.
-GEO_CURL="${GEO_CURL:-curl}"
-# Сколько считать измерение свежим. Узел подписки движок меняет при отказе, но не ежеминутно,
-# а каждый опрос — это обращение наружу через туннель со своим таймаутом.
-GEO_TTL="${GEO_TTL:-900}"
-# Как часто пробовать фоновый замер выхода, у которого свежего замера нет. Без этого опрос
-# страницы запускал curl через выход на КАЖДОМ обращении: у узла, который не отвечает, замер не
-# удаётся никогда, и роутер стучался к нему без остановки (чат splify2: соединения к узлу почти
-# каждые 0,02 с). Минута — дольше самого замера (curl --max-time 8), так что запуски не
-# накладываются, и достаточно часто, чтобы оживший узел показал страну без ручной проверки.
-GEO_RETRY="${GEO_RETRY:-60}"
-# Сервис и файл описания системы — абсолютные пути, поэтому подменить их заглушкой в
-# PATH нельзя, а стенду нужны оба: через первый идёт вся установка движка, по второму
-# выбирается архитектура пакета.
-INITD="${INITD:-/etc/init.d/steer}"
-RPCD_INITD="${RPCD_INITD:-/etc/init.d/rpcd}"
-OPENWRT_RELEASE="${OPENWRT_RELEASE:-/etc/openwrt_release}"
-# КАТАЛОГ ПО УМОЛЧАНИЮ — splify2-lists, и это тот же файл, который видит человек на вкладке
-# «Каталог»: перечень «какие списки бывают, как называются и где лежит каждый».
-#
-# ПОЧЕМУ ИЗ РЕЛИЗА, А НЕ ИЗ ВЕТКИ. Каталог собирается раз в сутки и публикуется одним файлом
-# релиза с постоянным тегом. Ссылка на релиз поэтому постоянна, а содержимое за ней меняется
-# только когда действительно изменилось: сборка не переиздаёт релиз, если содержание то же.
-# Пути в самом каталоге при этом абсолютны там, где это чужой набор (`url`), и относительны
-# `base_url` там, где это его собственный список, — то есть «манифест описывает одни файлы, а
-# качаются другие» здесь невозможно по построению.
-#
-# Переопределяется через uci: splify2.main.manifest_url (и кнопкой в настройках).
-MANIFEST_URL_DEFAULT="https://github.com/splify2/splify2-lists/releases/latest/download/lists.json"
-
-fail() { json_init; json_add_boolean ok 0; json_add_string error "$1"; json_dump; exit 0; }
-
-# Единственный способ скачать: сначала во временный файл, потом переименовать. Иначе
-# оборванная загрузка оставляет на месте рабочего списка обрубок, и канал начинает
-# маршрутизировать половину.
-# Скачивание живёт отдельным файлом: его же подключает splify2-update-lists, а обход
-# закрытого издателя (splify2#15) обязан быть у обеих половин одинаковым — иначе каталог
-# открывается, а обновление списков молчит. Путь швом, как и у jshn: на машине
-# разработчика этого файла нет, стенд подставляет свой.
-FETCH_TIMEOUT=${FETCH_TIMEOUT:-60}
-# Подключается ЛЕНИВО — группой методов, которой оно нужно (см. /usr/lib/splify2/rpcd): круг
-# опроса и чтение спеки уходят выше, а из остальных методов скачивание нужно половине.
-need_fetch() { [ "${_fetch_loaded:-}" = 1 ] || { . "${FETCH_SH:-/usr/lib/splify2/fetch.sh}"; _fetch_loaded=1; }; }
-# Где лежат группы методов. Швом — стенд подставляет каталог репозитория.
-RPCD_LIB="${RPCD_LIB:-/usr/lib/splify2/rpcd}"
-
-# Обновлятор списков — тот же, что ходит по расписанию. Путь швом по той же причине, что и
-# у fetch.sh: на машине разработчика его нет, стенд подставляет свой.
-UPDATE_LISTS=${UPDATE_LISTS:-/usr/sbin/splify2-update-lists}
-
-# ОБХОД DPI (zapret) И DNS-ПРОКСИ (https-dns-proxy) ИЗ splify2 УБРАНЫ. Обход DPI вернётся
-# позже (в движке остался `kind: zapret`), а шифрованный DNS — теперь встроенный резолвер
-# движка (`dns.upstreams` в спеке v2: DoH, DoT, DoQ, обычный DNS, выход `out`, bootstrap).
-# Чужие установленные zapret / Zapret Manager и https-dns-proxy мы не снимаем и не читаем:
-# это настройка человека.
-#
-# Отклик для счётчика на сайте: согласие и отметка последнего отклика. Общий файл с командой
-# отправки (splify2-ping) — экран показывает ровно то, что делает расписание.
-need_ping() { [ "${_ping_loaded:-}" = 1 ] || { . "${PING_SH:-/usr/lib/splify2/ping.sh}"; _ping_loaded=1; }; }
-
-# ---- идентификатор устройства для панели подписки (HWID) ----------------------------
-#
-# Считает его ДВИЖОК (`steer sub-hwid`), а не этот файл. Почему так — в
-# steer/src/ext/subfetch.c: идентификатор выводится из MAC-адреса шестнадцатеричным хешем, а
-# в оболочке для этого приходилось звать внешние `sha256sum`/`md5sum` и обходить каталог
-# устройств глобом. Движок и хеширует сам (mbedtls у него в руках), и порядок портов задаёт
-# сортировкой, а не порядком обхода каталога — то есть отвечает на тот же вопрос, но без
-# второй реализации и с проверкой стендом.
-#
-# Здесь остаётся один вызов и его кэш на время работы метода: sub_list зовёт идентификатор
-# один раз на весь ответ, а sub_info и sub_set — по разу, и лишний запуск движка на каждое
-# обращение был бы платой за неменяющееся число.
-HWID_CACHED=""
-
-# Каталог устройств для перечня СЕТЕЙ КЛИЕНТОВ (метод client_nets, splify2#16). Швом, потому
-# что стенд подставляет туда свои наборы устройств, — и отдельным именем от OUT_SYSNET ниже
-# по той же причине, которая названа у него: у каждого шва своя подделка.
-SYSNET="${SYSNET:-/sys/class/net}"
-
-# И тот же каталог для перечня устройств ВЫХОДА (метод devices) — отдельным именем, а не
-# общим с SYSNET: у каждого шва своя подделка, и один общий означал бы, что проверка одного
-# пути ломает другой. Здесь подделываются туннельные устройства.
-OUT_SYSNET="${OUT_SYSNET:-/sys/class/net}"
-
-# Скачать подписку и разобрать, что ответила панель, — ОДНИМ вызовом движка.
-#
-# Всё, что раньше стояло здесь, переехало в steer sub-fetch: заголовки запроса с
-# идентификатором устройства, разбор ответных заголовков, base64 названия подписки,
-# арифметика остатка трафика, повтор за другим форматом. Причина — в шапке
-# steer/src/ext/subfetch.c; коротко: каждый из этих шагов упирался в то, чего у оболочки нет,
-# и потому держался второй реализацией того, что у движка уже было готово. Число пригодных
-# узлов, по которому решается «не заглушка ли это», оболочка вообще узнавала регулярным
-# выражением из JSON отдельного запуска движка — то есть решение принималось по пересказу
-# нашего же ответа.
-#
-# Здесь остались учёт настройки (какая подписка, где её файлы, что в uci) и передача ответа
-# движка наверх. Ответ разбирается jsonfilter-ом по полям, а не пересобирается: второй раз
-# описать то же состояние — значит однажды описать его иначе.
-SUB_ANSWER=""
-
-# Зона фаервола для устройств, которые движок создаёт сам (выходы kind=vless).
-#
-# Зачем это здесь. fw4 отвергает форвардинг на устройство, не входящее ни в одну зону:
-# политика цепочки forward — drop, и клиент получает «Operation not permitted» ещё до
-# того, как пакет доберётся до туннеля. Проверено с настоящего клиента, а не выведено.
-#
-# Почему этого не делает движок. В nftables вердикт accept в своей базовой цепочке
-# завершает только ЕЁ: пакет всё равно доходит до цепочки fw4 и там отбрасывается. То
-# есть «разрешить заранее» из отдельной таблицы невозможно в принципе, и единственный
-# способ — попасть в зону. А зоны — это uci, то есть управляющий слой. Движок про это
-# честно предупреждает («not mentioned by the firewall at all»), но починить не может.
-#
-# Имена зон и их политики — ниже, у FW_ZONES: их две, и различает их нужда в трансляции
-# адресов, а не вкус.
-
-# Файл настройки uci. Пакет его не кладёт, а `uci set` в несуществующий файл молча ничего не
-# делает — ссылка подписки «сохранялась» и пропадала, причём метод отвечал ok. Тихая потеря
-# настройки хуже отказа, поэтому файл заводится здесь.
-#
-# `touch`, а не `: > файл`, и это не вкус: отказ перенаправления у СПЕЦИАЛЬНОЙ встроенной
-# команды завершает оболочку целиком (так требует POSIX и так делает ash). То есть там, где
-# каталога нет или на overlay кончилось место, метод умирал БЕЗ ОТВЕТА вовсе — ни ok, ни
-# ошибки, и интерфейс показывал «нет ответа» на пустом месте. Урок был записан в запуске 46 у
-# backup_put и там же исправлен, а два других места остались с прежней строкой: sub_set и
-# ui_set. Теперь оно одно на все три, потому что три копии одного правила — это три места,
-# где его можно забыть по-разному.
-UCI_SPLIFY2="${UCI_SPLIFY2:-/etc/config/splify2}"
-# Расписка: что в фаерволе сделали МЫ, а что было до нас.
-#
-# Файл, а не пометка в самой зоне: fw4 на незнакомую опцию в секции ругается («specifies
-# unknown option») при каждой перезагрузке правил, и человек читал бы это как дефект. А судить
-# по одному имени нельзя: зону с тем же именем мог сделать руками и человек — тогда она его.
-#
-# Записи двух видов, и вторая не менее важна первой:
-#   zone ЗОНА           — зону создали мы, значит нам её и убирать;
-#   dev ЗОНА УСТРОЙСТВО — это устройство в эту зону добавили мы.
-#
-# Учёт ПО КАЖДОМУ устройству нужен затем же, зачем и учёт зоны: в нашу зону человек мог руками
-# положить своё устройство, а правило «убрать всё, чего нет в спеке» вынесло бы его молча.
-FW_OWNED="${FW_OWNED:-/etc/splify2/fw-owned}"
-
-# ДВЕ зоны, а не одна, и различает их НУЖДА В ТРАНСЛЯЦИИ АДРЕСОВ.
-#
-# steer_vless — устройства, которые создаёт сам движок (kind=vless и kind=xsteer). NAT там не
-# нужен и вреден: клиент завершает TCP у себя и соединяется с сервером обычным сокетом, адрес
-# клиента наружу не уезжает вовсе, а трансляция на входе в устройство подменила бы адреса, по
-# которым движок и различает клиентов.
-#
-# steer_iface — устройства выходов kind=interface, то есть WireGuard, AmneziaWG и всё, что
-# поднимает netifd. Здесь наоборот: пакет уходит в туннель как есть и уносит адрес из локальной
-# сети, а обратно не возвращается ничего. Движок это и говорит своим «no masquerade/snat rule
-# found for wgN: packets leave with LAN addresses and the channel goes quiet while its counter
-# still rises». Значит masq здесь обязателен — и именно поэтому зона отдельная: смешав их, мы
-# либо оставили бы wg без NAT, либо навязали NAT туннелю движка.
-#
-# Имя steer_vless сохранено, хотя теперь оно уже не про один vless: на него могли сослаться
-# собственные правила человека, а переименование сломало бы их молча.
-#
-# ТРЕТЬЯ ЗОНА — steer_clients, и она не про выход, а про ВХОД. Устройства, которые спека
-# называет клиентами, бывают без зоны вовсе: так поднимаются tailscale0 и интерфейс сервера
-# WireGuard, заведённый мастером OpenWrt. fw4 роняет такой интерфейс дважды — `forward`, то
-# есть маршрутизации через нас нет совсем, и `input`, то есть до роутера с него не доходит
-# ничего, включая завёрнутый нами DNS (заворот делает DNAT на адрес самого роутера, дальше
-# пакет идёт через `input`). Снаружи это «выбрал tailscale0 в клиентах — правила стоят, а DNS
-# не подхватывает». Второе поле `clients` — не вид выхода, а признак этой ветки в fw_zone_sync;
-# устройства ей даёт fw_client_devices_unzoned, NAT не нужен.
-#
-# СТОИТ ПЕРВОЙ, и это не вкусовщина: пробросы «зона клиентов -> зона туннеля» заводит
-# синхронизация ЗОНЫ ТУННЕЛЯ, спрашивая fw_client_zones. Пока зоны клиентов нет, та её не
-# назовёт — значит завести её надо раньше, чем синхронизируются зоны туннелей.
-#
-# hysteria2 (QUIC-клиент со своим TUN, как vless) и прокси steer-proxy (trojan, shadowsocks,
-# socks, http, vmess — тоже свой TUN, TCP завершается в клиенте) идут в зону туннелей движка, awg
-# (WireGuard в ядре, адреса наружу меняются masquerade, как у обычного интерфейса) — в зону
-# интерфейсов.
-FW_ZONES="steer_clients:clients:0 steer_vless:vless,hysteria2,trojan,shadowsocks,socks,http,vmess,xsteer:0 steer_iface:interface,awg:1"
-
-# Релизы GitHub: версия, которой ставится пакет, и НАЗВАНИЕ, которым выпуск называют.
-#
-# Это две разные строки, и разные они по необходимости. Версия участвует в имени файла пакета
-# (`luci-app-splify2-26.9-1_noarch.apk`) и в теге (`v26.9`), поэтому в ней могут быть только
-# цифры и точки — пробелу там места нет ни у apk, ни у opkg, ни в URL. А выпуск называется
-# «26.9 Andromeda»: так он подписан на странице релизов и так о нём говорят.
-#
-# Пока бэкенд отдавал одни числа, список версий не сходился ни со страницей релизов, ни с
-# разговором о выпуске: человек читал «Обновить до 26.9», а искал «Andromeda». Теперь версия
-# и название едут рядом, сравнение по-прежнему идёт по числам, а установка — по версии.
-#
-# Отбор версий тот же, каким установка версию отвергает: тег с суффиксом («0.9.5-rc1»,
-# «nightly») иначе доезжает до выпадающего списка, встаёт первым — то есть помечается
-# «свежая» — и получает отказ собственного бэкенда при нажатии «Установить» (I-052). Число
-# составляющих при этом не проверяется: «26.9» — такая же законная версия, как «1.2.0», и
-# требовать три части значило бы отвергать собственный выпуск.
-#
-# Спрашиваем у перечня выпусков splify2/releases (version.json), а не держим список: зашитая
-# версия означает, что интерфейс ставит прошлое, и узнать об этом можно только заметив, что чего-то
-# не хватает. Последние десять стабильных и текущая предварительная — больше человеку не нужно,
-# старые выпуски остаются доступны по прямой ссылке. Перечень не ответил — релизы GitHub, как
-# прежде.
-
-# Версии через пробел, от новых к старым. Пробелов в них не бывает по условию отбора выше,
-# поэтому список безопасно перебирать словами.
-GH_VERS=""
-# Названия: «|версия=название|версия=название|». Своя разметка, а не массив, потому что
-# массивов у POSIX sh нет, а `while read` в конвейере ушёл бы в подоболочку — и всё, что jshn
-# накопил в переменных, там бы и осталось.
-GH_NAMES=""
-# Почему список версий такой короткий — одной строкой для человека. Пусто, когда перечень
-# приехал обычным путём: примечание на здоровом пути читалось бы как «что-то не так».
-GH_NOTE=""
-
-# Перечень выпусков — С ПАМЯТЬЮ НА ПОЛЧАСА. Поход за ним идёт сначала за version.json
-# репозитория splify2/releases (три адреса, m-engine.sh: rel_load), затем на api.github.com, а там,
-# где GitHub закрыт, — по лестнице обходных путей: полторы секунды на роутере на каждый из двух
-# репозиториев, и страница спрашивала оба при каждом открытии. Тот же срок помнит и сам
-# version.json — им же пользуется установка — и отказ всех трёх его адресов.
-#
-# БЫЛО ШЕСТЬ ЧАСОВ, и столько же помнила страница — то есть после выпуска человек не видел новую
-# версию до истечения обоих сроков, а попросить проверить было негде. Час ожидания вместо минуты
-# дороже, чем четыре обращения к GitHub в час (по два на каждый из двух перечней — steer и
-# splify2): предел там шестьдесят запросов в час на адрес, и полчаса тратят из него четыре.
-GH_CACHE_TTL_MIN="${GH_CACHE_TTL_MIN:-30}"
-
-# Какой менеджер пакетов на этом роутере.
-#
-# Определяется, а не предполагается: релизы обоих проектов теперь содержат и .apk, и
-# .ipk, установщик ставит через тот, что есть, — и бэкенд обязан уметь ровно то же.
-# Иначе на OpenWrt 23.05 карточка движка показывала бы пустую версию, «Установить»
-# возвращало бы пустое сообщение об ошибке (apk нет, rc 127, вывод пуст), а
-# самообновление интерфейса не работало бы вовсе.
-#
-# Единожды на запуск скрипта: ниже это спрашивают трижды.
-# PM_FIXTURE — шов для стенда: на машине разработчика есть только заглушки, и обе сразу,
-# поэтому иначе ветка opkg (а именно на ней и случаются беды с зависимостями) не проверяется
-# никогда. На роутере переменной нет, и всё решает наличие менеджера.
-if [ -n "${PM_FIXTURE:-}" ]; then PM="$PM_FIXTURE"
-elif command -v apk >/dev/null 2>&1; then PM=apk
-elif command -v opkg >/dev/null 2>&1; then PM=opkg
-else PM=none
-fi
-
-# Свои списки лежат отдельным подкаталогом, а не вперемешку со списками издателя.
-#
-# Иначе их не отличить: local_lists отдаёт всё, что лежит на диске, и «мой файл» от
-# «файла из манифеста» отличался бы только тем, есть ли такое имя в манифесте — то есть
-# менялся бы сам по себе при обновлении манифеста.
-CUSTOM=custom
-# Предел размера. Не перестраховка: overlay на роутере из отчётов теста — 6.9 МБ, и
-# список, который туда не влезет, положит не только себя. Мегабайта хватает на ~70 тысяч
-# доменов, чего для ручного списка заведомо достаточно.
-LIST_MAX_BYTES=1048576
-# По сколько байт отдавать список обратно (list_get). Тот же порядок величины, что у кусков
-# архива настроек, и по той же причине: ubus не резиновый, а свой список разрешён до
-# LIST_MAX_BYTES — целиком он в одно сообщение не влезает.
-#
-# Шов, как у BACKUP_MAX_BYTES, и ровно с тем же доводом: стенду надо проверить, что кусок
-# приезжает БАЙТ В БАЙТ и что смещение считается по считанному, а генерировать для этого
-# шестнадцать килобайт списка было бы проверкой размера фикстуры, а не логики. rpcd запускает
-# объект с чистым окружением, так что на роутере ветка `:-` не выбирается никогда.
-LIST_CHUNK="${LIST_CHUNK:-16384}"
-
-# ---- архив настроек: экспорт и восстановление (R-005) -------------------------
-#
-# Что уезжает в архив (версия формата 2, набор разделов и само число — в backup_build):
-# спека (/etc/steer/spec.json), подписка по умолчанию (/etc/steer/sub.txt) и ИМЕНОВАННЫЕ
-# подписки (/etc/steer/subs/*), СВОИ списки (/etc/steer/lists/custom/**), ключи туннелей
-# xsteer (/etc/steer/xsteer/*), стратегии выходов обхода (/etc/steer/zapret/*) и ВСЕ поля
-# uci секции main плюс поля именованных подписок.
-#
-# Прежняя редакция этого абзаца говорила «те поля uci, без которых восстановленная настройка
-# неполна — адрес подписки, её вид и память мастера», то есть три поля из одиннадцати. Восемь
-# остальных (название подписки, фикс Zapret Manager, адрес манифеста, скачивание через
-# туннель, DoH через туннель, подгонка списков, источник каталога стратегий, адрес geo)
-# терялись при восстановлении молча, и заметить это можно было только по тому, что настройка
-# «вернулась не такой».
-#
-# ПРО СЕКРЕТЫ. С появлением ключей xsteer архив стал содержать приватные ключи туннелей —
-# то же, что пароль от всех подключений. Предупреждение об этом стоит в шапке самого архива,
-# восстановленный файл кладётся 0600 в каталог 0700, а сборка идёт под umask 077.
-#
-# Чего в архиве нет ещё: ПРОИСХОЖДЕНИЯ своих списков (файлы `<список>.lst.src`, см.
-# custom_meta_path). Причина — формат: разборщик присланного файла строгий и отвергает
-# незнакомый раздел целиком, поэтому новый раздел сделал бы новые архивы нечитаемыми для уже
-# установленных версий, а цена этого выше пользы. Восстановленный список поэтому приезжает без
-# происхождения, то есть с «неизвестно», и интерфейс предлагает для него все три способа
-# правки — ровно как для списков, заведённых до появления этой записи.
-#
-# Чего в архиве НЕТ и не будет: зеркал категорий издателя в /etc/steer/lists (на стенде
-# 43 файла, 284 КБ — измерено в I-037). Это не настройка, а копия того, что публикуется
-# upstream: одинакова у всех, обновляется суточным cron и доскачивается сама перед каждой
-# проверкой спеки (fetch_missing_lists). Носить её между роутерами значило бы возить
-# 284 КБ, которые роутер всё равно возьмёт сам, да ещё и в виде заведомо устаревающего
-# среза чужих данных. Свои списки — обратный случай: их не публикует никто, кроме самого
-# человека, поэтому без них архив бесполезен.
-#
-# Формат — строчный, с разделами в квадратных скобках, а не один JSON. Причина
-# практическая: разбирать присланный файл приходится ЗДЕСЬ, в shell, и построчный разбор
-# в awk можно прочитать глазами, а вторая реализация разбора JSON в оболочке — нет.
-# Содержимое разделов при этом дословное: спека внутри остаётся спекой, список — списком,
-# файл читается и правится любым редактором. Строка, которую понимает разборщик как
-# заголовок, в валидном JSON и в списке доменов встретиться не может — `[spec]` не JSON,
-# а `[options]` не имя домена, — поэтому неоднозначности разделов не возникает.
-# ВЕРСИЯ ФОРМАТА ЗДЕСЬ НЕ ЗАДАЁТСЯ, и это не забывчивость. Определяет её НАБОР РАЗДЕЛОВ, а
-# разделы собирает backup_build в common.sh — там же и число. Пока оно стояло в двух местах,
-# диспетчер объявлял версию 1, а сборщик писал 2: экспорт называл версию, которой не
-# соответствовало его же содержимое.
-# Через ubus одним куском едет только то, что заведомо влезает: тот же порядок величины,
-# что у порций своего списка (CustomLists шлёт по 1000 строк ≈ 20 КБ). Остальное — по
-# кускам, как файл списка. Куски нарезаются ПО БАЙТАМ, а не по строкам: подписка бывает
-# одним base64-блоком в одну строку, и по строкам такой файл не режется вовсе.
-BACKUP_CHUNK=16384
-# Пределы недоверенного ввода. Проверяются ДО записи чего бы то ни было: overlay на
-# роутере из отчётов теста — 6,9 МБ, и «принять, а посмотреть потом» здесь означает
-# забитый флеш, после которого не пишется ни спека, ни журнал.
-# Предел на весь архив — шов, как пути выше: стенду надо проверить, что предел считается
-# по НАКОПЛЕННОМУ, а не по куску, и генерировать для этого четверть мегабайта JSON было бы
-# проверкой размера файла с фикстурой, а не проверкой логики. rpcd запускает объект с
-# чистым окружением, так что на роутере ветка `:-` не выбирается никогда.
-# Предел на весь архив. Два мегабайта, а не «сколько-нибудь разумно для настроек»: свой
-# список сам по себе разрешён размером до LIST_MAX_BYTES (1 МБ), и предел на архив ниже
-# этого числа означал бы настройку, которую МОЖНО завести, но НЕЛЬЗЯ вернуть из бекапа.
-# Накопленный архив живёт в /tmp, то есть в оперативной памяти, а не на overlay.
-BACKUP_MAX_BYTES="${BACKUP_MAX_BYTES:-2097152}"
-BACKUP_SPEC_MAX=65536
-BACKUP_SUB_MAX=131072
-BACKUP_OPT_MAX=8192
-# Швы ради стенда, как JSHN_SH: на роутере ветка `:-` не выбирается никогда.
-BACKUP_OUT="${BACKUP_OUT:-/tmp/splify2-backup.out}"
-BACKUP_IN="${BACKUP_IN:-/tmp/splify2-backup.in}"
-
-# ПОРЯДОК ПЕРЕНАПРАВЛЕНИЙ У `wc -c`. Ниже везде `wc -c 2>/dev/null < файл`, а не
-# `wc -c < файл 2>/dev/null`, и это не вкус.
-#
-# Оболочка применяет перенаправления СЛЕВА НАПРАВО и делает это САМА, до запуска команды.
-# В написании `< файл 2>/dev/null` отсутствующий файл разбирается тогда, когда stderr ещё
-# свой, — и жалобу печатает оболочка, а не `wc`: «cannot open …». Проверено опытом: первая
-# форма молчит, вторая говорит вслух.
-#
-# Куда попадает эта строка. Метод rpcd отвечает СТАНДАРТНЫМ ВЫВОДОМ, и жалоба уезжает
-# рядом с ответом — в журнал rpcd, а на части сборок и клиенту, который ждёт JSON.
-# Значение при этом уцелело бы (`|| echo 0`), поэтому находка и прожила долго: ответ верный,
-# а рядом мусор, которого никто не искал.
-#
-# Там, где `|| echo 0` не было вовсе (sub_info, backup_get, backup_put), цена выше: между
-# проверкой существования и чтением файл может исчезнуть, и тогда в `json_add_int` уезжает
-# ПУСТАЯ строка — то есть уже не мусор рядом с ответом, а битый JSON вместо ответа.
-#
-# Вторая половина той же находки (I-085) — `: > файл` в несуществующем каталоге, которое
-# завершает ash целиком, — закрыта раньше: файл настройки заводит uci_file, и стенд следит,
-# чтобы перенаправление не вернулось.
+# Окружение (швы, пути, общие функции) — файл рядом с остальными библиотеками: его же подключают
+# программы плагинов (lib.sh). Путь выводится из места самого диспетчера: на роутере это
+# /usr/libexec/rpcd/splify2 -> /usr/lib/splify2/env.sh, в стенде — то же внутри дерева репозитория.
+ENV_SH="${ENV_SH:-${0%/*}/../../lib/splify2/env.sh}"
+. "$ENV_SH"
 
 case "$1" in
 list)
@@ -504,7 +100,7 @@ list)
     json_add_object live; json_add_boolean diag; json_add_boolean fast; json_close_object
     json_add_object spec_get; json_close_object
     json_add_object applied_get; json_close_object
-    json_add_object spec_set; json_add_string spec; json_close_object
+    json_add_object spec_set; json_add_string spec; json_add_string rev; json_close_object
     json_add_object apply; json_close_object
     json_add_object spec_heal; json_close_object
     json_add_object explain; json_add_string address; json_close_object
@@ -551,6 +147,15 @@ list)
     json_add_object list_get
         json_add_string name; json_add_string kind; json_add_int offset
     json_close_object
+    # Что лежит в списке (только чтение, каталог списков): `q` — поиск по записям.
+    json_add_object list_peek
+        json_add_string path; json_add_string q
+    json_close_object
+    # Свой список из набора sing-box (.srs): base64 порциями (append, final) или ссылкой.
+    json_add_object list_srs_put
+        json_add_string name; json_add_string url; json_add_string data
+        json_add_boolean append; json_add_boolean final; json_add_string filename
+    json_close_object
     json_add_object engine; json_close_object
     # `name` — какая из подписок. Поля нет — первая (main), и это же значение приходит от
     # интерфейсов, которые про несколько подписок ещё не знают.
@@ -562,6 +167,8 @@ list)
     json_add_object sub_info; json_add_string name; json_close_object
     json_add_object sub_list; json_close_object
     json_add_object sub_del; json_add_string name; json_close_object
+    # Своё название подписки; пустое снимает его (R-115).
+    json_add_object sub_rename; json_add_string name; json_add_string title; json_close_object
     # Ссылку метод берёт из uci — второй источник той же ссылки означал бы, что остаток
     # можно спросить у панели, которой роутер не пользуется.
     json_add_object sub_quota; json_add_string name; json_close_object
@@ -590,6 +197,9 @@ list)
     json_add_object support_report; json_close_object
     json_add_object net_info; json_close_object
     json_add_object outbound_probe; json_add_string output; json_close_object
+    # Проверка серверов DNS с роутера (`steer dns-probe`): адрес сервера, как в dns.upstreams, и по
+    # желанию «=адрес,адрес» — минуя bootstrap. Ответ ядра — дословно.
+    json_add_object dns_probe; json_add_array urls; json_close_array; json_close_object
     json_add_object outbound_geo
         json_add_string output; json_add_boolean fresh
     json_close_object
@@ -604,9 +214,6 @@ list)
     json_add_object xsteer_link_put
         json_add_string iface; json_add_string link
     json_close_object
-    # Учёт роутера в счётчике на сайте: ключа нет или 1 — включено, 0 — выключено.
-    json_add_object telemetry_state; json_close_object
-    json_add_object telemetry_set; json_add_boolean on; json_close_object
     json_add_object lists_source; json_close_object
     json_add_object lists_source_set; json_add_string url; json_close_object
     json_add_object fetch_mode; json_close_object
@@ -635,38 +242,129 @@ list)
     json_add_object dns_log; json_close_object
     json_add_object conns; json_close_object
     json_add_object helper; json_add_string output; json_close_object
-    json_add_object group_select; json_add_string group; json_add_string member; json_close_object
+    json_add_object purge; json_add_boolean plan; json_add_boolean keep_config; json_close_object
     json_add_object engine_stop; json_close_object
     json_add_object engine_start; json_close_object
     json_add_object splify2_versions; json_close_object
     json_add_object splify2_install; json_add_string version; json_close_object
     json_add_object steer_versions; json_close_object
     json_add_object steer_install
-        json_add_string version; json_add_boolean extended; json_add_string modules
+        json_add_string version; json_add_string modules
     json_close_object
     # Модули ядра 2.0: перечень с состоянием и установка или снятие одного модуля.
     json_add_object steer_modules; json_close_object
+    # ReCheck — обход DPI на прямом трафике (служба splify2-recheck, движок — пакет recheck):
+    # состояние с изученным и настройки. Поле, которого в recheck_set нет, остаётся прежним.
+    json_add_object recheck_info; json_close_object
+    json_add_object recheck_set
+        json_add_boolean enabled; json_add_string interface; json_add_boolean persist
+        json_add_boolean watch_active; json_add_array resources; json_close_array
+        json_add_boolean epoch_bump; json_add_boolean forget
+    json_close_object
     json_add_object steer_module_add; json_add_string module; json_close_object
     json_add_object steer_module_del; json_add_string module; json_close_object
+    # Плагины: обёртка над менеджером ядра (rpcd/m-plugin.sh). У plugin_call поле params — объект
+    # произвольной формы: в сигнатуре его нет, rpcd отдаёт обработчику сообщение целиком.
+    json_add_object plugins_list; json_add_string lang; json_close_object
+    json_add_object plugins_search; json_add_string query; json_close_object
+    json_add_object repos_list; json_close_object
+    json_add_object plugin_status; json_add_string id; json_close_object
+    json_add_object plugin_job; json_add_string id; json_close_object
+    json_add_object plugin_install; json_add_string id; json_add_string version; json_close_object
+    json_add_object plugin_update; json_add_string id; json_close_object
+    json_add_object plugin_remove; json_add_string id; json_add_boolean force; json_add_boolean purge; json_close_object
+    json_add_object plugin_enable; json_add_string id; json_close_object
+    json_add_object plugin_disable; json_add_string id; json_close_object
+    json_add_object plugin_autoupdate; json_add_string id; json_add_boolean enabled; json_close_object
+    json_add_object repo_key; json_add_string key; json_close_object
+    json_add_object repo_add; json_add_string url; json_add_string key; json_add_string key_id; json_close_object
+    json_add_object repo_del; json_add_string name; json_close_object
+    json_add_object plugin_call; json_add_string id; json_add_string method; json_close_object
+    # Каркас на классическом LuCI JS (view/splify2/core): схема ключей спеки из ядра, проверка спеки без записи,
+    # настройки каркаса, словари языка от плагинов, настройки плагина по его схеме. values у
+    # plugin_settings_set — объект: в сигнатуре его нет (как params у plugin_call).
+    json_add_object spec_schema; json_close_object
+    json_add_object spec_check; json_add_string spec; json_close_object
+    json_add_object spec_yaml; json_close_object
+    json_add_object prefs_get; json_close_object
+    json_add_object prefs_set; json_add_string interface; json_add_string ui_lang; json_close_object
+    json_add_object paths; json_close_object
+    json_add_object i18n_get; json_add_string lang; json_close_object
+    json_add_object plugin_settings_get; json_add_string id; json_close_object
+    json_add_object plugin_settings_set; json_add_string id; json_close_object
+    # Новые имена на объекте splify2 от плагинов (`splify2.methods.alias` без имени у каркаса): их знает реестр.
+    # Вынесенные из каркаса методы (backup_get, lists …) уже перечислены выше — псевдонимом они остаются теми же.
+    if [ -z "${SPLIFY2_NO_EXT:-}" ]; then
+        if need_ext; then
+            for _ext_n in $(ext_list_names); do json_add_object "$_ext_n"; json_close_object; done
+        fi
+    fi
     json_dump
     ;;
 call)
+    # РАСШИРЕНИЯ КАРКАСА (splify2-api): переопределения методов и их псевдонимы берутся из реестра плагинов — файла,
+    # который пересобирает plugin_sync. Метод без записи в реестре идёт прежним путём; цена проверки — чтение
+    # небольшого файла встроенной командой `read`, без запуска процессов. final-методы (plugin_*, repo_* …)
+    # в реестр не попадают никогда. SPLIFY2_NO_EXT=1 ставит сам реестр, когда зовёт обработчик каркаса под обёрткой.
+    case "$2" in
+        plugin_*|plugins_*|repo_*|repos_*|prefs_*) ;;
+        *)
+            if [ -z "${SPLIFY2_NO_EXT:-}" ]; then
+                _ext_reg="${EXT_REG:-/var/run/splify2/ext.reg}"
+                _ext_state="${PLUGIN_STATE:-/etc/steer/plugins/state.json}"
+                _ext_safef="${EXT_SAFE_FILE:-/etc/splify2/safe}"
+                _ext_stale=0
+                [ -f "$_ext_reg" ] || _ext_stale=1
+                [ "$_ext_state" -nt "$_ext_reg" ] && _ext_stale=1
+                if [ -e "$_ext_safef" ]; then [ -e "$_ext_reg.safe" ] || _ext_stale=1
+                else [ -e "$_ext_reg.safe" ] && _ext_stale=1; fi
+                if [ "$_ext_stale" = 1 ] && need_ext; then ext_rebuild; fi
+                _ext_tab='	'
+                _ext_hit=0
+                if [ -f "$_ext_reg" ]; then
+                    while IFS="$_ext_tab" read -r _ext_k _ext_a _ext_rest; do
+                        [ "$_ext_k" = m ] && [ "$_ext_a" = "$2" ] && { _ext_hit=1; break; }
+                    done < "$_ext_reg"
+                fi
+                # Диспетчер вне цикла: вход запроса — стандартный ввод, а в цикле он занят файлом реестра.
+                if [ "$_ext_hit" = 1 ] && need_ext; then
+                    ext_dispatch "$2"
+                    exit 0
+                fi
+            fi ;;
+    esac
     # МЕТОД → ГРУППА. Разбирается только файл группы (плюс common.sh): см. шапку файлов в
     # /usr/lib/splify2/rpcd. Метод, которого нет ни в одной группе, — отказ здесь же, до
     # чтения чего бы то ни было.
     case "$2" in
-        status|diag|dev_stats|net_info|devices|client_nets|leases|engine_state|outbound_geo|outbound_probe|explain|xsteer_state|vless_nodes|vless_probe|hysteria2_nodes|hysteria2_probe|proxy_nodes|proxy_probe|dns_log|conns|helper|support_report) _grp=state ;;
-        spec_set|apply|group_select|spec_heal) _grp=spec ;;
-        lists|list_fetch|lists_update|list_put|list_remove|list_custom|list_get|local_lists|allow_domains|fetch_mode|fetch_mode_set|\
-        lists_source|lists_source_set) _grp=lists ;;
-        engine|engine_stop|engine_start|steer_versions|splify2_versions|splify2_install|steer_install|ui_get|ui_set|\
-        steer_modules|steer_module_add|steer_module_del) _grp=engine ;;
-        sub_set|sub_info|sub_quota|sub_list|sub_del|sub_auto|sub_refresh) _grp=sub ;;
-        backup_get|backup_put) _grp=backup ;;
+        status|diag|dev_stats|net_info|devices|client_nets|leases|engine_state|outbound_probe|explain|xsteer_state|vless_nodes|vless_probe|hysteria2_nodes|hysteria2_probe|proxy_nodes|proxy_probe|dns_log|dns_probe|conns|helper|support_report|spec_schema|spec_yaml) _grp=state ;;
+        spec_set|spec_check|apply|spec_heal) _grp=spec ;;
+        # Методы, вынесенные в плагины (plugins/): без плагина — отказ «нужен плагин X», с плагином их берёт реестр
+        # расширений выше как псевдонимы (methods.tsv, колонка moved).
+        lists|list_fetch|lists_update|list_put|list_remove|list_custom|list_get|list_peek|list_srs_put|local_lists|allow_domains|fetch_mode|fetch_mode_set|\
+        lists_source|lists_source_set|backup_get|backup_put|sub_quota|sub_auto|sub_rename|outbound_geo|steer_versions|splify2_versions|splify2_install|steer_install) _grp=moved ;;
+        engine|engine_stop|engine_start|ui_get|ui_set|\
+        steer_modules|steer_module_add|steer_module_del|purge|prefs_get|prefs_set|paths|i18n_get) _grp=engine ;;
+        sub_set|sub_info|sub_list|sub_del|sub_refresh) _grp=sub ;;
         xsteer_link|xsteer_link_put) _grp=xsteer ;;
-        telemetry_state|telemetry_set) _grp=telemetry ;;
-        *) fail "неизвестный метод" ;;
+        recheck_info|recheck_set) _grp=recheck ;;
+        plugins_list|plugins_search|repos_list|plugin_status|plugin_job|plugin_install|plugin_update|plugin_remove|\
+        plugin_enable|plugin_disable|plugin_autoupdate|repo_key|repo_add|repo_del|plugin_call|plugin_settings_get|plugin_settings_set) _grp=plugin ;;
+        *) fail_code req.unknown_method "Unknown method" ;;
     esac
+    # ЗАМОК НА МЕТОДЫ, КОТОРЫЕ ЧИТАЮТ, МЕНЯЮТ И ЗАМЕНЯЮТ ОБЩИЙ ФАЙЛ. Каждый вызов rpcd — свой
+    # процесс, и ручное «Применить» шло параллельно с плановым обновлением подписки или лечением
+    # после установки: оба читали спеку, учёт зон фаервола или файл подписки, оба писали своё, и
+    # выигрывал тот, кто заменил файл последним (I-546, I-473). Одна блокировка на спеку, подписки
+    # и архив — у них общие файлы и общий учёт зон; установка пакетов — своя (долгая, и спеку
+    # ей держать незачем).
+    case "$2" in
+        spec_set|apply|spec_heal|sub_set|sub_del|sub_refresh) call_lock state ;;
+        steer_module_add|steer_module_del) call_lock install ;;
+    esac
+    # Где спека и как её читать (spec.yaml ядра 2.1 или spec.json): читать — `spec_json`, писать —
+    # `spec_put`. Файл — /usr/lib/splify2/spec.sh, рядом с каталогом групп.
+    . "${SPEC_SH:-${RPCD_LIB%/rpcd}/spec.sh}"
     . "$RPCD_LIB/common.sh"
     . "$RPCD_LIB/m-$_grp.sh"
     ;;

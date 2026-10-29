@@ -1,0 +1,15 @@
+#!/bin/sh
+# Хук support_report: раздел отчёта поддержки — включено ли, пауза, исход последнего применения. Без секретов.
+. "${STEER_PLUGIN_DIR:?программа запускается хостом splify2 (нет STEER_PLUGIN_DIR)}/lib/base.sh"
+cat >/dev/null
+if is_on enabled; then en=on; else en=off; fi
+text="auto-apply: $en, pause $(pause_s) s"
+[ -s "$LAST" ] && text="$text
+last: $(tr -d '\n' < "$LAST")"
+json_init
+json_add_boolean ok 1
+json_add_object section
+json_add_string title "autoapply"
+json_add_string text "$text"
+json_close_object
+json_dump

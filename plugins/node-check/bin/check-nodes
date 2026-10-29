@@ -1,0 +1,22 @@
+#!/bin/sh
+# Задача check-nodes (раз в десять минут): если задан интервал, перебирает узлы каждой подписки, у которой прошлого перебора
+# нет или он старше интервала. Идёт в самой задаче, по одной подписке за раз.
+. "${STEER_PLUGIN_DIR:?программа запускается хостом splify2 (нет STEER_PLUGIN_DIR)}/lib/base.sh"
+iv="$(setting_num interval 0)"
+[ "$iv" != 0 ] || exit 0
+list="$("$SPLIFY2_HOST" sub list 2>/dev/null)" || exit 0
+printf '%s' "$list" | jsonfilter -e '@.subs[*]' 2>/dev/null | while IFS= read -r row; do
+    [ -n "$row" ] || continue
+    n="$(jsonfilter -s "$row" -e '@.name' 2>/dev/null)"
+    subname_ok "$n" || continue
+    [ "$(jsonfilter -s "$row" -e '@.present' 2>/dev/null)" = true ] || continue
+    path="$(jsonfilter -s "$row" -e '@.path' 2>/dev/null)"
+    [ -n "$path" ] || continue
+    d="$CHECK_DIR/$n"
+    [ -e "$d/pid" ] && continue                         # перебор уже идёт
+    last="$(num_or "$(cat "$d/done" 2>/dev/null)" 0)"
+    [ $(( $(now) - last )) -ge $((iv * 60)) ] || continue
+    sh "$STEER_PLUGIN_DIR/bin/check-job" "$n" "$path" 0
+    logger -t splify2-node-check "subscription $n: node search finished"
+done
+exit 0

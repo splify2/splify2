@@ -1,0 +1,13 @@
+#!/bin/sh
+# Хук post_spec_set: спека записана — если автоприменение включено, ставит метку и запускает отложенное применение
+# (bin/apply-later): правки, идущие подряд, склеиваются, потому что применяет только последний ожидающий. Хук отвечает
+# сразу и ничего не ждёт.
+. "${STEER_PLUGIN_DIR:?программа запускается хостом splify2 (нет STEER_PLUGIN_DIR)}/lib/base.sh"
+cat >/dev/null
+is_on enabled || { echo '{"ok":true}'; exit 0; }
+token="$(date -u +%s)-$$"
+mkdir -p "$RUN_DIR"
+printf '%s %s\n' "$token" "$(date -u +%s)" > "$PENDING"
+# Все дескрипторы закрыты: хост ждёт конца вывода хука, а worker живёт дольше.
+"$STEER_PLUGIN_DIR/bin/apply-later" "$token" >/dev/null 2>&1 </dev/null &
+echo '{"ok":true}'

@@ -1,0 +1,43 @@
+{
+  "schema": 1,
+  "id": "backup",
+  "version": "1.0.0",
+  "name": "Архив настроек",
+  "description": "Выгрузка настроек роутера в файл и восстановление из него",
+  "homepage": "https://github.com/splify2/splify2",
+  "compat": {
+    "splify2-api": "^1.0"
+  },
+  "arch": "all",
+  "permissions": [],
+  "i18n": {
+    "languages": [
+      "ru",
+      "en"
+    ]
+  },
+  "rpc": {
+    "prog": "bin/backup",
+    "methods": {
+      "get": {
+        "access": "write",
+        "timeout_s": 120
+      },
+      "put": {
+        "access": "write",
+        "timeout_s": 120
+      }
+    }
+  },
+  "splify2": {
+    "methods": {
+      "alias": {
+        "backup_get": "get",
+        "backup_put": "put"
+      }
+    },
+    "settings": {
+      "schema": "settings.schema.json"
+    }
+  }
+}

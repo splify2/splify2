@@ -1,0 +1,16 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "Settings archive",
+  "type": "object",
+  "properties": {
+    "max_archive_kb": {
+      "type": "integer",
+      "minimum": 256,
+      "maximum": 65536,
+      "title": "Archive size limit, KB",
+      "description": "The archive is built and received in memory. A larger archive is refused with its size.",
+      "default": 2048
+    }
+  },
+  "additionalProperties": false
+}

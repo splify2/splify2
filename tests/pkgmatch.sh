@@ -89,8 +89,10 @@ check "общие куски укладываются в пакет катало
 # пока имя было одно, про второй такой файл он промолчал бы, а второй появился (fast.sh).
 check "на отсутствие подключаемого файла стоит барьер" "1" \
     "$(grep -c "grep -ho '/usr/lib/splify2/" build.sh)"
-check "обе половины подключают общее скачивание" "2" \
-    "$(grep -c 'FETCH_SH:-/usr/lib/splify2/fetch.sh' files/usr/libexec/rpcd/splify2 files/usr/sbin/splify2-update-lists | awk -F: '{s+=$2} END {print s}')"
+# Скачивание одно: каркас подключает fetch.sh лениво (need_fetch в env.sh), а плагины качают службой хоста
+# `splify2-host fetch`, которая зовёт ту же функцию. Своего скачивания у плагина нет.
+check "скачивание одно: каркас и служба хоста для плагинов" "yes;yes" \
+    "$(grep -q 'FETCH_SH:-.*/fetch.sh' files/usr/lib/splify2/env.sh && echo yes || echo no);$(grep -q '^[[:space:]]*need_fetch$' files/usr/sbin/splify2-host && grep -q 'download "\$_f_url"' files/usr/sbin/splify2-host && echo yes || echo no)"
 # Быстрый путь опроса подключается ТОЛЬКО из объекта rpcd, и подключений там несколько: круг
 # опроса, чтение спеки и старые методы, отдающие те же числа. Если файл переименуют, а барьер
 # укладки промолчит — объект перестанет отвечать на самый частый вызов.
@@ -99,18 +101,7 @@ check "объект подключает быстрый путь" "yes" \
 check "файл быстрого пути на месте" "yes" \
     "$([ -s files/usr/lib/splify2/fast.sh ] && echo yes || echo no)"
 
-# Акцент Andromeda не подменяется общей переменной темы. `--primary-color-medium` и
-# `--primary-color-high` объявляет ЛЮБАЯ тема семейства bootstrap — просто как цвет ссылок,
-# безо всякого выбора человека. Пока они стояли в цепочке, единственный цветной элемент
-# страницы переставал быть цветом проекта: замерено на роутере под стоковой темой OpenWrt
-# 25.12 — светлая #1564c0, тёмная выцветшая бирюза #4da1c0. Выбор человека в Argon
-# (`--primary` / `--dark-primary`) уважается по-прежнему, он остаётся первым в цепочке.
-# Считается ОБРАЩЕНИЕ (`var(--primary-color-...`), а не упоминание: имена этих переменных
-# названы в комментарии выше самой цепочки — там объяснено, почему их там нет.
-check "акцент не подменяется общей переменной темы" "0" \
-    "$(grep -c 'var(--primary-color-' ui/src/index.css)"
-check "у предупреждения свой цвет текста в каждой яркости" "2" \
-    "$(grep -c -- '--sp-warning-fg:' ui/src/index.css)"
+# Оформление интерфейса (акцент, цвет предупреждения) — дело плагина Andromeda: его стенды в репозитории andromeda.
 
 # ---- I-044/R-034: провал сборки обязан называть причину ------------------------
 # Два самых длинных шага build.sh уезжали в /dev/null целиком, и человек получал одну
@@ -121,7 +112,7 @@ check "у предупреждения свой цвет текста в каж�
 check "вывод сборки интерфейса не выбрасывается" "0" \
     "$(grep -c 'npm run build >/dev/null 2>&1' build.sh)"
 check "вывод упаковки apk не выбрасывается" "0" \
-    "$(grep -c 'o \$OUT/luci-app-splify2-\$VERSION-1_noarch.apk" >/dev/null 2>&1' build.sh)"
+    "$(grep -c 'o \$OUT/splify2-\$VERSION-1_noarch.apk" >/dev/null 2>&1' build.sh)"
 # Отдельная проверка на то, что вывод не просто перестал глушиться, а СОХРАНЯЕТСЯ и
 # печатается в отказе: без неё шаг, печатающий полтора экрана на успехе, читался бы как
 # исправление.
@@ -132,8 +123,14 @@ check "провал сборки печатает сохранённый выв�
 check "установка apk-tools присоединена по И, а не точкой с запятой" "0" \
     "$(grep -c 'apk add --no-cache apk-tools >/dev/null 2>&1;' build.sh)"
 
-check "build.sh собирает apk" "1" "$(grep -c 'info name:luci-app-splify2' build.sh)"
-check "build.sh собирает ipk" "1" "$(grep -c 'Package: luci-app-splify2' build.sh)"
+check "build.sh собирает apk под именем splify2" "1" "$(grep -c 'info name:splify2 ' build.sh)"
+check "build.sh собирает ipk под именем splify2" "1" "$(grep -c '^Package: splify2$' build.sh)"
+# Переименование luci-app-splify2 -> splify2: прежнее имя обязано быть provides и replaces, иначе
+# обновление поставит второй пакет рядом с прежним (меню и ACL двух пакетов столкнутся).
+check "apk: provides и replaces прежнего имени" "1" \
+    "$(grep -c 'info provides:luci-app-splify2 --info replaces:luci-app-splify2' build.sh)"
+check "ipk: Provides, Replaces и Conflicts прежнего имени" "3" \
+    "$(grep -c '^\(Provides\|Replaces\|Conflicts\): luci-app-splify2$' build.sh)"
 check "build.sh берёт родной ipkg-build из OpenWrt" "1" \
     "$(grep -c 'scripts/ipkg-build' build.sh)"
 
@@ -149,15 +146,23 @@ check "CONTROL убирается после сборки ipk" "1" "$(grep -c 'r
 # apk называет пакет без бинарного кода noarch, opkg — all. Перепутать их значит скачать
 # несуществующий файл, и проверить это можно только сверкой имён между файлами.
 for suffix in noarch.apk all.ipk; do
-    check "build.sh кладёт luci-app-splify2-...-1_$suffix" "1" \
-        "$(grep -c "luci-app-splify2-\$VERSION-1_$suffix\|luci-app-splify2-\${VERSION}-1_$suffix" build.sh)"
-    # Барьер («пакета нет — валим шаг») и список выкладываемых файлов проверяются
-    # порознь: в теле релиза те же имена встречаются ещё и в примерах команд, и общий
-    # счёт по файлу поэтому ничего не значит.
-    check "барьер релиза требует $suffix" "1" \
-        "$(grep -c "test -f \"out/luci-app-splify2-\${VERSION}-1_$suffix\"" "$WF")"
-    check "релиз выкладывает $suffix" "1" \
-        "$(grep -c "^ *out/luci-app-splify2-\${{ env.VERSION }}-1_$suffix\$" "$WF")"
+    check "build.sh кладёт splify2-...-1_$suffix" "1" \
+        "$(grep -c "splify2-\$VERSION-1_$suffix\|splify2-\${VERSION}-1_$suffix" build.sh)"
+    check "барьер релиза требует $suffix" "1" "$(grep -c "test -f \"out/splify2-\${VERSION}-1_$suffix\"" "$WF")"
+    check "релиз выкладывает $suffix" "1" "$(grep -c "^ *out/splify2-\${{ env.VERSION }}-1_$suffix\$" "$WF")"
+    # Переход: обновление 26.10.x ищет файл по прежнему имени — релиз выкладывает копию пакета под ним.
+    check "релиз выкладывает копию luci-app-splify2-...-1_$suffix" "1" \
+        "$(grep -c "^ *out/compat/luci-app-splify2-\${{ env.VERSION }}-1_$suffix\$" "$WF")"
+done
+
+# ---- официальные репозитории плагинов по умолчанию -------------------------------
+# splify2-core-plugins и splify2-extended-plugins подключает пакет: без файла repos.d каталог «Плагины» их не видит,
+# а семя не обновляется из сети. Оба официальные (подписаны ключами splify2 из steer-core).
+for r in splify2-core-plugins splify2-extended-plugins; do
+    check "пакет кладёт repos.d/$r.json" "1" "$(grep -c 'for r in splify2-core-plugins splify2-extended-plugins; do' build.sh)"
+    check "repos.d/$r.json: id, official, адрес Pages" "$r;True;https://splify2.github.io/$r/" \
+        "$(python3 -c 'import json,sys; d=json.load(open(sys.argv[1])); print("%s;%s;%s" % (d["id"], d["official"], d["url"]))' \
+            "files/etc/steer/plugins/repos.d/$r.json")"
 done
 
 # ---- установщик умеет оба менеджера --------------------------------------------
@@ -193,17 +198,13 @@ check "ниже обёрток менеджер напрямую не зовут
 # которого не совпал: до скрипта append не доходил, и каждая порция загружаемого файла
 # замещала предыдущую вместо дописывания. Стенд rpcdmatch при этом был зелёным, потому
 # что слал настоящее булево — тип, которого из браузера не бывает.
-# Порции принимают два метода — list_put (файл списка) и backup_put (архив настроек), —
-# поэтому объявлений два. Сторожится не число ради числа, а тип: объявление append числом
+# Порции принимают три метода — list_put (файл списка), list_srs_put (набор .srs) и backup_put
+# (архив настроек), — поэтому объявлений три. Сторожится не число ради числа, а тип: объявление append числом
 # или строкой возвращает ту самую ловушку, ради которой проверка и заведена.
 check "бэкенд не объявляет append числом или строкой" "0" \
     "$(grep -c 'json_add_int append\|json_add_string append' files/usr/libexec/rpcd/splify2)"
-check "бэкенд объявляет append булевым" "2" \
+check "бэкенд объявляет append булевым" "3" \
     "$(grep -c 'json_add_boolean append' files/usr/libexec/rpcd/splify2)"
-check "интерфейс не шлёт append числом" "0" \
-    "$(grep -c 'p.append ? 1 : 0' ui/src/lib/rpc.ts)"
-check "интерфейс шлёт append булевым" "1" \
-    "$(grep -c 'p.append ?? false' ui/src/lib/rpc.ts)"
 
 # ---- документация не разошлась с кодом ----------------------------------------
 # docs/rpcd-api.md объявлен контрактом между интерфейсом и бэкендом, и разойтись с кодом он
@@ -237,47 +238,13 @@ n_code="$(printf '%s\n' "$methods" | grep -c .)"
 check "число методов в тексте контракта верно" "1" \
     "$(grep -c "Все $n_code объявленн" "$API")"
 
-# ---- ребро «интерфейс → метод rpcd» --------------------------------------------
-# Имена методов заданы строками в четырёх местах: блок `list)` в rpcd, ACL LuCI, контракт
-# в docs/rpcd-api.md и вызовы в интерфейсе (`declare<...>('local_lists')`). Барьер в
-# build.sh сторожил ребро rpcd → ACL, проверки выше — ребро rpcd → документ, а вызовы
-# интерфейса не сверялись ни с чем: переименование метода в скрипте оставляет в
-# интерфейсе вызов, который никуда не ведёт. Отказ ровно того невидимого вида, ради
-# которого барьер в ACL и написан — сборка проходит, tsc проходит, страница открывается и
-# показывает «нет данных» там, где у вызова есть запасной путь (а он есть у половины).
-#
-# Направление одно. Метод, который интерфейс не зовёт, законен: у объекта есть вызовы со
-# страницы протокола и из ssh.
-RPC=ui/src/lib/rpc.ts
-# Переносы строк убираются до поиска: у половины вызовов тип занимает несколько строк
-# (`declare<{ ... }>(\n    'outbound_probe',`), и построчный grep их не видит вовсе.
-rpc_methods() {  # ФАЙЛ → имена методов, которые он зовёт
-    tr '\n' ' ' < "$1" | grep -oE ">\( *'[a-z0-9_]+'" | tr -d " >('" | sort -u
-}
-absent=""
-for m in $(rpc_methods "$RPC"); do
-    printf '%s\n' "$methods" | grep -qx "$m" || absent="$absent$m "
-done
-check "каждый вызов интерфейса имеет метод в rpcd" "" "$absent"
-check "в build.sh есть барьер на это ребро" "1" \
-    "$(grep -c 'интерфейс зовёт методы, которых нет в rpcd' build.sh)"
-# Проверка выше зелена и на пустом множестве имён, поэтому рядом стоит проверка на то, что
-# имена вообще извлекаются и выдуманный вызов ловится. Без неё сломанное извлечение
-# (например, смена формы вызова в rpc.ts) читалось бы как «расхождений нет».
-check "имена вызовов извлекаются, а не теряются" "yes" \
-    "$([ "$(rpc_methods "$RPC" | grep -c .)" -gt 20 ] && echo yes || echo no)"
-# Вызов с многострочным типом — отдельная проверка: именно на нём построчный grep и
-# промахивается, а промах читается как «расхождений нет».
-check "многострочный вызов тоже виден" "yes" \
-    "$(rpc_methods "$RPC" | grep -qx outbound_probe && echo yes || echo no)"
-T_RPC="$(mktemp)"
-printf "export const api = {\n    ghost: declare<{ ok: boolean }>(\n        'no_such_method',\n    ),\n}\n" > "$T_RPC"
-check "выдуманный вызов барьером ловится" "no_such_method" "$(rpc_methods "$T_RPC")"
-rm -f "$T_RPC"
+# ---- ребро «интерфейс → метод rpcd» ----------------------------------------------
+# Переехало вместе с интерфейсом: Andromeda (репозиторий andromeda, tests/api-calls.sh) сверяет вызовы со списком публичных
+# методов splify2-api (`methods.tsv`), и этот список сверяет с диспетчером tests/exttest.sh.
 
 # Документация на русском — проект для русскоязычных пользователей. Проверяется наличие
 # кириллицы, а не отсутствие латиницы: имена методов, полей и команд остаются как есть.
-for d in README.md docs/rpcd-api.md ui/README.md; do
+for d in README.md docs/rpcd-api.md; do
     check "$d написан по-русски" "yes" \
         "$(grep -qP '[А-Яа-я]' "$d" && echo yes || echo no)"
 done
@@ -305,7 +272,7 @@ check "страница протокола есть в дереве" "yes" \
 # возвращается имя существующего пакета: имя несуществующего оставило бы кнопку, которая ничего
 # не ставит.
 check "страница называет пакетом сам splify2" "1" \
-    "$(grep -c "return 'luci-app-splify2'" luci/htdocs/luci-static/resources/protocol/xsteer.js)"
+    "$(grep -c "return 'splify2'" luci/htdocs/luci-static/resources/protocol/xsteer.js)"
 check "в коде не возвращается несуществующий пакет" "0" \
     "$(grep -c "'luci-proto-xsteer'" luci/htdocs/luci-static/resources/protocol/xsteer.js)"
 # Обработчик вызывает движок по абсолютному пути. Путь обязан быть тем, куда движок ставится
@@ -346,57 +313,38 @@ check "post-install называет команду перезапуска се�
 check "post-install сеть не перезапускает" "0" \
     "$(sed -n '/^cat > build\/scripts\/post-install/,/^EOF$/p' build.sh | grep -c '^ *"\?/etc/init.d/network"\? restart')"
 
-# ---- расписание: отклик для счётчика на сайте -----------------------------------
+# ---- расписание: счётчика установок больше нет ---------------------------------
 #
-# Отклик живёт своей строкой crontab: крон зовёт команду КАЖДЫЙ час, а 23 часа отсчитывает
-# она сама. Проверяется строка, которую post-install действительно допишет: блок берётся из
-# build.sh (сгенерированный build/scripts/post-install — артефакт, он может быть от прежней
-# сборки), а случайность минуты меряется ЗАПУСКОМ той самой команды awk.
+# Строки крона прежних отправок (splify2-ping, а до 26.10 — splify2-telemetry) при обновлении
+# снимаются, новых не ставится. Проверяется блок post-install, который действительно исполнится:
+# он берётся из build.sh (сгенерированный build/scripts/post-install — артефакт, он может быть от
+# прежней сборки).
 T="$(mktemp -d /tmp/pkgmatch.XXXXXX)"
 PI="$T/post-install.block"
 sed -n '/^cat > build\/scripts\/post-install/,/^EOF$/p' build.sh > "$PI"
-# Час — КАЖДЫЙ: после минуты идут четыре звёздочки. Строка `%s 5 * * *` дала бы раз в сутки,
-# и отклик раз в 23 часа превратился бы в отклик раз в 24 — роутер выпадал бы из счёта.
-check "post-install ставит отклик каждый час" "1" \
+check "post-install отклик для счётчика не ставит" "0" \
     "$(grep -c "printf '%s \\* \\* \\* \\* /usr/sbin/splify2-ping" "$PI")"
-check "и убирает строку прежней отправки отчёта" "1" \
-    "$(grep -c "sed -i '/splify2-telemetry/d' /etc/crontabs/root" "$PI")"
-check "а обновление списков осталось суточным" "1" \
-    "$(grep -c "printf '%s 5 \\* \\* \\* /usr/sbin/splify2-update-lists" "$PI")"
-# МИНУТА СЛУЧАЙНА И СВОЯ. Задания ставятся в одну и ту же СЕКУНДУ, а `srand()` в busybox awk
-# сеет временем — поэтому меряется следствие: команда берётся ИЗ САМОГО post-install и
-# запускается двадцать раз разными процессами.
-tm_min_cmd="$(grep -o 'awk -v s=\$\$ "BEGIN{[^"]*}"' "$PI" | head -1)"
-check "минута отклика считается командой из post-install" "yes" \
-    "$([ -n "$tm_min_cmd" ] && echo yes || echo no)"
-mins="$T/minutes"
-: > "$mins"
-_n=0
-while [ "$_n" -lt 20 ]; do
-    _n=$((_n + 1))
-    sh -c "$tm_min_cmd" >> "$mins" 2>/dev/null
-done
-check "и двадцать запусков подряд дают не одно число" "yes" \
-    "$([ "$(sort -u "$mins" | grep -c .)" -gt 1 ] && echo yes || echo no)"
-check "и все числа — минуты часа" "0" \
-    "$(awk 'NF && ($1 < 0 || $1 > 59)' "$mins" | grep -c .)"
+check "и убирает строку прежнего отклика" "1" \
+    "$(grep -c "sed -i '/splify2-ping/d' /etc/crontabs/root" "$PI")"
+check "обновление списков — не строка post-install, а задача плагина lists-catalog" "0;1" \
+    "$(grep -c "printf '%s 5 \\* \\* \\* /usr/sbin/splify2-update-lists" "$PI");$(grep -c '"cron": "M 5 \* \* \*"' plugins/lists-catalog/plugin.json)"
+check "post-install снимает прежнюю строку обновления списков" "1" \
+    "$(grep -c "sed -i '/splify2-update-lists/d' /etc/crontabs/root" "$PI")"
+check "пакет не везёт команду отклика" "0" \
+    "$(grep -c 'cp files/usr/sbin/splify2-ping' build.sh)"
+check "и в дереве её нет" "no" "$([ -e files/usr/sbin/splify2-ping ] && echo yes || echo no)"
+check "как и общего скрипта отклика" "no" "$([ -e files/usr/lib/splify2/ping.sh ] && echo yes || echo no)"
 rm -rf "$T"
 
 # ---- сказанное установщиком доходит до браузера ---------------------------------
 # post-install печатает в stdout менеджера пакетов, а тот попадает в $PKG_OUT. Пока
 # $PKG_OUT отдавался только в отказе, единственная просьба post-install («перезапустите
 # сеть») существовала лишь в терминале того, кто ставит пакет руками.
-# Метод splify2_install живёт в группе engine объекта rpcd (см. files/usr/lib/splify2/rpcd).
-RPCD=files/usr/lib/splify2/rpcd/m-engine.sh
+# Метод splify2_install живёт в плагине updater (plugins/updater/bin/updater); вывод менеджера пакетов ему отдаёт служба хоста.
+RPCD=plugins/updater/bin/updater
 check "self_update отдаёт вывод установщика и на успехе" "1" \
-    "$(grep -c 'json_add_string output "\$PKG_OUT"' "$RPCD")"
-# Окно шире двух строк: у объявления появились ещё поля (`via` — путь, которым приехал
-# пакет при обходе закрытого githubusercontent), и на -A2 проверка ловила бы форматирование,
-# а не наличие поля.
-check "интерфейс объявляет это поле у splify2_install" "1" \
-    "$(grep -A12 'splify2Install: declare' ui/src/lib/rpc.ts | grep -c 'output?: string')"
-check "карточка обновления его показывает" "1" \
-    "$(grep -c 'r.output' ui/src/components/SelfUpdateCard.tsx)"
+    "$(grep -c 'json_add_string output "\$INSTALL_OUT"' "$RPCD")"
+# Объявление этого поля в интерфейсе и его показ в карточке обновления проверяет репозиторий andromeda.
 
 # ---- workflow вообще пригоден к запуску ---------------------------------------
 # Разбор вынесен в tests/wfcheck.py — там объяснено, почему глазами это не ловится.
@@ -442,13 +390,6 @@ check "перезапуск rpcd в uci-defaults отложен и уведён 
     "$(grep -c '( sleep 2; /etc/init.d/rpcd restart ) >/dev/null 2>&1 &$' "$UD")"
 check "немедленного перезапуска rpcd в uci-defaults нет" "0" \
     "$(grep -c '^[[:space:]]*\[ -x /etc/init.d/rpcd \] && /etc/init.d/rpcd restart' "$UD")"
-# Кеш каталога умолчания сбрасывается при обновлении: адрес умолчания сменил издателя, а
-# файл перечитывается только когда его нет. Только для умолчания — свой адрес не трогаем.
-check "uci-defaults сбрасывает кеш каталога умолчания" "1" \
-    "$(grep -c 'rm -f /etc/splify2/manifest.json' "$UD")"
-check "сброс кеша обусловлен пустым manifest_url" "1" \
-    "$(grep -B1 'rm -f /etc/splify2/manifest.json' "$UD" | grep -c 'uci -q get splify2.main.manifest_url')"
-
 # ---- что именно переживает обновление прошивки --------------------------------
 # Настройку МАЛО ЗАВЕСТИ. sysupgrade и «Создать архив» собирают список из conffiles
 # установленных пакетов, /etc/sysupgrade.conf и /lib/upgrade/keep.d/* — общего правила
@@ -480,52 +421,7 @@ check "keep.d не тащит каталог стратегий" "0" "$(grep -c 
 check "uci-defaults называет keep.d" "yes" \
     "$(grep -q 'keep.d' "$UD" 2>/dev/null && echo yes || echo no)"
 check "и говорит, что соседство в /etc/config ничего не сохраняет" "yes" \
-    "$(grep -q 'общего правила' "$UD" 2>/dev/null && echo yes || echo no)"
-
-# Следы DoH и обхода DPI 26.9.x при обновлении (блок «следы DoH и zapret» в uci-defaults):
-# ключи uci, правило «DoH через туннель» (pref 29000, таблица 290) и таблицы nft splify2_*.
-# Гоняется сам блок с подменёнными uci, ip и nft: чужое правило и чужая таблица не трогаются.
-T26="$(mktemp -d)"
-sed -n '/^# >>> следы DoH и zapret/,/^# <<< следы DoH и zapret/p' "$UD" > "$T26/blk.sh"
-mkdir -p "$T26/bin"
-cat > "$T26/bin/uci" <<'STUB'
-#!/bin/sh
-echo "uci $*" >> "$T26LOG"
-case "$*" in "-q get splify2.main.doh_via_tunnel"|"-q get splify2.main.zm_fix") echo 1; exit 0 ;; "-q get "*) exit 1 ;; esac
-exit 0
-STUB
-cat > "$T26/bin/ip" <<'STUB'
-#!/bin/sh
-echo "ip $*" >> "$T26LOG"
-case "$*" in
-    "rule show")
-        printf '0:\tfrom all lookup local\n29000:\tfrom all uidrange 1000-1000 lookup 77\n'
-        [ -f "$T26ST" ] || printf '29000:\tfrom all uidrange 65534-65534 lookup 290\n' ;;
-    "rule del pref 29000 table 290") touch "$T26ST" ;;
-esac
-exit 0
-STUB
-cat > "$T26/bin/nft" <<'STUB'
-#!/bin/sh
-echo "nft $*" >> "$T26LOG"
-case "$*" in "list table inet splify2_zm"|"list table inet splify2_doh") exit 0 ;; "list table"*) exit 1 ;; esac
-exit 0
-STUB
-chmod +x "$T26/bin/"*
-T26LOG="$T26/log" T26ST="$T26/gone" PATH="$T26/bin:$PATH" timeout 20 sh "$T26/blk.sh"
-L26="$(cat "$T26/log" 2>/dev/null)"
-check "обновление снимает ключ doh_via_tunnel" "yes" \
-    "$(echo "$L26" | grep -qx 'uci -q delete splify2.main.doh_via_tunnel' && echo yes || echo no)"
-check "и zm_fix, и сохраняет это" "yes,yes" \
-    "$(echo "$L26" | grep -qx 'uci -q delete splify2.main.zm_fix' && echo yes || echo no),$(echo "$L26" | grep -qx 'uci -q commit splify2' && echo yes || echo no)"
-check "своё правило pref 29000 снимается один раз" "1" \
-    "$(echo "$L26" | grep -cx 'ip rule del pref 29000 table 290')"
-check "таблица 290 вычищается" "1" "$(echo "$L26" | grep -cx 'ip route flush table 290')"
-check "таблицы splify2_doh и splify2_zm снимаются, отсутствующей splify2_ztest — нет" \
-    "nft delete table inet splify2_doh,nft delete table inet splify2_zm" \
-    "$(echo "$L26" | grep '^nft delete' | sort | paste -sd, -)"
-check "чужое правило pref 29000 (таблица 77) не тронуто" "0" "$(echo "$L26" | grep -c 'table 77\|lookup 77')"
-rm -rf "$T26"
+    "$(grep -q 'Общего правила' "$UD" 2>/dev/null && echo yes || echo no)"
 
 # Заведение спеки и служба ядра (блок «пустая спека и служба ядра» в uci-defaults). Ядро ставят
 # раньше интерфейса, и его демон встаёт без спеки: `start` для РАБОТАЮЩЕЙ службы — пустой вызов
@@ -559,8 +455,6 @@ STUB
             без-службы) rm -f "$TSP/root/etc/init.d/steer" ;;
             спека)      printf '{"version":2}\n' > "$TSP/root/etc/steer/spec.json" ;;
             yaml)       printf 'version: 2\n' > "$TSP/root/etc/steer/spec.yaml" ;;
-            откат)      printf 'version: 2\n' > "$TSP/root/etc/steer/spec.yaml"; : > "$TSP/root/etc/steer/spec.json.bak"
-                        mkdir -p "$TSP/root/usr/sbin"; printf '#!/bin/sh\necho "{\\"version\\":2}"\n' > "$TSP/root/usr/sbin/steer"; chmod +x "$TSP/root/usr/sbin/steer" ;;
             коннектор)  printf '# sing-box от steer-box-connector\n' > "$TSP/root/etc/init.d/sing-box" ;;
         esac
     done
@@ -591,10 +485,6 @@ if [ -s "$TSP/blk.sh" ] && [ "$(grep -v '^[[:space:]]*#' "$TSP/blk.sh" | grep '/
     check "рядом spec.yaml: второй файл не заводится" "no" "$(spec_has)"
     check "  и служба не тронута" "" "$(spec_calls)"
 
-    spec_blk откат
-    check "откат с 26.11: spec.yaml с копией панели вернулся в spec.json" '{"version":2};yes' \
-        "$(cat "$TSP/root/etc/steer/spec.json" 2>/dev/null);$([ -s "$TSP/root/etc/steer/spec.yaml.bak" ] && echo yes || echo no)"
-
     spec_blk работает коннектор
     check "ядро ведёт коннектор: спека не заводится" "no" "$(spec_has)"
     check "  и служба steer не тронута" "" "$(spec_calls)"
@@ -609,6 +499,98 @@ check "в CHANGELOG.md есть раздел версии $CHV" "yes" \
     "$(awk -v v="$CHV" '/^## / { if (on) exit; split($0, h, " "); if (h[2] == v) { on = 1; next } } on { print }' CHANGELOG.md | grep -q '[^[:space:]]' && echo yes || echo no)"
 check "release.yml разбирает CHANGELOG.md тем же выражением" "1" \
     "$(grep -c "split(\$0, h, \" \"); if (h\[2\] == v)" .github/workflows/release.yml)"
+
+# ReCheck: перед снятием пакета служба и её таблица nftables убираются (иначе таблица переживает
+# init-скрипт), и это есть в обоих форматах; после обновления opkg служба поднимается заново.
+check "pre-remove останавливает службу ReCheck и снимает таблицу" "2" \
+    "$(sed -n '/^cat > build\/scripts\/pre-remove/,/^EOF$/p' build.sh | grep -c 'splify2-recheck stop\|delete table inet splify2_recheck')"
+check "apk получает pre-deinstall" "1" "$(grep -c 'pre-deinstall:build/scripts/pre-remove' build.sh)"
+check "ipk получает prerm" "1" "$(grep -c 'build/scripts/pre-remove "\$PKG/CONTROL/prerm"' build.sh)"
+check "post-install поднимает включённый ReCheck после обновления" "1" \
+    "$(sed -n '/^cat > build\/scripts\/post-install/,/^EOF$/p' build.sh | grep -c 'splify2-recheck restart')"
+
+# ---- счётчика установок больше нет: следы прежних версий уходят при обновлении ------
+# Блок uci-defaults снимает ключи отклика (согласие, идентификатор, адрес для стендов) и файл в /var и /tmp; соседи, которые живы (замер внешнего адреса выхода), не
+# трогаются. uci подменён файлом ключей, корень — каталог в /tmp.
+TUD="$(mktemp -d /tmp/pkgmatch-ud.XXXXXX)"
+mkdir -p "$TUD/bin" "$TUD/root/var/lib/splify2" "$TUD/root/var/run" "$TUD/root/tmp"
+cat > "$TUD/bin/uci" <<EOF2
+#!/bin/sh
+db="$TUD/uci.db"
+case "\$1" in -q) shift ;; esac
+case "\$1" in
+    get)    v="\$(sed -n "s|^\$2=||p" "\$db" 2>/dev/null | tail -n1)"; [ -n "\$v" ] || exit 1; printf '%s\n' "\$v" ;;
+    delete) sed -i "\\|^\$2=|d" "\$db" 2>/dev/null ;;
+    set)    k="\${2%%=*}"; sed -i "\\|^\$k=|d" "\$db" 2>/dev/null; printf '%s\n' "\$2" >> "\$db" ;;
+    commit) : ;;
+    *) exit 1 ;;
+esac
+EOF2
+chmod +x "$TUD/bin/uci"
+for k in telemetry telemetry_id ping_url; do echo "splify2.main.$k=x" >> "$TUD/uci.db"; done
+echo "splify2.main.manifest_url=keep" >> "$TUD/uci.db"
+for f in tmp/splify2-ping; do
+    echo x > "$TUD/root/$f"
+done
+echo x > "$TUD/root/var/lib/splify2/geo-wg0"
+sed -n '/^# Ключи счётчика установок/,/^\[ -n "\$_old" \]/p' files/etc/uci-defaults/99-splify2 > "$TUD/olds.sh"
+check "блок чистки прежних ключей найден в uci-defaults" "yes" "$([ -s "$TUD/olds.sh" ] && echo yes || echo no)"
+PATH="$TUD/bin:$PATH" SPLIFY2_TEST_ROOT="$TUD/root" sh "$TUD/olds.sh"
+check "ключи счётчика сняты" "splify2.main.manifest_url=keep" "$(cat "$TUD/uci.db")"
+for f in tmp/splify2-ping; do
+    check "прежний файл /$f убран" "no" "$([ -e "$TUD/root/$f" ] && echo yes || echo no)"
+done
+check "замер внешнего адреса выхода не тронут" "yes" "$([ -e "$TUD/root/var/lib/splify2/geo-wg0" ] && echo yes || echo no)"
+rm -rf "$TUD"
+# ---- настройки каталога списков переезжают в плагин lists-catalog ----------------------------------
+# Поля uci каркаса (адрес каталога, порог сокращения, тег второго издателя) один раз переносятся в conf плагина, и поля
+# снимаются: человек, менявший их, не теряет выбор при обновлении. Файл настроек плагина, если он уже есть, не затирается.
+TUD="$(mktemp -d /tmp/pkgmatch-mig.XXXXXX)"
+mkdir -p "$TUD/bin" "$TUD/root"
+cat > "$TUD/bin/uci" <<EOF2
+#!/bin/sh
+db="$TUD/uci.db"
+case "\$1" in -q) shift ;; esac
+case "\$1" in
+    get)    v="\$(sed -n "s|^\$2=||p" "\$db" 2>/dev/null | tail -n1)"; [ -n "\$v" ] || exit 1; printf '%s\n' "\$v" ;;
+    delete) sed -i "\\|^\$2=|d" "\$db" 2>/dev/null ;;
+    commit) : ;;
+    *) exit 1 ;;
+esac
+EOF2
+chmod +x "$TUD/bin/uci"
+printf '%s\n' 'splify2.main.manifest_url=https://example.net/own.json' 'splify2.main.list_shrink_factor=0' \
+    'splify2.main.allow_domains_tag=2026-01-01_00-00' 'splify2.main.sub_url=https://panel.example.net/s' > "$TUD/uci.db"
+sed -n '/^# >>> перенос настроек каталога списков/,/^# <<< перенос настроек каталога списков/p' files/etc/uci-defaults/99-splify2 > "$TUD/mig.sh"
+check "блок переноса настроек каталога найден в uci-defaults" "yes" "$([ -s "$TUD/mig.sh" ] && echo yes || echo no)"
+PATH="$TUD/bin:$PATH" SPLIFY2_TEST_ROOT="$TUD/root" sh "$TUD/mig.sh"
+MC="$TUD/root/etc/steer/plugins/conf/lists-catalog/settings.json"
+check "настройки каталога перенесены в conf плагина" "https://example.net/own.json;0;2026-01-01_00-00" \
+    "$(python3 -c 'import json,sys; d=json.load(open(sys.argv[1])); print("%s;%s;%s" % (d["manifest_url"], d["list_shrink_factor"], d["allow_domains_tag"]))' "$MC" 2>/dev/null)"
+check "поля uci каталога сняты, чужие остались" "splify2.main.sub_url=https://panel.example.net/s" "$(cat "$TUD/uci.db")"
+printf '%s\n' 'splify2.main.manifest_url=https://example.net/other.json' >> "$TUD/uci.db"
+PATH="$TUD/bin:$PATH" SPLIFY2_TEST_ROOT="$TUD/root" sh "$TUD/mig.sh"
+check "готовый файл настроек плагина не затирается" "https://example.net/own.json" \
+    "$(python3 -c 'import json,sys; print(json.load(open(sys.argv[1]))["manifest_url"])' "$MC")"
+rm -rf "$TUD"
+# Метод учёта убран из объекта rpcd и из прав интерфейса; ни одного упоминания в рабочих текстах.
+check "rpcd не знает telemetry_state и telemetry_set" "0" \
+    "$(grep -c 'telemetry_state\|telemetry_set' files/usr/libexec/rpcd/splify2 luci/root/usr/share/rpcd/acl.d/splify2.json | awk -F: '{s+=$2} END {print s+0}')"
+# Файлы, в которые пишут параллельные вызовы одного и того же метода (страница спрашивает версии ядра
+# и интерфейса, обзор списков — разом), создаются mktemp, а не по общему имени: общее имя — смесь двух
+# ответов, имя с номером процесса в /tmp предсказуемо.
+check "кэш local_lists и ответы GitHub пишутся в свои файлы (mktemp)" "0;1;1;1" \
+    "$(grep -c '_ll_c\.tmp' plugins/lists-catalog/lib/methods.sh);$(grep -c 'mktemp \"${GH_CACHE:-/tmp/splify2-releases.json}.api.XXXXXX' files/usr/lib/splify2/rpcd/pkg-lib.sh);$(grep -c 'mktemp \"${GH_CACHE:-/tmp/splify2-releases.json}.version.XXXXXX' files/usr/lib/splify2/rpcd/pkg-lib.sh);$(grep -c 'mktemp \"$_ll_c.XXXXXX' plugins/lists-catalog/lib/methods.sh)"
+# Методы, отдающие секреты (архив с приватными ключами туннелей, ссылка xs:// с ключом), — только в
+# группе write: учётная запись «только чтение» их получить не должна.
+check "backup_get и xsteer_link — в write и не в read" "yes" \
+    "$(python3 -c 'import json,sys
+a = json.load(open(sys.argv[1]))["splify2"]
+r = a["read"]["ubus"]["splify2"]; w = a["write"]["ubus"]["splify2"]
+print("yes" if all(m in w and m not in r for m in ("backup_get", "xsteer_link")) else "no")' luci/root/usr/share/rpcd/acl.d/splify2.json)"
+check "группы telemetry в rpcd нет" "no" "$([ -e files/usr/lib/splify2/rpcd/m-telemetry.sh ] && echo yes || echo no)"
+check "README и руководство о счётчике не говорят" "0" \
+    "$(cat README.md docs/guide.md | grep -ci 'Счётчик на сайте\|TELEMETRY.md')"
 
 printf '\n%d проверок пройдено' "$pass"
 if [ "$fail" -gt 0 ]; then printf ', %d ПРОВАЛЕНО\n' "$fail"; exit 1; fi

@@ -1,0 +1,79 @@
+{
+  "schema": 1,
+  "id": "group-check",
+  "version": "1.0.0",
+  "name": "Group check",
+  "description": "Checks the members of output groups: a verdict for each member, failure history, a hint when a member is dead",
+  "homepage": "https://github.com/splify2/splify2",
+  "compat": {
+    "splify2-api": "^1.0"
+  },
+  "arch": "all",
+  "permissions": [
+    "splify2.hooks"
+  ],
+  "i18n": {
+    "languages": [
+      "ru",
+      "en"
+    ]
+  },
+  "rpc": {
+    "prog": "bin/groupcheck",
+    "methods": {
+      "group_status": {
+        "access": "read",
+        "timeout_s": 30
+      },
+      "group_history": {
+        "access": "read",
+        "timeout_s": 30
+      },
+      "group_check": {
+        "access": "write",
+        "timeout_s": 120
+      }
+    }
+  },
+  "splify2": {
+    "hooks": {
+      "backup_sections": {
+        "prog": "hooks/backup",
+        "timeout_s": 30
+      },
+      "support_report": {
+        "prog": "hooks/support"
+      },
+      "purge": {
+        "prog": "hooks/purge"
+      }
+    },
+    "tasks": [
+      {
+        "name": "check-groups",
+        "every": "5m",
+        "prog": "bin/check-groups",
+        "only_if": "engine-enabled",
+        "timeout_s": 600
+      }
+    ],
+    "events": {
+      "subscribe": [
+        "switched",
+        "failed"
+      ],
+      "prog": "hooks/event",
+      "timeout_s": 5
+    },
+    "methods": {
+      "alias": {
+        "group_status": "group_status",
+        "group_history": "group_history",
+        "group_check": "group_check"
+      }
+    },
+    "settings": {
+      "schema": "settings.schema.json"
+    }
+  }
+}

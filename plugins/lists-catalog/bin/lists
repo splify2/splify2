@@ -1,0 +1,17 @@
+#!/bin/sh
+# Программа rpc плагина lists-catalog: $1 — метод, параметры — одна строка JSON в stdin, ответ — один объект JSON в
+# stdout. Методы объявлены в plugin.json (rpc.methods) и видны на объекте splify2 теми же именами (splify2.methods.alias).
+#
+# Все пути и скачивание — через `lib/base.sh`: плагин берёт у хоста каталог списков и программу ядра
+# (`splify2-host paths`), скачивает службой `splify2-host fetch`, спрашивает спеку службой `splify2-host spec`. Файлов
+# и переменных каркаса здесь нет.
+. "${STEER_PLUGIN_DIR:?программа запускается хостом splify2 (нет STEER_PLUGIN_DIR)}/lib/base.sh"
+
+METHOD="${1:-}"
+case "$METHOD" in
+    lists|list_fetch|lists_update|list_put|list_remove|list_custom|list_get|list_peek|list_srs_put|local_lists|\
+    allow_domains|fetch_mode|fetch_mode_set|lists_source|lists_source_set) ;;
+    *) echo "no such method: $METHOD" >&2; exit 2 ;;
+esac
+lists_init
+. "$STEER_PLUGIN_DIR/lib/methods.sh"
