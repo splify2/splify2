@@ -1,4 +1,4 @@
-# splify2-api 1.1: методы объекта rpcd splify2 и их вид для расширений.
+# splify2-api 1.3: методы объекта rpcd splify2 и их вид для расширений.
 # Колонки через табуляцию: имя, вид, плагин.
 #   frame — метод каркаса: можно обернуть или заменить (methods.override), имя занять нельзя;
 #   fast — быстрый путь опроса (live, spec_get, applied_get): диспетчер отвечает на них до чтения реестра, поэтому
@@ -54,6 +54,9 @@ ui_set	frame
 xsteer_state	frame
 xsteer_link	frame
 xsteer_link_put	frame
+awg_list	frame
+awg_put	frame
+awg_del	frame
 lists_source	moved	lists-catalog
 lists_source_set	moved	lists-catalog
 fetch_mode	moved	lists-catalog

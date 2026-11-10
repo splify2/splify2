@@ -35,6 +35,7 @@ set -u
 SPLIFY2_DIR=${SPLIFY2_DIR:-/etc/splify2}
 # Расписка фаервола: что в нём сделали МЫ. Разбирается ниже так же, как в m-spec.sh.
 FW_OWNED=${FW_OWNED:-$SPLIFY2_DIR/fw-owned}
+NET_OWNED=${NET_OWNED:-$SPLIFY2_DIR/net-owned}
 STEER_DIR=${STEER_DIR:-/etc/steer}
 UCI_SPLIFY2=${UCI_SPLIFY2:-/etc/config/splify2}
 CRONTAB=${CRONTAB:-/etc/crontabs/root}
@@ -244,8 +245,38 @@ purge_zone() {  # ИМЯ_ЗОНЫ
     return 0
 }
 
+# Пробросы в зоны ЧЕЛОВЕКА, заведённые нами (расписка `xfwd ЗОНА_ВЫХОДА ЗОНА_КЛИЕНТОВ`, m-spec.sh:
+# fw_foreign_sync): устройство выхода лежало в его зоне, и пару «зона клиентов -> его зона» дописали
+# мы. Убирается только проброс, и только записанный за нами; зона остаётся как была. Идёт ПЕРВЫМ:
+# источником такого проброса бывает наша зона клиентов, а её следом удаляет purge_zone.
+purge_foreign_forwardings() {
+    [ -f "$FW_OWNED" ] || return 0
+    # Перечень — переменной, а удаление — отдельным циклом с here-doc: цикл за конвейером идёт в
+    # подоболочке, и FW_CHANGED из неё не вернулся бы.
+    _xf_list="$(sed -n 's/^xfwd //p' "$FW_OWNED" 2>/dev/null)"
+    while read -r _xf_d _xf_s; do
+        [ -n "$_xf_d" ] && [ -n "$_xf_s" ] || continue
+        # Секция ищется по сторонам и заново на каждую строку: после удаления uci перенумеровывает
+        # безымянные секции.
+        _xf_f="$(fw_sections forwarding | while IFS= read -r _xf_g; do
+            [ "$(uci -q get "firewall.$_xf_g.dest" 2>/dev/null)" = "$_xf_d" ] || continue
+            [ "$(uci -q get "firewall.$_xf_g.src" 2>/dev/null)" = "$_xf_s" ] || continue
+            printf '%s' "$_xf_g"; break
+        done)"
+        [ -n "$_xf_f" ] || continue
+        plan "$(s2_t purge.forwarding_own_zone "The forwarding rule {rule} ({from} -> {to}) into your zone, added by splify2, is removed" rule "$_xf_f" from "$_xf_s" to "$_xf_d")"
+        [ "$DO" = 1 ] || continue
+        uci -q delete "firewall.$_xf_f" && FW_CHANGED=1
+    done <<EOF
+$_xf_list
+EOF
+    [ "$DO" = 1 ] && [ "$FW_CHANGED" = 1 ] && uci -q commit firewall
+    return 0
+}
+
 purge_firewall() {
     FW_CHANGED=0
+    purge_foreign_forwardings
     for _z in $FW_ZONES; do
         purge_zone "${_z%%:*}"
     done
@@ -380,12 +411,41 @@ purge_paths() {
 # Интерфейсы с протоколом xsteer заводил он сам, поэтому они не наши и мы их не трогаем. Но
 # молчать о них нельзя: без обработчика протокола netifd их не поднимет и скажет «не
 # поддерживаемый тип протокола» — а выглядит это как поломка сети из-за чистки.
+# Интерфейсы xsteer, которые завели МЫ — из ссылки xs:// (расписка NET_OWNED, m-xsteer.sh). Без
+# обработчика протокола такой интерфейс не поднимется, а человек его не заводил и искать в
+# настройках сети не станет. Убирается секция интерфейса и секции его пиров. При --keep-config
+# остаётся: это настройка, ради которой ключ и существует. Интерфейс, у которого человек сменил
+# протокол, уже не наш.
+purge_xsteer_ifaces() {
+    [ "$KEEP" = 1 ] && return 0
+    [ -f "$NET_OWNED" ] || return 0
+    _px_any=0
+    for _px_i in $(sed -n 's/^xsteer //p' "$NET_OWNED" 2>/dev/null); do
+        case "$_px_i" in ''|*[!A-Za-z0-9_]*) continue ;; esac
+        [ "$(uci -q get "network.$_px_i.proto" 2>/dev/null)" = xsteer ] || continue
+        plan "$(s2_t purge.xsteer_iface "The xsteer interface {iface}, created by splify2 from a link, is removed" iface "$_px_i")"
+        [ "$DO" = 1 ] || continue
+        ifdown "$_px_i" >/dev/null 2>&1
+        for _px_p in $(uci -q show network 2>/dev/null | sed -n "s/^network\.\([^.]*\)=xsteer_$_px_i\$/\1/p"); do
+            uci -q delete "network.$_px_p"
+        done
+        uci -q delete "network.$_px_i" && _px_any=1
+    done
+    [ "$_px_any" = 1 ] && uci -q commit network
+    return 0
+}
+
 warn_xsteer() {
-    _ifs="$(uci show network 2>/dev/null |
-        sed -n "s/^network\.\([^.]*\)\.proto='xsteer'$/\1/p" | tr '\n' ' ')"
+    _ifs=""
+    for _wx_i in $(uci show network 2>/dev/null | sed -n "s/^network\.\([^.]*\)\.proto='xsteer'$/\1/p"); do
+        # Заведённые нами из ссылки уходят сами (purge_xsteer_ifaces) — в показе они ещё на месте,
+        # но остающимися не являются. При --keep-config остаются и они.
+        [ "$KEEP" = 1 ] || ! grep -qxF "xsteer $_wx_i" "$NET_OWNED" 2>/dev/null || continue
+        _ifs="$_ifs$_wx_i "
+    done
     [ -n "$_ifs" ] || return 0
     say "$(s2_t purge.xsteer_left "Interfaces with the xsteer protocol stay in the network settings: {ifaces}" ifaces "$_ifs")"
-    say "$(s2_t purge.xsteer_note "We did not create them, so we leave them alone, but without the protocol handler they will not come up")"
+    say "$(s2_t purge.xsteer_note "They stay as they are, but without the protocol handler they will not come up")"
     return 0
 }
 
@@ -442,6 +502,7 @@ purge_engine
 purge_plugins
 purge_recheck
 purge_firewall
+purge_xsteer_ifaces
 purge_nft
 purge_cron
 purge_rpcd_timeout

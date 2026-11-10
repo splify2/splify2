@@ -296,7 +296,8 @@ settings_set() {  # КЛЮЧ ЗНАЧЕНИЕ
 # ---- настройки каркаса: проверка, выгрузка, восстановление ------------------------------------------------------
 
 # Состав: спека (spec), подписка по умолчанию (sub), выбор у групп «вручную» (select), поля uci секции main и
-# именованных подписок (options), именованные подписки (sub.ИМЯ), ключи туннелей xsteer (xsteer.ИМЯ). Каталог —
+# именованных подписок (options), именованные подписки (sub.ИМЯ), ключи туннелей xsteer (xsteer.ИМЯ), файлы своих туннелей
+# WireGuard и AmneziaWG — выходов kind: awg (awg.ИМЯ). Каталог —
 # файлы с этими именами, текст дословный. Свои списки и данные плагинов сюда не входят: ими занимаются плагины.
 STATE_SPEC_MAX=65536
 STATE_SUB_MAX=131072
@@ -552,11 +553,19 @@ state_check_dir() {  # КАТАЛОГ
         case "$_nm" in .*|''|*[!A-Za-z0-9_.:@-]*) echo "$(s2_t state.tunnel_name "The tunnel name \"{name}\" is not valid" name "$_nm")"; return 1 ;; esac
         _why="$(state_check_xsteer "$_f" "$_nm")" || { echo "${_why:-$(s2_t state.tunnel_invalid "The tunnel setting from the archive is not valid")}"; return 1; }
     done
+    # Файлы своих туннелей — ТОЙ ЖЕ проверкой формы, что принимает awg_put (awg_conf_check, common.sh): файл, который
+    # панель приняла, обязан вернуться из архива. Значения проверит ядро — вместе со спекой, которая называет выход.
+    for _f in "$_d"/awg.*; do
+        [ -f "$_f" ] || continue
+        _nm="${_f##*/}"; _nm="${_nm#awg.}"
+        awg_name_ok "$_nm" || { echo "$(s2_t state.tunnel_name "The tunnel name \"{name}\" is not valid" name "$_nm")"; return 1; }
+        _why="$(awg_conf_check "$_f" "$_nm")" || { echo "${_why:-$(s2_t state.tunnel_invalid "The tunnel setting from the archive is not valid")}"; return 1; }
+    done
     return 0
 }
 
 state_any() {  # КАТАЛОГ
-    for _f in "$1/spec" "$1/sub" "$1/options" "$1/select" "$1"/sub.* "$1"/xsteer.*; do
+    for _f in "$1/spec" "$1/sub" "$1/options" "$1/select" "$1"/sub.* "$1"/xsteer.* "$1"/awg.*; do
         [ -f "$_f" ] && return 0
     done
     return 1
@@ -590,6 +599,14 @@ state_export() {  # КАТАЛОГ
         _x_n="${_x_f##*/}"; _x_n="${_x_n%.conf}"
         case "$_x_n" in .*|*[!A-Za-z0-9_.:@-]*) continue ;; esac
         cp "$_x_f" "$_x/xsteer.$_x_n"
+    done
+    # Файлы своих туннелей (выходы kind: awg) — дословно, как их принял awg_put: спека называет выход, а ключи лежат
+    # в файле, и архив без него вернул бы выход, которому нечем подняться.
+    for _x_f in "$AWG_DIR"/*.conf; do
+        [ -f "$_x_f" ] || continue
+        _x_n="${_x_f##*/}"; _x_n="${_x_n%.conf}"
+        awg_name_ok "$_x_n" || continue
+        cp "$_x_f" "$_x/awg.$_x_n"
     done
     # ВСЕ поля splify2.main каркаса, а не часть: те, что человек правил однажды и руками, иначе терялись бы молча.
     # Перечень сверяется с кодом: grep -rhoE 'splify2\.(main|sub_[a-z_]*)\.[a-z_]+' files/ | sort -u
@@ -651,6 +668,23 @@ state_import() {  # КАТАЛОГ
                 _i_xs=$((_i_xs + 1)) ||
                 { rm -f "$XSTEER_DIR/$_i_nm.conf.new.$$"; _i_warn="${_i_warn}$(s2_t state.warn_tunnel "The keys of tunnel {name} were not saved; " name "$_i_nm")"; }
         else
+            _i_warn="${_i_warn}$(s2_t state.warn_tunnel "The keys of tunnel {name} were not saved; " name "$_i_nm")"
+        fi
+    done
+    # Файлы своих туннелей — тоже до спеки: её выходы kind: awg ядро проверяет вместе с файлом.
+    _i_awg=0
+    for _i_f in "$_i"/awg.*; do
+        [ -f "$_i_f" ] || continue
+        _i_nm="${_i_f##*/}"; _i_nm="${_i_nm#awg.}"
+        mkdir -p "$AWG_DIR"
+        chmod 0700 "$AWG_DIR" 2>/dev/null
+        if cp "$_i_f" "$AWG_DIR/.$_i_nm.new.$$"; then
+            chmod 0600 "$AWG_DIR/.$_i_nm.new.$$"
+            mv "$AWG_DIR/.$_i_nm.new.$$" "$AWG_DIR/$_i_nm.conf" &&
+                _i_awg=$((_i_awg + 1)) ||
+                { rm -f "$AWG_DIR/.$_i_nm.new.$$"; _i_warn="${_i_warn}$(s2_t state.warn_tunnel "The keys of tunnel {name} were not saved; " name "$_i_nm")"; }
+        else
+            rm -f "$AWG_DIR/.$_i_nm.new.$$"
             _i_warn="${_i_warn}$(s2_t state.warn_tunnel "The keys of tunnel {name} were not saved; " name "$_i_nm")"
         fi
     done
@@ -719,6 +753,7 @@ state_import() {  # КАТАЛОГ
     # Числами, а не одним «ок»: «восстановлено» без перечня не отличает «вернули всё» от «вернули одну подписку».
     json_add_int subs "$_i_subs"
     json_add_int xsteer "$_i_xs"
+    json_add_int awg "$_i_awg"
     json_add_boolean select "$_i_select"
     [ -n "$_i_warn" ] && json_add_string warn "$_i_warn"
     json_dump

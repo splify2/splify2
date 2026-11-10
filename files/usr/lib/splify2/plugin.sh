@@ -37,7 +37,7 @@ PLUGIN_HOST_API="${PLUGIN_HOST_API:-1.0.0}"
 PLUGIN_RPC_TIMEOUT=30
 # Версия splify2-api (plugin-sdk/docs/splify2-api.md): хуки, задачи, события, псевдонимы и переопределения. Её
 # отдаёт plugins_list рядом с host_api; плагин с compat.splify2-api другого major блок `splify2` не получает.
-PLUGIN_SPLIFY2_API="${PLUGIN_SPLIFY2_API:-1.2.0}"
+PLUGIN_SPLIFY2_API="${PLUGIN_SPLIFY2_API:-1.3.0}"
 # Каталог библиотек: рядом с plugin.sh лежат lib.sh, env.sh, ext.sh и methods.tsv. Стенды подставляют PLUGIN_SH,
 # и каталог выводится из него.
 SPLIFY2_LIBDIR="${SPLIFY2_LIBDIR:-${PLUGIN_SH:+${PLUGIN_SH%/*}}}"

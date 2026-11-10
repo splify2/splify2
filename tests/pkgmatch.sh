@@ -400,7 +400,7 @@ check "немедленного перезапуска rpcd в uci-defaults не
 KEEP=files/lib/upgrade/keep.d/splify2
 check "keep.d есть в репозитории" "yes" "$([ -f "$KEEP" ] && echo yes || echo no)"
 check "build.sh кладёт keep.d в дерево пакета" "1" "$(grep -c "cp $KEEP" build.sh)"
-for f in /etc/config/splify2 /etc/splify2/fw-owned; do
+for f in /etc/config/splify2 /etc/splify2/fw-owned /etc/splify2/net-owned; do
     check "keep.d объявляет $f" "1" "$(grep -cx "$f" "$KEEP" 2>/dev/null)"
 done
 # Ни комментариев, ни пустых строк, ни относительных путей: файл читает sysupgrade, и строка,

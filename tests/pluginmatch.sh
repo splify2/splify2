@@ -643,7 +643,7 @@ mkdir -p "$PLUG/views"; echo чужое > "$PLUG/views/p-stray"; ln -s /elsewher
 rpcd plugins_list >/dev/null
 check "  чужие файлы и ссылки p-* не тронуты" "yes;yes" \
     "$([ -f "$PLUG/views/p-stray" ] && echo yes || echo no);$([ -L "$PLUG/views/p-foreign" ] && echo yes || echo no)"
-check "plugins_list: splify2_api — 1.2.0" "1.2.0" "$(rpcd plugins_list | pj 'd["splify2_api"]')"
+check "plugins_list: splify2_api — 1.3.0" "1.3.0" "$(rpcd plugins_list | pj 'd["splify2_api"]')"
 
 # ---- CGI плагина: splify2.cgi (splify2-api 1.2) — так встаёт шлюз Desktop API ------------------------------------------
 plug_reset

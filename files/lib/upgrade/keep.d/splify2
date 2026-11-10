@@ -3,3 +3,4 @@
 /etc/splify2/recheck.conf
 /etc/splify2/recheck.cache
 /etc/splify2/seeded
+/etc/splify2/net-owned
