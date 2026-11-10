@@ -540,3 +540,100 @@ box_busy() {
     [ -n "$BOX_BY" ] || BOX_BY=steer-box-connector
     return 0
 }
+
+# ---- свои туннели WireGuard и AmneziaWG (выход kind: awg) -----------------------------------
+#
+# Каталог файлов выходов kind: awg — тот, где их ищет ядро, когда у выхода нет ключа `conf`
+# (steer, src/kinds/awg.c: `<каталог спеки>/awg/<имя выхода>.conf`). Файл называется по ВЫХОДУ, и
+# поэтому в спеку путь не пишется вовсе: она остаётся без путей к ключам, а архив настроек и
+# переезд на другой роутер не зависят от того, где у того роутера лежит каталог.
+# В каждом файле — ПРИВАТНЫЙ КЛЮЧ: каталог 0700, файлы 0600, в ответы и журнал содержимое не идёт.
+AWG_DIR="${AWG_DIR:-${SPEC%/*}/awg}"
+# Предел размера — тот же, что у ядра (awg_conf_load, src/kinds/awgdev.c: пять строк I по 16 КБ и
+# тысяча AllowedIPs): файл больше ядро не прочтёт, и принять его здесь значило бы отложить отказ
+# до применения.
+AWG_CONF_MAX=262144
+
+# Имя туннеля — будущее имя выхода: буквы, цифры, `_ - .`, до 31 байта (предел имени выхода у
+# ядра), не с точки — имя становится именем файла, и «..» означало бы запись мимо каталога.
+awg_name_ok() {  # ИМЯ
+    case "$1" in
+        ''|.*|*[!A-Za-z0-9_.-]*) return 1 ;;
+    esac
+    [ "${#1}" -le 31 ]
+}
+
+# Форма файла wg-quick/awg-quick: раздел [Interface] с PrivateKey, хотя бы один [Peer] с
+# PublicKey, а строки — только раздел, «Ключ = значение» или комментарий. Это проверка ФОРМЫ, а
+# не разбор: судья значений — ядро (awg_put спрашивает его, когда плагин awg стоит), и вторая
+# реализация разбора здесь однажды разошлась бы с ним. Нужна она там, где ядра не спросить:
+# архив настроек проверяется до записи, плагин может ещё не стоять.
+# Отказ печатается в stdout и называет номер строки, но НИКОГДА её содержимое: там ключи.
+awg_conf_check() {  # ФАЙЛ ИМЯ
+    _ac_sz="$(wc -c 2>/dev/null < "$1" || echo 0)"
+    [ "$_ac_sz" -le "$AWG_CONF_MAX" ] ||
+        { echo "$(s2_t awg.big "The tunnel file \"{name}\" is larger than {max} KB" name "$2" max "$((AWG_CONF_MAX / 1024))")"; return 1; }
+    # Управляющие байты, кроме табуляции и перевода строки: в текстовом файле это двоичный мусор
+    # (в окно вставили не тот файл) либо попытка спрятать строку от построчной проверки.
+    if [ "$(LC_ALL=C tr -d '\11\12\40-\377' < "$1" | wc -c)" != 0 ]; then
+        echo "$(s2_t awg.binary "The tunnel file \"{name}\" holds binary data: a WireGuard or AmneziaWG text file is expected" name "$2")"
+        return 1
+    fi
+    _ac_r="$(awk '
+        { l = $0; sub(/#.*/, "", l); gsub(/^[ \t]+|[ \t]+$/, "", l) }
+        l == "" { next }
+        tolower(l) == "[interface]" { sec = "i"; ni++; next }
+        tolower(l) == "[peer]" { sec = "p"; np++; next }
+        l ~ /^\[/ { print "line " NR; exit }
+        l !~ /^[A-Za-z][A-Za-z0-9]*[ \t]*=/ || sec == "" { print "line " NR; exit }
+        {
+            k = tolower(l); sub(/[ \t]*=.*/, "", k)
+            if (sec == "i" && k == "privatekey") key = 1
+            if (sec == "p" && k == "publickey") pub = 1
+        }
+        END {
+            if (ni != 1) print "iface"
+            else if (!key) print "key"
+            else if (!np || !pub) print "peer"
+        }' "$1" | head -n 1)"
+    case "$_ac_r" in
+        '') return 0 ;;
+        line*) echo "$(s2_t awg.format "The tunnel file \"{name}\", line {line}: a section [Interface] or [Peer] or a line like \"Key = value\" is expected, as in a WireGuard file" name "$2" line "${_ac_r#line }")" ;;
+        iface) echo "$(s2_t awg.no_interface "The tunnel file \"{name}\" must have exactly one [Interface] section" name "$2")" ;;
+        key) echo "$(s2_t awg.no_key "The tunnel file \"{name}\" has no private key (PrivateKey in [Interface])" name "$2")" ;;
+        peer) echo "$(s2_t awg.no_peer "The tunnel file \"{name}\" has no server: a [Peer] section with PublicKey is expected" name "$2")" ;;
+    esac
+    return 1
+}
+
+# Что из файла можно показать: адрес сервера, адреса туннеля, нужен ли AmneziaWG. Строки
+# «endpoint ЗНАЧЕНИЕ», «addr ЗНАЧЕНИЕ» (по одной на адрес), «amnezia 0|1». Ключей здесь нет и быть
+# не может: читаются только Endpoint, Address и параметры обфускации.
+# AmneziaWG нужен, когда в файле есть то, чего обычный WireGuard не выражает, — тем же правилом,
+# каким модуль выбирает ядро (awg_conf_needs_awg, src/kinds/awgdev.c): параметр вне набора
+# WireGuard со значением не «ноль», H1–H4 не свои номера 1–4, keepalive диапазоном. Файл Amnezia
+# с выключенной обфускацией (Jc = 0, H1 = 1 …) — обычный WireGuard. Это подсказка человеку
+# («AmneziaWG» в строке туннеля), а не приговор: модуль выбирает ядро при применении.
+awg_conf_info() {  # ФАЙЛ
+    awk '
+        BEGIN {
+            n = split("privatekey address mtu listenport dns table fwmark preup postup predown postdown saveconfig publickey presharedkey endpoint allowedips", w, " ")
+            for (i = 1; i <= n; i++) wg[w[i]] = 1
+        }
+        { l = $0; sub(/#.*/, "", l); gsub(/^[ \t]+|[ \t]+$/, "", l) }
+        l == "" || l ~ /^\[/ { next }
+        {
+            k = tolower(l); sub(/[ \t]*=.*/, "", k)
+            v = l; sub(/^[^=]*=[ \t]*/, "", v)
+            if (k == "endpoint" && !ep) { ep = 1; print "endpoint " v }
+            else if (k == "address") {
+                n = split(v, a, ",")
+                for (i = 1; i <= n; i++) { gsub(/^[ \t]+|[ \t]+$/, "", a[i]); if (a[i] != "") print "addr " a[i] }
+            }
+            else if (k == "persistentkeepalive") { if (v ~ /-/) am = 1 }
+            else if (k in wg) { }
+            else if (k ~ /^h[1-4]$/) { if (v != substr(k, 2)) am = 1 }
+            else if (v != "" && v != "0") am = 1
+        }
+        END { print "amnezia " (am ? 1 : 0) }' "$1"
+}

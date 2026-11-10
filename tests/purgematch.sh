@@ -485,6 +485,53 @@ check "при коннекторе службу steer не останавлив�
 check "и сказано, что ядро ведёт коннектор" "yes" "$(outhas 'ведёт steer-box-connector')"
 check "наши зоны при этом убраны" "no" "$(zones | grep -q steer_ && echo yes || echo no)"
 
+# ---- проброс в зону человека и интерфейс xsteer из ссылки ---------------------------
+# Устройство выхода лежало в зоне человека (vpnz), и пару «lan -> vpnz» дописали мы (расписка
+# `xfwd`, fw_foreign_sync): при удалении уходит ровно этот проброс, зона остаётся. Проброс в ту
+# же зону, который человек завёл сам (guest -> vpnz), расписки не имеет и остаётся.
+# Интерфейс xsteer, заведённый из ссылки (расписка net-owned), убирается вместе с секцией пира;
+# заведённый человеком в настройках сети (xs0) остаётся, и о нём сказано.
+seed_own() {
+    setup
+    cat >> "$T/uci.store" <<'EOF'
+firewall.vpnz=zone
+firewall.vpnz.name=vpnz
+firewall.vpnz.device=wg9
+firewall.@forwarding[5]=forwarding
+firewall.@forwarding[5].src=lan
+firewall.@forwarding[5].dest=vpnz
+firewall.guest2vpn=forwarding
+firewall.guest2vpn.src=guest
+firewall.guest2vpn.dest=vpnz
+network.xs1=interface
+network.xs1.proto=xsteer
+network.cfg0a1b=xsteer_xs1
+network.cfg0a1b.public_key=k
+EOF
+    printf 'xfwd vpnz lan\n' >> "$T/etc/splify2/fw-owned"
+    printf 'xsteer xs1\n' > "$T/etc/splify2/net-owned"
+}
+seed_own
+run_purge
+check "показ: проброс в зону человека назван нашим" "yes" "$(outhas 'lan -> vpnz) в вашу зону')"
+check "показ: интерфейс xsteer из ссылки назван" "yes" "$(outhas 'интерфейс xsteer xs1, заведённый splify2 из ссылки')"
+check "показ: остающимся назван только интерфейс человека" "yes;no" \
+    "$(grep 'остаются в настройке сети' "$T/out" | grep -q 'xs0' && echo yes || echo no);$(grep 'остаются в настройке сети' "$T/out" | grep -q 'xs1' && echo yes || echo no)"
+check "показ ничего не удалил" "yes;yes" "$(has 'firewall.@forwarding[5].dest=vpnz');$(has 'network.xs1.proto=xsteer')"
+seed_own
+run_purge --yes
+check "наш проброс в зону человека убран" "no" "$(grep -q '^firewall\.@forwarding\[[0-9]*\]\.dest=vpnz$' "$T/uci.store" && echo yes || echo no)"
+check "зона человека осталась, со своим устройством" "yes" "$(has 'firewall.vpnz.device=wg9')"
+check "проброс, заведённый человеком в ту же зону, остался" "yes" "$(has 'firewall.guest2vpn.dest=vpnz')"
+check "интерфейс xsteer из ссылки убран вместе с пиром" "no;no" "$(has 'network.xs1.proto=xsteer');$(has 'network.cfg0a1b=xsteer_xs1')"
+check "интерфейс xsteer человека остался" "yes" "$(has 'network.xs0.proto=xsteer')"
+check "чужой интерфейс сети не тронут" "yes" "$(has 'network.lan.proto=static')"
+seed_own
+run_purge --yes --keep-config
+check "с сохранением настроек интерфейс из ссылки остаётся" "yes" "$(has 'network.xs1.proto=xsteer')"
+check "а проброс в зону человека уходит и тогда: это правило фаервола, а не настройка" "no" \
+    "$(grep -q '^firewall\.@forwarding\[[0-9]*\]\.dest=vpnz$' "$T/uci.store" && echo yes || echo no)"
+
 # ---- нечего убирать ----------------------------------------------------------------
 # Роутер, где следов нет: скрипт обязан сказать это и выйти успехом, а не ругаться.
 setup

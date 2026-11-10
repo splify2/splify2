@@ -358,35 +358,46 @@ fw_zone_sync() {  # ЗОНА ВИДЫ MASQ
     # Обратного проброса (`lan -> зона клиентов`) мы не заводим: он открыл бы локальной сети
     # доступ к пирам чужого туннеля, а об этом нас никто не просил.
     if [ "$_kinds" = clients ]; then
-        [ -n "$(fw_forwarding_id "$_z" wan)" ] || {
+        # ЗОНА ВНЕШНЕЙ СЕТИ — НАСТОЯЩАЯ, а не слово `wan` (fw_wan_zone): у человека она может
+        # называться иначе, а проброс в зону, которой нет, не пропустил бы ничего. Не нашлась —
+        # проброса не заводим и говорим об этом: молча это выглядело бы как «зона есть, а
+        # интернета с этого интерфейса нет». Расписка — прежняя строка `fwd wan ЗОНА`: слово wan
+        # в ней значит «наружу», а не имя зоны (по ней расписку чистят fw_forget_zone и purge).
+        _wz="$(fw_wan_zone)"
+        if [ -z "$_wz" ]; then
+            fw_noted "fwd wan $_z" ||
+                echo "$(s2_t fw.wan_zone_unknown "The firewall zone of the outside network was not found: forwarding from {zone} outward was not added" zone "$_z")"
+        elif [ -z "$(fw_forwarding_id "$_z" "$_wz")" ]; then
             uci -q add firewall forwarding >/dev/null
             uci -q set firewall.@forwarding[-1].src="$_z"
-            uci -q set firewall.@forwarding[-1].dest='wan'
+            uci -q set firewall.@forwarding[-1].dest="$_wz"
             fw_note "fwd wan $_z"
             changed=1
-            msg="$(s2_t fw.fwd_wan_added "{prefix}forwarding {zone} -> wan added" prefix "${msg:+$msg, }" zone "$_z")"
-        }
+            msg="$(s2_t fw.fwd_out_added "{prefix}forwarding {zone} -> {wan} added" prefix "${msg:+$msg, }" zone "$_z" wan "$_wz")"
+        fi
     else
-        # Разрешение lan -> зона. Без него зона есть, а трафик всё равно не идёт: политика forward
-        # у fw4 применяется к паре зон, а не к одной.
-        [ -n "$(fw_forwardings_to "$_z")" ] || {
-            uci -q add firewall forwarding >/dev/null
-            uci -q set firewall.@forwarding[-1].src='lan'
-            uci -q set firewall.@forwarding[-1].dest="$_z"
-            changed=1
-            msg="$(s2_t fw.fwd_lan_added "{prefix}forwarding lan -> {zone} added" prefix "${msg:+$msg, }" zone "$_z")"
-        }
-
-        # ПРОБРОС ИЗ ЗОН УСТРОЙСТВ КЛИЕНТОВ. Спека может назвать интерфейс из другой зоны — tailscale0
-        # в своей зоне ts по руководствам: движок помечает пакет (iifname), маршрут ведёт в туннель,
-        # а forward-цепочка fw4 его отбрасывает, потому что пары «ts -> зона туннелей» никто не
-        # заводил. Так и пришло первое обращение по Андромеде: «выбираю tailscale0, проксирование не
-        # взлетает». Устройства в спеке выбираем мы — значит и проброс из их зон наша забота. С
-        # расписки: убирается, когда устройств из этой зоны в спеке больше нет; чужие пробросы (без
-        # расписки) не трогаются. lan пробрасывается выше и всегда; зона туннеля сама в себя — нет.
+        # ПРОБРОС ИЗ ЗОН УСТРОЙСТВ КЛИЕНТОВ — ИЗ НАСТОЯЩИХ ЗОН, а не из слова `lan`. Политика forward
+        # у fw4 применяется к паре зон: без проброса зона есть, а трафик не идёт. Прежде пара была
+        # «lan -> зона» при любых настройках, и роутер, у которого зона локальной сети названа
+        # иначе, получал проброс из зоны, которой нет, а из настоящей — ничего: правила стоят,
+        # диагностика зелёная, трафик падает молча. Зоны спрашиваются у устройств клиентов спеки
+        # (fw_client_zones; без перечня в спеке клиент — br-lan, его зона обычно и есть lan).
+        #
+        # Спека может назвать интерфейс и из другой зоны — tailscale0 в своей зоне ts по
+        # руководствам: движок помечает пакет (iifname), маршрут ведёт в туннель, а forward-цепочка
+        # fw4 его отбрасывает, потому что пары «ts -> зона туннелей» никто не заводил. Так и пришло
+        # первое обращение по Андромеде: «выбираю tailscale0, проксирование не взлетает».
+        # Устройства в спеке выбираем мы — значит и проброс из их зон наша забота. С расписки:
+        # убирается, когда устройств из этой зоны в спеке больше нет; чужие пробросы (без расписки,
+        # в том числе `lan -> зона`, заведённый прежними версиями) не трогаются; зона туннеля сама
+        # в себя — нет.
+        #
+        # Ни одна зона не узналась (устройство клиентов не названо ни в одной зоне ни через
+        # device, ни через network — и в зону клиентов не попало), а зона lan есть — пробрасываем
+        # из неё, как прежде: хуже прежнего от этого не будет.
         _cz_want="$(fw_client_zones)"
+        [ -n "$_cz_want" ] || { [ -n "$(zone_index lan)" ] && _cz_want=lan; }
         for _cz in $_cz_want; do
-            [ "$_cz" = lan ] && continue
             [ "$_cz" = "$_z" ] && continue
             [ -n "$(fw_forwarding_id "$_cz" "$_z")" ] && continue
             uci -q add firewall forwarding >/dev/null
@@ -413,6 +424,88 @@ fw_zone_sync() {  # ЗОНА ВИДЫ MASQ
         echo "$msg"
     fi
     return "$changed"
+}
+
+# Зона внешней сети — имя или пусто. Три источника, от точного к грубому:
+#   1. зона, в чей список network входит интерфейс `wan` — так устроена настройка OpenWrt, и имя
+#      зоны при этом может быть любым;
+#   2. зона устройства, через которое идёт маршрут по умолчанию, — интерфейс тоже переименован
+#      либо выход наружу — не `wan` вовсе (второй провайдер, модем);
+#   3. зона с именем wan.
+fw_wan_zone() {
+    _fw_i="$(fw_zone_of_network wan)"
+    if [ -z "$_fw_i" ]; then
+        _fw_d="$(ip -4 route show default 2>/dev/null | sed -n 's/.* dev \([^ ]*\).*/\1/p' | head -n 1)"
+        [ -n "$_fw_d" ] && _fw_i="$(fw_zone_id_of_dev "$_fw_d")"
+    fi
+    [ -n "$_fw_i" ] || _fw_i="$(zone_index wan)"
+    [ -n "$_fw_i" ] && uci -q get "firewall.$_fw_i.name" 2>/dev/null
+}
+
+# ПРОБРОС В ЗОНУ ЧЕЛОВЕКА. Устройство выхода, которому человек сам назначил зону, в нашу не
+# переносится (fw_zone_sync: «оставлены как есть») — зона его, со своим NAT и своими правилами.
+# Но пару «зона клиентов -> эта зона» за него никто не заводил: если он её забыл, пакет помечен,
+# маршрут ведёт в туннель, а forward-цепочка fw4 его отбрасывает — правила стоят, диагностика
+# зелёная, трафик падает молча. Выход в спеке выбрали мы, значит и проброс к нему — наша забота,
+# ровно как проброс из зон клиентов в нашу зону.
+#
+# Заводится ТОЛЬКО проброс — своя секция forwarding; сама зона человека (устройства, политика,
+# NAT) не меняется. С расписки, отдельным видом строки: `xfwd ЗОНА_ВЫХОДА ЗОНА_КЛИЕНТОВ` — «проброс
+# в чужую зону». Убирается по расписке, когда больше не нужен: устройство ушло из выходов спеки
+# или из зоны, либо в зоне-источнике не осталось устройств клиентов. Проброс, который человек
+# завёл сам, не дублируется и за нами не записывается.
+# Печатает, что сделала; код 1 — изменения были.
+fw_foreign_sync() {
+    _ff_changed=0; _ff_msg=""
+    _ff_ours=" "; _ff_kinds=""
+    for _ff_z in $FW_ZONES; do
+        _ff_ours="$_ff_ours${_ff_z%%:*} "
+        _ff_k="${_ff_z#*:}"; _ff_k="${_ff_k%%:*}"
+        [ "$_ff_k" = clients ] || _ff_kinds="${_ff_kinds:+$_ff_kinds,}$_ff_k"
+    done
+    _ff_cz="$(fw_client_zones)"
+    # Нужные пары «ЗОНА_ВЫХОДА ЗОНА_КЛИЕНТОВ УСТРОЙСТВО» (устройство — чтобы назвать причину).
+    _ff_want=""
+    for _ff_d in $(fw_devices_of "$_ff_kinds"); do
+        _ff_i="$(fw_zone_id_of_dev "$_ff_d")"
+        [ -n "$_ff_i" ] || continue
+        _ff_n="$(uci -q get "firewall.$_ff_i.name" 2>/dev/null)"
+        [ -n "$_ff_n" ] || continue
+        case "$_ff_ours" in *" $_ff_n "*) continue ;; esac
+        for _ff_c in $_ff_cz; do
+            # Клиенты и выход в одной зоне: это политика forward самой зоны, пары тут нет.
+            [ "$_ff_c" = "$_ff_n" ] && continue
+            _ff_want="$_ff_want$_ff_n $_ff_c $_ff_d
+"
+        done
+    done
+    while read -r _ff_n _ff_c _ff_d; do
+        [ -n "$_ff_n" ] || continue
+        [ -n "$(fw_forwarding_id "$_ff_c" "$_ff_n")" ] && continue
+        uci -q add firewall forwarding >/dev/null
+        uci -q set firewall.@forwarding[-1].src="$_ff_c"
+        uci -q set firewall.@forwarding[-1].dest="$_ff_n"
+        fw_note "xfwd $_ff_n $_ff_c"
+        _ff_changed=1
+        _ff_msg="$_ff_msg$(s2_t fw.fwd_own_zone_added "Forwarding {from} -> {zone} added: the output device {device} is in your zone {zone}; the zone itself is not changed" from "$_ff_c" zone "$_ff_n" device "$_ff_d")
+"
+    done <<EOF
+$_ff_want
+EOF
+    while read -r _ff_n _ff_c; do
+        [ -n "$_ff_n" ] || continue
+        printf '%s' "$_ff_want" | grep -q "^$_ff_n $_ff_c " && continue
+        _ff_f="$(fw_forwarding_id "$_ff_c" "$_ff_n")"
+        [ -n "$_ff_f" ] && uci -q delete "firewall.$_ff_f" && _ff_changed=1
+        fw_unnote "xfwd $_ff_n $_ff_c"
+        _ff_msg="$_ff_msg$(s2_t fw.fwd_own_zone_removed "Forwarding {from} -> {zone} removed: it is no longer needed" from "$_ff_c" zone "$_ff_n")
+"
+    done <<EOF
+$(sed -n 's/^xfwd //p' "$FW_OWNED" 2>/dev/null)
+EOF
+    [ "$_ff_changed" = 1 ] && uci -q commit firewall
+    printf '%s' "$_ff_msg"
+    return "$_ff_changed"
 }
 
 # Зоны прежних версий, слитые в steer_zone: steer_vless (masq 0) и steer_iface (masq 1).
@@ -477,6 +570,12 @@ fw_sync() {
         [ -n "$out" ] && printf '%s\n' "$out" | while IFS= read -r l; do
             [ -n "$l" ] && printf 'splify2: %s\n' "$l"
         done
+    done
+    # Пробросы в зоны человека — после наших зон: зона клиентов к этому мигу заведена, и её имя
+    # среди зон клиентов уже есть.
+    out="$(fw_foreign_sync)" || any=1
+    [ -n "$out" ] && printf '%s\n' "$out" | while IFS= read -r l; do
+        [ -n "$l" ] && printf 'splify2: %s\n' "$l"
     done
     if [ "$any" = 1 ]; then
         fw4 reload >/dev/null 2>&1 || /etc/init.d/firewall reload >/dev/null 2>&1

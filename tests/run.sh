@@ -47,6 +47,9 @@ run pluginhygiene sh "$ROOT/tests/pluginhygiene.sh"
 run hostmatch sh "$ROOT/tests/hostmatch.sh"
 # ReCheck: таблица nftables для IPv4 и IPv6, служба и rpcd без движка.
 run recheckmatch sh "$ROOT/tests/recheckmatch.sh"
+# Свой туннель WireGuard/AmneziaWG файлом или текстом (выход kind: awg): приём и проверка файла, закрытая запись,
+# перечень и удаление, файлы туннелей в архиве настроек; с собранным ядром — против его разбора.
+run awgmatch sh "$ROOT/tests/awgmatch.sh"
 # Спека в spec.yaml (spec.sh): JSON-вид, запись переводом ядра, перевод при обновлении ядра.
 run specfilematch sh "$ROOT/tests/specfilematch.sh"
 # Автоприменение на роутере (плагин autoapply): хук после записи спеки, пауза, склейка правок, sweep, события.

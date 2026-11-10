@@ -4086,13 +4086,38 @@ rpcd xsteer_link_put '{"iface":"home","link":"xs://k@198.51.100.9:8443?pk=p&ip=1
 check "xsteer_link_put: повторный приём оставляет ровно одного пира" "1" \
       "$(grep -c '=xsteer_home$' "$T/uci.store" | tr -d ' ')"
 
-# Интерфейса нет — метод его НЕ СОЗДАЁТ и говорит, где создать. Созданный здесь туннель остался бы
-# без зоны фаервола: выглядел бы настроенным и не вёз бы трафик.
-out="$(rpcd xsteer_link_put '{"iface":"newone","link":"xs://k@1.2.3.4:443?pk=p&ip=10.0.0.1/24"}')"
-check "xsteer_link_put: несуществующий интерфейс не создаётся" "false" "$(printf '%s' "$out" | jget ok)"
-check "xsteer_link_put: сказано, где его создать" "yes" \
-      "$(printf '%s' "$out" | jget error | grep -q 'настройках сети' && echo yes || echo no)"
-check "xsteer_link_put: и в настройке его не появилось" "" "$(uci_get network.newone.proto)"
+# Интерфейса нет — метод ЗАВОДИТ ЕГО САМ: всё, что интерфейсу нужно, лежит в ссылке, и отсылать
+# человека в настройки сети роутера незачем. Зону фаервола его устройству ставит apply, когда оно
+# взято в выход. Заведённое записано в расписке — по ней его уберёт полное удаление.
+: > "$T/ifup.log"; rm -f "$T/etc/net-owned"
+out="$(rpcd xsteer_link_put '{"iface":"newone","link":"xs://k@198.51.100.9:8443?pk=p&ip=10.77.0.5/24"}')"
+check "xsteer_link_put: несуществующий интерфейс заводится" "true;true" "$(printf '%s' "$out" | jget ok);$(printf '%s' "$out" | jget created)"
+check "xsteer_link_put: секция интерфейса с протоколом xsteer" "interface;xsteer" "$(uci_get network.newone);$(uci_get network.newone.proto)"
+check "xsteer_link_put: ключ и адрес из ссылки легли в новый интерфейс" "yes;10.77.0.5/24" \
+      "$([ -n "$(uci_get network.newone.private_key)" ] && echo yes || echo no);$(uci_get network.newone.addresses)"
+check "xsteer_link_put: пир нового интерфейса создан" "1" "$(grep -c '=xsteer_newone$' "$T/uci.store" | tr -d ' ')"
+check "xsteer_link_put: устройство названо в ответе" "xs-newone" "$(printf '%s' "$out" | jget device)"
+check "xsteer_link_put: новый интерфейс поднят" "yes" "$(grep -qx 'newone' "$T/ifup.log" 2>/dev/null && echo yes || echo no)"
+check "xsteer_link_put: заведённое записано в расписке" "yes" "$(grep -qx 'xsteer newone' "$T/etc/net-owned" 2>/dev/null && echo yes || echo no)"
+out="$(rpcd xsteer_link_put '{"iface":"home","link":"xs://k@198.51.100.9:8443?pk=p&ip=10.77.0.5/24"}')"
+check "xsteer_link_put: существующий интерфейс за нами не записывается" "false;no" \
+      "$(printf '%s' "$out" | jget created | sed 's/^$/false/');$(grep -qx 'xsteer home' "$T/etc/net-owned" 2>/dev/null && echo yes || echo no)"
+# Чужое не переписывается: имя, занятое интерфейсом другого протокола, — отказ.
+uci_set 'network.lan' interface; uci_set 'network.lan.proto' static
+out="$(rpcd xsteer_link_put '{"iface":"lan","link":"xs://k@198.51.100.9:8443?pk=p&ip=10.77.0.5/24"}')"
+check "xsteer_link_put: интерфейс другого протокола не трогается" "false;xs.not_xsteer;static;" \
+      "$(printf '%s' "$out" | jget ok);$(printf '%s' "$out" | jget code);$(uci_get network.lan.proto);$(uci_get network.lan.private_key)"
+# Имя нового интерфейса: устройство xs-<имя> обязано влезть в 15 знаков ядра.
+out="$(rpcd xsteer_link_put '{"iface":"abcdefghijklm","link":"xs://k@198.51.100.9:8443?pk=p&ip=10.77.0.5/24"}')"
+check "xsteer_link_put: имя нового интерфейса длиннее 12 знаков отвергается" "xs.bad_new_iface;" \
+      "$(printf '%s' "$out" | jget code);$(uci_get network.abcdefghijklm)"
+out="$(rpcd xsteer_link_put '{"iface":"my-tun","link":"xs://k@198.51.100.9:8443?pk=p&ip=10.77.0.5/24"}')"
+check "xsteer_link_put: имя нового интерфейса с дефисом отвергается (секция uci)" "xs.bad_new_iface" "$(printf '%s' "$out" | jget code)"
+# Негодная ссылка не оставляет пустой секции: интерфейс заводится после разбора.
+out="$(XS_LINK_RC=2 XS_LINK_ERR="неизвестный параметр snii" rpcd xsteer_link_put \
+       '{"iface":"new2","link":"xs://k@1.2.3.4:443?snii=a"}')"
+check "xsteer_link_put: негодная ссылка нового интерфейса не заводит" "false;;no" \
+      "$(printf '%s' "$out" | jget ok);$(uci_get network.new2);$(grep -qx 'xsteer new2' "$T/etc/net-owned" 2>/dev/null && echo yes || echo no)"
 
 out="$(XS_LINK_RC=2 XS_LINK_ERR="неизвестный параметр snii" rpcd xsteer_link_put \
        '{"iface":"home","link":"xs://k@1.2.3.4:443?snii=a"}')"
@@ -4641,6 +4666,117 @@ out="$(rpcd apply)"
 check "у устройства есть своя зона — нашей не появляется" "" "$(zone_id_by_name steer_clients)"
 check "ему хватает проброса из его зоны" "lan ts" "$(fwd_srcs steer_zone)"
 rm -f "$T/uci.store"; : > "$T/uci.store"
+
+# ---- устройство выхода в ЗОНЕ ЧЕЛОВЕКА: зона его, проброс в неё — наш -----------------------
+#
+# Человек завёл туннель в сети роутера и положил его в свою зону (vpnz). Мы такое устройство в
+# свою зону не переносим («оставлены как есть») — но пару «зона клиентов -> vpnz» за него никто не
+# заводил: забыл он её — пакет помечен, маршрут ведёт в туннель, а fw4 его отбрасывает; правила
+# стоят, диагностика зелёная, трафик падает молча. Выход в спеке выбрали мы, значит и проброс к
+# нему — наша забота. Заводится СВОЯ секция forwarding с расписки (`xfwd ЗОНА_ВЫХОДА
+# ЗОНА_КЛИЕНТОВ`), зона человека не меняется; убирается по расписке, когда не нужна.
+own_fwd() {  # SRC DEST -> сколько пробросов такой пары (любых секций)
+    _of_n=0
+    for _of_f in $(sed -n 's/^firewall\.\([^.=]*\)=forwarding$/\1/p' "$T/uci.store"); do
+        [ "$(uci_get "firewall.$_of_f.src")" = "$1" ] && [ "$(uci_get "firewall.$_of_f.dest")" = "$2" ] && _of_n=$((_of_n + 1))
+    done
+    printf '%s' "$_of_n"
+}
+SPEC_WG='{"schema":1,"lan_devices":["br-lan"],"outputs":{"direct":{"kind":"direct"},"vpn":{"kind":"interface","device":"wg0","on_fail":"direct"}},"channels":[]}'
+SPEC_NOOUT='{"schema":1,"lan_devices":["br-lan"],"outputs":{"direct":{"kind":"direct"}},"channels":[]}'
+rm -f "$T/uci.store" "$T/etc/fw-owned"; : > "$T/uci.store"
+uci_set 'firewall.@zone[0]' zone;  uci_set 'firewall.@zone[0].name' lan; uci_set 'firewall.@zone[0].device' 'br-lan'
+uci_set 'firewall.@zone[1]' zone;  uci_set 'firewall.@zone[1].name' wan; uci_set 'firewall.@zone[1].device' 'eth1'
+uci_set 'firewall.vpnz' zone;      uci_set 'firewall.vpnz.name' vpnz;    uci_set 'firewall.vpnz.device' 'wg0'
+uci_set 'firewall.vpnz.masq' '1'
+uci_set 'firewall.@forwarding[0]' forwarding; uci_set 'firewall.@forwarding[0].src' lan; uci_set 'firewall.@forwarding[0].dest' wan
+printf '%s\n' "$SPEC_WG" > "$T/etc/spec.json"
+out="$(rpcd apply)"
+check "устройство выхода в зоне человека: apply прошёл" "true" "$(printf '%s' "$out" | jget ok)"
+check "в нашу зону оно не перенесено, и нашей зоны туннелей нет" "wg0;" "$(zone_devs vpnz);$(zone_id_by_name steer_zone)"
+check "проброс lan -> зона человека заведён" "1" "$(own_fwd lan vpnz)"
+check "и записан за нами отдельным видом расписки" "yes" \
+      "$(grep -qx 'xfwd vpnz lan' "$T/etc/fw-owned" 2>/dev/null && echo yes || echo no)"
+check "и назван в ответе apply, вместе со словами «зона не меняется»" "yes;yes" \
+      "$(printf '%s' "$out" | grep -q 'проброс lan -> vpnz добавлен' && echo yes || echo no);$(printf '%s' "$out" | grep -q 'сама зона не меняется' && echo yes || echo no)"
+check "сама зона человека не тронута: устройство и NAT прежние" "wg0;1" "$(uci_get firewall.vpnz.device);$(uci_get firewall.vpnz.masq)"
+check "зона человека за нами не записана" "0" "$(grep -c 'zone vpnz\|dev vpnz' "$T/etc/fw-owned" 2>/dev/null | tr -d ' ')"
+out="$(rpcd apply)"
+check "второй apply проброс не дублирует" "1" "$(own_fwd lan vpnz)"
+# Выход убран из спеки — наш проброс уходит по расписке, зона человека остаётся.
+printf '%s\n' "$SPEC_NOOUT" > "$T/etc/spec.json"
+out="$(rpcd apply)"
+check "выход убран — наш проброс в зону человека убран" "0" "$(own_fwd lan vpnz)"
+check "и расписка снята, а зона осталась" "no;wg0" \
+      "$(grep -qx 'xfwd vpnz lan' "$T/etc/fw-owned" 2>/dev/null && echo yes || echo no);$(zone_devs vpnz)"
+check "и сказано, что проброс убран" "yes" "$(printf '%s' "$out" | grep -q 'проброс lan -> vpnz убран' && echo yes || echo no)"
+# Проброс человек завёл сам — второго не заводим, за собой не числим и при уходе выхода не трогаем.
+uci_set 'firewall.lan2vpn' forwarding; uci_set 'firewall.lan2vpn.src' lan; uci_set 'firewall.lan2vpn.dest' vpnz
+printf '%s\n' "$SPEC_WG" > "$T/etc/spec.json"
+out="$(rpcd apply)"
+check "проброс человека в его зону не дублируется" "1" "$(own_fwd lan vpnz)"
+check "и за нами не записан" "no" "$(grep -q '^xfwd ' "$T/etc/fw-owned" 2>/dev/null && echo yes || echo no)"
+printf '%s\n' "$SPEC_NOOUT" > "$T/etc/spec.json"
+out="$(rpcd apply)"
+check "выход убран — проброс человека остаётся" "1" "$(own_fwd lan vpnz)"
+# Зона человека называет интерфейс списком network (так пишет зоны LuCI), а клиентов две зоны.
+rm -f "$T/uci.store" "$T/etc/fw-owned"; : > "$T/uci.store"
+uci_set 'firewall.@zone[0]' zone;  uci_set 'firewall.@zone[0].name' lan; uci_set 'firewall.@zone[0].device' 'br-lan'
+uci_set 'firewall.@zone[1]' zone;  uci_set 'firewall.@zone[1].name' wan; uci_set 'firewall.@zone[1].device' 'eth1'
+uci_set 'firewall.ts' zone;        uci_set 'firewall.ts.name' ts;        uci_set 'firewall.ts.device' 'tailscale0'
+uci_set 'network.wgnet' interface; uci_set 'network.wgnet.proto' wireguard
+uci_set 'firewall.vpnz' zone;      uci_set 'firewall.vpnz.name' vpnz;    uci_set 'firewall.vpnz.network' 'wgnet'
+printf '%s\n' '{"schema":1,"lan_devices":["br-lan","tailscale0"],"outputs":{"direct":{"kind":"direct"},"vpn":{"kind":"interface","device":"wgnet","on_fail":"direct"}},"channels":[]}' > "$T/etc/spec.json"
+out="$(rpcd apply)"
+check "зона через network, клиенты в двух зонах — проброс из каждой" "1;1" "$(own_fwd lan vpnz);$(own_fwd ts vpnz)"
+# Клиенты из зоны ts ушли из спеки — проброс ts -> vpnz уходит, lan -> vpnz остаётся.
+printf '%s\n' '{"schema":1,"lan_devices":["br-lan"],"outputs":{"direct":{"kind":"direct"},"vpn":{"kind":"interface","device":"wgnet","on_fail":"direct"}},"channels":[]}' > "$T/etc/spec.json"
+out="$(rpcd apply)"
+check "клиентов в зоне ts больше нет — её проброс убран, остальной на месте" "1;0" "$(own_fwd lan vpnz);$(own_fwd ts vpnz)"
+# Туннель лежит в той же зоне, что клиенты (wg0 в lan — так тоже делают): пары зон нет, пробрасывать нечего.
+rm -f "$T/uci.store" "$T/etc/fw-owned"; : > "$T/uci.store"
+uci_set 'firewall.@zone[0]' zone;  uci_set 'firewall.@zone[0].name' lan; uci_set 'firewall.@zone[0].device' 'br-lan wg0'
+printf '%s\n' "$SPEC_WG" > "$T/etc/spec.json"
+out="$(rpcd apply)"
+check "выход и клиенты в одной зоне — пробросов не заводим" "0;no" \
+      "$(grep -c '=forwarding$' "$T/uci.store" | tr -d ' ');$(grep -q '^xfwd ' "$T/etc/fw-owned" 2>/dev/null && echo yes || echo no)"
+
+# ---- зоны клиентов и внешней сети — НАСТОЯЩИЕ, а не слова lan и wan -------------------------
+#
+# Зона локальной сети названа иначе (home), зона внешней — тоже (inet, со списком network wan).
+# Прежде проброс в зону туннелей заводился из слова `lan`, а из зоны клиентов наружу — в слово
+# `wan`: на таком роутере оба вели в зоны, которых нет, а из настоящих не пробрасывалось ничего.
+rm -f "$T/uci.store" "$T/etc/fw-owned"; : > "$T/uci.store"
+uci_set 'firewall.@zone[0]' zone;  uci_set 'firewall.@zone[0].name' home; uci_set 'firewall.@zone[0].device' 'br-lan'
+uci_set 'firewall.@zone[1]' zone;  uci_set 'firewall.@zone[1].name' inet; uci_set 'firewall.@zone[1].network' 'wan wan6'
+uci_set 'firewall.@forwarding[0]' forwarding; uci_set 'firewall.@forwarding[0].src' home; uci_set 'firewall.@forwarding[0].dest' inet
+printf '%s\n' '{"schema":1,"lan_devices":["br-lan","tailscale0"],"outputs":{"direct":{"kind":"direct"},"vpn":{"kind":"interface","device":"wg0","on_fail":"direct"}},"channels":[]}' > "$T/etc/spec.json"
+out="$(rpcd apply)"
+check "зоны переименованы: apply прошёл" "true" "$(printf '%s' "$out" | jget ok)"
+check "в зону туннелей пробрасывается из настоящей зоны клиентов, а не из слова lan" "home steer_clients" "$(fwd_srcs steer_zone)"
+check "проброс из зоны home записан за нами" "yes" \
+      "$(grep -qx 'fwd steer_zone home' "$T/etc/fw-owned" 2>/dev/null && echo yes || echo no)"
+check "из зоны клиентов наружу — в настоящую зону внешней сети, а не в слово wan" "inet steer_zone" "$(fwd_dests steer_clients)"
+check "пробросов в несуществующие зоны lan и wan нет" "0" \
+      "$(grep -c '^firewall\.[^.]*\.\(src=lan\|dest=wan\)$' "$T/uci.store" | tr -d ' ')"
+check "проброс наружу назван в ответе настоящим именем зоны" "yes" \
+      "$(printf '%s' "$out" | grep -q 'проброс steer_clients -> inet добавлен' && echo yes || echo no)"
+out="$(rpcd apply)"
+check "второй apply ничего не дублирует" "home steer_clients;inet steer_zone" "$(fwd_srcs steer_zone);$(fwd_dests steer_clients)"
+# Внешний интерфейс тоже переименован: зона ищется по устройству маршрута по умолчанию.
+rm -f "$T/uci.store" "$T/etc/fw-owned"; : > "$T/uci.store"
+uci_set 'firewall.@zone[0]' zone;  uci_set 'firewall.@zone[0].name' home; uci_set 'firewall.@zone[0].device' 'br-lan'
+uci_set 'firewall.@zone[1]' zone;  uci_set 'firewall.@zone[1].name' inet; uci_set 'firewall.@zone[1].device' 'pppoe-isp'
+out="$(IP_DEFAULT_DEV=pppoe-isp rpcd apply)"
+check "зона внешней сети найдена по маршруту по умолчанию" "inet steer_zone" "$(fwd_dests steer_clients)"
+# Зоны внешней сети не нашлось вовсе — проброса в пустоту нет, и об этом сказано.
+rm -f "$T/uci.store" "$T/etc/fw-owned"; : > "$T/uci.store"
+uci_set 'firewall.@zone[0]' zone;  uci_set 'firewall.@zone[0].name' home; uci_set 'firewall.@zone[0].device' 'br-lan'
+out="$(rpcd apply)"
+check "зоны внешней сети нет — проброс наружу не заводится, а в туннель заведён" "steer_zone" "$(fwd_dests steer_clients)"
+check "и об этом сказано" "yes" "$(printf '%s' "$out" | grep -q 'зона фаервола внешней сети не найдена' && echo yes || echo no)"
+# Обычный роутер (lan и wan) ведёт себя как прежде — это сторожит раздел выше («lan ts», «steer_zone wan»).
+rm -f "$T/uci.store" "$T/etc/fw-owned"; : > "$T/uci.store"
 
 # ---- спека v2: бэкенд читает её так же, как прежнюю v1 ------------------------------------
 # Интерфейс пишет v2 (`lists`, `rules`, `subscription`, `lan.devices`); до первого сохранения на

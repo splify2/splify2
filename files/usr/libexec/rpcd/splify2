@@ -214,6 +214,11 @@ list)
     json_add_object xsteer_link_put
         json_add_string iface; json_add_string link
     json_close_object
+    # Свой туннель WireGuard/AmneziaWG файлом или текстом (выход kind: awg, rpcd/m-awg.sh): перечень
+    # файлов, приём и удаление. Ключи в ответах не возвращаются.
+    json_add_object awg_list; json_close_object
+    json_add_object awg_put; json_add_string name; json_add_string text; json_add_boolean replace; json_close_object
+    json_add_object awg_del; json_add_string name; json_close_object
     json_add_object lists_source; json_close_object
     json_add_object lists_source_set; json_add_string url; json_close_object
     json_add_object fetch_mode; json_close_object
@@ -347,6 +352,7 @@ call)
         steer_modules|steer_module_add|steer_module_del|purge|prefs_get|prefs_set|paths|i18n_get) _grp=engine ;;
         sub_set|sub_info|sub_list|sub_del|sub_refresh) _grp=sub ;;
         xsteer_link|xsteer_link_put) _grp=xsteer ;;
+        awg_list|awg_put|awg_del) _grp=awg ;;
         recheck_info|recheck_set) _grp=recheck ;;
         plugins_list|plugins_search|repos_list|plugin_status|plugin_job|plugin_install|plugin_update|plugin_remove|\
         plugin_enable|plugin_disable|plugin_autoupdate|repo_key|repo_add|repo_del|plugin_call|plugin_settings_get|plugin_settings_set) _grp=plugin ;;
@@ -359,7 +365,7 @@ call)
     # и архив — у них общие файлы и общий учёт зон; установка пакетов — своя (долгая, и спеку
     # ей держать незачем).
     case "$2" in
-        spec_set|apply|spec_heal|sub_set|sub_del|sub_refresh) call_lock state ;;
+        spec_set|apply|spec_heal|sub_set|sub_del|sub_refresh|awg_put|awg_del|xsteer_link_put) call_lock state ;;
         steer_module_add|steer_module_del) call_lock install ;;
     esac
     # Где спека и как её читать (spec.yaml ядра 2.1 или spec.json): читать — `spec_json`, писать —

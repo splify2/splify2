@@ -9,8 +9,8 @@
 #   - данные других плагинов (свои списки каталога, их настройки) — разделы `[plugin <id> <имя>]`: плагин с хуком
 #     backup_sections отдаёт и принимает их сам (`splify2-host hook backup_sections`).
 #
-# Что едет в архив (формат 4; без разделов плагинов — формат 3, его читают и прежние версии): `[spec]`, `[sub]` и
-# `[sub имя]`, `[select]`, `[xsteer имя]`, разделы плагинов, `[options]`.
+# Что едет в архив (формат 4; без разделов плагинов — формат 3, его читают и прежние версии; с файлами своих туннелей —
+# формат 5): `[spec]`, `[sub]` и `[sub имя]`, `[select]`, `[xsteer имя]`, `[awg имя]`, разделы плагинов, `[options]`.
 #
 # ПРО СЕКРЕТЫ. Архив содержит приватные ключи туннелей и ссылки vless:// — то же, что пароль от всех подключений.
 # Предупреждение об этом стоит в шапке самого архива; собирается и разворачивается он в закрытом рабочем каталоге
@@ -41,12 +41,14 @@ fi
 BACKUP_OUT="$RUN_DIR/backup.out"
 BACKUP_IN="$RUN_DIR/restore.in"
 
-# Версия формата определяется НАБОРОМ РАЗДЕЛОВ: 3 — разделы каркаса, 4 — плюс `[plugin <id> <имя>]`. Разбор принимает
+# Версия формата определяется НАБОРОМ РАЗДЕЛОВ: 3 — разделы каркаса, 4 — плюс `[plugin <id> <имя>]`, 5 — плюс файлы своих
+# туннелей `[awg <имя>]` (выходы kind: awg). Разбор принимает
 # любую версию не новее своей: у людей уже лежат файлы, собранные прежними версиями, а архив, перестающий открываться от
 # обновления, — не архив. Более НОВЫЙ файл отвергается целиком: там разделы, смысла которых мы не знаем, а восстановить
 # половину хуже, чем не восстановить ничего.
 BACKUP_FORMAT=3
 BACKUP_FORMAT_EXT=4
+BACKUP_FORMAT_AWG=5
 
 # Плагин, которому достаются списки и настройки каталога из архивов формата 3 (до выноса каталога списков в плагин
 # они лежали разделами `[list …]` и полями `manifest_url`, `list_shrink_factor` раздела `[options]`).
@@ -204,6 +206,11 @@ backup_build() {  # КАТАЛОГ_ВЫГРУЗКИ
     _bb_ext="${_bb_ext%X}"
     _bb_fmt="$BACKUP_FORMAT"
     [ -n "$_bb_ext" ] && _bb_fmt="$BACKUP_FORMAT_EXT"
+    # Файлы туннелей — раздел, которого прежние версии не знают: версия выше, и прежний разбор отвечает «файл новее»,
+    # а не «неизвестный раздел». Архив без туннелей остаётся прежней версии и открывается прежними.
+    for _bb_f in "$1"/awg.*; do
+        [ -f "$_bb_f" ] && { _bb_fmt="$BACKUP_FORMAT_AWG"; break; }
+    done
     printf 'splify2-backup %s\n' "$_bb_fmt"
     printf '# %s\n' "$(s2_t backup.header_1 "splify2 settings: the spec, subscriptions, tunnel keys, plugin data and uci fields.")"
     printf '# %s\n' "$(s2_t backup.header_2 "Restored by the same interface. Mirrors of the categories")"
@@ -223,6 +230,11 @@ backup_build() {  # КАТАЛОГ_ВЫГРУЗКИ
     for _bb_f in "$1"/xsteer.*; do
         [ -f "$_bb_f" ] || continue
         printf '[xsteer %s]\n' "${_bb_f##*/xsteer.}"
+        awk 1 "$_bb_f"
+    done
+    for _bb_f in "$1"/awg.*; do
+        [ -f "$_bb_f" ] || continue
+        printf '[awg %s]\n' "${_bb_f##*/awg.}"
         awk 1 "$_bb_f"
     done
     [ -n "$_bb_ext" ] && printf '%s' "$_bb_ext"
@@ -261,7 +273,7 @@ backup_split() {  # ФАЙЛ КАТАЛОГ
     return "$_bs_rc"
 }
 backup_split_awk() {  # ФАЙЛ КАТАЛОГ
-    awk -v dir="$2" -v ver="$BACKUP_FORMAT_EXT" '
+    awk -v dir="$2" -v ver="$BACKUP_FORMAT_AWG" '
     NR == 1 {
         if ($0 !~ /^splify2-backup [0-9]+$/) { print "backup.not_settings"; exit 1 }
         if ($2 + 0 < 1 || $2 + 0 > ver + 0) {
@@ -272,15 +284,22 @@ backup_split_awk() {  # ФАЙЛ КАТАЛОГ
     }
     # Комментарии выбрасываются везде, КРОМЕ разделов, которые едут дословно. Строки раздела плагина всегда
     # начинаются с пробела (отступ), поэтому комментарием быть не могут.
-    /^#/ { if (kind != "xsteer") next }
+    /^#/ { if (kind != "xsteer" && kind != "awg") next }
     # Подписка в виде JSON бывает массивом: строка с `[` в начале — её содержимое, а не заголовок раздела. Внутри
     # раздела подписки заголовком считается только то, что называется нашим разделом.
     kind == "sub" && /^\[/ && !($0 == "[spec]" || $0 == "[sub]" || $0 == "[options]" || $0 == "[select]" ||
-        $0 ~ /^\[(list (domains|prefixes)|sub|xsteer) [A-Za-z0-9_:@.-]+\]$/) { print > cur; next }
+        $0 ~ /^\[(list (domains|prefixes)|sub|xsteer|awg) [A-Za-z0-9_:@.-]+\]$/) { print > cur; next }
     /^\[/ {
         # Настройка туннеля — файл в формате WireGuard, и в нём есть СВОИ строки в квадратных скобках. Для разборщика
         # это содержимое, а не заголовки: файл обязан приехать дословно.
-        if (kind == "xsteer" && ($0 == "[Interface]" || $0 == "[Peer]")) { print > cur; next }
+        if ((kind == "xsteer" || kind == "awg") && ($0 == "[Interface]" || $0 == "[Peer]")) { print > cur; next }
+        # Файл своего туннеля пишет не мы, а сервер человека, и его заголовок бывает в любом регистре, с пробелами и
+        # комментарием (`[peer]`, ` [Peer] # nl`): проверка формы (awg_conf_check) и ядро такие принимают, значит
+        # принятый файл обязан и из архива вернуться, а не оборвать восстановление «неизвестным разделом».
+        if (kind == "awg") {
+            h = tolower($0); sub(/#.*/, "", h); gsub(/^[ \t]+|[ \t\r]+$/, "", h)
+            if (h == "[interface]" || h == "[peer]") { print > cur; next }
+        }
         kind = ""
         if ($0 == "[spec]")         { cur = dir "/spec" }
         else if ($0 == "[sub]")     { cur = dir "/sub"; kind = "sub" }
@@ -300,6 +319,11 @@ backup_split_awk() {  # ФАЙЛ КАТАЛОГ
         else if ($0 ~ /^\[xsteer [A-Za-z0-9_:@-][A-Za-z0-9_.:@-]*\]$/) {
             split(substr($0, 2, length($0) - 2), p, " ")
             cur = dir "/xsteer." p[2]; kind = "xsteer"
+        }
+        # Файл своего туннеля (выход kind: awg): имя — имя выхода, без ведущей точки по той же причине.
+        else if ($0 ~ /^\[awg [A-Za-z0-9_-][A-Za-z0-9_.-]*\]$/) {
+            split(substr($0, 2, length($0) - 2), p, " ")
+            cur = dir "/awg." p[2]; kind = "awg"
         }
         # Раздел плагина: id — как у манифеста, имя — буквы, цифры, подчёркивание. Оба становятся частью имени файла в
         # песочнице, поэтому точка в имени запрещена (в id дефис допускается, точки — нет).
@@ -469,7 +493,7 @@ backup_put() {
     why="$(backup_split "$BACKUP_IN" "$D")" || backup_giveup "${why:-$(s2_t backup.unparsable "The archive cannot be parsed")}"
     backup_legacy "$D"
     fw=0
-    for f in "$D/spec" "$D/sub" "$D/options" "$D/select" "$D"/sub.* "$D"/xsteer.*; do
+    for f in "$D/spec" "$D/sub" "$D/options" "$D/select" "$D"/sub.* "$D"/xsteer.* "$D"/awg.*; do
         [ -f "$f" ] && fw=1
     done
     plug=0
@@ -492,7 +516,7 @@ backup_put() {
     warn="$BK_PLUG_WARN"
     plug_done="$BK_PLUG_DONE"
     plug_lists="$BK_PLUG_LISTS"
-    spec_done=0; sub_done=0; subs_done=0; xsteer_done=0; select_done=0
+    spec_done=0; sub_done=0; subs_done=0; xsteer_done=0; awg_done=0; select_done=0
     if [ "$fw" = 1 ]; then
         imp="$("$SPLIFY2_HOST" state import "$D")"; imp_rc=$?
         json_load "$imp" 2>/dev/null
@@ -501,7 +525,7 @@ backup_put() {
             backup_giveup "${why:-$(s2_t backup.restore_failed "The settings were not restored")}"
         fi
         json_get_var spec_done spec; json_get_var sub_done sub; json_get_var subs_done subs
-        json_get_var xsteer_done xsteer; json_get_var select_done select
+        json_get_var xsteer_done xsteer; json_get_var select_done select; json_get_var awg_done awg
         json_get_var iwarn warn
         [ -n "$iwarn" ] && warn="$warn$iwarn"
     fi
@@ -514,6 +538,7 @@ backup_put() {
     # Числами, а не одним «ок»: «восстановлено» без перечня не отличает «вернули всё» от «вернули один список».
     json_add_int subs "${subs_done:-0}"
     json_add_int xsteer "${xsteer_done:-0}"
+    json_add_int awg "${awg_done:-0}"
     json_add_boolean select "${select_done:-0}"
     [ "$plug_done" -gt 0 ] && json_add_int plugins "$plug_done"
     json_add_array lists
