@@ -1,4 +1,4 @@
 {
   "plugin.name": "Auto-apply",
-  "plugin.description": "Applies the saved settings by itself after a pause, even when no page is open"
+  "plugin.description": "Applies the saved settings on the router by itself, right after they are saved, even when no page is open"
 }

@@ -15,13 +15,37 @@
 
 STEER="${STEER:-/usr/sbin/steer}"
 EVENTS_RETRY="${EVENTS_RETRY:-5}"
+
+# ПОДПИСЧИК УХОДИТ ВМЕСТЕ СО СЛУЖБОЙ. Прежде подписка стояла в конвейере (`steer ctl subscribe | while read`): procd,
+# останавливая службу, убивал оболочку, а `steer ctl subscribe` оставался сиротой и висел на сокете ядра до первого события,
+# которое некому было отдать. Каждый перезапуск службы (включение и выключение плагина, обновление пакета) оставлял
+# по подписчику, а у ядра их не больше восьми: на живом роутере за неделю набралось три, восьмой отнял бы события у всех.
+# Теперь подписчик — именованный ребёнок: его номер известен, и ловушка завершения убирает его первой же командой.
+_ev_pid=""
+_ev_fifo="${EVENTS_FIFO:-${TMPDIR:-/tmp}/splify2-events.$$}"
+ev_stop() {
+    [ -n "$_ev_pid" ] && kill "$_ev_pid" 2>/dev/null
+    rm -f "$_ev_fifo"
+}
+trap 'ev_stop; exit 0' TERM INT HUP
+trap 'ev_stop' EXIT
+
 # Стенду достаточно одного соединения: EVENTS_ONCE=1.
 while :; do
-    "$STEER" ctl subscribe 2>/dev/null | while IFS= read -r _ev_line; do
+    rm -f "$_ev_fifo"
+    if ! mkfifo "$_ev_fifo" 2>/dev/null; then
+        [ -n "${EVENTS_ONCE:-}" ] && exit 1
+        sleep "$EVENTS_RETRY"; continue
+    fi
+    "$STEER" ctl subscribe > "$_ev_fifo" 2>/dev/null &
+    _ev_pid=$!
+    while IFS= read -r _ev_line; do
         case "$_ev_line" in
             '{'*'"ev"'*) ext_event_dispatch "$_ev_line" ;;
         esac
-    done
+    done < "$_ev_fifo"
+    wait "$_ev_pid" 2>/dev/null
+    _ev_pid=""
     [ -n "${EVENTS_ONCE:-}" ] && break
     sleep "$EVENTS_RETRY"
 done

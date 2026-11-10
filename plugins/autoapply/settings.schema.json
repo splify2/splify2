@@ -6,8 +6,8 @@
     "enabled": {
       "type": "boolean",
       "title": "Apply saved settings automatically",
-      "description": "Off - the Apply button stays an explicit action. On - saved changes are applied after a pause, even if the page was closed.",
-      "default": false
+      "description": "On - saved changes are applied by the router itself after a short pause, even if the page was closed. Off - the settings are applied only by an explicit action.",
+      "default": true
     },
     "pause_s": {
       "type": "integer",
@@ -15,7 +15,7 @@
       "maximum": 3600,
       "title": "Pause after the last save, seconds",
       "description": "Changes that follow one another within this pause are applied by one application.",
-      "default": 2
+      "default": 1
     },
     "sweep": {
       "type": "boolean",

@@ -1,9 +1,9 @@
 {
   "schema": 1,
   "id": "autoapply",
-  "version": "1.0.0",
+  "version": "1.1.0",
   "name": "Auto-apply",
-  "description": "Applies the saved settings by itself after a pause, even when no page is open",
+  "description": "Applies the saved settings on the router by itself, right after they are saved, even when no page is open",
   "homepage": "https://github.com/splify2/splify2",
   "compat": {
     "splify2-api": "^1.0"
@@ -28,6 +28,10 @@
       "autoapply_now": {
         "access": "write",
         "timeout_s": 120
+      },
+      "autoapply_kick": {
+        "access": "write",
+        "timeout_s": 30
       },
       "autoapply_cancel": {
         "access": "write",
@@ -73,6 +77,7 @@
       "alias": {
         "autoapply_status": "autoapply_status",
         "autoapply_now": "autoapply_now",
+        "autoapply_kick": "autoapply_kick",
         "autoapply_cancel": "autoapply_cancel"
       }
     },

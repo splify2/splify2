@@ -632,6 +632,22 @@ envs EVENTS_ONCE=1 sh "$SBIN/splify2-events" >/dev/null 2>&1
 check "ev1 получил applied и failed, но не switched" "2;1;1;0" "$(gc '"api":1' "$T/marks/ev-ev1");$(gc '"ev":"applied"' "$T/marks/ev-ev1");$(gc '"ev":"failed"' "$T/marks/ev-ev1");$(gc '"ev":"switched"' "$T/marks/ev-ev1")"
 check "ev2 с фильтром «*» получил все три события, мусор — нет" "3" "$(gc '"ev"' "$T/marks/ev-ev2")"
 check "событие передано объектом внутри оболочки {api, event}" "applied" "$(head -1 "$T/marks/ev-ev1" | pj 'd["event"]["ev"]')"
+# Остановка службы забирает подписчика с собой: прежде `steer ctl subscribe` оставался сиротой на сокете ядра.
+cat > "$T/bin/steer-hang" <<'EOF'
+#!/bin/sh
+echo $$ > "$SANDBOX/sub.pid"
+exec sleep 600
+EOF
+chmod +x "$T/bin/steer-hang"
+# Сигнал получает сама служба (как от procd), а не оболочка стенда вокруг неё: номер процесса она пишет до exec.
+envs STEER="$T/bin/steer-hang" sh -c 'echo $$ > "$SANDBOX/svc.pid"; exec sh "$0"' "$SBIN/splify2-events" >/dev/null 2>&1 &
+_n=0; while [ ! -s "$T/sub.pid" ] && [ "$_n" -lt 50 ]; do sleep 0.1; _n=$((_n + 1)); done
+ev_sub="$(cat "$T/sub.pid" 2>/dev/null)"
+kill -TERM "$(cat "$T/svc.pid" 2>/dev/null)" 2>/dev/null; wait 2>/dev/null
+sleep 0.3
+check "служба остановлена — её подписчик на события ядра тоже завершён" "был;нет" "$([ -n "$ev_sub" ] && echo был || echo не-было);$(kill -0 "${ev_sub:-0}" 2>/dev/null && echo есть || echo нет)"
+kill "${ev_sub:-0}" 2>/dev/null
+
 set_state ev1 disabled; set_state ev2 disabled
 sync_now
 check "подписчиков не осталось — служба остановлена и снята с автозапуска" "stop|disable|" "$(tail -n 2 "$T/events-initd.log" | tr '\n' '|')"

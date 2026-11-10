@@ -1,7 +1,7 @@
 {
   "Auto-apply": "Автоприменение",
   "Apply saved settings automatically": "Применять сохранённое само",
-  "Off - the Apply button stays an explicit action. On - saved changes are applied after a pause, even if the page was closed.": "Выключено — «Применить» остаётся явным действием. Включено — сохранённое применяется через паузу, даже если страницу закрыли.",
+  "On - saved changes are applied by the router itself after a short pause, even if the page was closed. Off - the settings are applied only by an explicit action.": "Включено — сохранённое применяет сам роутер через короткую паузу, даже если страницу закрыли. Выключено — настройки применяются только явным действием.",
   "Pause after the last save, seconds": "Пауза после последней правки, секунд",
   "Changes that follow one another within this pause are applied by one application.": "Правки, идущие друг за другом в пределах паузы, применяются одним применением.",
   "Apply what was saved but not applied": "Применять сохранённое и не применённое",
