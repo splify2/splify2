@@ -101,7 +101,7 @@ case "$2" in
             # протокола на более длинном отказывает, и интерфейс не поднялся бы никогда).
             case "$iface" in *[!A-Za-z0-9_]*) _xl_bad=1 ;; *) _xl_bad=0 ;; esac
             [ "$_xl_bad" = 0 ] && [ "${#iface}" -le 12 ] ||
-                fail_code xs.bad_new_iface "The interface name: letters, digits and _, up to 12 characters (the device is xs-{iface}, and the kernel accepts 15)" iface "$iface"
+                fail_code xs.bad_new_iface "The interface name: letters, digits and _, up to 12 characters"
             _xl_new=1
         fi
         # Ссылка уходит движку СТАНДАРТНЫМ ВВОДОМ, а не аргументом: аргументы видны в списке
@@ -124,9 +124,16 @@ case "$2" in
             fail_code xs.core_incomplete "The core returned a configuration without required fields. This is a core error, not a link error."
         # Интерфейс заводится ПОСЛЕ разбора ссылки: негодная ссылка не оставляет в настройке сети
         # пустой секции.
+        # Отказ ПОСЛЕ заведения — с откатом своей секции: правки uci до commit лежат в общем
+        # черновике (/tmp/.uci), и следующий `uci commit network` — чей угодно, хоть страницы сети —
+        # записал бы полузаведённый интерфейс без пира. Откатывается только эта секция: чужие
+        # несохранённые правки сети в том же черновике не наши.
+        # Отказы ниже зовут fail_code сами, а не через обёртку: стенд словарей (i18nmatch) ищет коды
+        # по вызовам fail_code.
+        xl_undo() { [ "$_xl_new" = 1 ] && uci -q revert "network.$iface" 2>/dev/null; return 0; }
         if [ "$_xl_new" = 1 ]; then
             uci -q set "network.$iface=interface" && uci -q set "network.$iface.proto=xsteer" ||
-                fail_code xs.network_not_saved "Cannot save the network settings"
+                { xl_undo; fail_code xs.network_not_saved "Cannot save the network settings"; }
         fi
         uci -q set "network.$iface.private_key=$priv"
         uci -q delete "network.$iface.addresses"
@@ -146,7 +153,7 @@ case "$2" in
             uci -q delete "network.$_p"
         done
         _sec=$(uci -q add network "xsteer_$iface")
-        [ -n "$_sec" ] || fail_code xs.peer_section "Cannot create the peer section: no space left"
+        [ -n "$_sec" ] || { xl_undo; fail_code xs.peer_section "Cannot create the peer section: no space left"; }
         uci -q set "network.$_sec.public_key=$pub"
         uci -q set "network.$_sec.endpoint_host=${ep%:*}"
         uci -q set "network.$_sec.endpoint_port=${ep##*:}"
@@ -160,7 +167,7 @@ case "$2" in
             IFS="$_old_ifs"
         }
         [ -n "$ka" ] && uci -q set "network.$_sec.persistent_keepalive=$ka"
-        uci -q commit network || fail_code xs.network_not_saved "Cannot save the network settings"
+        uci -q commit network || { xl_undo; fail_code xs.network_not_saved "Cannot save the network settings"; }
         # Расписка — после записи: интерфейс, который не лёг в настройку, нашим не числится.
         if [ "$_xl_new" = 1 ]; then
             mkdir -p "${NET_OWNED%/*}" 2>/dev/null
