@@ -352,6 +352,13 @@ ext_rebuild() {
     done <<EOF
 $_er_list
 EOF
+    # СТРОКИ ХУКОВ — ЕЩЁ И ОТДЕЛЬНЫМ ФАЙЛОМ. Запись спеки и применение спрашивают хуки по нескольку раз за вызов
+    # (есть ли подписчик, до, после), и каждый вопрос читал весь реестр встроенной `read` — больше сотни строк, из
+    # которых хуков пятая часть; на роутере с MIPS это десятые доли секунды на каждое сохранение. Файл кладётся ДО
+    # замены реестра: читатель, увидевший новый реестр, видит и новые хуки. Нет файла (реестр прежней версии до
+    # первой пересборки) — читается весь реестр, как раньше (ext_hooks_file).
+    grep "^hook$EXT_TAB" "$EXT_REG_TMP" > "$EXT_REG.hooks.new.$$" 2>/dev/null
+    mv -f "$EXT_REG.hooks.new.$$" "$EXT_REG.hooks" 2>/dev/null || rm -f "$EXT_REG.hooks.new.$$" "$EXT_REG.hooks"
     if [ -f "$EXT_REG" ] && cmp -s "$EXT_REG" "$EXT_REG_TMP"; then
         # Тот же состав: время файла обновляется, чтобы «state.json новее» не повторялось.
         touch "$EXT_REG"
@@ -359,7 +366,14 @@ EOF
     else
         mv -f "$EXT_REG_TMP" "$EXT_REG"
     fi
+    # Файл хуков — не старше реестра: по времени читатель судит, годится ли он (ext_hooks_file).
+    touch "$EXT_REG.hooks" 2>/dev/null
     return 0
+}
+
+# Откуда читать строки хуков: отдельный файл, а без него — весь реестр.
+ext_hooks_file() {
+    if [ -f "$EXT_REG.hooks" ] && ! [ "$EXT_REG" -nt "$EXT_REG.hooks" ]; then EXT_HOOKS="$EXT_REG.hooks"; else EXT_HOOKS="$EXT_REG"; fi
 }
 
 # Реестр устарел: нет файла, state.json новее, режим безопасности переключили.
@@ -427,6 +441,7 @@ ext_hook_each() {  # ХУК КОНТЕКСТ_JSON ОБРАБОТЧИК [ПЕРЕ
     _eh_hook="$1"; _eh_ctx="$2"; _eh_cb="$3"; shift 3
     ext_ready || return 0
     ext_safe && return 0
+    ext_hooks_file
     while IFS="$EXT_TAB" read -r _eh_t _eh_h _eh_id _eh_prog _eh_mode _eh_to _eh_crit; do
         [ "$_eh_t" = hook ] && [ "$_eh_h" = "$_eh_hook" ] || continue
         [ -z "${EXT_ONLY_ID:-}" ] || [ "$EXT_ONLY_ID" = "$_eh_id" ] || continue
@@ -436,7 +451,7 @@ ext_hook_each() {  # ХУК КОНТЕКСТ_JSON ОБРАБОТЧИК [ПЕРЕ
         rm -f "$EXT_TMP_IN"
         "$_eh_cb" "$_eh_id" "$EXT_RC" "$EXT_OUT" "$_eh_mode" "$_eh_crit" </dev/null
         ext_clean
-    done < "$EXT_REG"
+    done < "$EXT_HOOKS"
     return 0
 }
 
@@ -494,9 +509,10 @@ ext_gate() {  # ХУК КОНТЕКСТ_JSON [ПЕРЕМЕННАЯ=ЗНАЧЕН�
 ext_has_hook() {  # ХУК
     ext_ready || return 1
     ext_safe && return 1
+    ext_hooks_file
     while IFS="$EXT_TAB" read -r _hh_t _hh_h _hh_rest; do
         [ "$_hh_t" = hook ] && [ "$_hh_h" = "$1" ] && return 0
-    done < "$EXT_REG"
+    done < "$EXT_HOOKS"
     return 1
 }
 

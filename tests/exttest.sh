@@ -318,6 +318,9 @@ echo '{"ok":false}'
 EOF
 chmod -x "$PL/lib/noexec/h"
 sync_now
+# Строки хуков лежат ещё и отдельным файлом — его читают вопросы о хуках вместо всего реестра.
+check "файл хуков: те же строки hook, что в реестре, и ничего кроме" "да;0" \
+      "$(reg | grep '^hook	' | cmp -s - "$PL/run/ext.reg.hooks" && echo да || echo нет);$(grep -vc '^hook	' "$PL/run/ext.reg.hooks")"
 check "хук без бита исполнения не подключается" "0;yes" "$(reg | grep -c '^hook	pre_spec_set	noexec');$(has 'программы h нет или она не исполняемая' "$PL/run/ext.reg")"
 
 echo "== хуки: порядок и режимы pre_apply"
