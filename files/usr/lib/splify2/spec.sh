@@ -90,6 +90,9 @@ spec_put() {  # ВРЕМЕННЫЙ_JSON
     fi
     rm -f "$1"
     spec_json >/dev/null
+    # Спека сменилась — запомненные на время вызова ответы ядра об устройствах выходов больше не верны
+    # (fw_devices_of в rpcd/common.sh). Вне rpcd функции нет.
+    command -v fw_devices_forget >/dev/null 2>&1 && fw_devices_forget
     return 0
 }
 

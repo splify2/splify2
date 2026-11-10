@@ -2,7 +2,8 @@
 # Программа rpc плагина autoapply: $1 — метод, параметры — JSON в stdin, ответ — объект JSON.
 #
 #   autoapply_status    включено ли, пауза, ждёт ли применение, есть ли неприменённое, исход последнего применения
-#   autoapply_now       применить сохранённое сейчас (не ждать паузы)
+#   autoapply_now       применить сохранённое сейчас (не ждать паузы) и дождаться исхода
+#   autoapply_kick      применить сохранённое сейчас, не дожидаясь исхода: ответ сразу, исход — в autoapply_status
 #   autoapply_cancel    отменить ожидающее применение
 . "${STEER_PLUGIN_DIR:?программа запускается хостом splify2 (нет STEER_PLUGIN_DIR)}/lib/base.sh"
 METHOD="${1:-}"
@@ -13,15 +14,33 @@ autoapply_status() {
     json_add_boolean ok 1
     if is_on enabled; then json_add_boolean enabled 1; else json_add_boolean enabled 0; fi
     json_add_int pause_s "$(pause_s)"
+    # «Есть ли неприменённое» считается ПЕРВЫМ, метки — после: сравнение спек занимает десятки миллисекунд, и применение,
+    # начавшееся за это время, иначе выглядело бы как «не применено и никто не занят».
+    _st_un=0; _st_rej=0
+    if unapplied; then
+        _st_un=1
+        if [ -s "$FAILED" ] && [ "$(cat "$FAILED")" = "$(spec_sum)" ]; then _st_rej=1; fi
+    fi
+    _st_pend=0; _st_app=0
     if [ -e "$PENDING" ]; then
         read -r _ since < "$PENDING"
-        json_add_boolean pending 1
+        _st_pend=1
         json_add_int since "$(num_or "$since" 0)"
-    else
-        json_add_boolean pending 0
     fi
-    if unapplied; then json_add_boolean unapplied 1; else json_add_boolean unapplied 0; fi
-    if [ -s "$FAILED" ] && unapplied && [ "$(cat "$FAILED")" = "$(spec_sum)" ]; then json_add_boolean rejected 1; else json_add_boolean rejected 0; fi
+    applying && _st_app=1
+    json_add_boolean pending "$_st_pend"
+    json_add_boolean applying "$_st_app"
+    json_add_boolean unapplied "$_st_un"
+    json_add_boolean rejected "$_st_rej"
+    # Одно слово о состоянии — его показывает интерфейс: applying — роутер применяет, pending — ждёт паузу после правки,
+    # rejected — ядро отвергло эту спеку, unapplied — сохранено и не применено (применит sweep или autoapply_kick),
+    # idle — всё применено.
+    if [ "$_st_app" = 1 ]; then _st_state=applying
+    elif [ "$_st_pend" = 1 ]; then _st_state=pending
+    elif [ "$_st_rej" = 1 ]; then _st_state=rejected
+    elif [ "$_st_un" = 1 ]; then _st_state=unapplied
+    else _st_state=idle; fi
+    json_add_string state "$_st_state"
     if [ -s "$LAST" ]; then
         json_add_object last
         json_add_boolean ok "$(jsonfilter -i "$LAST" -e '@.ok' 2>/dev/null | grep -qx true && echo 1 || echo 0)"
@@ -46,11 +65,17 @@ autoapply_now() {
     json_dump
 }
 
+autoapply_kick() {
+    if ! is_on enabled; then echo '{"ok":true,"scheduled":false,"enabled":false}'; exit 0; fi
+    schedule_apply 0
+    echo '{"ok":true,"scheduled":true,"enabled":true}'
+}
+
 autoapply_cancel() {
     if [ -e "$PENDING" ]; then rm -f "$PENDING"; echo '{"ok":true,"cancelled":true}'; else echo '{"ok":true,"cancelled":false}'; fi
 }
 
 case "$METHOD" in
-    autoapply_status|autoapply_now|autoapply_cancel) "$METHOD" ;;
+    autoapply_status|autoapply_now|autoapply_kick|autoapply_cancel) "$METHOD" ;;
     *) echo "no such method: $METHOD" >&2; exit 2 ;;
 esac

@@ -1,6 +1,6 @@
 #!/bin/sh
 # Стенд плагина autoapply (plugins/autoapply): автоприменение на роутере — хук после записи спеки, отложенное применение с
-# паузой, задача sweep, события, методы status/now/cancel, архив настроек.
+# паузой, задача sweep, события, методы status/now/kick/cancel, состояние для интерфейса (state, applying), архив настроек.
 #
 # Плагин пользуется каркасом только через службы хоста (`spec get [--applied]`, `apply`, `settings`); хост здесь настоящий,
 # а применение (метод apply каркаса) — двойник с журналом и исходом по команде APPLY_OUT: ok, reject (ядро отвергло, код 1),
@@ -50,6 +50,8 @@ cat > "$T/bin/rpcd-apply" <<'EOF'
 echo "apply" >> "$SANDBOX/apply.log"
 case "$(cat "$SANDBOX/apply.mode" 2>/dev/null || echo ok)" in
     ok)     cp "$SANDBOX/etc/spec.json" "$SANDBOX/etc/spec.applied.json"; echo '{"ok":true,"output":"applied"}' ;;
+    # Долгое применение: ядро исполняет то, что прочло в начале (в каркасе запись спеки на это время стоит за замком).
+    slow)   cp "$SANDBOX/etc/spec.json" "$SANDBOX/etc/spec.read"; sleep 3; mv "$SANDBOX/etc/spec.read" "$SANDBOX/etc/spec.applied.json"; echo '{"ok":true,"output":"applied"}' ;;
     reject) echo '{"ok":false,"output":"cannot read a list"}' ;;
     busy)   echo '{"ok":false,"error":"ядро занято: podkop"}' ;;
 esac
@@ -84,21 +86,34 @@ hook() { printf '{"api":1,"hook":"%s","plugin":"autoapply","ctx":%s}\n' "$1" "$2
 applies() { grep -c '^apply' "$T/apply.log" 2>/dev/null; }
 set_spec() { printf '{"version":2,"outputs":{"direct":{"kind":"direct"}},"n":%s}\n' "$1" > "$T/etc/spec.json"; }
 settings() { printf '%s\n' "$1" > "$CONF/settings.json"; }
-reset() { : > "$T/apply.log"; rm -f "$RUN/pending" "$RUN/last.json" "$RUN/failed-sum" "$RUN/spec."*; echo ok > "$T/apply.mode"; }
+reset() { : > "$T/apply.log"; rm -f "$RUN/pending" "$RUN/applying" "$RUN/last.json" "$RUN/failed-sum" "$RUN/spec."*; echo ok > "$T/apply.mode"; }
 
 set_spec 1; cp "$T/etc/spec.json" "$T/etc/spec.applied.json"; reset
 
-echo "== выключено: ничего не происходит =="
+echo "== по умолчанию включено: сохранённое применяет роутер =="
 set_spec 2
+out="$(hook post_spec_set '{"rev":"r0"}' spec-saved)"
+check "хук отвечает ok" "true" "$(printf '%s' "$out" | jget ok)"
+check "без настроек автоприменение включено — метка ожидания стоит" "yes" "$([ -s "$RUN/pending" ] && echo yes || echo no)"
+out="$(method autoapply_status)"
+check "status: включено, пауза 1 с, состояние pending" "true;1;pending" "$(printf '%s' "$out" | jget enabled);$(printf '%s' "$out" | jget pause_s);$(printf '%s' "$out" | jget state)"
+sleep 3
+check "применено без участия страницы" "1;idle" "$(applies);$(method autoapply_status | jget state)"
+
+echo "== выключено настройкой: ничего не происходит =="
+settings '{"enabled":false}'
+set_spec 20; reset
 out="$(hook post_spec_set '{"rev":"r1"}' spec-saved)"
 check "хук отвечает ok" "true" "$(printf '%s' "$out" | jget ok)"
-check "по умолчанию автоприменение выключено — метки нет" "no" "$([ -e "$RUN/pending" ] && echo yes || echo no)"
-sleep 3
+check "выключено — метки нет" "no" "$([ -e "$RUN/pending" ] && echo yes || echo no)"
+sleep 2
 check "и применения не было" "0" "$(applies)"
 out="$(method autoapply_status)"
-check "status: выключено, есть неприменённое" "true;false;true" "$(printf '%s' "$out" | jget ok);$(printf '%s' "$out" | jget enabled);$(printf '%s' "$out" | jget unapplied)"
+check "status: выключено, есть неприменённое" "true;false;true;unapplied" "$(printf '%s' "$out" | jget ok);$(printf '%s' "$out" | jget enabled);$(printf '%s' "$out" | jget unapplied);$(printf '%s' "$out" | jget state)"
 reset; : > "$T/log.txt"
 check "sweep при выключенном ничего не применяет" "0" "$(pl "$PD/bin/sweep" </dev/null; applies)"
+out="$(method autoapply_kick)"
+check "kick при выключенном ничего не ставит" "false;no" "$(printf '%s' "$out" | jget scheduled);$([ -e "$RUN/pending" ] && echo yes || echo no)"
 
 echo "== включено: применяет через паузу, подряд идущие правки — одним применением =="
 settings '{"enabled":true,"pause_s":1}'
@@ -133,6 +148,28 @@ check "now: применено сразу, без паузы" "true;true;1" "$(p
 out="$(method autoapply_now)"
 check "now: применять нечего — applied false" "true;false;1" "$(printf '%s' "$out" | jget ok);$(printf '%s' "$out" | jget applied);$(applies)"
 
+echo "== autoapply_kick и состояние «применяется» =="
+settings '{"enabled":true,"pause_s":30}'
+set_spec 41; reset; echo slow > "$T/apply.mode"
+t0="$(date +%s)"
+out="$(method autoapply_kick)"
+check "kick: поставлено, ответ сразу (не ждёт ни паузы, ни применения)" "true;yes" "$(printf '%s' "$out" | jget scheduled);$([ $(( $(date +%s) - t0 )) -le 1 ] && echo yes || echo no)"
+sleep 1
+out="$(method autoapply_status)"
+check "пока роутер применяет: applying, метки ожидания уже нет" "true;false;applying" "$(printf '%s' "$out" | jget applying);$(printf '%s' "$out" | jget pending);$(printf '%s' "$out" | jget state)"
+set_spec 42; hook post_spec_set '{"rev":"k2"}' spec-saved >/dev/null
+out="$(method autoapply_status)"
+check "правка во время применения: и applying, и pending — состояние applying" "true;true;applying" "$(printf '%s' "$out" | jget applying);$(printf '%s' "$out" | jget pending);$(printf '%s' "$out" | jget state)"
+sleep 4
+check "первое применение кончилось: метка applying снята, исход записан" "no;true" "$([ -e "$RUN/applying" ] && echo yes || echo no);$(method autoapply_status | jget last.ok)"
+echo ok > "$T/apply.mode"
+method autoapply_kick >/dev/null; sleep 2
+out="$(method autoapply_status)"
+check "правка, пришедшая во время применения, применена следом" "2;false;idle" "$(applies);$(printf '%s' "$out" | jget unapplied);$(printf '%s' "$out" | jget state)"
+printf '999999 %s\n' "$(date -u +%s)" > "$RUN/applying"
+out="$(method autoapply_status)"
+check "брошенная метка applying (процесса нет) не считается и убирается" "false;no" "$(printf '%s' "$out" | jget applying);$([ -e "$RUN/applying" ] && echo yes || echo no)"
+
 echo "== sweep: сохранённое и не применённое =="
 settings '{"enabled":true,"pause_s":1}'
 set_spec 5; reset
@@ -143,7 +180,7 @@ pl "$PD/bin/sweep" </dev/null
 check "ядро отвергло: код 1, исход записан с причиной" "false;1;yes" "$(method autoapply_status | jget last.ok);$(jget rc < "$RUN/last.json");$(method autoapply_status | jget last.message | grep -q 'cannot read' && echo yes || echo no)"
 pl "$PD/bin/sweep" </dev/null
 check "отвергнутое повторно не применяется, пока спека та же" "1" "$(applies)"
-check "status называет это: rejected" "true" "$(method autoapply_status | jget rejected)"
+check "status называет это: rejected" "true;rejected" "$(method autoapply_status | jget rejected);$(method autoapply_status | jget state)"
 set_spec 7; echo ok > "$T/apply.mode"
 pl "$PD/bin/sweep" </dev/null
 check "спека изменилась — sweep пробует снова" "2" "$(applies)"

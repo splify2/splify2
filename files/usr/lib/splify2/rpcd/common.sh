@@ -180,9 +180,39 @@ uci_commit() {
 # берутся как имена выходов: устройство выводится из имени выхода, НО может быть задано в спеке
 # явно, и тогда «имя выхода» — это молча неверный список ровно там, где по нему настраивают
 # фаервол. kind=direct отсеивается сам: устройства у него нет, и --devices ничего не печатает.
+#
+# ОТВЕТ ЯДРА ЗАПОМИНАЕТСЯ НА ВРЕМЯ ВЫЗОВА. Применение спрашивает устройства двадцать с лишним раз (зоны, перенос зоны,
+# лечение ipv6), и каждый раз — по запуску ядра на вид выхода: на живом роутере замер показал 223 запуска `steer outputs`
+# за одно применение, то есть секунду с лишним на AX3000T и многие секунды на роутере с MIPS — при том что само ядро
+# применяет спеку за 60 мс. Ответ по виду выхода кладётся файлом в каталог вызова (fw_devices_begin) и читается оттуда;
+# файлом, а не переменной, потому что спрашивают из подоболочек `$(…)`. Спека за вызов меняется только через spec_put
+# (лечение), и он память сбрасывает (fw_devices_forget). Вызов, не открывший память (fw_devices_begin не звали), идёт
+# как прежде — запуском ядра на каждый вопрос.
+FWDEV_CACHE=""
+fw_devices_begin() {
+    FWDEV_CACHE="${TMPDIR:-/tmp}/splify2-fwdev.$$"
+    # Каталог с тем же номером процесса мог остаться от убитого вызова: чужое содержимое не читаем.
+    rm -rf "$FWDEV_CACHE" 2>/dev/null
+    if ! mkdir -m 700 "$FWDEV_CACHE" 2>/dev/null; then FWDEV_CACHE=""; return 0; fi
+    trap 'rm -rf "$FWDEV_CACHE" 2>/dev/null' EXIT
+}
+fw_devices_forget() {
+    [ -n "${FWDEV_CACHE:-}" ] && [ -d "$FWDEV_CACHE" ] && rm -f "$FWDEV_CACHE"/* 2>/dev/null
+    return 0
+}
 fw_devices_of() {  # ВИДЫ_ЧЕРЕЗ_ЗАПЯТУЮ
     for k in $(printf '%s' "$1" | tr ',' ' '); do
-        "$STEER" outputs --kind "$k" --devices --spec "$SPEC" 2>/dev/null
+        if [ -n "${FWDEV_CACHE:-}" ] && [ -d "$FWDEV_CACHE" ]; then
+            case "$k" in */*|.*|'') continue ;; esac
+            if [ ! -f "$FWDEV_CACHE/$k" ]; then
+                # Во временный файл и переименованием: читатель не увидит половину ответа.
+                "$STEER" outputs --kind "$k" --devices --spec "$SPEC" > "$FWDEV_CACHE/.$k.$$" 2>/dev/null
+                mv "$FWDEV_CACHE/.$k.$$" "$FWDEV_CACHE/$k" 2>/dev/null
+            fi
+            cat "$FWDEV_CACHE/$k" 2>/dev/null
+        else
+            "$STEER" outputs --kind "$k" --devices --spec "$SPEC" 2>/dev/null
+        fi
     done | grep . | sort -u
 }
 
