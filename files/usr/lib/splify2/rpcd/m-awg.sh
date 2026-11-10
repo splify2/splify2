@@ -115,23 +115,38 @@ case "$2" in
         ;;
 
     awg_put)
-        # Принять файл туннеля: {name, text}. Имя — будущее имя выхода (файл называется по нему).
-        # Файл с тем же именем ЗАМЕЩАЕТСЯ: так меняют настройку туннеля, который уже в работе, —
-        # ядро кладёт новую поверх живого устройства при следующем применении.
+        # Принять файл туннеля: {name, text, replace}. Имя — будущее имя выхода (файл называется по
+        # нему).
+        #
+        # ФАЙЛ С ТЕМ ЖЕ ИМЕНЕМ ЗАМЕЩАЕТСЯ ТОЛЬКО ПО ПРОСЬБЕ (`replace: true`): так меняют настройку
+        # туннеля, который уже в работе, — ядро кладёт новую поверх живого устройства при следующем
+        # применении. Без просьбы — отказ awg.exists: второй туннель, добавленный под тем же именем
+        # (имя подставляется из имени файла, а файлы у серверов зовутся одинаково — wg0.conf),
+        # молча заменил бы ключи первого, и рабочий туннель ушёл бы на чужой сервер.
         read -r input
         json_load "$input" 2>/dev/null || fail_code req.unparsable "Unparsable request"
         json_get_var name name
         json_get_var text text
+        json_get_var replace replace
         awg_name_ok "$name" || fail_code awg.bad_name "The tunnel name: letters, digits, _ - and a dot, up to 31 characters, not starting with a dot"
         [ -n "$text" ] || fail_code awg.need_text "The text of a WireGuard or AmneziaWG file is required"
         # Имя занято выходом ДРУГОГО вида (или словом ядра): выход awg с этим именем не добавить,
-        # а файл остался бы без хозяина. Выход вида awg с этим именем — замена его файла.
+        # а файл остался бы без хозяина. Выход вида awg с этим именем — замена его файла, но только
+        # когда выход читает файл по умолчанию: со своим `conf` он читает другой файл, и принятый
+        # здесь лёг бы мимо — ответ «туннель заменён» был бы неправдой.
         case "$name" in direct|block) fail_code awg.name_taken "The name {name} is taken by another output. Choose another name." name "$name" ;; esac
         if spec_have; then
             _ap_k="$(jsonfilter -i "$(spec_json)" -e "@.outputs['$name'].kind" 2>/dev/null)"
             [ -z "$_ap_k" ] || [ "$_ap_k" = awg ] ||
                 fail_code awg.name_taken "The name {name} is taken by another output. Choose another name." name "$name"
+            _ap_c="$(jsonfilter -i "$(spec_json)" -e "@.outputs['$name'].conf" 2>/dev/null)"
+            [ -z "$_ap_c" ] || [ "$_ap_c" = "$AWG_DIR/$name.conf" ] ||
+                fail_code awg.name_taken "The name {name} is taken by another output. Choose another name." name "$name"
         fi
+        case "$replace" in 1|true) ;; *)
+            [ ! -e "$AWG_DIR/$name.conf" ] ||
+                fail_code awg.exists "The tunnel {name} already exists. Choose another name." name "$name" ;;
+        esac
         mkdir -p "$AWG_DIR" 2>/dev/null || fail_code awg.not_saved "The tunnel was not saved: no space left"
         # Права каталога — ЯВНО, а не от umask: внутри приватные ключи.
         chmod 0700 "$AWG_DIR" 2>/dev/null
@@ -163,7 +178,11 @@ case "$2" in
             _ap_bad="$(printf '%s\n' "$_ap_out" | grep -F "awg: выход $name: " | head -n 1)"
             if [ -n "$_ap_bad" ]; then
                 rm -f "$_ap_tmp"
-                fail_code awg.rejected "The tunnel file was not accepted: {reason}" reason "${_ap_bad#*awg: выход "$name": }"
+                # Отказ чтения файла ядро начинает путём («ПУТЬ: причина»), а путь здесь — черновик
+                # с номером процесса: человеку он ни о чём не говорит и после отказа не существует.
+                _ap_r="${_ap_bad#*awg: выход "$name": }"
+                case "$_ap_r" in "$_ap_tmp: "*) _ap_r="${_ap_r#"$_ap_tmp: "}" ;; esac
+                fail_code awg.rejected "The tunnel file was not accepted: {reason}" reason "$_ap_r"
             fi
         elif s2_core_split "$_ap_out"; then
             case "$S2_CORE_CODE" in

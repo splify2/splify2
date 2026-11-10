@@ -37,8 +37,11 @@ try: v = eval(sys.argv[1])
 except Exception: v = "НЕТ ПОЛЯ"
 print(v if isinstance(v, str) else json.dumps(v, ensure_ascii=False))' "$1"
 }
-req() {  # ИМЯ ТЕКСТ -> вход awg_put
-    python3 -c 'import json,sys; print(json.dumps({"name": sys.argv[1], "text": sys.argv[2]}))' "$1" "$2"
+req() {  # ИМЯ ТЕКСТ [replace] -> вход awg_put
+    python3 -c 'import json,sys
+r = {"name": sys.argv[1], "text": sys.argv[2]}
+if len(sys.argv) > 3: r["replace"] = True
+print(json.dumps(r))' "$@"
 }
 
 mkdir -p "$T/bin" "$T/etc" "$T/lock" "$T/var"
@@ -85,6 +88,9 @@ d = json.load(open(sys.argv[1], encoding="utf-8"))
 for n, o in d["outputs"].items():
     if o.get("kind") != "awg": continue
     for i, l in enumerate(open(o["conf"], encoding="utf-8"), 1):
+        if l.startswith("Unreadable"):
+            sys.stderr.write("steer[warn] awg: выход %s: %s: файл слишком большой для конфигурации туннеля\n" % (n, o["conf"]))
+            break
         if l.startswith("BadKey"):
             sys.stderr.write("steer[warn] awg: выход %s: строка %d: неизвестный параметр BadKey в [Interface]\n" % (n, i))' "$_spec"
         exit 0 ;;
@@ -156,7 +162,7 @@ AllowedIPs = 0.0.0.0/0, ::/0"
 echo "== методы объявлены и разрешены"
 check "awg_list, awg_put, awg_del есть в list диспетчера" "3" \
       "$(envs sh "$SCRIPT" list 2>/dev/null | python3 -c 'import json,sys; d=json.load(sys.stdin); print(sum(k in d for k in ("awg_list","awg_put","awg_del")))')"
-check "awg_put принимает name и text" "name,text" \
+check "awg_put принимает name, text и replace" "name,replace,text" \
       "$(envs sh "$SCRIPT" list 2>/dev/null | python3 -c 'import json,sys; print(",".join(sorted(json.load(sys.stdin)["awg_put"])))')"
 check "ACL: awg_list — чтение, awg_put и awg_del — запись" "read;write;write" \
       "$(python3 -c 'import json,sys
@@ -215,6 +221,13 @@ check "отказ ядра: код awg.rejected, слова ядра о стро
 check "  ядру дана спека из одного этого выхода, а не спека человека" "direct,nl" \
       "$(python3 -c 'import json,sys; print(",".join(sorted(json.load(open(sys.argv[1]))["outputs"])))' "$T/last-check.json")"
 check "  после отказа ядра файла нет" "0" "$(ls -A "$T/etc/awg" 2>/dev/null | wc -l | tr -d ' ')"
+out="$(rpc awg_put "$(req nl "[Interface]
+PrivateKey = $PRIV
+Unreadable = 1
+[Peer]
+PublicKey = $PUB")")"
+check "отказ ядра с путём файла: путь черновика человеку не показан" "awg.rejected;no;yes" \
+      "$(printf '%s' "$out" | pj 'd.get("code","")');$(printf '%s' "$out" | grep -q '\.nl\.new\.' && echo yes || echo no);$(printf '%s' "$out" | pj 'd["error"]' | grep -q 'не принят: файл слишком большой' && echo yes || echo no)"
 
 echo "== awg_put: файл принят"
 out="$(rpc awg_put "$(req nl "$WG")")"
@@ -232,6 +245,24 @@ check "черновиков в каталоге не осталось" "nl.conf"
 check "спеку метод не трогал" '{"version":2,"outputs":{"direct":{"kind":"direct"},"wg0":{"kind":"interface","device":"wg0"}}}' "$(cat "$T/etc/spec.json")"
 check "ключ не попал в журнал вызовов ядра" "no" "$(grep -qF "$PRIV" "$T/steer.log" "$T/stderr" 2>/dev/null && echo yes || echo no)"
 
+# Имя уже занято файлом: без replace — отказ, файл первого туннеля не тронут (второй туннель из wg0.conf
+# другого сервера не должен молча заменить ключи первого); с replace — замена.
+cp "$T/etc/awg/nl.conf" "$T/nl.before"
+out="$(rpc awg_put "$(req nl "$(printf '%s' "$WG" | sed 's/203.0.113.7/198.51.100.9/')")")"
+check "то же имя без replace: отказ awg.exists, файл прежний" "awg.exists;nl;yes" \
+      "$(printf '%s' "$out" | pj 'd.get("code","")');$(printf '%s' "$out" | pj 'd["args"]["name"]');$(cmp -s "$T/nl.before" "$T/etc/awg/nl.conf" && echo yes || echo no)"
+out="$(rpc awg_put "$(req nl "$(printf '%s' "$WG" | sed 's/203.0.113.7/198.51.100.9/')" replace)")"
+check "то же имя с replace: файл заменён" "true;198.51.100.9:51820;1" \
+      "$(printf '%s' "$out" | pj 'str(d["ok"]).lower()');$(printf '%s' "$out" | pj 'd["endpoint"]');$(grep -c 198.51.100.9 "$T/etc/awg/nl.conf")"
+check "  и закрыт по-прежнему, черновиков нет" "600;nl.conf" "$(stat -c %a "$T/etc/awg/nl.conf");$(ls -A "$T/etc/awg" | tr '\n' ' ' | sed 's/ $//')"
+cp "$T/nl.before" "$T/etc/awg/nl.conf"
+# Выход awg с этим именем, но со своим conf, читает другой файл: принятый здесь лёг бы мимо.
+printf '{"version":2,"outputs":{"direct":{"kind":"direct"},"cust":{"kind":"awg","conf":"/srv/cust.conf"}}}\n' > "$T/etc/spec.json"
+out="$(rpc awg_put "$(req cust "$WG" replace)")"
+check "имя выхода awg со своим conf — занято, файла нет" "awg.name_taken;no" \
+      "$(printf '%s' "$out" | pj 'd.get("code","")');$([ -e "$T/etc/awg/cust.conf" ] && echo yes || echo no)"
+printf '{"version":2,"outputs":{"direct":{"kind":"direct"},"wg0":{"kind":"interface","device":"wg0"}}}\n' > "$T/etc/spec.json"
+
 out="$(rpc awg_put "$(req am.1 "$(printf '%s' "$AWG" | sed 's/$/\r/')")")"
 check "файл из Windows (\\r\\n): принят, AmneziaWG, адрес IPv6 — nat" "true;true;nat;vpn.example.org:443" \
       "$(printf '%s' "$out" | pj 'str(d["ok"]).lower()');$(printf '%s' "$out" | pj 'str(d["amnezia"]).lower()');$(printf '%s' "$out" | pj 'd["ipv6"]');$(printf '%s' "$out" | pj 'd["endpoint"]')"
@@ -247,7 +278,7 @@ out="$(STEER_NOPLUGIN=1 rpc awg_put "$(req np "$WG")")"
 check "ядро без плагина: файл принят по форме, checked и plugin_ready — false" "true;false;false" \
       "$(printf '%s' "$out" | pj 'str(d["ok"]).lower()');$(printf '%s' "$out" | pj 'str(d["checked"]).lower()');$(printf '%s' "$out" | pj 'str(d["plugin_ready"]).lower()')"
 check "  файл лежит" "600" "$(stat -c %a "$T/etc/awg/np.conf" 2>/dev/null)"
-out="$(STEER_GONE=1 rpc awg_put "$(req np "$WG")")"
+out="$(STEER_GONE=1 rpc awg_put "$(req np "$WG" replace)")"
 check "ядра нет вовсе: файл принят по форме" "true;false" "$(printf '%s' "$out" | pj 'str(d["ok"]).lower()');$(printf '%s' "$out" | pj 'str(d["checked"]).lower()')"
 awg_plugin enabled
 
@@ -320,6 +351,19 @@ out="$(put "$T/arch.txt")"
 check "backup_put: архив принят, туннели числом" "true;3" "$(printf '%s' "$out" | pj 'str(d["ok"]).lower()');$(printf '%s' "$out" | pj 'd["awg"]')"
 check "  файлы вернулись дословно — с комментарием и своими разделами [Interface] и [Peer]" "yes;yes;600" \
       "$(cmp -s "$T/awg.keep/nl.conf" "$T/etc/awg/nl.conf" && echo yes || echo no);$(cmp -s "$T/awg.keep/am.1.conf" "$T/etc/awg/am.1.conf" && echo yes || echo no);$(stat -c %a "$T/etc/awg/am.1.conf" 2>/dev/null)"
+# Заголовки разделов в файле сервера бывают в другом регистре и с комментарием — проверка формы и ядро такие
+# принимают, значит и архив обязан их вернуть, а не оборвать восстановление «неизвестным разделом».
+printf '%s\n' "[interface]" "PrivateKey = $PRIV" "Address = 10.8.0.2/32" "[Peer] # сервер" "PublicKey = $PUB" > "$T/etc/awg/low.conf"
+chmod 600 "$T/etc/awg/low.conf"
+check "файл с [interface] и «[Peer] # …» проходит проверку формы" "true" \
+      "$(rpc awg_put "$(req low "$(cat "$T/etc/awg/low.conf")" replace)" | pj 'str(d["ok"]).lower()')"
+cp "$T/etc/awg/low.conf" "$T/low.keep"
+out="$(rpc backup_get '{"offset":0}')"
+printf '%s' "$out" | python3 -c 'import json,sys; sys.stdout.write(json.load(sys.stdin).get("text", ""))' > "$T/arch5.txt"
+rm -rf "$T/etc/awg"
+out="$(put "$T/arch5.txt")"
+check "  и возвращается из архива дословно" "true;yes" \
+      "$(printf '%s' "$out" | pj 'str(d["ok"]).lower()');$(cmp -s "$T/low.keep" "$T/etc/awg/low.conf" && echo yes || echo no)"
 rm -rf "$T/etc/awg"
 out="$(rpc backup_get '{"offset":0}')"
 check "архив без туннелей остаётся прежнего формата: его читают прежние версии" "3" "$(printf '%s' "$out" | pj 'd["format"]')"
@@ -358,7 +402,7 @@ PublicKey = $PUB")")"
     # Выход, который отдаёт awg_put, ядро принимает в спеке: то, что панель положит в outputs, проходит spec_set.
     SP="$(python3 -c 'import json,sys
 o = json.loads(sys.argv[1])["output"]
-print(json.dumps({"spec": json.dumps({"version": 2, "outputs": {"direct": {"kind": "direct"}, "nl": o}})}))' "$(STEER_REAL="$STEER_BIN" rpc awg_put "$(req nl "$WG")")")"
+print(json.dumps({"spec": json.dumps({"version": 2, "outputs": {"direct": {"kind": "direct"}, "nl": o}})}))' "$(STEER_REAL="$STEER_BIN" rpc awg_put "$(req nl "$WG" replace)")")"
     out="$(STEER_REAL="$STEER_BIN" rpc spec_set "$SP")"
     check "ядро: спека с выходом из ответа awg_put сохраняется" "true" "$(printf '%s' "$out" | pj 'str(d["ok"]).lower()')"
 else

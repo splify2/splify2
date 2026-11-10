@@ -902,6 +902,7 @@
   "awg.bad_name": "The tunnel name: letters, digits, _ - and a dot, up to 31 characters, not starting with a dot",
   "awg.big": "The tunnel file \"{name}\" is larger than {max} KB",
   "awg.binary": "The tunnel file \"{name}\" holds binary data: a WireGuard or AmneziaWG text file is expected",
+  "awg.exists": "The tunnel {name} already exists. Choose another name.",
   "awg.format": "The tunnel file \"{name}\", line {line}: a section [Interface] or [Peer] or a line like \"Key = value\" is expected, as in a WireGuard file",
   "awg.in_use": "The tunnel {name} is used by outputs: {outputs}. Remove them first.",
   "awg.in_use_applied": "The tunnel {name} is still in use by the applied settings. Apply the changes first.",
@@ -919,6 +920,6 @@
   "fw.fwd_own_zone_added": "Forwarding {from} -> {zone} added: the output device {device} is in your zone {zone}; the zone itself is not changed",
   "fw.fwd_own_zone_removed": "Forwarding {from} -> {zone} removed: it is no longer needed",
   "purge.forwarding_own_zone": "The forwarding rule {rule} ({from} -> {to}) into your zone, added by splify2, is removed",
-  "xs.bad_new_iface": "The interface name: letters, digits and _, up to 12 characters (the device is xs-{iface}, and the kernel accepts 15)",
+  "xs.bad_new_iface": "The interface name: letters, digits and _, up to 12 characters",
   "purge.xsteer_iface": "The xsteer interface {iface}, created by splify2 from a link, is removed"
 }

@@ -217,7 +217,7 @@ list)
     # Свой туннель WireGuard/AmneziaWG файлом или текстом (выход kind: awg, rpcd/m-awg.sh): перечень
     # файлов, приём и удаление. Ключи в ответах не возвращаются.
     json_add_object awg_list; json_close_object
-    json_add_object awg_put; json_add_string name; json_add_string text; json_close_object
+    json_add_object awg_put; json_add_string name; json_add_string text; json_add_boolean replace; json_close_object
     json_add_object awg_del; json_add_string name; json_close_object
     json_add_object lists_source; json_close_object
     json_add_object lists_source_set; json_add_string url; json_close_object
