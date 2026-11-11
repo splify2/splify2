@@ -2023,9 +2023,161 @@ HTTP: `bad_request` — 400, `not_installed` и `no_method` — 404, `disabled`,
 - `plugin_settings_set` — вход: `{ "id", "values": { … } }` (объект до 256 КБ; в сигнатуре rpcd его нет, как у `params`
   в `plugin_call`); выход: `{ "ok": true, "id" }`. Файл заменяется атомарно; проверка значений — дело формы и плагина.
 
+## Методы плагинов
+
+Новые имена на объекте `splify2`, которые дают официальные плагины. Их нет в блоке `list)` диспетчера: rpcd узнаёт
+их из реестра плагинов при перечитке, пока плагин стоит и включён; права — в ACL плагина `splify2-p-<id>`. Плагина
+нет или он выключен — метода на объекте нет: ubus отвечает «Method not found» (или, пока rpcd не перечитал объект,
+каркас — `req.unknown_method`). Отказы плагинной части (срок, ответ
+не по форме) — как у `plugin_call`.
+
+| Метод плагина | Плагин | Права | Вход на stdin |
+|---|---|---|---|
+| `autoapply_status` | `autoapply` | read | — |
+| `autoapply_now` | `autoapply` | write | — |
+| `autoapply_kick` | `autoapply` | write | — |
+| `autoapply_cancel` | `autoapply` | write | — |
+| `group_status` | `group-check` | read | `{group?}` |
+| `group_history` | `group-check` | read | `{group, limit?}` |
+| `group_check` | `group-check` | write | `{group?}` |
+| `nodes_check` | `node-check` | write | `{sub, insecure?}` |
+| `nodes_result` | `node-check` | read | `{sub}` |
+| `nodes_best` | `node-check` | read | `{sub}` |
+| `nodes_cancel` | `node-check` | write | `{sub}` |
+| `subs_schedule` | `subscriptions` | read | — |
+| `update_status` | `updater` | read | — |
+| `update_check` | `updater` | write | — |
+
+### `autoapply_status` (read) — плагин `autoapply`
+
+Применяет ли роутер сохранённое сам и в каком он состоянии.
+
+```json
+{ "ok": true, "enabled": true, "pause_s": 1, "since": 1790000000, "pending": true, "applying": false,
+  "unapplied": true, "rejected": false, "state": "pending",
+  "last": { "ok": true, "at": 1789999000, "source": "pause", "message": "" } }
+```
+
+- `enabled`, `pause_s` — настройки плагина; `since` — когда поставлено ожидание (есть только при `pending: true`).
+- `state` — одно слово для интерфейса: `applying` — роутер применяет; `pending` — ждёт паузу после правки;
+  `rejected` — ядро отвергло именно эту спеку, повтора не будет, пока она не изменится; `unapplied` — сохранено и не
+  применено (применит задача `sweep` или `autoapply_kick`); `idle` — всё применено. Порядок проверки — как в
+  перечислении: применение идёт — `applying`, даже если ждёт и следующее.
+- `last` — исход последнего применения плагином: `source` — `pause` (после правки), `sweep` (задача), `manual`
+  (`autoapply_now`); `message` — первая строка ошибки или вывода. Поля нет, пока плагин ничего не применял.
+
+### `autoapply_now` (write) — плагин `autoapply`
+
+Применить сохранённое сейчас и дождаться исхода — и при выключенной настройке `enabled`. Ожидание снимается.
+
+- **Выход:** применять нечего — `{ "ok": true, "applied": false }`; иначе `{ "ok": <bool>, "applied": <bool>, "rc":
+  <0|1|3>, "message": "…" }`: `0` — применено, `1` — ядро отвергло, `3` — применение не состоялось (ядро занято
+  коннектором, применение остановил хук плагина).
+
+### `autoapply_kick` (write) — плагин `autoapply`
+
+Применить сохранённое сейчас, не дожидаясь исхода: ответ сразу, исход — в `autoapply_status`. Andromeda зовёт его,
+когда открыта с неприменённым и в конце пачки правок.
+
+- **Выход:** `{ "ok": true, "scheduled": true, "enabled": true }`; при выключенной настройке `enabled` ничего не
+  делает — `{ "ok": true, "scheduled": false, "enabled": false }`.
+
+### `autoapply_cancel` (write) — плагин `autoapply`
+
+Отменить ожидающее применение. **Выход:** `{ "ok": true, "cancelled": <bool> }` — было ли что отменять.
+
+### `group_status` (read) — плагин `group-check`
+
+Приговор по каждому члену групп выходов спеки (или одной группы `group`).
+
+```json
+{ "ok": true, "groups": [ { "name": "eu", "checked": 1790000000, "alive": 1, "total": 2, "members": [
+    { "name": "nl", "verdict": "alive", "ms": 42, "failures": 0, "since": 1789990000 },
+    { "name": "de", "verdict": "dead", "failures": 3, "since": 1789999000 } ] } ],
+  "hints": [ { "code": "member_dead", "group": "eu", "member": "de" } ] }
+```
+
+`verdict` — `alive`, `unstable` (отказал меньше `dead_after` раз подряд), `dead`, `unknown` (проверять нечем:
+вложенная группа, выход без устройства); `ms` — только у живого; `checked` — когда группу пробовали (`0` — ещё не
+пробовали); `hints` — по записи на мёртвого члена. **Отказы:** `spec.none` («There is no spec»), `group.bad_name`
+(«Invalid group name»).
+
+### `group_history` (read) — плагин `group-check`
+
+- **Вход:** `{ "group": "eu", "limit": 50 }` — `limit` необязательный, по умолчанию 50.
+- **Выход:** `{ "ok": true, "entries": [ { "at": <unix>, "kind": "verdict|switched|failed", "text": "…" } ] }` —
+  последние перемены приговоров и события ядра по группе. Без группы — `group.none_given` («No group given»).
+
+### `group_check` (write) — плагин `group-check`
+
+Проверить сейчас, не дожидаясь расписания: проба каждого члена (метод каркаса `outbound_probe`). **Выход:**
+`{ "ok": true, "checked": <проверено групп> }`; нет такой группы — `group.none` («There is no group "{name}"»).
+
+### `nodes_check` (write) — плагин `node-check`
+
+Запустить перебор узлов подписки на роутере, в фоне: не больше `parallel` (настройка плагина) проверок сразу,
+каждый узел — методом своего протокола (`vless_probe`, `hysteria2_probe`, `proxy_probe`).
+
+- **Вход:** `{ "sub": "<имя подписки или путь к её файлу узлов>", "insecure": <bool> }`.
+- **Выход:** `{ "ok": true, "started": true, "running": true }`; перебор этой подписки уже идёт —
+  `{ "ok": true, "started": false, "running": true }`.
+- **Отказы:** `sub.none_given` («No subscription given»), `sub.not_exists`, `sub.not_downloaded`.
+
+### `nodes_result` (read) — плагин `node-check`
+
+Ход и итог перебора.
+
+```json
+{ "ok": true, "state": "running", "started": 1790000000, "total": 26, "done": 10, "ok_count": 7,
+  "best": { "name": "🇳🇱 NL-1", "proto": "vless", "index": 3, "ms": 120 }, "why": "<первая причина отказа>",
+  "nodes": [ { "proto": "vless", "index": 3, "name": "🇳🇱 NL-1", "checked": true, "ok": true, "ms": 120 } ] }
+```
+
+`state` — `running`, `done` (тогда ещё `finished`), `stopped` (процесс пропал или перебор остановлен) или `none`
+(перебора не было: ответ `{ "ok": true, "state": "none" }`). `index` — номер узла в его протоколе, как у `nodes`
+выхода; у непроверенного узла `checked: false`.
+
+### `nodes_best` (read) — плагин `node-check`
+
+Самый быстрый из ответивших: `{ "ok": true, "found": true, "name", "proto", "index", "ms", "complete": <bool> }`;
+`complete` — перебор закончен. Ответивших нет — `{ "ok": true, "found": false }`; перебора не было —
+`nodes.not_started` («The node search has not been started»).
+
+### `nodes_cancel` (write) — плагин `node-check`
+
+Остановить перебор подписки. **Выход:** `{ "ok": true, "cancelled": <bool> }`.
+
+### `subs_schedule` (read) — плагин `subscriptions`
+
+Расписание всех подписок одним ответом: `{ "ok": true, "subs": [ { "name", "auto": <минуты>, "auto_at": <unix> } ] }`.
+В ответе — подписки, у которых задан интервал; `auto` — `0`, если интервал вне нынешних пределов настроек;
+`auto_at` — время последней попытки, `0` — попыток не было.
+
+### `update_status` (read) — плагин `updater`
+
+Итог последней проверки выпусков, пересчитанный по тому, что стоит сейчас (после установки отметка «есть новее» гаснет
+сама). В сеть не ходит.
+
+```json
+{ "ok": true, "checked_at": 1790000000, "channel": "stable",
+  "steer":   { "current": "2.1.0", "latest": "2.1.1", "available": true },
+  "splify2": { "current": "26.11.0", "latest": "26.11.0", "available": false } }
+```
+
+Проверки ещё не было — `{ "ok": true, "checked_at": 0 }`. Менеджер пакетов не ответил — `pkg.manager_silent`.
+
+### `update_check` (write) — плагин `updater`
+
+Проверить сейчас: спросить перечень выпусков (см. «Перечень выпусков») и запомнить итог. **Выход:** `{ "ok": true,
+"checked_at", "channel", "steer": { "current", "latest", "prerelease"? }, "splify2": { … } }`; у продукта, перечень
+которого не получен, вместо `latest` — `why` (`updater.no_list`, «The release list was not received»). При канале
+`prerelease` новее считается и текущая предварительная, если она новее стабильной. Поля `available` здесь нет — его
+считает `update_status`.
+
 ## Перечень методов
 
-Все 98 объявленных методов (из блока `list)` скрипта rpcd). Группа ACL в скобках.
+Все 98 объявленных методов каркаса (из блока `list)` скрипта rpcd) и их группа ACL. Методы вида `moved` (см. начало
+документа) работают, только пока стоит их плагин; новые имена от плагинов — в разделе «Методы плагинов».
 
 | Метод | ACL | Вход на stdin |
 |---|---|---|
@@ -2097,7 +2249,7 @@ HTTP: `bad_request` — 400, `not_installed` и `no_method` — 404, `disabled`,
 | `splify2_versions` | read | — |
 | `splify2_install` | write | `{version}` |
 | `steer_versions` | read | — |
-| `steer_install` | write | `{version, modules}` |
+| `steer_install` | write | `{version, modules?}` |
 | `steer_modules` | read | — |
 | `steer_module_add` | write | `{module}` |
 | `steer_module_del` | write | `{module}` |
@@ -2130,15 +2282,7 @@ HTTP: `bad_request` — 400, `not_installed` и `no_method` — 404, `disabled`,
 
 ## Источник истины
 
-Документ выведен из объекта rpcd: диспетчер `files/usr/libexec/rpcd/splify2` (быстрый путь круга
-опроса, переменные, блок `list`, таблица «метод → группа») и файлы `files/usr/lib/splify2/rpcd/`
-(`common.sh` — общие помощники, `m-<группа>.sh` — помощники и ветки методов группы). Разнесено
-ради скорости: busybox ash разбирает файл целиком, и один файл в 4500 строк стоил 110 мс на каждый
-вызов. Если документ и код расходятся — прав код, а документ устарел.
-
-
-## Минимум обновления в каркасе
-
-Метод `engine` отдаёт объект `update` — `{url, command}`: страницу выпусков splify2 и команду установщика (`install.sh`
-ставит и обновляет). Это всё, что каркас оставляет у себя от обновления (решение О-2 открыто): версии, скачивание и
-установка ядра и splify2 — плагин `updater`. Где плагина нет или он не ответил, интерфейс показывает эти две строки.
+Документ выведен из кода: диспетчер `files/usr/libexec/rpcd/splify2` (быстрый путь круга опроса, блок `list`, таблица
+«метод → группа»), файлы групп `files/usr/lib/splify2/rpcd/` (`common.sh` — общие помощники, `m-<группа>.sh` — ветки
+методов группы; разнесено, чтобы на каждый вызов разбирался только нужный файл), таблица `methods.tsv`, службы хоста
+`files/usr/sbin/splify2-host` и плагины `plugins/<id>/` (манифест, `bin/`). Если документ и код расходятся — прав код.
