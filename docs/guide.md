@@ -251,7 +251,7 @@ Andromeda или `?basic=1` в адресе; поле «Интерфейс» н�
 ## Установка и обновление
 
 ```sh
-wget -O /tmp/splify2-install.sh https://gitlab.com/xyzmean/splify2/-/raw/main/install.sh && sh /tmp/splify2-install.sh
+wget -O /tmp/splify2-install.sh https://raw.githubusercontent.com/splify2/splify2/main/install.sh && sh /tmp/splify2-install.sh
 ```
 
 splify2 26.11 работает с ядром steer 2.1.0 или новее (пакет `steer-core`). Пакет `splify2` зависит от

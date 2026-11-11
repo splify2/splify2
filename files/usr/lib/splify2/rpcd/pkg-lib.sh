@@ -480,4 +480,4 @@ steer_fetch() {  # ВЕРСИЯ ИМЯ_ФАЙЛА -> 0, файл /tmp/ИМЯ; vi
 # сломан, остаётся способ обновиться руками: страница выпусков и команда установщика (он же обновляет). Метод engine отдаёт
 # обе строки, интерфейс показывает их там, где плагина нет.
 UPDATE_URL="${UPDATE_URL:-https://github.com/splify2/splify2/releases/latest}"
-UPDATE_CMD="${UPDATE_CMD:-wget -O /tmp/splify2-install.sh https://gitlab.com/xyzmean/splify2/-/raw/main/install.sh && sh /tmp/splify2-install.sh}"
+UPDATE_CMD="${UPDATE_CMD:-wget -O /tmp/splify2-install.sh https://raw.githubusercontent.com/splify2/splify2/main/install.sh && sh /tmp/splify2-install.sh}"

@@ -286,12 +286,6 @@ jobs:
             Установка одной строкой — она же поставит ядро, если его нет:
 
             ```sh
-            sh -c "$(wget -qO- https://gitlab.com/xyzmean/splify2/-/raw/main/install.sh)"
-            ```
-
-            Если `githubusercontent.com` у вас открыт, работает и так:
-
-            ```sh
             sh -c "$(wget -qO- https://raw.githubusercontent.com/splify2/splify2/main/install.sh)"
             ```
 

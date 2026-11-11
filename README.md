@@ -63,7 +63,7 @@ LuCI JS, — бэкенд rpcd и семя официальных плагино
 ## Установка
 
 ```sh
-wget -O /tmp/splify2-install.sh https://gitlab.com/xyzmean/splify2/-/raw/main/install.sh && sh /tmp/splify2-install.sh
+wget -O /tmp/splify2-install.sh https://raw.githubusercontent.com/splify2/splify2/main/install.sh && sh /tmp/splify2-install.sh
 ```
 
 Нужно ядро steer 2.1.0 или новее (пакет `steer-core`; протоколы — его плагины). Установка и переход с 26.10 —

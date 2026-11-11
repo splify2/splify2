@@ -1,7 +1,7 @@
 #!/bin/sh
 # Установка splify2 на OpenWrt одной строкой.
 #
-#   wget -O /tmp/splify2-install.sh https://gitlab.com/xyzmean/splify2/-/raw/main/install.sh && sh /tmp/splify2-install.sh
+#   wget -O /tmp/splify2-install.sh https://raw.githubusercontent.com/splify2/splify2/main/install.sh && sh /tmp/splify2-install.sh
 #
 # Прежняя строка через raw.githubusercontent.com осталась рабочей там, где этот хост
 # доступен:
