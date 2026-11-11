@@ -4,6 +4,7 @@
 'require view.splify2.core.i18n as i18n';
 'require view.splify2.core.api as api';
 'require view.splify2.core.store as store';
+'require view.splify2.core.coreupdate as coreupdate';
 
 // Overview: the state of the core, the verdicts of its checks, the counts of the spec, start and stop,
 // the support report. The frame draws no charts and keeps no history: that is a plugin's work.
@@ -74,6 +75,11 @@ return baseclass.extend({
 						E('td', { 'class': 'td left' }, c.why || '') ]);
 				});
 				out.innerHTML = '';
+				// The core is older than the panel needs, or its update runs or failed (coreupdate.js). While it runs the
+				// state is read again: the line of progress moves without a button.
+				var cu = coreupdate.banner(eng);
+				if (cu) out.appendChild(cu);
+				if (coreupdate.running(eng)) setTimeout(function() { if (my === seq && out.isConnected) draw(); }, 3000);
 				out.appendChild(E('div', { 'class': 'cbi-section' }, [
 					E('h3', {}, T('Status')), kv(rows),
 					E('div', { 'class': 'cbi-page-actions' }, [
