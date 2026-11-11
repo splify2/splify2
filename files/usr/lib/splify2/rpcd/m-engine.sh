@@ -14,6 +14,27 @@ need_fetch
 # Пакеты, выпуски, версии (общее с хостом): pkg-lib.sh.
 . "${PKG_LIB_SH:-${RPCD_LIB:-/usr/lib/splify2/rpcd}/pkg-lib.sh}"
 
+# Ход обновления ядра силами каркаса (splify2-core-update, шапка coreup.sh): идёт, кончилось, оборвалось — и ждёт ли
+# повтора автообновление. Нет ни хода, ни метки — поля нет вовсе.
+core_update_add() {
+    . "${COREUP_SH:-${SPLIFY2_LIBDIR:-/usr/lib/splify2}/coreup.sh}"
+    coreup_state
+    [ -n "$CU_STATE" ] || [ -f "$COREUP_AUTO" ] || return 0
+    json_add_object core_update
+    [ -n "$CU_STATE" ] && json_add_string state "$CU_STATE"
+    [ -n "$CU_PROGRESS" ] && json_add_string progress "$CU_PROGRESS"
+    [ -n "$CU_VERSION" ] && json_add_string version "$CU_VERSION"
+    if [ "$CU_STATE" = failed ]; then
+        [ "$CU_CODE" = core_update.aborted ] && CU_ERROR="$(s2_t core_update.aborted "The core update was interrupted")"
+        json_add_string error "$CU_ERROR"
+        json_add_string code "$CU_CODE"
+    fi
+    json_add_boolean auto "$([ "$CU_AUTO" = 1 ] && echo 1 || echo 0)"
+    # Повторит ли cron сам (метка автообновления ещё стоит).
+    json_add_boolean retry "$([ -f "$COREUP_AUTO" ] && echo 1 || echo 0)"
+    json_close_object
+}
+
 case "$2" in
 
     engine)
@@ -46,6 +67,7 @@ case "$2" in
             json_add_boolean vless 0
             json_add_boolean enabled "$svc_enabled"
             json_add_boolean running "$svc_running"
+            core_update_add
             json_dump
             exit 0
         fi
@@ -77,6 +99,7 @@ case "$2" in
         json_add_string url "$UPDATE_URL"
         json_add_string command "$UPDATE_CMD"
         json_close_object
+        core_update_add
         json_dump
         ;;
 

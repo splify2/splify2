@@ -26,23 +26,28 @@
 # выкладка того же владельца.
 #
 # Скачать файлом и запустить (или `sh -c "$(wget -qO- …)"`), а не `wget … | sh`: через
-# конвейер установщику достаётся не терминал, и вопрос про модули ядра он не задаёт вовсе —
+# конвейер установщику достаётся не терминал, и вопрос про протоколы он не задаёт вовсе —
 # молча берёт умолчание.
 #
 # Что делает: определяет архитектуру, предупреждает, если на роутере стоит splify первой
-# версии, ставит ядро steer, если его нет, ставит интерфейс, включает службу. Ничего не
+# версии, приводит ядро steer к последнему выпуску линии 2.1 (ставит, если его нет; обновляет 1.x,
+# 2.0.x с пакетами модулей и прежние 2.1.x — одним пакетом steer-core), ставит интерфейс, ставит плагины
+# протоколов из семени ядра, включает службу. Спека, списки и подписки в /etc/steer остаются как были.
+# Запуск повторно ничего не ломает: последнее ядро не трогается, интерфейс ставится заново. Ничего не
 # спрашивает, если спрашивать не о чем. Версии и адреса пакетов — из перечня выпусков
 # splify2/releases (version.json, со сверкой sha256), а GitHub API и обходы выше — запасной путь.
 #
-# Почему ядро ставится отсюда, а не объявлено зависимостью пакета. Ядро 2.0 — пакет steer-core и
-# модули протоколов (steer-vless, steer-hysteria2, steer-proxy, …), и какие модули нужны, решает
-# человек: зависимость пакета умеет только «нужен steer-core», а угадать за него значит либо
-# положить лишнее, либо не положить нужное и получить «выход не работает» без объяснения.
+# Почему ядро ставится отсюда, а не объявлено зависимостью пакета. Пакеты ядра лежат в выпусках, а не в
+# репозитории OpenWrt: жёсткая зависимость сделала бы панель неустанавливаемой («no such package»). Панель,
+# приехавшая на ядро младше нужного (самообновление 26.10.x на ядре 2.0.x), обновляет его сама —
+# splify2-core-update, тем же путём, что плагин updater.
 set -eu
 
 REPO_STEER=splify2/steer
 REPO_UI=splify2/splify2
-TMP=/tmp/splify2-install
+# Корень файловой системы — шов стенда (tests/installmatch.sh гоняет установщик целиком в песочнице); на роутере пуст.
+R="${INSTALL_ROOT:-}"
+TMP="$R/tmp/splify2-install"
 API=https://api.github.com/repos
 RAW=https://raw.githubusercontent.com
 # Обходной путь к тем же файлам, если `githubusercontent.com` закрыт (см. шапку). Ветка
@@ -155,9 +160,11 @@ pm_world_heal() {  # [ИМЕНА-ERE]
 pm_add() {  # ФАЙЛ... [!ИМЯ...] — одной транзакцией
     if [ "$PM" = apk ]; then
         # До: поломку прошлой оборванной установки (см. pm_world_heal) apk сам не чинит, и без
-        # лечения не ставится ничто. После — при любом исходе: оборванная транзакция ломает world
-        # заново, а закрепления за файлами нам не нужны.
-        pm_world_heal
+        # лечения не ставится ничто; и наши закрепления за файлами — модули 2.0, поставленные
+        # файлами, держат «steer-vless><Q1…», а steer-core 2.1 берёт их имена на себя (provides) и с
+        # таким закреплением не решается («breaks: world[steer-vless><Q1…]»). После — при любом
+        # исходе: оборванная транзакция ломает world заново, а закрепления за файлами нам не нужны.
+        pm_world_heal "$PM_OURS"
         out="$(apk add --allow-untrusted --force-overwrite "$@" 2>&1)"
         _pm_rc=$?
         if [ "$_pm_rc" = 0 ]; then pm_world_heal "$PM_OURS"; return 0; fi
@@ -198,13 +205,13 @@ pm_ext()    { if [ "$PM" = apk ]; then echo "apk"; else echo "ipk"; fi; }
 # Архитектура ПАКЕТОВ, а не процессора: `apk --print-arch` отдаёт `aarch64`, а пакеты
 # OpenWrt называются `aarch64_cortex-a53`. По первому имя файла собирается неверно, и
 # скачивание молча не находит релиз — проверено на живом роутере.
-if [ -f /etc/openwrt_release ]; then
-    ARCH="$( . /etc/openwrt_release; printf '%s' "${DISTRIB_ARCH:-}" )"
+if [ -f "$R/etc/openwrt_release" ]; then
+    ARCH="$( . "$R/etc/openwrt_release"; printf '%s' "${DISTRIB_ARCH:-}" )"
 fi
 # Запасной путь — только для apk: у opkg своего «print-arch» нет, а DISTRIB_ARCH выше
 # есть на обеих ветках OpenWrt, так что сюда доходят лишь совсем странные системы.
 [ -n "${ARCH:-}" ] || [ "$PM" != apk ] || ARCH="$(apk --print-arch 2>/dev/null || true)"
-[ -n "$ARCH" ] || die "не удалось определить архитектуру пакетов"
+[ -n "${ARCH:-}" ] || die "не удалось определить архитектуру пакетов"
 
 mkdir -p "$TMP"
 # Ловушка INT/TERM завершает скрипт (exit запускает ловушку EXIT, та убирает каталог); одна
@@ -329,82 +336,102 @@ pm_has() {  # ИМЯ
     pm_names | grep -qx "$1"
 }
 
-# Модули ядра 2.0 в порядке показа (тот же перечень, что у бэкенда, m-engine.sh STEER_MODULES) и
-# умолчание к первой установке: VLESS, hysteria2 и протоколы прокси — туннели по подписке и
-# ссылкам. Пакеты 2.0.0 этих трёх вместе — 120–240 КБ (aarch64 — mipsel) при steer-core около
-# 1,1 МБ, а без них подписка не заработает; xsteer, обфускатор и мост Telegram ставятся из
-# интерфейса, когда понадобятся.
-STEER_MODULES="vless hysteria2 proxy xsteer obfs tgws"
-STEER_DEFAULT_MODULES="vless hysteria2 proxy"
-
-# Какие модули поставить: выбор человека, уже стоящие (модуль зависит от steer-core точной
-# версии — транзакция без него не пройдёт) и, при переходе со steer-extended 1.x, вшитые в него
-# vless, xsteer, obfs, tgws — переход не отнимает того, что работало.
-steer_mods() {  # ВЫБОР
-    _sm_have=" $1 "
-    for _sm in $STEER_MODULES; do
-        if pm_has "steer-$_sm"; then _sm_have="$_sm_have$_sm "; fi
-    done
-    if pm_has steer-extended && ! pm_has steer-core; then
-        _sm_have="$_sm_have vless xsteer obfs tgws "
+# Версия установленного пакета без ревизии (2.0.5); пусто — не стоит.
+pm_ver() {  # ИМЯ
+    if [ "$PM" = apk ]; then
+        pm_installed | sed -n "s/^$1-\([0-9][^ -]*\)-r[0-9]* .*/\1/p" | head -n 1
+    else
+        pm_installed | sed -n "s/^$1 - \([0-9][^ ]*\).*/\1/p" | sed 's/-[0-9]*$//' | head -n 1
     fi
-    _sm_out=""
-    for _sm in $STEER_MODULES; do
-        case "$_sm_have" in *" $_sm "*) _sm_out="$_sm_out $_sm" ;; esac
+}
+
+# Протоколы ядра 2.1 — плагины менеджера ядра (`steer plugin …`), а не пакеты: их архивы лежат в самом пакете
+# steer-core (семя) и ставятся без сети. Порядок показа и умолчание к первой установке — те же, что были у модулей 2.0:
+# VLESS, hysteria2 и протоколы прокси — туннели по подписке и ссылкам, без них подписка не заработает; остальное
+# ставится из вкладки «Плагины», когда понадобится. tgws — не из семени ядра, а из репозитория
+# splify2-extended-plugins (его подключает пакет панели), поэтому ставится из сети и после панели.
+STEER_PLUGINS="vless hysteria2 proxy xsteer obfs warpbox awg tgws"
+STEER_DEFAULT_PLUGINS="vless hysteria2 proxy"
+# Пакеты модулей ядра 2.0 (и мета-пакет steer-extended 1.x): steer-core 2.1 снимает их сам (apk: provides и replaces,
+# opkg: Conflicts и Replaces), а `steer plugin migrate` из его postinst ставит вместо них плагины.
+STEER_MOD_PKGS="steer-vless steer-hysteria2 steer-proxy steer-xsteer steer-obfs steer-warpbox steer-tgws steer-extended"
+
+# Какие плагины поставить сверх того, что поставит сам переход (`steer plugin migrate`: виды выходов спеки и прежние
+# пакеты модулей): выбор человека и мост Telegram, если стоял его пакет — в семени ядра моста нет, и migrate его
+# пропускает.
+steer_plugins() {  # ВЫБОР
+    _sp_have=" $1 "
+    if pm_has steer-tgws; then _sp_have="$_sp_have tgws "; fi
+    _sp_out=""
+    for _sp in $STEER_PLUGINS; do
+        case "$_sp_have" in *" $_sp "*) _sp_out="$_sp_out $_sp" ;; esac
     done
-    printf '%s\n' "${_sm_out# }"
+    printf '%s\n' "${_sp_out# }"
 }
 
 # Ядро ведёт steer-box-connector (sing-box для podkop и forkop на ядре steer): его пакет зависит
 # от steer-core точной версии, и служба steer рядом с ним делила бы таблицу nft и метки. Тогда
 # ядро не ставится и не включается — это пакеты коннектора, а не наши. Признак — тот же, что у
-# скриптов пакетов ядра: чья служба /etc/init.d/sing-box.
-BOX_INITD="${BOX_INITD:-/etc/init.d/sing-box}"
+# скриптов пакетов ядра: чья служба /etc/init.d/sing-box. С 2.1 это по-прежнему так: ядро и коннектор
+# обновляются вместе одной командой (steer/docs/guide.md, «Обновление с 2.0.x на 2.1»), и одно ядро apk не
+# поставит — пакет коннектора 2.0.x требует ядро своей версии.
+BOX_INITD="${BOX_INITD:-$R/etc/init.d/sing-box}"
 box_busy() {
     grep -q steer-box-connector "$BOX_INITD" 2>/dev/null
 }
 
-HAVE_CORE=no
-if pm_has steer-core; then HAVE_CORE=yes; fi
+CORE_VER="$(pm_ver steer-core)"
 # Прежние пакеты ядра: 1.x (steer, steer-extended) и промежуточной раскладки (libsteer,
 # libsteer-wolfssl). steer-core заменяет их — снимаются они в той же транзакции.
 STEER_OLD=""
 for _n in steer steer-extended libsteer libsteer-wolfssl; do
     if pm_has "$_n"; then STEER_OLD="$STEER_OLD $_n"; fi
 done
+# Стоящие пакеты модулей 2.0 — только для слов человеку и для opkg (см. pm_drop_old).
+MOD_OLD=""
+for _n in $STEER_MOD_PKGS; do
+    if pm_has "$_n"; then MOD_OLD="$MOD_OLD $_n"; fi
+done
 
-# ---- модули ядра ----------------------------------------------------------------
-# Спрашиваем ТОЛЬКО если ядро 2.0 ставится и есть кому ответить. Без терминала (из скрипта, по
-# ssh с перенаправленным вводом) — умолчание.
-WANT_MODULES="$STEER_DEFAULT_MODULES"
+# ---- плагины протоколов ---------------------------------------------------------
+# Спрашиваем ТОЛЬКО при первой установке ядра (steer-core ещё нет) и если есть кому ответить. При переходе с 2.0
+# состав решает сам переход — по видам выходов спеки и по стоявшим пакетам модулей: что работало, работает и дальше.
+# Без терминала (из скрипта, по ssh с перенаправленным вводом) — умолчание.
+WANT_PLUGINS="$STEER_DEFAULT_PLUGINS"
 if box_busy; then
     info "ядро ведёт steer-box-connector — пакеты ядра не трогаю"
-elif [ "$HAVE_CORE" = yes ]; then
-    info "ядро уже стоит (steer-core); обновляется оно из интерфейса"
+elif [ -n "$CORE_VER" ]; then
+    WANT_PLUGINS=""
 elif [ -t 0 ]; then
     say ""
-    say "Какие модули ядра поставить?"
+    say "Какие протоколы поставить?"
     cat <<'TXT'
   vless      VLESS
   hysteria2  Hysteria2
   proxy      Trojan, Shadowsocks, SOCKS, HTTP, VMess
   xsteer     XSTEER
   obfs       WireGuard поверх TCP
-  tgws       мост Telegram
+  warpbox    Cloudflare WARP
+  awg        AmneziaWG
+  tgws       мост Telegram (из сети)
   Остальные можно поставить и снять потом: вкладка «Плагины».
 TXT
-    printf '  Через пробел [%s]: ' "$STEER_DEFAULT_MODULES"
+    printf '  Через пробел [%s]: ' "$STEER_DEFAULT_PLUGINS"
     read -r ans || ans=""
     if [ -n "${ans:-}" ]; then
-        WANT_MODULES=""
+        WANT_PLUGINS=""
         for _m in $ans; do
-            case " $STEER_MODULES " in
-                *" $_m "*) WANT_MODULES="$WANT_MODULES $_m" ;;
-                *) info "такого модуля нет: $_m — пропускаю" ;;
+            case " $STEER_PLUGINS " in
+                *" $_m "*) WANT_PLUGINS="$WANT_PLUGINS $_m" ;;
+                *) info "такого протокола нет: $_m — пропускаю" ;;
             esac
         done
     fi
 fi
+
+# Состав считается сейчас, до ядра: steer-core 2.1 снимает пакет steer-tgws в своей транзакции, и после неё узнать,
+# что мост стоял, уже не по чему.
+ENSURE_PLUGINS="$(steer_plugins "$WANT_PLUGINS")"
 
 # ---- перечень выпусков splify2/releases ---------------------------------------
 # Первый источник версий и адресов файлов — version.json репозитория splify2/releases: его
@@ -679,6 +706,12 @@ ver_ok() {  # ВЕРСИЯ
     [ "$(printf '%s\n2.1.0\n' "$1" | sort -V | head -n 1)" = 2.1.0 ]
 }
 
+# A не младше B.
+ver_ge() {  # A B
+    case "$1" in ''|*[!0-9.]*) return 1 ;; esac
+    [ "$(printf '%s\n%s\n' "$1" "$2" | sort -V | head -n 1)" = "$2" ]
+}
+
 # Последняя стабильная версия; если она старше 2.1.0 — предварительная из перечня выпусков, если
 # она 2.1.0 или новее.
 steer_version() {
@@ -690,11 +723,12 @@ steer_version() {
     printf '%s\n' "$_sv"
 }
 
-# Снять прежние пакеты ядра у opkg (у него нет `!имя` в транзакции): только наши имена 1.x и
-# промежуточной раскладки — чужого установщик не снимает.
+# Снять прежние пакеты ядра у opkg (у него нет `!имя` в транзакции): только наши имена 1.x,
+# промежуточной раскладки и модулей 2.0 — чужого установщик не снимает. Зовётся, только если opkg
+# отказал в установке steer-core: обычно хватает его Conflicts и Replaces.
 pm_drop_old() {  # ИМЕНА
     for _d in "$@"; do
-        case "$_d" in steer|steer-extended|libsteer|libsteer-wolfssl) opkg remove --force-depends "$_d" >/dev/null 2>&1 || true ;; esac
+        case "$_d" in steer|steer-extended|libsteer|libsteer-wolfssl|steer-vless|steer-hysteria2|steer-proxy|steer-xsteer|steer-obfs|steer-warpbox|steer-tgws) opkg remove --force-depends "$_d" >/dev/null 2>&1 || true ;; esac
     done
 }
 
@@ -713,53 +747,93 @@ pm_forget_old() {  # ИМЕНА
     done
 }
 
-if ! box_busy && [ "$HAVE_CORE" = no ]; then
+# Ядро обновляет сама панель (splify2-core-update: панель 26.11 приехала самообновлением на ядро 2.0.x) — второй
+# установке рядом с ней не место: две транзакции одного пакета ждали бы друг друга или ставили ядро дважды.
+COREUP_PID="$R/tmp/splify2-core-update/pid"
+coreup_busy() {
+    _cb="$(cat "$COREUP_PID" 2>/dev/null)"
+    case "$_cb" in ''|*[!0-9]*) return 1 ;; esac
+    kill -0 "$_cb" 2>/dev/null
+}
+
+STEER_BIN="${STEER_BIN:-$R/usr/sbin/steer}"
+SPEC_DIR="$R/etc/steer"
+CORE_DONE=no
+if ! box_busy; then
     SV="$(steer_version)"
     [ -n "$SV" ] || die "не удалось узнать версию ядра: не ответили ни перечень выпусков splify2/releases, ни api.github.com, ни raw.githubusercontent.com, ни зеркало на gitlab.com. Пакеты можно поставить руками с https://github.com/$REPO_STEER/releases"
-    ver_ok "$SV" || die "последний выпуск ядра — $SV, а этому интерфейсу нужно ядро 2.1 или новее. Пакеты steer-core и модули можно поставить руками с https://github.com/$REPO_STEER/releases"
-    MODS="$(steer_mods "$WANT_MODULES")"
-    say ""
-    say "Ядро steer $SV${MODS:+ · модули: $MODS}"
-    FILES=""
-    for _p in steer-core $(for _m in $MODS; do printf 'steer-%s ' "$_m"; done); do
-        _f="${_p}-${SV}-1_${ARCH}.$(pm_ext)"
+    ver_ok "$SV" || die "последний выпуск ядра — $SV, а этому интерфейсу нужно ядро 2.1 или новее. Пакет steer-core можно поставить руками с https://github.com/$REPO_STEER/releases"
+    if [ -n "$CORE_VER" ] && ver_ge "$CORE_VER" "$SV"; then
+        say ""
+        say "Ядро steer $CORE_VER — последний выпуск, не трогаю"
+    else
+        coreup_busy && die "ядро сейчас обновляет сама панель (ход: /tmp/splify2-core-update/log) — дождитесь его конца и запустите установщик снова"
+        say ""
+        if [ -n "$CORE_VER" ]; then
+            say "Ядро steer $CORE_VER → $SV${MOD_OLD:+ (пакеты модулей${MOD_OLD} заменяются плагинами)}"
+        else
+            say "Ядро steer $SV"
+        fi
+        # Первая установка: пустая спека ДО ядра. postinst ядра зовёт `steer plugin migrate`, а тот без спеки ставит
+        # все плагины семени, отмеченные умолчанием, — выбор выше перестал бы что-либо значить. Со спекой без выходов
+        # туннелей migrate не ставит ничего, и ставится ровно выбранное (ниже, после панели). Та же спека, что
+        # пишется в конце (см. «запуск»), только раньше.
+        if [ ! -s "$SPEC_DIR/spec.json" ] && [ ! -s "$SPEC_DIR/spec.yaml" ]; then
+            mkdir -p "$SPEC_DIR" 2>/dev/null
+            printf '{"version":2,"outputs":{"direct":{"kind":"direct"}}}\n' > "$SPEC_DIR/spec.json" 2>/dev/null || true
+        fi
+        _f="steer-core-${SV}-1_${ARCH}.$(pm_ext)"
         info "$_f"
         fetch_pkg steer "$SV" "$_f" "$TMP/$_f" "$REPO_STEER"
-        FILES="$FILES $TMP/$_f"
-    done
-    # Одной транзакцией: модуль зависит от steer-core точной версии. Прежнее ядро у apk снимается
-    # в ней же: `!имя` (у steer — снятием закрепления имени за файлом 1.x в world, после чего
-    # steer-core замещает его по replaces). /etc/steer — спека, списки, подписки — пакетам не
-    # принадлежит и остаётся на месте.
-    EXTRA=""
-    if [ "$PM" = apk ]; then
-        for _n in $STEER_OLD; do
-            case "$_n" in
-                steer) apk add steer >/dev/null 2>&1 || true ;;
-                *) EXTRA="$EXTRA !$_n" ;;
-            esac
-        done
-    fi
-    # shellcheck disable=SC2086
-    if ! pm_add $FILES $EXTRA; then
-        [ "$PM" = opkg ] && [ -n "$STEER_OLD" ] || die "ядро не установилось"
-        info "прежнее ядро мешает — снимаю его и ставлю заново"
+        # Одной транзакцией. Прежнее ядро 1.x у apk снимается в ней же: `!имя` (у steer — снятием закрепления
+        # имени за файлом 1.x в world, после чего steer-core замещает его по replaces). Пакеты модулей 2.0
+        # называть не нужно: steer-core 2.1 берёт их имена на себя, а закрепления за файлами, с которыми он не
+        # решается, pm_add снимает до транзакции. /etc/steer — спека, списки, подписки — пакетам не
+        # принадлежит и остаётся на месте.
+        EXTRA=""
+        if [ "$PM" = apk ]; then
+            for _n in $STEER_OLD; do
+                case "$_n" in
+                    steer) apk add steer >/dev/null 2>&1 || true ;;
+                    *) EXTRA="$EXTRA !$_n" ;;
+                esac
+            done
+        fi
         # shellcheck disable=SC2086
-        pm_drop_old $STEER_OLD
+        if ! pm_add "$TMP/$_f" $EXTRA; then
+            [ "$PM" = opkg ] && [ -n "$STEER_OLD$MOD_OLD" ] || die "ядро не установилось"
+            info "прежнее ядро мешает — снимаю его и ставлю заново"
+            # shellcheck disable=SC2086
+            pm_drop_old $STEER_OLD $MOD_OLD
+            pm_add "$TMP/$_f" || die "ядро не установилось, а прежнее снято: поставьте пакет руками с https://github.com/$REPO_STEER/releases"
+        fi
+        rm -f "$TMP/$_f"
         # shellcheck disable=SC2086
-        pm_add $FILES || die "ядро не установилось, а прежнее снято: поставьте пакеты руками с https://github.com/$REPO_STEER/releases"
+        [ "$PM" = apk ] && pm_forget_old $STEER_OLD
+        _now="$(pm_ver steer-core)"
+        ver_ge "$_now" 2.1.0 || die "менеджер пакетов ответил успехом, а стоит steer-core ${_now:-—}: поставьте пакет руками с https://github.com/$REPO_STEER/releases"
+        info "установлено: steer-core $_now"
+        CORE_DONE=yes
     fi
-    # shellcheck disable=SC2086
-    [ "$PM" = apk ] && pm_forget_old $STEER_OLD
-    info "установлено"
+elif ! ver_ok "$CORE_VER"; then
+    say ""
+    say "Внимание: ядро steer ${CORE_VER:-—} ведёт steer-box-connector, а панели нужно ядро 2.1 или новее."
+    info "Ядро и коннектор обновляются вместе (документация коннектора): одно ядро пакет коннектора 2.0 не пустит."
+    info "Панель ставится, но до этого обновления скажет «ядро устарело»."
 fi
 
 # ---- интерфейс ----------------------------------------------------------------
 UV="$(latest "$REPO_UI")"
 [ -n "$UV" ] || die "не удалось узнать версию интерфейса: не ответили ни перечень выпусков splify2/releases, ни api.github.com, ни raw.githubusercontent.com, ни зеркало на gitlab.com. Пакет можно поставить руками с https://github.com/$REPO_UI/releases"
 UI_PKG="splify2-${UV}-1_$(pm_suffix)"
+UI_NOW="$(pm_ver splify2)"
 say ""
-say "Интерфейс splify2 $UV"
+if [ "$UI_NOW" = "$UV" ]; then
+    # Тот же выпуск — ставится заново всё равно: повтор установщика чинит недоставленное (файлы, семя, rpcd).
+    say "Интерфейс splify2 $UV (тот же выпуск — ставлю заново)"
+else
+    say "Интерфейс splify2 $UV"
+fi
 info "$UI_PKG"
 fetch_pkg splify2 "$UV" "$UI_PKG" "$TMP/$UI_PKG" "$REPO_UI"
 # До переименования пакет назывался luci-app-splify2. Новый (splify2) объявляет его provides/replaces,
@@ -767,7 +841,39 @@ fetch_pkg splify2 "$UV" "$UI_PKG" "$TMP/$UI_PKG" "$REPO_UI"
 # снимается заранее; настройки и спека лежат вне пакета и остаются.
 pm_drop_old_ui
 pm_add "$TMP/$UI_PKG" || die "интерфейс не установился"
+rm -f "$TMP/$UI_PKG"
 info "установлен"
+
+# ---- плагины -------------------------------------------------------------------
+# После панели, а не сразу после ядра: tgws ставится из репозитория splify2-extended-plugins, который подключает пакет
+# панели, а довод (splify2-host engine settle) — службой самой панели.
+#
+#   1. `steer plugin migrate` — плагины видов выходов спеки и стоявших пакетов модулей. Его уже позвал postinst ядра;
+#      повтор ничего не ставит дважды и доводит то, что тогда не встало (стоящее ядро 2.1 без нужного плагина).
+#   2. выбор человека (первая установка) и мост Telegram — `steer plugin ensure`: стоящий не трогается.
+#   3. довод: автозапуск, спека в spec.yaml (ядро 2.1 читает и прежний spec.json, но панель и updater ведут
+#      spec.yaml — тот же итог, что у обновления из интерфейса), перезапуск службы со спекой.
+#   4. семя панели — его уже прошёл postinst пакета; повтор показывает итог и доставляет не вставшее.
+if ! box_busy && [ -x "$STEER_BIN" ] && ver_ok "$(pm_ver steer-core)"; then
+    say ""
+    say "Плагины"
+    "$STEER_BIN" plugin migrate 2>&1 | sed 's/^/  /' || true
+    for _p in $ENSURE_PLUGINS; do
+        if "$STEER_BIN" plugin ensure "$_p" >/dev/null 2>&1; then
+            info "$_p: стоит"
+        elif [ "$_p" = tgws ]; then
+            info "tgws не встал (он ставится из сети, из репозитория splify2-extended-plugins) — поставьте его из вкладки «Плагины»"
+        else
+            info "$_p не встал — поставьте его из вкладки «Плагины»"
+        fi
+    done
+    if [ -x "$R/usr/sbin/splify2-host" ]; then
+        "$R/usr/sbin/splify2-host" engine settle >/dev/null 2>&1 || info "довод ядра не удался — спека применится кнопкой «Применить»"
+    fi
+    if [ -x "$R/usr/sbin/splify2-seed" ]; then
+        "$R/usr/sbin/splify2-seed" --no-reload 2>&1 | sed -n 's/^installed \([^ ]*\).*/  панель: \1 поставлен/p; s/^failed \(.*\)/  панель: не встал \1 (повторится сам)/p' || true
+    fi
+fi
 
 # ---- запуск -------------------------------------------------------------------
 # Срок вызова rpcd — тот же, что ждёт интерфейс (120 с); стандартные 30 с обрывали долгие
@@ -777,11 +883,13 @@ info "установлен"
 # `|| true` — под set -e: отсутствующий ключ даёт uci код 1, и без этого установщик молча
 # завершался ПОСЛЕ установки пакетов — без рестарта rpcd, пустой спеки и слова «Готово».
 _rt="$(uci -q get rpcd.@rpcd[0].timeout 2>/dev/null || true)"
-case "${_rt:-30}" in ''|*[!0-9]*) _rt=30 ;; esac
+# Пусто (ключа нет — так на свежей прошивке) — это стандартные 30 с. Прежняя проверка `${_rt:-30}` подставляла
+# 30 только в образец, а сравнивала пустое: `[ "" -lt 120 ]` — ошибка вместо «меньше», и срок не выставлялся.
+case "$_rt" in ''|*[!0-9]*) _rt=30 ;; esac
 if [ "$_rt" -lt 120 ]; then
     uci -q set rpcd.@rpcd[0].timeout=120 && uci -q commit rpcd
 fi
-/etc/init.d/rpcd restart >/dev/null 2>&1 || true   # чтобы ubus увидел новый бэкенд
+"$R/etc/init.d/rpcd" restart >/dev/null 2>&1 || true   # чтобы ubus увидел новый бэкенд
 # Пустая спека — по тому же доводу, что и срок rpcd выше: то же самое делает
 # files/etc/uci-defaults/99-splify2, а здесь повтор на случай, если uci-defaults отложен.
 #
@@ -791,14 +899,15 @@ fi
 # настройка, а то, что роутер делает без нас, и правилу-исключению нужен адрес назначения.
 # Форма — спека v2, как в uci-defaults: ядро 2.0 читает её, а прежнюю (`schema`) интерфейс при
 # первом открытии переписал бы сам. Две спеки рядом ядро отвергает — при spec.yaml не пишем.
-if [ ! -s /etc/steer/spec.json ] && [ ! -s /etc/steer/spec.yaml ]; then
-    mkdir -p /etc/steer 2>/dev/null
+# При коннекторе спеку не заводим: ядро ведёт он (тот же довод, что у uci-defaults).
+if ! box_busy && [ ! -s "$SPEC_DIR/spec.json" ] && [ ! -s "$SPEC_DIR/spec.yaml" ]; then
+    mkdir -p "$SPEC_DIR" 2>/dev/null
     printf '{"version":2,"outputs":{"direct":{"kind":"direct"}}}\n' \
-        > /etc/steer/spec.json 2>/dev/null || true
+        > "$SPEC_DIR/spec.json" 2>/dev/null || true
 fi
 # При коннекторе служба steer не включается: ядро ведёт он (box_busy).
-if [ -x /etc/init.d/steer ] && ! box_busy; then
-    /etc/init.d/steer enable >/dev/null 2>&1 || true
+if [ -x "$R/etc/init.d/steer" ] && ! box_busy; then
+    "$R/etc/init.d/steer" enable >/dev/null 2>&1 || true
 fi
 
 say ""
@@ -808,5 +917,6 @@ say "Готово."
 if [ -n "$V1_SIGNS" ]; then
     info "Первая версия splify осталась на роутере — пока она включена, DNS делят два хозяина (см. выше)."
 fi
+info "ядро: steer-core $(pm_ver steer-core || true), интерфейс: splify2 $(pm_ver splify2 || true)"
 info "Откройте LuCI → Сервисы → splify2"
 info "Дальше: вставить ссылку подписки и отметить сервисы — больше ничего не нужно."

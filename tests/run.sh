@@ -60,6 +60,9 @@ run nodecheckmatch sh "$ROOT/tests/nodecheckmatch.sh"
 run groupcheckmatch sh "$ROOT/tests/groupcheckmatch.sh"
 # Версии и установка ядра и splify2 (плагин updater): порядок шагов, проверки до сети, итог проверки выпусков, задача.
 run updatermatch sh "$ROOT/tests/updatermatch.sh"
+# Обновление ядра силами каркаса (splify2-core-update): панель на ядре младше нужного без плагина updater — шаги, отказы,
+# ход, автообновление и его повтор, семя на старом ядре, методы steer_install/steer_versions/engine, postinst.
+run coreupmatch sh "$ROOT/tests/coreupmatch.sh"
 # Плагин subscriptions: расписание автообновления (задача зовёт методы каркаса только по тем подпискам, у которых срок
 # вышел), остаток трафика, название, поля sub_list через хук, архив. Стенд про то, кого позвали и кого не тронули.
 run subsmatch  sh "$ROOT/tests/subsmatch.sh"
@@ -69,7 +72,7 @@ run subsmatch  sh "$ROOT/tests/subsmatch.sh"
 run purgematch sh "$ROOT/tests/purgematch.sh"
 # Скачивание с обходом закрытого githubusercontent: лестница путей и её порядок (splify2#15).
 run fetchmatch sh "$ROOT/tests/fetchmatch.sh"
-# Определение версии в установщике: оба пути и оба отказа (R-048).
+# Установщик: определение версии (оба пути и оба отказа, R-048) и прогон целиком из каждого начального состояния (apk, opkg).
 run installmatch sh "$ROOT/tests/installmatch.sh"
 # Разбор конфигурации на странице протокола xsteer. Пропускается вслух, если нет quickjs.
 run protomatch python3 "$ROOT/tests/protomatch.py"

@@ -89,6 +89,8 @@ cp files/usr/sbin/splify2-purge "$PKG/usr/sbin/splify2-purge"
 cp files/usr/sbin/splify2-plugin-sync "$PKG/usr/sbin/splify2-plugin-sync"
 # Семя плагинов «из коробки» (ниже кладётся в /usr/share/splify2/seed) и команда, которая ставит их через менеджер ядра.
 cp files/usr/sbin/splify2-seed "$PKG/usr/sbin/splify2-seed"
+# Обновление ядра силами каркаса, когда ядро младше нужного и плагин updater встать не может (шапка coreup.sh).
+cp files/usr/sbin/splify2-core-update "$PKG/usr/sbin/splify2-core-update"
 # ReCheck — обход DPI на прямом трафике: служба запускает движок из отдельного пакета recheck,
 # если тот стоит и обход включён (/etc/splify2/recheck.conf); иначе ничего не делает.
 cp files/etc/init.d/splify2-recheck "$PKG/etc/init.d/splify2-recheck"
@@ -141,7 +143,8 @@ chmod 0755 "$PKG/usr/libexec/rpcd/splify2" \
            "$PKG/usr/sbin/splify2-purge"
 chmod 0644 "$PKG"/usr/lib/splify2/*.sh "$PKG"/usr/lib/splify2/rpcd/*.sh
 cp files/usr/lib/splify2/plugin-rpcd "$PKG/usr/lib/splify2/plugin-rpcd"
-chmod 0755 "$PKG/usr/lib/splify2/plugin-rpcd" "$PKG/usr/sbin/splify2-plugin-sync" "$PKG/usr/sbin/splify2-seed"
+chmod 0755 "$PKG/usr/lib/splify2/plugin-rpcd" "$PKG/usr/sbin/splify2-plugin-sync" "$PKG/usr/sbin/splify2-seed" \
+           "$PKG/usr/sbin/splify2-core-update"
 # splify2-api (хуки, задачи, события, псевдонимы): таблица методов, запуск задач и раздача событий ядра.
 cp files/usr/lib/splify2/methods.tsv "$PKG/usr/lib/splify2/methods.tsv"
 chmod 0644 "$PKG/usr/lib/splify2/methods.tsv"
@@ -266,8 +269,35 @@ rm -rf /tmp/luci-modulecache/ 2>/dev/null
 # Плагины: ссылки и ACL их объектов ubus (после обновления прошивки плагины на месте, ссылок нет).
 # До перечитки rpcd ниже — одной на всё.
 # Плагины «из коробки» (Andromeda, языки, логика) — из семени пакета, без сети: одно обновление, и привычная панель на месте.
-# Что не встало (ядра ещё нет), повторится по cron; снятое человеком не возвращается (/etc/splify2/seeded).
-[ -x /usr/sbin/splify2-seed ] && /usr/sbin/splify2-seed --no-reload 2>&1 | sed 's/^/splify2: плагин: /'
+# Что не встало, повторится по cron; снятое человеком не возвращается (/etc/splify2/seeded).
+#
+# ЯДРО МЛАДШЕ НУЖНОГО (код 3 семени: «core-too-old <стоит> <нужно>»). Так приезжает самообновление 26.10.x: одна кнопка
+# «Обновить панель» на роутере с ядром 2.0.x, где плагины не ставятся вовсе. Без обновления ядра человек остался бы с
+# панелью, которая говорит «ядро устарело», и без плагина updater, которым ядро обновляется, — тупик (снято на QEMU-стенде
+# с выпущенными пакетами). Поэтому ядро обновляется здесь же, само: splify2-core-update в фоне (он ждёт конца этой
+# транзакции менеджера пакетов — она держит замок базы), ход — в методе engine и в /tmp/splify2-core-update/log. Не
+# вышло (нет сети, нет места) — повторяется раз в час сутки (cron семени) и кнопкой «Обновить ядро». Ядро коннектора
+# steer-box-connector — его пакеты, и его не трогаем.
+if [ -x /usr/sbin/splify2-seed ]; then
+    _sd_out="$(/usr/sbin/splify2-seed --no-reload 2>&1)"; _sd_rc=$?
+    if [ "$_sd_rc" = 3 ]; then
+        set -- $_sd_out
+        if [ "${1:-}" = no-core ]; then
+            echo "splify2: ядра steer нет — плагины встанут после его установки (установщик или кнопка «Обновить ядро» в панели)."
+        elif grep -q steer-box-connector /etc/init.d/sing-box 2>/dev/null; then
+            echo "splify2: ядро steer ${2:-?} старше нужного панели ${3:-?}, а ведёт его steer-box-connector: обновите коннектор"
+            echo "         вместе с ядром (документация коннектора). Плагины панели встанут после этого."
+        else
+            . /usr/lib/splify2/coreup.sh
+            mkdir -p "${COREUP_AUTO%/*}" && printf '0 0\n' > "$COREUP_AUTO"
+            coreup_start --auto
+            echo "splify2: ядро steer ${2:-?} старше нужного панели ${3:-?} — обновляю его в фоне до последнего выпуска."
+            echo "         Ход — на странице splify2 и в /tmp/splify2-core-update/log; плагины и Andromeda встанут после него."
+        fi
+    else
+        [ -n "$_sd_out" ] && printf '%s\n' "$_sd_out" | sed 's/^/splify2: плагин: /'
+    fi
+fi
 [ -x /usr/sbin/splify2-plugin-sync ] && /usr/sbin/splify2-plugin-sync --no-reload >/dev/null 2>&1
 /etc/init.d/rpcd reload 2>/dev/null
 # Перечитка (SIGHUP) снимает объекты обработчиков и регистрирует их заново вызовом `list`; если
@@ -382,7 +412,7 @@ chmod +x build/scripts/pre-remove
 for _need in $(grep -ho '/usr/lib/splify2/[a-z0-9_-]*\.sh' \
                     files/usr/libexec/rpcd/splify2 files/usr/sbin/splify2-host \
                     files/etc/init.d/splify2-recheck files/usr/lib/splify2/rpcd/*.sh \
-                    files/usr/lib/splify2/*.sh files/usr/sbin/splify2-task files/usr/sbin/splify2-events \
+                    files/usr/lib/splify2/*.sh files/usr/sbin/splify2-task files/usr/sbin/splify2-events files/usr/sbin/splify2-core-update files/usr/sbin/splify2-seed \
                     plugins/*/lib/*.sh plugins/*/bin/* |
                sort -u); do
     test -s "$PKG$_need" || {
@@ -423,7 +453,11 @@ test -s "$PKG/usr/share/splify2/spec-schema.json" || {
     exit 1; }
 test -x "$PKG/usr/sbin/splify2-seed" || {
     echo "в пакете нет usr/sbin/splify2-seed — плагины «из коробки» поставить будет нечем"; exit 1; }
+test -x "$PKG/usr/sbin/splify2-core-update" || {
+    echo "в пакете нет usr/sbin/splify2-core-update — панель на старом ядре не сможет его обновить"; exit 1; }
 mkdir -p "$OUT"
+# Файл пакета отдаётся владельцу дерева внутри контейнера (chown): контейнер пишет от root, и сборка не от root (GitHub
+# Actions, машина разработчика) не могла потом ни перезаписать, ни убрать собственный out/.
 # `&&` после установки apk-tools, а не `;`. С точкой с запятой провал установки игнорировался
 # и проявлялся командой позже — как отсутствующий `apk mkpkg`, о чём говорилось «упаковка
 # провалилась». Причина (нет сети в контейнере, зеркало alpine не отвечает) при этом не
@@ -437,7 +471,7 @@ docker run --rm -v "$PWD":/w -w /w alpine:latest sh -c \
        --script post-install:build/scripts/post-install \
        --script post-upgrade:build/scripts/post-install \
        --script pre-deinstall:build/scripts/pre-remove \
-       -F $PKG -o $OUT/splify2-$VERSION-1_noarch.apk" > "$BUILD_LOG" 2>&1 \
+       -F $PKG -o $OUT/splify2-$VERSION-1_noarch.apk && chown $(id -u):$(id -g) $OUT/splify2-$VERSION-1_noarch.apk" > "$BUILD_LOG" 2>&1 \
     || { echo "упаковка apk провалилась:"; cat "$BUILD_LOG"; exit 1; }
 
 # ---- тот же пакет в формате opkg ---------------------------------------------

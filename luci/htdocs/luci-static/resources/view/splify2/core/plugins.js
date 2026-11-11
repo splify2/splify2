@@ -4,6 +4,7 @@
 'require view.splify2.core.i18n as i18n';
 'require view.splify2.core.api as api';
 'require view.splify2.core.autoform as autoform';
+'require view.splify2.core.coreupdate as coreupdate';
 
 // Plugins: the catalog and the repositories (a third-party repository is marked), install, update,
 // enable, disable, remove, auto-update, and the settings of a plugin drawn from ITS schema
@@ -11,16 +12,6 @@
 // React panel's "Plugins" tab (docs/rpcd-api.md, "Plugins").
 
 var T = i18n.T.bind(i18n);
-
-// Versions as numbers by parts: -1, 0, 1.
-function cmpVer(a, b) {
-	var x = String(a).split('.').map(Number), y = String(b).split('.').map(Number);
-	for (var i = 0; i < Math.max(x.length, y.length); i++) {
-		var d = (x[i] || 0) - (y[i] || 0);
-		if (d) return d < 0 ? -1 : 1;
-	}
-	return 0;
-}
 
 function badge(text, color, title) {
 	return E('span', { title: title || '', style: 'display:inline-block;margin-left:6px;padding:1px 7px;border-radius:3px;font-size:85%;color:#fff;background:' + color }, text);
@@ -239,28 +230,9 @@ return baseclass.extend({
 			})));
 		};
 
-		// Update the core to the newest release the frame works with (steer_versions, steer_install): the
-		// call downloads a package, so the timeout of the call is raised, as the Andromeda page does.
-		var updateCore = function(o) {
-			var go = function(version) {
-				if (typeof L !== 'undefined' && L.env && !(Number(L.env.rpctimeout) >= 120)) L.env.rpctimeout = 120;
-				ui.showModal(T('Updating steer'), [ E('p', { 'class': 'spinning' }, T('Working...')) ]);
-				api.call('steer_install', { version: version }).then(function() {
-					ui.hideModal();
-					changed();
-					note(T('steer updated to {version}.', { version: version }));
-					load(true);
-				}, function(e) { ui.hideModal(); fail(e); });
-			};
-			return api.call('steer_versions').then(function(r) {
-				var vs = (r.versions || []).filter(function(v) { return v !== r.prerelease && /^\d+(\.\d+)+$/.test(v) && cmpVer(v, o.need) >= 0; });
-				var newest = vs.reduce(function(m, v) { return !m || cmpVer(v, m) > 0 ? v : m; }, null);
-				if (!newest) { note(T('No steer {need} or newer is available for this router.', { need: o.need }), 'warning'); return; }
-				ui.showModal(T('Update steer to {version}?', { version: newest }), [
-					E('div', { 'class': 'right' }, [ E('button', { 'class': 'btn', click: ui.hideModal }, T('Cancel')), ' ',
-						E('button', { 'class': 'btn cbi-button-action', click: function() { ui.hideModal(); go(newest); } }, T('Update the core')) ]) ]);
-			}, fail);
-		};
+		// Update the core to the newest release the frame works with: the same flow as the overview (coreupdate.js) -
+		// with the updater plugin or, on a core too old for plugins, by the frame itself in the background.
+		var updateCore = function(o) { return coreupdate.start(o.need); };
 
 		var search = E('input', { type: 'text', 'class': 'cbi-input-text', placeholder: T('Search the catalog'), keyup: function(ev) {
 			if (ev.key === 'Enter') { state.query = ev.target.value; loadCatalog(); }

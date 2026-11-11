@@ -396,7 +396,10 @@ pkg_world_heal() {  # [ИМЕНА-ERE]
 # про opkg: у 1.2.5 зависимостей не было, и ветка apk отказа не встречала; у 26.9 их две.
 pkg_add_file() {  # ФАЙЛ... [!ИМЯ...] — одной транзакцией менеджера
     if [ "$PM" = apk ]; then
-        pkg_world_heal
+        # До транзакции — и наши закрепления за файлами: пакеты модулей 2.0, поставленные файлами, держат в world
+        # «steer-vless><Q1…», и steer-core 2.1, который берёт их имена на себя (provides), с таким закреплением не
+        # решается вовсе («breaks: world[steer-vless><Q1…]»). Просто имя он закрывает собой.
+        pkg_world_heal "$PKG_OURS"
         _pa_out="$(apk add --allow-untrusted --force-overwrite "$@" 2>&1)"
         _pa_rc=$?
         if [ "$_pa_rc" != 0 ]; then

@@ -342,8 +342,8 @@ for what in ядра интерфейса; do
 done
 check "установщик ставит пакеты через fetch_pkg — с адресами из version.json" "2" \
     "$(grep -c '^ *fetch_pkg ' "$ROOT/install.sh")"
-check "отказы ведут на страницу релизов (версии ядра и интерфейса, ядро старше 2.0, переход по opkg)" "4" \
-    "$(grep -c 'Пакеты\|Пакет можно поставить руками' "$ROOT/install.sh")"
+check "отказы ведут на страницу релизов (версии ядра и интерфейса, ядро старше 2.1, переход по opkg, ядро не обновилось)" "5" \
+    "$(grep -c 'руками с https://github.com/\$REPO_[A-Z]*/releases' "$ROOT/install.sh")"
 
 # ---- обнаружение splify первой версии (R-018) ----------------------------------
 #
@@ -445,8 +445,10 @@ rm -f "$V1BOX/etc/init.d/splify" "$SB/nftset"
 # (pm_drop_old у opkg, pm_forget_old — уборка world у apk), и только по своим именам.
 check "установщик ничего не удаляет (кроме прежнего своего ядра)" "0" \
     "$(sed '/^pm_drop_old() {/,/^}/d; /^pm_forget_old() {/,/^}/d; /^pm_drop_old_ui() {/,/^}/d' "$ROOT/install.sh" | grep -c 'apk del\|opkg remove\|rm -rf /etc\|uci -q delete')"
-check "снимаются только имена прежнего ядра" "2" \
-    "$(sed -n '/^pm_drop_old() {/,/^}/p; /^pm_forget_old() {/,/^}/p' "$ROOT/install.sh" | grep -c 'steer|steer-extended|libsteer|libsteer-wolfssl)')"
+check "снимаются только имена прежнего ядра (1.x и модули 2.0)" "2" \
+    "$(sed -n '/^pm_drop_old() {/,/^}/p; /^pm_forget_old() {/,/^}/p' "$ROOT/install.sh" | grep -c 'case "\$_d" in steer|steer-extended|libsteer|libsteer-wolfssl[|)]')"
+check "  и ничего чужого: у opkg — только наши имена" "steer steer-extended libsteer libsteer-wolfssl steer-vless steer-hysteria2 steer-proxy steer-xsteer steer-obfs steer-warpbox steer-tgws" \
+    "$(sed -n '/^pm_drop_old() {/,/^}/p' "$ROOT/install.sh" | sed -n 's/.*case "\$_d" in \([^)]*\)).*/\1/p' | tr '|' ' ')"
 
 # Ловушки set -e. Чтение отсутствующего ключа uci — не ошибка установки, а `_rt="$(uci -q get …)"`
 # под set -e завершал скрипт молча ПОСЛЕ установки пакетов: без рестарта rpcd, пустой спеки и
@@ -477,24 +479,26 @@ check "docs/guide.md объясняет, что делать с первой в�
 check "README ведёт на docs/guide.md" "да" \
     "$(grep -qF 'docs/guide.md' "$ROOT/README.md" && echo да || echo нет)"
 
-# ---- ядро 2.0: модули вместо вариантов -------------------------------------------------
-# Вариантов «базовый/расширенный» больше нет: ядро — steer-core, протоколы — модули. Состав
-# установки: выбор человека (умолчание — vless, hysteria2, proxy), уже стоящие модули и, при
-# переходе со steer-extended 1.x, вшитые в него vless, xsteer, obfs, tgws.
-eval "$(sed -n '/^REPO_STEER=/p; /^pm_names() {/,/^}/p; /^pm_has() {/,/^}/p; /^STEER_MODULES=/p; /^STEER_DEFAULT_MODULES=/p; /^steer_mods() {/,/^}/p; /^ver_ok() {/,/^}/p; /^steer_version() {/,/^}/p; /^BOX_INITD=/p; /^box_busy() {/,/^}/p' "$ROOT/install.sh")"
-check "функция steer_mods достана из install.sh" "steer_mods" "$(command -v steer_mods >/dev/null && echo steer_mods)"
-check "умолчание к первой установке — vless hysteria2 proxy" "vless hysteria2 proxy" "$STEER_DEFAULT_MODULES"
+# ---- ядро 2.1: один пакет steer-core, протоколы — плагины -------------------------------
+# Пакетов модулей больше нет: ядро — steer-core, протоколы — плагины из его семени. Установщик спрашивает
+# плагины только при первой установке ядра (умолчание — vless, hysteria2, proxy); при переходе с 2.0 состав
+# решает `steer plugin migrate` по спеке и стоявшим пакетам, а сам установщик доводит лишь мост Telegram
+# (его нет в семени ядра — migrate его пропускает).
+eval "$(sed -n '/^R=/p; /^REPO_STEER=/p; /^pm_names() {/,/^}/p; /^pm_has() {/,/^}/p; /^pm_ver() {/,/^}/p; /^STEER_PLUGINS=/p; /^STEER_DEFAULT_PLUGINS=/p; /^STEER_MOD_PKGS=/p; /^steer_plugins() {/,/^}/p; /^ver_ok() {/,/^}/p; /^ver_ge() {/,/^}/p; /^steer_version() {/,/^}/p; /^BOX_INITD=/p; /^box_busy() {/,/^}/p' "$ROOT/install.sh")"
+check "функция steer_plugins достана из install.sh" "steer_plugins" "$(command -v steer_plugins >/dev/null && echo steer_plugins)"
+check "умолчание к первой установке — vless hysteria2 proxy" "vless hysteria2 proxy" "$STEER_DEFAULT_PLUGINS"
 : > "$SB/pkglist"
-check "чистый роутер: выбор человека как есть, по порядку" "vless proxy tgws" "$(steer_mods 'tgws proxy vless')"
-printf '%s\n' 'steer-extended-1.5.9-r1 x86_64 {steer-extended} (GPL-2.0)' > "$SB/pkglist"
-check "steer-extended 1.5.9: к выбору — вшитые в него модули" "vless hysteria2 proxy xsteer obfs tgws" \
-    "$(steer_mods "$STEER_DEFAULT_MODULES")"
+check "чистый роутер: выбор человека как есть, по порядку" "vless proxy tgws" "$(steer_plugins 'tgws proxy vless')"
+printf '%s\n' 'steer-core-2.0.5-r1 x86_64 {steer-core}' 'steer-tgws-2.0.5-r1 x86_64 {steer-tgws}' 'steer-vless-2.0.5-r1 x86_64 {steer-vless}' > "$SB/pkglist"
+check "стоял пакет steer-tgws — мост доводится установщиком, остальное — migrate" "tgws" "$(steer_plugins '')"
+check "версия пакета без ревизии" "2.0.5" "$(pm_ver steer-core)"
 printf '%s\n' 'steer-1.5.9-r1 x86_64 {steer} (GPL-2.0)' > "$SB/pkglist"
-check "steer 1.5.9: только выбор (имя steer не путается со steer-core)" "proxy" "$(steer_mods proxy)"
-check "  и steer-core не считается стоящим" "нет" "$(pm_has steer-core && echo да || echo нет)"
-printf '%s\n' 'steer-core-2.0.0-r1 x86_64 {steer-core}' 'steer-obfs-2.0.0-r1 x86_64 {steer-obfs}' > "$SB/pkglist"
-check "стоящий модуль входит в состав" "vless obfs" "$(steer_mods vless)"
+check "steer 1.5.9: steer-core не считается стоящим (имя steer не путается)" "нет;" "$(pm_has steer-core && echo да || echo нет);$(pm_ver steer-core)"
 : > "$SB/pkglist"
+check "каждый протокол бэкенда (STEER_MODULES) — среди плагинов установщика" "" \
+    "$(for m in $(sed -n 's/^STEER_MODULES="\(.*\)"/\1/p' "$ROOT/files/usr/lib/splify2/rpcd/pkg-lib.sh"); do case " $STEER_PLUGINS " in *" $m "*) ;; *) printf '%s ' "$m" ;; esac; done)"
+check "ver_ge: 2.1.0 ≥ 2.1.0, 2.1.1 ≥ 2.1.0, 2.0.5 < 2.1.0" "да;да;нет" \
+    "$(ver_ge 2.1.0 2.1.0 && echo да || echo нет);$(ver_ge 2.1.1 2.1.0 && echo да || echo нет);$(ver_ge 2.0.5 2.1.0 && echo да || echo нет)"
 
 # Версия ядра: стабильная 1.5.9 этому интерфейсу не годится (он пишет спеку v2) — тогда
 # предварительная из перечня, если она 2.1 или новее.
@@ -508,14 +512,13 @@ check "предварительной нет — версия как есть (�
 check "отказ на ядре старше 2.1 назван" "1" "$(grep -c 'этому интерфейсу нужно ядро 2.1 или новее' "$ROOT/install.sh")"
 relreset
 
-# Пакеты 2.0: ядро и модули — одной транзакцией, прежнее ядро — в ней же (`!имя`).
-check "ядро и модули ставятся одним pm_add" "1" "$(grep -c 'if ! pm_add \$FILES \$EXTRA' "$ROOT/install.sh")"
-check "имена файлов — steer-core и steer-<модуль>" "1" "$(grep -c 'for _p in steer-core ' "$ROOT/install.sh")"
+check "файлов пакетов модулей (steer-<модуль>-<версия>) установщик больше не качает" "0" \
+    "$(grep -c 'steer-%s \|steer-\$_m-\|for _p in steer-core ' "$ROOT/install.sh")"
 check "прежних пакетов steer-extended/steer больше не ставит" "0" \
     "$(grep -c 'steer-extended-\${SV}\|\"steer-\${SV}' "$ROOT/install.sh")"
 
 # Спека — v2, как в uci-defaults: ядро 2.0 прежнюю схему не читает.
-check "пустая спека — v2" "1" "$(grep -c "printf '{\"version\":2,\"outputs\":{\"direct\":{\"kind\":\"direct\"}}}" "$ROOT/install.sh")"
+check "пустая спека — v2 (до ядра при первой установке и в конце)" "2" "$(grep -c "printf '{\"version\":2,\"outputs\":{\"direct\":{\"kind\":\"direct\"}}}" "$ROOT/install.sh")"
 check "спеки v1 установщик не пишет" "0" "$(grep -c '"schema":1' "$ROOT/install.sh")"
 
 # Коннектор steer-box-connector: ядро — его, установщик ядро не ставит и службу steer не включает.
@@ -524,12 +527,8 @@ printf '# sing-box от steer-box-connector\n' > "$BOX_INITD"
 check "коннектор узнаётся по его службе sing-box" "да" "$(box_busy && echo да || echo нет)"
 printf '# sing-box\n' > "$BOX_INITD"
 check "чужой sing-box коннектором не считается" "нет" "$(box_busy && echo да || echo нет)"
-check "при коннекторе служба steer не включается" "1" "$(grep -c 'init.d/steer \] && ! box_busy' "$ROOT/install.sh")"
-
-# Модули перечислены одинаково в установщике, бэкенде и интерфейсе.
-check "перечень модулей установщика = бэкенда" \
-    "$(sed -n 's/^STEER_MODULES="\(.*\)"/\1/p' "$ROOT/files/usr/lib/splify2/rpcd/pkg-lib.sh")" "$STEER_MODULES"
-# Перечень модулей в интерфейсе (Andromeda, репозиторий andromeda) сверяет её собственный стенд tests/frame-sync.sh.
+check "при коннекторе служба steer не включается" "1" "$(grep -c 'init.d/steer" \] && ! box_busy' "$ROOT/install.sh")"
+unset BOX_INITD
 
 # ---- установка файла пакета: пустые списки/индексы не валят установку ------------------
 # У 26.9 две зависимости (https-dns-proxy, ip-full), у 1.2.5 не было ни одной, поэтому
@@ -595,6 +594,308 @@ cp "$APK_WORLD.seed" "$APK_WORLD"; rm -f "$APK_DB.none"
 check "opkg: файла world нет — лечение молча ничего не делает" "0" \
     "$(rm -f "$SB/none.world"; APK_WORLD="$SB/none.world" PM=opkg pm_world_heal; echo $?)"
 unset APK_WORLD APK_DB
+
+# ---- установщик целиком: каждое начальное состояние, apk и opkg ----------------------------
+#
+# Зачем целиком. Переход на 2.1 — это порядок шагов (спека до ядра, ядро до панели, плагины после панели) и то, что
+# менеджер пакетов делает между ними (steer-core 2.1 снимает пакеты модулей, его postinst зовёт migrate). Проверки
+# функций по отдельности этого не видят. Песочница: корень INSTALL_ROOT, заглушки apk/opkg с базой пакетов, которые
+# повторяют то, что о них известно со стенда (provides/replaces ядра 2.1, закрепления в world, отказ «breaks» на
+# закреплении модуля), заглушки steer, splify2-host, splify2-seed, uci, init-скриптов и wget, отдающий version.json и
+# файлы пакетов по имени. Настоящих apk и opkg здесь нет — их проверяет стенд QEMU (apk) и только он.
+W="$SB/whole"
+# Заглушки менеджеров из проверок выше — прочь из PATH: установщик выбирает менеджер по тому, какой нашёлся.
+rm -f "$SB/bin/apk" "$SB/bin/opkg"
+mkdir -p "$W/bin-apk" "$W/bin-opkg" "$W/bin" "$W/assets"
+for f in steer-core-2.1.0-1_x86_64.apk steer-core-2.1.1-1_x86_64.apk splify2-26.11.0-1_noarch.apk steer-core-2.1.0-1_x86_64.ipk \
+         steer-core-2.1.1-1_x86_64.ipk splify2-26.11.0-1_all.ipk; do
+    printf 'PKG %s\n' "$f" > "$W/assets/$f"
+done
+mkwrel() {  # СТАБИЛЬНАЯ_STEER
+    python3 - "$W/version.json" "$1" "$W/assets" <<'PY'
+import hashlib, json, os, sys
+out, stable, adir = sys.argv[1:4]
+def asset(name):
+    b = open(os.path.join(adir, name), "rb").read()
+    return {"name": name, "size": len(b), "sha256": hashlib.sha256(b).hexdigest(),
+            "urls": [f"https://github.com/splify2/releases/releases/download/x/{name}"]}
+def ver(v, names):
+    return {"version": v, "channel": "stable", "assets": [asset(n) for n in names if os.path.exists(os.path.join(adir, n))]}
+core = lambda v: [f"steer-core-{v}-1_x86_64.apk", f"steer-core-{v}-1_x86_64.ipk"]
+doc = {"schema": 1, "products": {
+    "steer": {"stable": stable, "prerelease": None, "versions": [ver(v, core(v)) for v in ("2.1.1", "2.1.0") if v <= stable]},
+    "splify2": {"stable": "26.11.0", "prerelease": None,
+                "versions": [ver("26.11.0", ["splify2-26.11.0-1_noarch.apk", "splify2-26.11.0-1_all.ipk"])]}}}
+json.dump(doc, open(out, "w"), indent=1)
+PY
+}
+cat > "$W/bin/wget" <<'STUB'
+#!/bin/sh
+url=""; outf=""; prev=""
+for a in "$@"; do case "$a" in http*) url="$a" ;; esac; [ "$prev" = "-qO" ] && outf="$a"; prev="$a"; done
+echo "$url" >> "$W/wget.log"
+case "$url" in
+    *splify2/releases/main/version.json) f="$W/version.json" ;;
+    *github.com/splify2/releases/releases/download/*) f="$W/assets/${url##*/}" ;;
+    *) exit 1 ;;
+esac
+[ -f "$f" ] || exit 1
+if [ -n "$outf" ] && [ "$outf" != "-" ]; then cat "$f" > "$outf"; else cat "$f"; fi
+STUB
+cat > "$W/bin/uci" <<'STUB'
+#!/bin/sh
+echo "uci $*" >> "$W/uci.log"
+case "$*" in *" get "*) exit 1 ;; esac
+exit 0
+STUB
+# База пакетов: $INSTALL_ROOT/pkgs, строки «имя версия». apk видит её как `apk list -I` и как /lib/apk/db/installed
+# (C:/P:/V:), opkg — как `opkg list-installed`. Скрипты пакетов — файлы hook-<имя> песочницы.
+cat > "$W/bin/pkgdb" <<'STUB'
+#!/bin/sh
+# pkgdb add ИМЯ ВЕРСИЯ | del ИМЯ | has ИМЯ — и перестройка базы apk
+DB="$INSTALL_ROOT/pkgs"; touch "$DB"
+case "$1" in
+    add) sed -i "/^$2 /d" "$DB"; echo "$2 $3" >> "$DB" ;;
+    del) sed -i "/^$2 /d" "$DB" ;;
+    has) grep -q "^$2 " "$DB"; exit $? ;;
+esac
+mkdir -p "$INSTALL_ROOT/lib/apk/db"
+while read -r n v; do printf 'C:Q1%s=\nP:%s\nV:%s-r1\n\n' "$n" "$n" "$v"; done < "$DB" > "$INSTALL_ROOT/lib/apk/db/installed"
+STUB
+# Что делает пакет при установке (postinst): ядро 2.1 снимает прежние пакеты (provides/replaces у apk, Conflicts и
+# Replaces у opkg), кладёт steer и зовёт migrate; панель кладёт свои команды.
+cat > "$W/bin/pkghook" <<'STUB'
+#!/bin/sh
+# pkghook ИМЯ ВЕРСИЯ
+R="$INSTALL_ROOT"
+case "$1" in
+    steer-core)
+        case "$2" in 2.0*) exit 0 ;; esac
+        for o in steer libsteer libsteer-wolfssl steer-vless steer-hysteria2 steer-proxy steer-xsteer steer-obfs steer-warpbox steer-tgws steer-extended; do
+            pkgdb has "$o" && { pkgdb del "$o"; echo "purge $o" >> "$W/pm.log"; }
+        done
+        mkdir -p "$R/usr/sbin" "$R/etc/init.d"
+        cp "$W/bin/steer.stub" "$R/usr/sbin/steer"; chmod +x "$R/usr/sbin/steer"
+        printf '#!/bin/sh\necho "steer-init $*" >> "$W/svc.log"\n' > "$R/etc/init.d/steer"; chmod +x "$R/etc/init.d/steer"
+        # спека к моменту postinst ядра (порядок «пустая спека до ядра»)
+        if [ -s "$R/etc/steer/spec.json" ] || [ -s "$R/etc/steer/spec.yaml" ]; then echo "spec-at-core yes" >> "$W/pm.log"; else echo "spec-at-core no" >> "$W/pm.log"; fi
+        "$R/usr/sbin/steer" plugin migrate >/dev/null 2>&1 ;;
+    splify2)
+        mkdir -p "$R/usr/sbin"
+        printf '#!/bin/sh\necho "host $*" >> "$W/host.log"\necho "{\\"ok\\":true}"\n' > "$R/usr/sbin/splify2-host"
+        printf '#!/bin/sh\necho "seed $*" >> "$W/seed.log"\necho "installed andromeda 26.11.0"\n' > "$R/usr/sbin/splify2-seed"
+        chmod +x "$R/usr/sbin/splify2-host" "$R/usr/sbin/splify2-seed" ;;
+esac
+exit 0
+STUB
+cat > "$W/bin/steer.stub" <<'STUB'
+#!/bin/sh
+echo "steer $*" >> "$W/steer.log"
+case "$*" in "plugin ensure ${STEER_ENSURE_FAIL:-none}") exit 1 ;; esac
+exit 0
+STUB
+cat > "$W/bin-apk/apk" <<'STUB'
+#!/bin/sh
+echo "apk $*" >> "$W/pm.log"
+DB="$INSTALL_ROOT/pkgs"; WD="$APK_WORLD"; touch "$DB" "$WD"
+case "$1" in
+    list) while read -r n v; do echo "$n-$v-r1 x86_64 {$n} () [installed]"; done < "$DB"; exit 0 ;;
+    update) exit 0 ;;
+    del) shift; for n in "$@"; do pkgdb del "$n"; sed -i "/^$n\$/d; /^$n></d" "$WD"; done; exit 0 ;;
+    add) shift
+        files=""; names=""
+        for a in "$@"; do case "$a" in --*) ;; *.apk) files="$files $a" ;; *) names="$names $a" ;; esac; done
+        for f in $files; do
+            case "${f##*/}" in steer-core-2.[1-9]*)
+                # steer-core 2.1 берёт имена модулей на себя; закрепление модуля за файлом 2.0 не решается (снято на 3.0.5)
+                pin="$(grep -E '^steer-(vless|hysteria2|proxy|xsteer|obfs|warpbox|tgws|extended)><' "$WD" | head -n 1)"
+                [ -n "$pin" ] && { printf 'ERROR: unable to select packages:\n  steer-core:\n    breaks: world[%s]\n' "$pin"; exit 1; } ;;
+            esac
+        done
+        [ -n "${APK_ADD_FAIL:-}" ] && { echo "ERROR: $APK_ADD_FAIL"; exit 1; }
+        for f in $files; do
+            b="${f##*/}"; n="$(echo "$b" | sed 's/-[0-9].*//')"; v="$(echo "$b" | sed "s/^$n-//; s/-1_.*//")"
+            pkgdb add "$n" "$v"; sed -i "/^$n\$/d; /^$n></d" "$WD"; echo "$n><Q1$n=" >> "$WD"
+            pkghook "$n" "$v"
+        done
+        for n in $names; do case "$n" in '!'*) pkgdb has "${n#!}" && pkgdb del "${n#!}" ;; *) grep -qx "$n" "$WD" || echo "$n" >> "$WD" ;; esac; done
+        exit 0 ;;
+esac
+exit 0
+STUB
+cat > "$W/bin-opkg/opkg" <<'STUB'
+#!/bin/sh
+echo "opkg $*" >> "$W/pm.log"
+DB="$INSTALL_ROOT/pkgs"; touch "$DB"
+case "$1" in
+    list-installed) while read -r n v; do echo "$n - $v-1"; done < "$DB"; exit 0 ;;
+    update) exit 0 ;;
+    remove) shift; for n in "$@"; do case "$n" in --*) ;; *) pkgdb del "$n" ;; esac; done; exit 0 ;;
+    install) shift
+        if [ -n "${OPKG_CONFLICT:-}" ]; then
+            for m in steer-vless steer-proxy; do pkgdb has "$m" && { echo " * check_conflicts_for: The following packages conflict with steer-core: $m"; exit 1; }; done
+        fi
+        for f in "$@"; do
+            case "$f" in --*) continue ;; esac
+            b="${f##*/}"; n="$(echo "$b" | sed 's/-[0-9].*//')"; v="$(echo "$b" | sed "s/^$n-//; s/-1_.*//")"
+            pkgdb add "$n" "$v"; pkghook "$n" "$v"
+        done
+        exit 0 ;;
+esac
+exit 0
+STUB
+chmod +x "$W"/bin/* "$W"/bin-apk/* "$W"/bin-opkg/*
+
+# Состояние роутера: менеджер, пакеты «имя версия», world (apk), спека; печатает ничего.
+wroot() {  # apk|opkg [ИМЯ ВЕРСИЯ]...
+    WPM="$1"; shift
+    rm -rf "$W/r" "$W"/*.log; mkdir -p "$W/r/etc/init.d" "$W/r/etc/apk" "$W/r/tmp"
+    printf "DISTRIB_ARCH='x86_64'\n" > "$W/r/etc/openwrt_release"
+    printf '#!/bin/sh\necho "rpcd $*" >> "$W/svc.log"\n' > "$W/r/etc/init.d/rpcd"; chmod +x "$W/r/etc/init.d/rpcd"
+    : > "$W/r/pkgs"; : > "$W/r/etc/apk/world"
+    while [ $# -ge 2 ]; do
+        echo "$1 $2" >> "$W/r/pkgs"; echo "$1" >> "$W/r/etc/apk/world"; shift 2
+    done
+    INSTALL_ROOT="$W/r" PATH="$W/bin:$PATH" pkgdb rebuild
+    # стоящее ядро — со своей командой и службой, как на роутере
+    if grep -q '^steer-core ' "$W/r/pkgs"; then
+        mkdir -p "$W/r/usr/sbin"; cp "$W/bin/steer.stub" "$W/r/usr/sbin/steer"; chmod +x "$W/r/usr/sbin/steer"
+        printf '#!/bin/sh\necho "steer-init $*" >> "$W/svc.log"\n' > "$W/r/etc/init.d/steer"; chmod +x "$W/r/etc/init.d/steer"
+    fi
+}
+# Запуск установщика без терминала (умолчания), как `sh install.sh </dev/null`. Вывод — в $W/out, код — в $W/rc.
+wrun() {
+    env INSTALL_ROOT="$W/r" W="$W" APK_WORLD="$W/r/etc/apk/world" APK_DB="$W/r/lib/apk/db/installed" \
+        BOX_INITD="$W/r/etc/init.d/sing-box" PATH="$W/bin-$WPM:$W/bin:$PATH" "$@" \
+        sh "$ROOT/install.sh" </dev/null > "$W/out" 2>&1
+    echo $? > "$W/rc"
+}
+pkgs() { sort "$W/r/pkgs" | tr '\n' ';' | sed 's/;$//'; }
+steerlog() { grep -o 'steer plugin [a-z]* *[a-z0-9]*' "$W/steer.log" 2>/dev/null | sed 's/ *$//' | tr '\n' ';' | sed 's/;$//'; }
+mkwrel 2.1.0
+
+# 1. Чистый роутер, apk.
+wroot apk
+wrun
+check "чистый apk: установка прошла" "0" "$(cat "$W/rc")"
+check "  поставлены steer-core 2.1.0 и splify2 26.11.0" "splify2 26.11.0;steer-core 2.1.0" "$(pkgs)"
+check "  пустая спека легла ДО ядра (migrate ставит выбранное, а не всё семя)" "spec-at-core yes" "$(grep spec-at-core "$W/pm.log")"
+check "  плагины: migrate (postinst и установщик), затем выбор по умолчанию" \
+    "steer plugin migrate;steer plugin migrate;steer plugin ensure vless;steer plugin ensure hysteria2;steer plugin ensure proxy" "$(steerlog)"
+check "  довод панели (engine settle) и итог семени" "host engine settle;seed --no-reload" "$(cat "$W/host.log" "$W/seed.log" 2>/dev/null | tr '\n' ';' | sed 's/;$//')"
+check "  файлов модулей не качал" "0" "$(grep -c 'steer-vless\|steer-proxy' "$W/wget.log")"
+check "  срок rpcd выставлен 120 (ключа не было — uci молчит)" "1" "$(grep -c 'uci -q set rpcd.@rpcd\[0\].timeout=120' "$W/uci.log")"
+check "  без жалоб оболочки" "0" "$(grep -c 'Illegal number\|not found\|parameter not set' "$W/out")"
+check "  rpcd перезапущен, служба steer включена" "rpcd restart;steer-init enable" "$(grep -e 'steer-init enable' -e 'rpcd restart' "$W/svc.log" | tr '\n' ';' | sed 's/;$//')"
+
+# 2. Ядро 2.0.5 с модулями, поставленными файлами (закрепления в world), и прежняя панель 26.10.4 — состояние, которое
+#    оставляет официальный установщик 26.10.4.
+wroot apk steer-core 2.0.5 steer-vless 2.0.5 steer-hysteria2 2.0.5 steer-proxy 2.0.5 luci-app-splify2 26.10.4
+printf '%s\n' 'steer-core><Q1steer-core=' 'steer-vless><Q1steer-vless=' 'steer-hysteria2><Q1steer-hysteria2=' \
+    'steer-proxy><Q1steer-proxy=' 'luci-app-splify2><Q1luci-app-splify2=' 'zapret' > "$W/r/etc/apk/world"
+mkdir -p "$W/r/etc/steer/lists"; printf 'version: 2\noutputs:\n  wgb: { kind: interface, device: wgb }\n' > "$W/r/etc/steer/spec.yaml"
+echo 1.0.0.1 > "$W/r/etc/steer/lists/test.lst"
+wrun
+check "2.0.5 + модули файлами + 26.10.4 (apk): установка прошла" "0" "$(cat "$W/rc")"
+check "  итог — steer-core 2.1.0 и splify2 26.11.0, пакетов модулей и luci-app-splify2 нет" "splify2 26.11.0;steer-core 2.1.0" "$(pkgs)"
+check "  ядро ставилось одним файлом, без имён модулей в команде" "1;0" \
+    "$(grep -c '^apk add .*steer-core-2.1.0-1_x86_64.apk' "$W/pm.log");$(grep '^apk add .*steer-core' "$W/pm.log" | grep -c 'steer-vless')"
+check "  закрепления модулей за файлами сняты до транзакции (иначе breaks: world)" "0" "$(grep -c 'breaks' "$W/out")"
+check "  чужая запись world цела" "zapret" "$(grep -x zapret "$W/r/etc/apk/world")"
+check "  вопроса нет, выбор не навязан: только migrate" "steer plugin migrate;steer plugin migrate" "$(steerlog)"
+check "  спека и списки на месте, пустая спека рядом не легла" "yes;1.0.0.1;no" \
+    "$([ -s "$W/r/etc/steer/spec.yaml" ] && echo yes);$(cat "$W/r/etc/steer/lists/test.lst");$([ -e "$W/r/etc/steer/spec.json" ] && echo yes || echo no)"
+check "  сказано, что модули заменяются плагинами" "1" "$(grep -c 'Ядро steer 2.0.5 → 2.1.0 (пакеты модулей steer-vless steer-hysteria2 steer-proxy заменяются плагинами)' "$W/out")"
+
+# 3. Тот же переход, но стоял мост Telegram пакетом: плагин tgws ставится из сети после панели.
+wroot apk steer-core 2.0.5 steer-vless 2.0.5 steer-tgws 2.0.5 splify2 26.11.0
+wrun
+check "2.0.5 + steer-tgws: после панели — ensure tgws" "steer plugin migrate;steer plugin migrate;steer plugin ensure tgws" "$(steerlog)"
+wroot apk steer-core 2.0.5 steer-tgws 2.0.5
+wrun STEER_ENSURE_FAIL=tgws
+check "  tgws не встал (нет сети) — установка не падает, путь назван" "0;1" \
+    "$(cat "$W/rc");$(grep -c 'tgws не встал (он ставится из сети' "$W/out")"
+
+# 4. Уже 2.1.0 и 26.11.0, последний выпуск — 2.1.0: ядро не трогается, панель ставится заново, ничего не ломается.
+wroot apk steer-core 2.1.0 splify2 26.11.0
+mkdir -p "$W/r/etc/steer"; printf 'version: 2\n' > "$W/r/etc/steer/spec.yaml"
+wrun
+check "2.1.0 + 26.11.0, повтор: прошло, ядро не качалось и не ставилось" "0;0;0" \
+    "$(cat "$W/rc");$(grep -c 'steer-core-' "$W/wget.log");$(grep -c '^apk add .*steer-core' "$W/pm.log")"
+check "  сказано, что ядро последнее" "1" "$(grep -c 'Ядро steer 2.1.0 — последний выпуск, не трогаю' "$W/out")"
+check "  панель — заново тем же выпуском, итог тот же" "1;splify2 26.11.0;steer-core 2.1.0" "$(grep -c 'тот же выпуск — ставлю заново' "$W/out");$(pkgs)"
+
+# 5. 2.1.0 стоит, вышел 2.1.1 — обновляется.
+mkwrel 2.1.1
+wroot apk steer-core 2.1.0 splify2 26.11.0
+wrun
+check "2.1.0 → 2.1.1: обновлено" "0;splify2 26.11.0;steer-core 2.1.1" "$(cat "$W/rc");$(pkgs)"
+mkwrel 2.1.0
+
+# 6. Ядро 1.x (steer-extended): переход одной транзакцией с `!steer-extended`, выбор по умолчанию.
+wroot apk steer-extended 1.5.9
+wrun
+check "1.5.9 steer-extended (apk): прошло, итог steer-core 2.1.0" "0;splify2 26.11.0;steer-core 2.1.0" "$(cat "$W/rc");$(pkgs)"
+check "  прежнее ядро названо в той же транзакции" "1" "$(grep -c '^apk add .*steer-core-2.1.0.*!steer-extended' "$W/pm.log")"
+
+# 7. Коннектор: пакеты ядра не трогаются, плагины не ставятся; про ядро 2.0 сказано, что делать.
+wroot apk steer-core 2.0.5 steer-box-connector 2.0.5
+printf '# sing-box от steer-box-connector\n' > "$W/r/etc/init.d/sing-box"
+wrun
+check "коннектор: ядро не ставилось, migrate не звался, панель встала" "0;0;;splify2 26.11.0;steer-box-connector 2.0.5;steer-core 2.0.5" \
+    "$(cat "$W/rc");$(grep -c '^apk add .*steer-core' "$W/pm.log");$(steerlog);$(pkgs)"
+check "  сказано: ядро и коннектор обновляются вместе" "1" "$(grep -c 'Ядро и коннектор обновляются вместе' "$W/out")"
+check "  спеку при коннекторе не заводит" "no" "$([ -e "$W/r/etc/steer/spec.json" ] && echo yes || echo no)"
+
+# 8. Ядро обновляет сама панель (splify2-core-update идёт) — установщик не мешает ей второй транзакцией.
+wroot apk steer-core 2.0.5 splify2 26.11.0
+mkdir -p "$W/r/tmp/splify2-core-update"; sleep 30 & echo $! > "$W/r/tmp/splify2-core-update/pid"
+wrun
+check "панель обновляет ядро — отказ словами, пакеты не тронуты" "1;1;splify2 26.11.0;steer-core 2.0.5" \
+    "$(cat "$W/rc");$(grep -c 'ядро сейчас обновляет сама панель' "$W/out");$(pkgs)"
+kill "$(cat "$W/r/tmp/splify2-core-update/pid")" 2>/dev/null
+
+# 9. apk отказал (места нет) — установка падает до панели, без «Готово».
+wroot apk steer-core 2.0.5 steer-vless 2.0.5
+wrun APK_ADD_FAIL="No space left on device"
+check "apk отказал на ядре — отказ, панель не ставилась, прежнее ядро на месте" "1;0;steer-core 2.0.5;steer-vless 2.0.5" \
+    "$(cat "$W/rc");$(grep -c 'splify2-26.11.0' "$W/wget.log");$(pkgs)"
+
+# 10. opkg: чистый роутер, переход с 2.0.5 (Conflicts и Replaces снимают модули), отказ по конфликту.
+wroot opkg
+wrun
+check "чистый opkg: прошло, ipk-файлы" "0;splify2 26.11.0;steer-core 2.1.0;1" \
+    "$(cat "$W/rc");$(pkgs);$(grep -c '^opkg install .*steer-core-2.1.0-1_x86_64.ipk' "$W/pm.log")"
+wroot opkg steer-core 2.0.5 steer-vless 2.0.5 steer-proxy 2.0.5 luci-app-splify2 26.10.4
+mkdir -p "$W/r/etc/steer"; printf '{"version":2,"outputs":{"wgb":{"kind":"interface","device":"wgb"}}}\n' > "$W/r/etc/steer/spec.json"
+wrun
+check "2.0.5 + модули (opkg): Conflicts и Replaces ядра 2.1 снимают модули, итог 2.1.0 и 26.11.0" "0;splify2 26.11.0;steer-core 2.1.0" "$(cat "$W/rc");$(pkgs)"
+check "  luci-app-splify2 снят перед панелью" "1" "$(grep -c '^opkg remove --force-depends luci-app-splify2' "$W/pm.log")"
+check "  прежняя спека на месте" '{"version":2,"outputs":{"wgb":{"kind":"interface","device":"wgb"}}}' "$(cat "$W/r/etc/steer/spec.json")"
+wroot opkg steer-core 2.0.5 steer-vless 2.0.5 steer-proxy 2.0.5
+wrun OPKG_CONFLICT=1
+check "opkg отказал конфликтом с модулями — сняты только наши модули, ядро встало со второго раза" "0;splify2 26.11.0;steer-core 2.1.0" "$(cat "$W/rc");$(pkgs)"
+check "  снимались steer-vless и steer-proxy (--force-depends), steer-core — нет" "2;0" \
+    "$(grep -c '^opkg remove --force-depends steer-\(vless\|proxy\)$' "$W/pm.log");$(grep -c '^opkg remove.* steer-core$' "$W/pm.log")"
+wroot opkg steer-core 2.1.0 splify2 26.11.0
+wrun
+check "opkg 2.1.0 + 26.11.0, повтор: ядро не трогается" "0;0;splify2 26.11.0;steer-core 2.1.0" \
+    "$(cat "$W/rc");$(grep -c '^opkg install .*steer-core' "$W/pm.log");$(pkgs)"
+wroot opkg steer 1.5.9
+wrun
+check "opkg 1.5.9 steer: переход на steer-core 2.1.0" "0;splify2 26.11.0;steer-core 2.1.0" "$(cat "$W/rc");$(pkgs)"
+
+# Последний выпуск ядра младше 2.1 и предварительной нет — отказ словами до любых пакетов.
+python3 - "$W/version.json" <<'PY'
+import json, sys
+d = json.load(open(sys.argv[1])); d["products"]["steer"]["stable"] = "2.0.5"; d["products"]["steer"]["versions"] = [{"version": "2.0.5", "assets": []}]
+json.dump(d, open(sys.argv[1], "w"))
+PY
+wroot apk
+wrun
+check "выпуск ядра 2.0.5 — отказ «нужно ядро 2.1», пакетов не ставил" "1;1;" \
+    "$(cat "$W/rc");$(grep -c 'этому интерфейсу нужно ядро 2.1 или новее' "$W/out");$(pkgs)"
+mkwrel 2.1.0
 
 printf '\n%d проверок пройдено\n' "$pass"
 if [ "$fail" -gt 0 ]; then
