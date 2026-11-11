@@ -1,0 +1,205 @@
+#!/bin/sh
+# Довести ядро steer до версии, которой нужна эта панель (STEER_MIN_VERSION), без плагина updater.
+#
+#   splify2-core-update [--version В] [--auto]           обновить сейчас, в этом процессе; ход — в stdout
+#   splify2-core-update --start [--version В] [--auto]   то же отдельным процессом в фоне; код 1 — уже идёт
+#
+# Зачем и когда — шапка /usr/lib/splify2/coreup.sh: панель 26.11 приезжает самообновлением 26.10.x на ядро 2.0.x, где
+# плагины (и updater, и Andromeda) не ставятся. Этой командой ядро обновляет кнопка «Обновить ядро» базового вида
+# (steer_install без плагина updater, rpcd/m-moved.sh) и сам postinst пакета, увидев старое ядро (--auto).
+#
+# Шаги — те же, что у метода steer_install плагина updater, и теми же службами хоста (splify2-host), поэтому скачивание со
+# сверкой sha256 и обходами, проверка места на флеше, лечение /etc/apk/world и довод после установки здесь не повторены:
+#   1. версия — самая новая стабильная не младше нужной (или предварительная, если стабильной такой нет);
+#   2. файл steer-core этой версии и архитектуры — `release fetch`;
+#   3. установка — `pkg install` одной транзакцией. steer-core 2.1 сам снимает пакеты модулей 2.0 (apk: provides и
+#      replaces; opkg: Conflicts и Replaces), а его postinst ставит плагины протоколов из семени (`steer plugin migrate`);
+#   4. довод — `engine settle`: плагины видов выходов спеки, автозапуск, спека в spec.yaml, перезапуск службы;
+#   5. семя панели — splify2-seed: updater, Andromeda и остальные плагины «из коробки» встают, rpcd перечитывается.
+#
+# Ход: COREUP_DIR (state, progress, log, error, code, version, auto, pid) — его отдаёт метод engine (core_update), и по
+# нему базовый вид показывает строку хода. Повторять безопасно: стоящее ядро не младше нужного — сразу шаг 5.
+# Чего не делает: не трогает ядро, которое ведёт steer-box-connector (podkop, forkop) — это пакеты коннектора.
+
+_cu_lib="${SPLIFY2_LIBDIR:-/usr/lib/splify2}"
+. "${JSHN_SH:-/usr/share/libubox/jshn.sh}"
+ENV_SH="${ENV_SH:-$_cu_lib/env.sh}"
+. "$ENV_SH"
+. "$RPCD_LIB/common.sh"
+. "${COREUP_SH:-$_cu_lib/coreup.sh}"
+HOST="${SPLIFY2_HOST_BIN:-/usr/sbin/splify2-host}"
+SEED_BIN="${SEED_BIN:-/usr/sbin/splify2-seed}"
+# Пакеты ядра прежних раскладок, которые steer-core 2.1 заменяет: 1.x и промежуточная (steer, libsteer…) и модули 2.0.
+# Ими разрешается конфликт, если менеджер назовёт их мешающими (pkg_install снимает только названные им).
+CORE_OLD_PKGS="steer libsteer libsteer-wolfssl steer-vless steer-hysteria2 steer-proxy steer-xsteer steer-obfs steer-warpbox steer-tgws steer-extended"
+
+want=""; auto=""; start=""
+while [ $# -gt 0 ]; do
+    case "$1" in
+        --version) want="${2:-}"; shift ;;
+        --auto) auto=1 ;;
+        --start) start=1 ;;
+        *) echo "usage: splify2-core-update [--start] [--version VERSION] [--auto]" >&2; exit 2 ;;
+    esac
+    shift
+done
+case "$want" in *[!0-9.]*) echo "a version may contain only digits and dots" >&2; exit 2 ;; esac
+
+if [ -n "$start" ]; then
+    coreup_start ${want:+--version "$want"} ${auto:+--auto} || { echo "already running" >&2; exit 1; }
+    exit 0
+fi
+
+# ---- один процесс за раз ---------------------------------------------------------------------------------------------
+# Замок — каталог (mkdir атомарен) с номером процесса; оставшийся от оборванного (перезагрузка тут ни при чём: /tmp
+# пуст) снимается, если его процесса нет.
+mkdir -p "$COREUP_DIR" 2>/dev/null
+chmod 700 "$COREUP_DIR" 2>/dev/null
+if ! mkdir "$COREUP_DIR/lock" 2>/dev/null; then
+    if coreup_running; then echo "already running" >&2; exit 1; fi
+    rm -rf "$COREUP_DIR/lock"
+    mkdir "$COREUP_DIR/lock" 2>/dev/null || { echo "already running" >&2; exit 1; }
+fi
+echo $$ > "$COREUP_DIR/pid"
+PKGDIR="$COREUP_DIR/pkg"
+trap 'rm -rf "$COREUP_DIR/lock" "$PKGDIR"' EXIT
+trap 'exit 143' INT TERM
+# Закрытый терминал (запуск руками по ssh) не обрывает установку посередине.
+trap '' HUP
+rm -f "$COREUP_DIR/error" "$COREUP_DIR/code" "$COREUP_DIR/version"
+: > "$COREUP_DIR/log"
+echo running > "$COREUP_DIR/state"
+if [ -n "$auto" ]; then echo 1 > "$COREUP_DIR/auto"; else rm -f "$COREUP_DIR/auto"; fi
+
+# Строка хода: в файл хода (её показывает базовый вид), в журнал и в stdout.
+step() {  # КОД "English {name}" [ИМЯ ЗНАЧЕНИЕ]...
+    _st="$(s2_t "$@")"
+    printf '%s\n' "$_st" > "$COREUP_DIR/progress"
+    printf '%s %s\n' "$(date '+%H:%M:%S')" "$_st" >> "$COREUP_DIR/log"
+    printf '%s\n' "$_st"
+}
+# В журнал — как есть (вывод менеджера пакетов, семени).
+log() { [ -n "$1" ] && printf '%s\n' "$1" >> "$COREUP_DIR/log"; return 0; }
+
+# Конец с отказом: слова и код — в файлы хода. Автообновление считает попытку (повтор по cron — splify2-seed).
+finish_fail() {  # КОД "English {name}" [ИМЯ ЗНАЧЕНИЕ]...
+    _ff_code="$1"
+    _ff="$(s2_t "$@")"
+    printf '%s\n' "$_ff" > "$COREUP_DIR/error"
+    printf '%s\n' "$_ff_code" > "$COREUP_DIR/code"
+    printf '%s\n' "$_ff" > "$COREUP_DIR/progress"
+    printf '%s %s\n' "$(date '+%H:%M:%S')" "$_ff" >> "$COREUP_DIR/log"
+    printf '%s\n' "$_ff" >&2
+    if [ -f "$COREUP_AUTO" ]; then
+        set -- $(cat "$COREUP_AUTO" 2>/dev/null)
+        _ff_n="${1:-0}"; case "$_ff_n" in *[!0-9]*) _ff_n=0 ;; esac
+        printf '%s %s\n' "$((_ff_n + 1))" "$(date +%s)" > "$COREUP_AUTO"
+    fi
+    echo failed > "$COREUP_DIR/state"
+    exit 1
+}
+
+finish_ok() {
+    rm -f "$COREUP_AUTO"
+    echo done > "$COREUP_DIR/state"
+    exit 0
+}
+
+# Ответ службы хоста: поле JSON.
+jf() { jsonfilter -s "$1" -e "@.$2" 2>/dev/null; }
+
+# ---- можно ли -----------------------------------------------------------------------------------------------------------
+if box_busy; then
+    # Ядро — пакет коннектора, его версия держит и сам коннектор: обновлять их вместе — дело того, кто его ставил.
+    rm -f "$COREUP_AUTO"
+    finish_fail core.busy "The core is busy: {by}" by "$BOX_BY"
+fi
+
+seed() {
+    step core_update.seed "Installing the plugins of the panel"
+    _sd="$("$SEED_BIN" 2>&1)"; _sd_rc=$?
+    log "$_sd"
+    if [ "$_sd_rc" != 0 ]; then
+        # Ядро уже новое: не вставшее семя повторит cron (строка # splify2-seed), а интерфейс видит, что именно.
+        step core_update.seed_partly "The core is updated; some plugins did not install and will be retried: {what}" \
+            what "$(printf '%s\n' "$_sd" | sed -n 's/^failed //p' | tr '\n' ';' | sed 's/;$//; s/;/; /g')"
+    fi
+}
+
+have="$(core_version)"
+if [ -z "$want" ] && [ -n "$have" ] && coreup_ver_ge "$have" "$STEER_MIN_VERSION"; then
+    # Ядро уже годится (обновили другим путём, повтор после обрыва на семени): осталось семя.
+    printf '%s\n' "$have" > "$COREUP_DIR/version"
+    seed
+    step core_update.done "The core is steer {version}" version "$have"
+    finish_ok
+fi
+[ -n "$want" ] && ! coreup_ver_ge "$want" "$STEER_MIN_VERSION" &&
+    finish_fail updater.steer_min "The interface works with a core no older than {min}" min "$STEER_MIN_VERSION"
+
+# ---- версия --------------------------------------------------------------------------------------------------------------
+info="$("$HOST" pkg info 2>/dev/null)" || finish_fail pkg.manager_silent "The package manager did not answer"
+arch="$(jf "$info" arch)"; ext="$(jf "$info" ext)"
+[ -n "$arch" ] || finish_fail updater.no_arch "The architecture was not detected"
+ver="$want"
+if [ -z "$ver" ]; then
+    step core_update.versions "Looking for the newest steer release"
+    rv="$("$HOST" release versions steer 2>/dev/null)"
+    pre="$(jf "$rv" prerelease)"
+    # Самая новая стабильная не младше нужной; нет такой — предварительная, если она не младше (тот же выбор, что у
+    # установщика install.sh, steer_version).
+    for v in $(jf "$rv" 'versions[*]'); do
+        case "$v" in ''|*[!0-9.]*) continue ;; esac
+        [ "$v" = "$pre" ] && continue
+        coreup_ver_ge "$v" "$STEER_MIN_VERSION" || continue
+        if [ -z "$ver" ] || coreup_ver_ge "$v" "$ver"; then ver="$v"; fi
+    done
+    [ -n "$ver" ] || { coreup_ver_ge "$pre" "$STEER_MIN_VERSION" && ver="$pre"; }
+    if [ -z "$ver" ]; then
+        [ -n "$rv" ] && [ "$(jf "$rv" ok)" = true ] &&
+            finish_fail core_update.no_version "No steer {need} or newer is available for this router." need "$STEER_MIN_VERSION"
+        finish_fail updater.no_list "The release list was not received"
+    fi
+fi
+printf '%s\n' "$ver" > "$COREUP_DIR/version"
+
+# ---- файл ------------------------------------------------------------------------------------------------------------------
+name="steer-core-${ver}-1_${arch}.${ext}"
+mkdir -p "$PKGDIR"
+step core_update.download "Downloading {name}" name "$name"
+fr="$("$HOST" release fetch steer "$ver" "$name" "$PKGDIR/$name" 2>/dev/null)" || {
+    note="$(jf "$fr" note)"
+    finish_fail updater.download "Download failed: {name} (no such version for {arch}?){note}" name "$name" arch "$arch" note "${note:+ — $note}"
+}
+log "$(jf "$fr" via)"
+
+# ---- установка -----------------------------------------------------------------------------------------------------------
+# Пакет обновления самой панели ставит менеджер, а postinst этого пакета и зовёт нас: та транзакция держит замок базы, и
+# наша ждёт её конца. Не дольше десяти минут — дальше менеджер занят чем-то своим, и отказ скажет об этом сам.
+_w=0
+while [ "$_w" -lt "${COREUP_PM_WAIT:-300}" ] && pidof apk opkg >/dev/null 2>&1; do
+    sleep 2; _w=$((_w + 1))
+done
+step core_update.install "Installing steer {version}" version "$ver"
+# shellcheck disable=SC2086
+ir="$("$HOST" pkg install "$PKGDIR/$name" --replace $CORE_OLD_PKGS 2>/dev/null)"; irc=$?
+rm -f "$PKGDIR/$name"
+log "$(jf "$ir" output)"
+if [ "$irc" != 0 ]; then
+    err="$(jf "$ir" error)"
+    finish_fail core_update.install_failed "steer {version} did not install: {why}" version "$ver" why "$(printf '%s' "${err:-?}" | tail -n 3 | tr '\n' ' ')"
+fi
+now="$(core_version)"
+coreup_ver_ge "$now" "$STEER_MIN_VERSION" ||
+    finish_fail core_update.still_old "The package manager reported success, but steer {version} is installed" version "${now:-?}"
+
+# ---- довод и семя --------------------------------------------------------------------------------------------------------
+step core_update.settle "Installing the protocol plugins the spec needs"
+mr="$("$HOST" engine modules 2>/dev/null)"
+mods="$(jf "$mr" 'modules[*]' | tr '\n' ' ')"
+# shellcheck disable=SC2086
+sr="$("$HOST" engine settle $mods 2>/dev/null)"
+log "$(jf "$sr" ensure_error)"
+seed
+step core_update.done "The core is steer {version}" version "$now"
+finish_ok
