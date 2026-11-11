@@ -66,7 +66,8 @@ trap 'rm -rf "$COREUP_DIR/lock" "$PKGDIR"' EXIT
 trap 'exit 143' INT TERM
 # Закрытый терминал (запуск руками по ssh) не обрывает установку посередине.
 trap '' HUP
-rm -f "$COREUP_DIR/error" "$COREUP_DIR/code" "$COREUP_DIR/version"
+# Строка хода прошлого запуска («перечень не получен») не должна висеть над новым, пока он не сказал своей.
+rm -f "$COREUP_DIR/error" "$COREUP_DIR/code" "$COREUP_DIR/version" "$COREUP_DIR/progress"
 : > "$COREUP_DIR/log"
 echo running > "$COREUP_DIR/state"
 if [ -n "$auto" ]; then echo 1 > "$COREUP_DIR/auto"; else rm -f "$COREUP_DIR/auto"; fi
