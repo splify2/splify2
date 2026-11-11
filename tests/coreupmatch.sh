@@ -255,11 +255,11 @@ reset; setcore 2.0.5
 out="$(rpcd steer_install '{"version":"2.1.0"}')"
 check "steer_install на ядре 2.0.5: ok, started, версия" "true;true;2.1.0" \
     "$(printf '%s' "$out" | jget ok);$(printf '%s' "$out" | jget started);$(printf '%s' "$out" | jget version)"
-sleep 0.3
+for _i in 1 2 3 4 5 6 7 8 9 10 11 12 13 14 15 16 17 18 19 20; do [ -s "$T/start.log" ] && break; sleep 0.25; done
 check "  обновление начато в фоне с названной версией" "start --version 2.1.0" "$(cat "$T/start.log")"
 : > "$T/start.log"
 out="$(rpcd steer_install '{}')"
-sleep 0.3
+for _i in 1 2 3 4 5 6 7 8 9 10 11 12 13 14 15 16 17 18 19 20; do [ -s "$T/start.log" ] && break; sleep 0.25; done
 check "steer_install без версии — последняя подходящая (решает команда)" "true;start " "$(printf '%s' "$out" | jget ok);$(cat "$T/start.log")"
 out="$(rpcd steer_install '{"version":"2.0.9"}')"
 check "steer_install младше нужной — отказ updater.steer_min" "false;updater.steer_min" "$(printf '%s' "$out" | jget ok);$(printf '%s' "$out" | jget code)"
