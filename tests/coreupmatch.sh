@@ -233,6 +233,8 @@ check "  второй прогон (cron) строку не множит" "1" "$
 check "  метки автообновления нет — обновление не начинается" "" "$(grep '^start --auto' "$T/start.log")"
 printf '1 0\n' > "$T/etc/core-update.auto"; : > "$T/start.log"
 seed >/dev/null
+# Повтор начинает отдельный процесс: его след появляется не мгновенно (на загруженной машине — через доли секунды).
+for _i in 1 2 3 4 5 6 7 8 9 10 11 12 13 14 15 16 17 18 19 20; do [ -s "$T/start.log" ] && break; sleep 0.25; done
 check "  метка есть и час прошёл — cron начинает повтор в фоне" "start --auto" "$(cat "$T/start.log")"
 printf '1 %s\n' "$(date +%s)" > "$T/etc/core-update.auto"; : > "$T/start.log"
 seed >/dev/null
