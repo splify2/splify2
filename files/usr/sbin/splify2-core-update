@@ -156,7 +156,9 @@ if [ -z "$ver" ]; then
     done
     [ -n "$ver" ] || { coreup_ver_ge "$pre" "$STEER_MIN_VERSION" && ver="$pre"; }
     if [ -z "$ver" ]; then
-        [ -n "$rv" ] && [ "$(jf "$rv" ok)" = true ] &&
+        # Перечень пришёл и в нём есть версии, но ни одной подходящей — так и сказать; пустой перечень (все источники
+        # молчат: служба хоста отвечает ok и пустым списком) — это «перечень не получен», а не «нет версии».
+        [ -n "$(jf "$rv" 'versions[*]')" ] &&
             finish_fail core_update.no_version "No steer {need} or newer is available for this router." need "$STEER_MIN_VERSION"
         finish_fail updater.no_list "The release list was not received"
     fi

@@ -148,6 +148,9 @@ check "  слова отказа — в error и в строке хода" "The 
 reset; setcore 2.0.5; printf '{"ok":true,"versions":["2.0.5"],"names":{}}\n' > "$T/fix/v2.json"; cp "$T/fix/versions.json" "$T/fix/v1.json"; cp "$T/fix/v2.json" "$T/fix/versions.json"
 cu
 check "в перечне нет 2.1 — отказ «нет steer 2.1.0 или новее»" "1;core_update.no_version" "$(cat "$T/rc");$(st code)"
+printf '{"ok":true,"arch":"x86_64","versions":[],"names":{}}\n' > "$T/fix/versions.json"; reset; setcore 2.0.5
+cu
+check "перечень пустой (все источники молчат, служба отвечает ok) — «перечень не получен»" "1;updater.no_list" "$(cat "$T/rc");$(st code)"
 cp "$T/fix/v1.json" "$T/fix/versions.json"
 
 reset; setcore 2.0.5; : > "$T/fix/fetch.fail"
