@@ -753,6 +753,42 @@ PY
     check "в архиве программы исполняемые, как в каталоге" "yes;yes;yes" "$([ -x "$PL/lib/backup/bin/backup" ] && echo yes || echo no);$([ -x "$PL/lib/lists-catalog/bin/lists" ] && echo yes || echo no);$([ -x "$PL/lib/lists-catalog/bin/update-lists" ] && echo yes || echo no)"
     check "из архива: backup_get отвечает" "true" "$(rpc backup_get '{"offset":0}' | pj 'str(d["ok"]).lower()')"
     check "из архива: lists отвечает ответом каталога, а не отказом плагина" "no" "$(rpc lists | pj '"yes" if d.get("code") in ("not_installed", "unavailable", "failed") else "no"')"
+    # Тот же плагин, но как его ставит пакет: из семени файлом — репозитория в состоянии нет (ядро пишет его только
+    # взятому из индекса). Имена переданных методов каркас отдаёт и ему; без записи в перечне семени, без архива этой
+    # версии в семени и с неподписанным семенем — нет.
+    seed_state() {  # ID [ПОЛЕ=ЗНАЧЕНИЕ_JSON]
+        python3 - "$PL/state.json" "$@" <<'PY'
+import json, sys
+p, i = sys.argv[1:3]
+d = json.load(open(p)); d["plugins"][i] = {"version": "1.0.0", "state": "enabled", "repo": None, "from": "file"}
+for kv in sys.argv[3:]:
+    k, v = kv.split("=", 1); d["plugins"][i][k] = json.loads(v)
+json.dump(d, open(p, "w"))
+PY
+        touch -d '+3 seconds' "$PL/state.json"
+    }
+    lists_refused() { rpc lists | pj '"yes" if d.get("code") in ("not_installed", "unavailable", "failed") else "no"'; }
+    mkdir -p "$T/seed"; cp "$T/dist/lists-catalog-1.0.0-all.s2p" "$T/seed/"; echo lists-catalog > "$T/seeded"
+    export SPLIFY2_SEED="$T/seed" SPLIFY2_SEEDED="$T/seeded"
+    seed_state lists-catalog
+    check "из семени пакета (репозитория нет): lists отвечает" "no" "$(lists_refused)"
+    : > "$T/seeded"; seed_state lists-catalog
+    check "из файла, но не семенем поставлен: имя не отдаётся" "yes" "$(lists_refused)"
+    echo lists-catalog > "$T/seeded"; seed_state lists-catalog 'version="1.0.1"'
+    check "из файла другой версии, чем в семени: имя не отдаётся" "yes" "$(lists_refused)"
+    seed_state lists-catalog 'unsigned=true'
+    check "без подписи: имя не отдаётся" "yes" "$(lists_refused)"
+    : > "$T/seed/unsigned"; seed_state lists-catalog
+    check "семя сборки без подписи: имя не отдаётся" "yes" "$(lists_refused)"
+    rm -f "$T/seed/unsigned"; seed_state lists-catalog 'from="network"'
+    check "из сети без репозитория: имя не отдаётся" "yes" "$(lists_refused)"
+    unset SPLIFY2_SEED SPLIFY2_SEEDED
+    python3 - "$PL/state.json" <<'PY'
+import json, sys
+d = json.load(open(sys.argv[1])); d["plugins"]["lists-catalog"] = {"version": "1.0.0", "state": "enabled", "repo": "splify2-core-plugins"}
+json.dump(d, open(sys.argv[1], "w"))
+PY
+    touch -d '+6 seconds' "$PL/state.json"
     sync_now
     check "из архива: задача update-lists в crontab" "1" "$(gc 'splify2-task lists-catalog update-lists' "$PL/crontab")"
 else

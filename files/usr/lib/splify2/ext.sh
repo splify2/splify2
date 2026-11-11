@@ -33,11 +33,34 @@ EXT_TASK_BIN="${EXT_TASK_BIN:-/usr/sbin/splify2-task}"
 EXT_EVENTS_INITD="${EXT_EVENTS_INITD:-/etc/init.d/splify2-events}"
 EXT_TASK_LOCK_DIR="${EXT_TASK_LOCK_DIR:-/var/lock}"
 EXT_OFFICIAL_REPOS="${EXT_OFFICIAL_REPOS:-splify2 splify2-core-plugins}"
+# Семя пакета (splify2-seed): каталог архивов и перечень поставленного из него — см. ext_seed_official.
+EXT_SEED_DIR="${SPLIFY2_SEED:-/usr/share/splify2/seed}"
+EXT_SEEDED="${SPLIFY2_SEEDED:-/etc/splify2/seeded}"
 EXT_HOOK_TIMEOUT=10
 EXT_TASK_TIMEOUT=600
 EXT_HOOKS_KNOWN=" pre_spec_set post_spec_set pre_apply post_apply post_apply_fail heal backup_sections support_report purge plugin_changed sub_fields "
 EXT_CRON_BEGIN='# splify2-plugins begin'
 EXT_CRON_END='# splify2-plugins end'
+
+# Плагин из семени пакета — официальный, хотя репозитория у него в состоянии нет.
+#
+# ЗАЧЕМ. Семя ставится файлом (`steer plugin install --file`), а менеджер плагинов ядра записывает репозиторий только
+# тому, что взято из индекса: у поставленного из файла `repo` пуст. По одному `repo` плагины самого пакета выходили
+# «чужими», и каркас не отдавал им имена методов, которые сам же им передал (lists, sub_*, steer_versions…): после
+# установки и обновления пакета каталог списков, подписки и обновление отвечали «нужен плагин», хотя плагин стоял.
+#
+# Признак — все четыре условия разом: плагин записан в перечень поставленного семенем, встал из файла, с проверенной
+# подписью (семя без подписи — сборка разработчика с меткой unsigned — сюда не подходит), и архив именно этой версии
+# лежит в семени пакета. Каталог семени и перечень пишет только пакет и root.
+ext_seed_official() {  # ID
+    [ -r "$PLUGIN_STATE" ] || return 1
+    grep -qx "$1" "$EXT_SEEDED" 2>/dev/null || return 1
+    [ -f "$EXT_SEED_DIR/unsigned" ] && return 1
+    set -- "$1" $(jsonfilter -i "$PLUGIN_STATE" -e "@.plugins['$1'].from" -e "@.plugins['$1'].version" 2>/dev/null)
+    [ "${2:-}" = file ] && [ -n "${3:-}" ] || return 1
+    [ "$(jsonfilter -i "$PLUGIN_STATE" -e "@.plugins['$1'].unsigned" 2>/dev/null)" = true ] && return 1
+    [ -f "$EXT_SEED_DIR/$1-$3-all.s2p" ]
+}
 EXT_TAB='	'
 
 # Плагины и их помощники: библиотека плагинов нужна реестру (состояние, пути, права).
@@ -171,6 +194,7 @@ ext_scan_plugin() {  # ID
     [ -r "$PLUGIN_STATE" ] && _sp_repo="$(jsonfilter -i "$PLUGIN_STATE" -e "@.plugins['$_sp_id'].repo" 2>/dev/null)"
     _sp_official=0
     for _sp_r in $EXT_OFFICIAL_REPOS; do [ "$_sp_r" = "$_sp_repo" ] && _sp_official=1; done
+    [ "$_sp_official" = 1 ] || { [ -z "$_sp_repo" ] && ext_seed_official "$_sp_id" && _sp_official=1; }
     _sp_safe=0
     ext_safe && _sp_safe=1
     ext_emit plugin "$_sp_id" "$_sp_official"

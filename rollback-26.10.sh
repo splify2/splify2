@@ -30,7 +30,7 @@ else
     opkg remove splify2 steer-core >/dev/null 2>&1
     opkg install "$D"/steer-core-*.ipk && opkg install "$D"/steer-*.ipk "$D/$UI" || bad "установка не прошла"
 fi
-rm -rf /usr/lib/steer/plugins /tmp/splify2-releases.json* "$D"
+rm -rf /tmp/splify2-releases.json* "$D"
 # Следы линии 26.11, которые пакет не снимает: задания плагинов в cron, экраны плагинов, служба событий.
 sed -i '/^# splify2-plugins begin/,/^# splify2-plugins end/d' /etc/crontabs/root 2>/dev/null; /etc/init.d/cron restart >/dev/null 2>&1
 rm -rf /www/luci-static/resources/view/splify2/p-* /tmp/luci-indexcache* /tmp/luci-modulecache
