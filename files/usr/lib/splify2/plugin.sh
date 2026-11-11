@@ -19,9 +19,15 @@ PLUGIN_CONF_DIR="${PLUGIN_CONF_DIR:-/etc/steer/plugins/conf}"
 PLUGIN_RPCD_DIR="${PLUGIN_RPCD_DIR:-/usr/libexec/rpcd}"
 PLUGIN_ACL_DIR="${PLUGIN_ACL_DIR:-/usr/share/rpcd/acl.d}"
 PLUGIN_DISPATCHER="${PLUGIN_DISPATCHER:-/usr/lib/splify2/plugin-rpcd}"
-# Каталог интерфейса плагина раздаёт uhttpd: ссылка /www/luci-static/resources/splify2/plugins/<id> ->
-# <каталог плагина>/ui (plugin-sdk/docs/s2p.md, «Раскладка»). Раздаётся ТОЛЬКО ui/, не весь плагин: рядом с
-# ним лежат программы и манифест.
+# Интерфейс плагина раздаёт uhttpd: /www/luci-static/resources/splify2/plugins/<id>/ — каталог с двумя ссылками,
+# ui -> <каталог плагина>/ui и i18n -> <каталог плагина>/i18n (plugin-sdk/docs/s2p.md, «Раскладка»). Так адреса
+# совпадают с тем, как их строит панель (host-api.md, «Загрузка»): `<id>/<ui.entry>` при entry «ui/index.js» и
+# словари `<id>/i18n/<язык>.json`. Раздаются ТОЛЬКО ui/ и i18n/, не весь плагин: рядом лежат программы, манифест
+# и схема настроек.
+#
+# Прежде сам `<id>` был ссылкой на ui/ — и адрес панели `<id>/ui/index.js` указывал в `ui/ui/index.js`: интерфейс
+# первого же плагина со своим экраном (warpbox-ui) не загрузился («Failed to fetch dynamically imported module»).
+# Ссылка прежнего вида при первой же сверке заменяется каталогом.
 PLUGIN_UI_DIR="${PLUGIN_UI_DIR:-/www/luci-static/resources/splify2/plugins}"
 # Интерфейс плагина для страницы splify2 (splify2-api 1.1, `splify2.luci.interface`): каталог плагина luci/ раздаётся как
 # view/splify2/p-<id>/, и LuCI грузит вид как модуль view.splify2.p-<id>.<имя>.
@@ -470,10 +476,18 @@ plugin_sync() {
         # Интерфейс плагина: ссылка на его ui/ (если манифест объявляет `ui`).
         if [ -n "$(jsonfilter -i "${_ps_d}plugin.json" -e '@.ui.entry' 2>/dev/null)" ] && [ -d "${_ps_d}ui" ]; then
             _ps_uiwant="$_ps_uiwant$_ps_id "
-            mkdir -p "$PLUGIN_UI_DIR" 2>/dev/null
-            [ "$(readlink "$PLUGIN_UI_DIR/$_ps_id" 2>/dev/null)" = "$PLUGIN_ROOT/$_ps_id/ui" ] ||
-                ln -sfn "$PLUGIN_ROOT/$_ps_id/ui" "$PLUGIN_UI_DIR/$_ps_id"
-            [ -n "$_ps_stamp" ] && printf 'L %s\n' "$PLUGIN_UI_DIR/$_ps_id" >> "$_ps_stamp.$$"
+            _ps_ud="$PLUGIN_UI_DIR/$_ps_id"
+            # Ссылка прежнего вида (сам <id> -> ui/) уходит: на её месте встаёт каталог.
+            [ -L "$_ps_ud" ] && rm -f "$_ps_ud"
+            mkdir -p "$_ps_ud" 2>/dev/null
+            # uhttpd отдаёт файлы и не от root: каталоги по пути должны быть проходимы.
+            chmod 0755 "${PLUGIN_UI_DIR%/*}" "$PLUGIN_UI_DIR" "$_ps_ud" 2>/dev/null
+            for _ps_sub in ui i18n; do
+                [ -d "${_ps_d}$_ps_sub" ] || { rm -f "$_ps_ud/$_ps_sub"; continue; }
+                [ "$(readlink "$_ps_ud/$_ps_sub" 2>/dev/null)" = "$PLUGIN_ROOT/$_ps_id/$_ps_sub" ] ||
+                    ln -sfn "$PLUGIN_ROOT/$_ps_id/$_ps_sub" "$_ps_ud/$_ps_sub"
+                [ -n "$_ps_stamp" ] && printf 'L %s\n' "$_ps_ud/$_ps_sub" >> "$_ps_stamp.$$"
+            done
         fi
         plugin_rpc_methods "$_ps_id" || continue
         [ -n "$PLUGIN_RPC_READ$PLUGIN_RPC_WRITE" ] || continue
@@ -543,11 +557,19 @@ plugin_sync() {
     done
     # Ссылки на интерфейсы: лишняя — та, чьего плагина нет среди включённых с `ui`. Перечитки rpcd они не требуют.
     for _ps_u in "$PLUGIN_UI_DIR"/*; do
-        [ -L "$_ps_u" ] || continue
         _ps_id="${_ps_u##*/}"
         case "$_ps_uiwant" in *" $_ps_id "*) continue ;; esac
-        # Только наши: ссылка ведёт в каталог плагинов.
-        case "$(readlink "$_ps_u")" in "$PLUGIN_ROOT"/*) rm -f "$_ps_u" ;; esac
+        if [ -L "$_ps_u" ]; then
+            # Ссылка прежнего вида. Только наши: ведёт в каталог плагинов.
+            case "$(readlink "$_ps_u")" in "$PLUGIN_ROOT"/*) rm -f "$_ps_u" ;; esac
+        elif [ -d "$_ps_u" ]; then
+            # Каталог плагина: снимаются только наши ссылки, сам каталог — если после них он пуст (чужое не трогаем).
+            for _ps_sub in ui i18n; do
+                [ -L "$_ps_u/$_ps_sub" ] || continue
+                case "$(readlink "$_ps_u/$_ps_sub")" in "$PLUGIN_ROOT"/*) rm -f "$_ps_u/$_ps_sub" ;; esac
+            done
+            rmdir "$_ps_u" 2>/dev/null
+        fi
     done
     for _ps_a in "$PLUGIN_ACL_DIR"/splify2-p-*.json; do
         [ -f "$_ps_a" ] || continue

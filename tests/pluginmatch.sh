@@ -610,16 +610,22 @@ printf '{"schema":1,"id":"recheck","version":"1.0.0","name":"r","ui":{"entry":"u
 mkdir -p "$PLUG/lib/recheck/ui"; echo 'export default {}' > "$PLUG/lib/recheck/ui/index.js"
 printf '{"schema":1,"id":"lang-en","version":"26.11.0","name":"English","ui":{"entry":"ui/index.js"}}\n' > "$PLUG/lib/lang-en/plugin.json"
 mkdir -p "$PLUG/lib/lang-en/ui"
+# У recheck есть и словари интерфейса; прежняя раскладка — сам <id> ссылкой на ui/ — должна уйти при сверке.
+mkdir -p "$PLUG/lib/recheck/i18n" "$PLUG/www"; echo '{}' > "$PLUG/lib/recheck/i18n/ru.json"
+ln -s "$PLUG/lib/recheck/ui" "$PLUG/www/recheck"
 rpcd plugins_list >/dev/null; sleep 0.3
-check "ui: ссылка только на ui/ плагина, не на весь плагин" "$PLUG/lib/recheck/ui;$PLUG/lib/lang-en/ui" \
-    "$(readlink "$PLUG/www/recheck");$(readlink "$PLUG/www/lang-en")"
-check "  файл интерфейса доступен по ссылке, программа плагина — нет" "yes;no" \
-    "$([ -f "$PLUG/www/recheck/index.js" ] && echo yes || echo no);$([ -e "$PLUG/www/recheck/prog" ] && echo yes || echo no)"
-check "  у плагина без rpc, но с ui — ссылка на ui есть, объекта ubus нет" "yes;no" \
-    "$([ -L "$PLUG/www/lang-en" ] && echo yes || echo no);$([ -e "$PLUG/rpcd/splify2.p.lang-en" ] && echo yes || echo no)"
+# Адрес панели — <id>/<ui.entry> при entry «ui/index.js» и <id>/i18n/<язык>.json (host-api.md): каталог <id> с двумя
+# ссылками. Прежде <id> был ссылкой на ui/, и панель искала ui/ui/index.js — интерфейс плагина не загружался.
+check "ui: каталог плагина со ссылками ui и i18n, прежняя ссылка заменена" "dir;$PLUG/lib/recheck/ui;$PLUG/lib/recheck/i18n;$PLUG/lib/lang-en/ui" \
+    "$([ -d "$PLUG/www/recheck" ] && [ ! -L "$PLUG/www/recheck" ] && echo dir || echo link);$(readlink "$PLUG/www/recheck/ui");$(readlink "$PLUG/www/recheck/i18n");$(readlink "$PLUG/www/lang-en/ui")"
+check "  файл интерфейса и словарь доступны по адресу панели, программа и манифест плагина — нет" "yes;yes;no;no" \
+    "$([ -f "$PLUG/www/recheck/ui/index.js" ] && echo yes || echo no);$([ -f "$PLUG/www/recheck/i18n/ru.json" ] && echo yes || echo no);$([ -e "$PLUG/www/recheck/rpc" ] && echo yes || echo no);$([ -e "$PLUG/www/recheck/plugin.json" ] && echo yes || echo no)"
+check "  у плагина без словарей ссылки i18n нет" "no" "$([ -e "$PLUG/www/lang-en/i18n" ] && echo yes || echo no)"
+check "  у плагина без rpc, но с ui — каталог интерфейса есть, объекта ubus нет" "yes;no" \
+    "$([ -L "$PLUG/www/lang-en/ui" ] && echo yes || echo no);$([ -e "$PLUG/rpcd/splify2.p.lang-en" ] && echo yes || echo no)"
 rpcd plugin_disable '{"id":"lang-en"}' >/dev/null
-check "  выключенный плагин — ссылка на ui снята" "no;yes" \
-    "$([ -e "$PLUG/www/lang-en" ] && echo yes || echo no);$([ -L "$PLUG/www/recheck" ] && echo yes || echo no)"
+check "  выключенный плагин — его каталог интерфейса снят целиком" "no;yes" \
+    "$([ -e "$PLUG/www/lang-en" ] && echo yes || echo no);$([ -L "$PLUG/www/recheck/ui" ] && echo yes || echo no)"
 echo чужое > "$PLUG/www/stray"; ln -s /elsewhere "$PLUG/www/foreign"
 rpcd plugins_list >/dev/null
 check "  чужие файлы и ссылки в каталоге интерфейсов не тронуты" "yes;yes" \
