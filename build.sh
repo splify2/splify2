@@ -456,6 +456,8 @@ test -x "$PKG/usr/sbin/splify2-seed" || {
 test -x "$PKG/usr/sbin/splify2-core-update" || {
     echo "в пакете нет usr/sbin/splify2-core-update — панель на старом ядре не сможет его обновить"; exit 1; }
 mkdir -p "$OUT"
+# Файл пакета отдаётся владельцу дерева внутри контейнера (chown): контейнер пишет от root, и сборка не от root (GitHub
+# Actions, машина разработчика) не могла потом ни перезаписать, ни убрать собственный out/.
 # `&&` после установки apk-tools, а не `;`. С точкой с запятой провал установки игнорировался
 # и проявлялся командой позже — как отсутствующий `apk mkpkg`, о чём говорилось «упаковка
 # провалилась». Причина (нет сети в контейнере, зеркало alpine не отвечает) при этом не
@@ -469,7 +471,7 @@ docker run --rm -v "$PWD":/w -w /w alpine:latest sh -c \
        --script post-install:build/scripts/post-install \
        --script post-upgrade:build/scripts/post-install \
        --script pre-deinstall:build/scripts/pre-remove \
-       -F $PKG -o $OUT/splify2-$VERSION-1_noarch.apk" > "$BUILD_LOG" 2>&1 \
+       -F $PKG -o $OUT/splify2-$VERSION-1_noarch.apk && chown $(id -u):$(id -g) $OUT/splify2-$VERSION-1_noarch.apk" > "$BUILD_LOG" 2>&1 \
     || { echo "упаковка apk провалилась:"; cat "$BUILD_LOG"; exit 1; }
 
 # ---- тот же пакет в формате opkg ---------------------------------------------
