@@ -101,6 +101,7 @@
   "fetch.fake_ip": "{host} resolves to the fake IP {addr}: first remove its domain from the channels",
   "fetch.loop": "The publisher address {addr} is also the node address of output {name}: a retry through the tunnel would loop",
   "fetch.need_ip_full": "A tunnel retry is not possible: full iproute2 is needed (package ip-full)",
+  "fetch.need_curl": "A retry through output {name} is not possible: curl is needed (package curl)",
   "fetch.no_ipv4": "{host} does not resolve to an IPv4 address: there is nothing to retry through a tunnel",
   "fetch.no_output": "{host} did not answer directly and there is no running output with its own table",
   "fetch.sum_all": "The checksum did not match at any address: the file is not the one in the release list",

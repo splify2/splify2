@@ -44,7 +44,8 @@ if [ "${1:-}" = spec ] && [ "${2:-}" = convert ]; then
 fi
 echo "$*" >> "$SANDBOX/steer.log"
 case "${1:-}" in
-    status) printf '{"outputs":{"vless":{"device":"tun0","up":true}}}\n' ;;
+    status) printf '{"outputs":{"vless":{"device":"tun0","up":true,"mark":"0x00100000"},"wgb":{"device":"wg0","up":true,"mark":"0x00200000"}}}\n' ;;
+    nft-map) [ -f "$SANDBOX/nftmap.json" ] && cat "$SANDBOX/nftmap.json" ;;
     sub-quota)
         # Ответ панели: остаток пишется в файл --info; SUB_QUOTA=none — панель промолчала.
         [ "${SUB_QUOTA:-ok}" = none ] && exit 1
@@ -56,16 +57,34 @@ case "${1:-}" in
 esac
 exit 0
 EOF
-# curl: что скачать, решает URL; запрос протоколируется.
+# curl: что скачать, решает URL; запрос протоколируется, путь (устройство или порт источника) и таблицы nft в миг
+# запроса — отдельно.
 cat > "$T/bin/curl" <<'EOF'
 #!/bin/sh
-out=""; url=""
-while [ $# -gt 0 ]; do case "$1" in -o) out="$2"; shift 2 ;; http*) url="$1"; shift ;; *) shift ;; esac; done
+out=""; url=""; via=""
+while [ $# -gt 0 ]; do case "$1" in -o) out="$2"; shift 2 ;; --interface|--local-port) via="$1 $2"; shift 2 ;;
+    http*) url="$1"; shift ;; *) shift ;; esac; done
 echo "$url" >> "$SANDBOX/requested"
+[ -n "$via" ] && echo "$via tables=$(ls "$SANDBOX/nft" 2>/dev/null | tr '\n' ' ')" >> "$SANDBOX/via.log"
+[ -f "$SANDBOX/curl-fail" ] && exit 7
 case "$url" in
     *1.1.1.1*|*trace*) printf 'ip=203.0.113.7\nloc=DE\n\nsplify_ms=0.250\n'; exit 0 ;;
     *down*) exit 22 ;;
     *) printf 'body of %s\n' "$url" > "$out" ;;
+esac
+EOF
+# nft: таблицы — файлы в $SANDBOX/nft; карта перенаправления ядра — $SANDBOX/redir-map.
+cat > "$T/bin/nft" <<'EOF'
+#!/bin/sh
+mkdir -p "$SANDBOX/nft"
+case "$*" in
+    "list map inet steer tcp_redir")
+        [ -f "$SANDBOX/redir-map" ] || exit 1
+        printf 'table inet steer {\n\tmap tcp_redir {\n\t\ttype mark : inet_service\n'
+        cat "$SANDBOX/redir-map"; printf '\t}\n}\n' ;;
+    "-f "*) n="$(sed -n 's/^table inet \([^ ]*\) {$/\1/p' "$2")"; cp "$2" "$SANDBOX/nft/$n" ;;
+    "delete table inet "*) [ -f "$SANDBOX/nft/$4" ] || exit 1; rm -f "$SANDBOX/nft/$4" ;;
+    *) exit 1 ;;
 esac
 EOF
 chmod +x "$T/bin"/*
@@ -82,7 +101,7 @@ host() {  # СЛУЖБА [АРГУМЕНТЫ…] — службы хоста т�
         UCI_STUB_DB="$T/uci.db" XSTEER_DIR="$T/etc/xs" RC_D="${RC_D_FIXTURE:-$T/rc.d}" STEER_INIT="$T/bin/initd-steer" \
         RPCD_BIN="${RPCD_BIN_FIXTURE:-$T/bin/rpcd-apply}" \
         STEER_RC="${STEER_RC:-0}" STEER_ERR="${STEER_ERR:-}" GEO_CURL="${GEO_CURL_FIXTURE:-$T/bin/curl}" \
-        OPENWRT_RELEASE="$T/openwrt_release" PM_FIXTURE="${PM_FIXTURE_HOST:-apk}" PKG_DB="$T/pkgdb" \
+        OUTMARK_DIR="$T/om" OPENWRT_RELEASE="$T/openwrt_release" PM_FIXTURE="${PM_FIXTURE_HOST:-apk}" PKG_DB="$T/pkgdb" \
         "$@" 2>"$T/stderr" <"${HOST_IN:-/dev/null}"
 }
 hostrun() { host sh "$HOST" "$@"; }
@@ -392,6 +411,27 @@ check "probe geo: выхода нет — отказ no_device, код 1" "false
 out="$(GEO_CURL_FIXTURE=/nonexistent/curl hostrun probe geo vless)"
 check "probe geo: нет curl — why no_curl и curl:false" "no_curl;false" "$(printf '%s' "$out" | jget why);$(printf '%s' "$out" | jget curl)"
 check "probe: имя выхода с косой — отказ" "false" "$(hostrun probe geo 'a/b' | jget ok)"
+# Туннель с перенаправлением TCP (ядро steer 2.1: метка выхода в карте tcp_redir) — по метке выхода: TCP, пущенный в
+# устройство такого туннеля, ядро сбрасывает. Обычный выход — прежний --interface.
+check "probe geo без перенаправления: через устройство" "--interface tun0 tables=" "$(cat "$T/via.log")"
+rm -f "$T/via.log"
+printf '{"table":"steer","family":"inet","mark":{"mask":"0x0ff00000","base":20,"bits":8}}\n' > "$T/nftmap.json"
+printf '\t\telements = { 0x00100000 : 9481 }\n' > "$T/redir-map"
+out="$(hostrun probe geo vless)"
+check "probe geo, tcp-redir: адрес и страна замерены" "true;203.0.113.7;DE" \
+      "$(printf '%s' "$out" | jget ok);$(printf '%s' "$out" | jget ip);$(printf '%s' "$out" | jget cc)"
+check "probe geo, tcp-redir: порт из ряда, таблица метки стоит, --interface нет" "yes;" \
+      "$(grep -q '^--local-port 29[0-9]*-29[0-9]* tables=splify2_om[0-9]*_[0-9]* $' "$T/via.log" && echo yes || echo no);$(grep -c '^--interface' "$T/via.log" | sed 's/^0$//')"
+check "probe geo, tcp-redir: таблица и место сняты" ";" "$(ls "$T/nft" | tr '\n' ' ');$(ls "$T/om" 2>/dev/null | tr '\n' ' ')"
+rm -f "$T/via.log"
+out="$(hostrun probe geo wgb)"
+check "probe geo, обычный выход рядом с туннелем: прежний --interface" "true;--interface wg0 tables=" \
+      "$(printf '%s' "$out" | jget ok);$(cat "$T/via.log")"
+rm -f "$T/via.log"; touch "$T/curl-fail"
+out="$(hostrun probe geo vless)"
+check "probe geo, tcp-redir, curl отказал: no_answer, таблица и место сняты" "no_answer;yes;;" \
+      "$(printf '%s' "$out" | jget why);$(grep -q '^--local-port' "$T/via.log" && echo yes || echo no);$(ls "$T/nft" | tr '\n' ' ');$(ls "$T/om" 2>/dev/null | tr '\n' ' ')"
+rm -f "$T/via.log" "$T/curl-fail" "$T/nftmap.json" "$T/redir-map"
 check "probe: неизвестная проба — использование (код 2)" "2" "$(hostrun probe other vless >/dev/null; echo $?)"
 
 # ---- release, pkg, engine modules: выпуски, пакеты, протоколы ядра -------------------------------------------------

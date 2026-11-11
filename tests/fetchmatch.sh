@@ -42,18 +42,24 @@ mkdir -p "$T/bin" "$S/dns" "$T/cache"
 # открыто»; `blocked-always` закрывает адрес совсем.
 cat > "$T/bin/curl" <<'EOF'
 #!/bin/sh
-out=""; url=""; four=no; hdr=""
+out=""; url=""; four=no; hdr=""; via=""
 while [ $# -gt 0 ]; do
     case "$1" in
         -o) out="$2"; shift 2 ;;
         -H) hdr="$2"; shift 2 ;;
         -4) four=yes; shift ;;
         --connect-timeout|--max-time) shift 2 ;;
+        --interface) via="interface=$2"; shift 2 ;;
+        --local-port) via="local-port=$2"; shift 2 ;;
         http*) url="$1"; shift ;;
         *) shift ;;
     esac
 done
 printf '%s four=%s hdr=%s\n' "$url" "$four" "$hdr" >> "$STATE/curl.log"
+# Путь запроса и таблицы nft, стоящие В МИГ запроса: метка должна стоять, пока curl идёт.
+[ -n "$via" ] && printf '%s tables=%s\n' "$via" "$(ls "$STATE/nft" 2>/dev/null | tr '\n' ' ')" >> "$STATE/via.log"
+[ -f "$STATE/curl-sleep" ] && sleep "$(cat "$STATE/curl-sleep")"
+[ -f "$STATE/curl-fail" ] && exit 7
 blocked() {
     [ -f "$1" ] || return 1
     while IFS= read -r pat; do
@@ -93,9 +99,33 @@ esac
 exit 0
 EOF
 
+# nft: таблицы — файлы в $STATE/nft (имя — имя таблицы, внутри — загруженный текст), карта
+# перенаправления ядра — $STATE/redir-map (нет файла — карты нет). Протокол — $STATE/nft.log.
+cat > "$T/bin/nft" <<'EOF'
+#!/bin/sh
+echo "$*" >> "$STATE/nft.log"
+mkdir -p "$STATE/nft"
+case "$*" in
+    "list map inet steer tcp_redir")
+        [ -f "$STATE/redir-map" ] || { echo "Error: No such file or directory" >&2; exit 1; }
+        printf 'table inet steer {\n\tmap tcp_redir {\n\t\ttype mark : inet_service\n'
+        cat "$STATE/redir-map"
+        printf '\t}\n}\n'; exit 0 ;;
+    "-f "*)
+        [ -f "$STATE/nft-fail" ] && exit 1
+        n="$(sed -n 's/^table inet \([^ ]*\) {$/\1/p' "$2")"
+        cp "$2" "$STATE/nft/$n"; cp "$2" "$STATE/nft-last"; exit 0 ;;
+    "delete table inet "*)
+        [ -f "$STATE/nft/$4" ] || exit 1
+        rm -f "$STATE/nft/$4"; exit 0 ;;
+esac
+exit 1
+EOF
+
 cat > "$T/bin/steer" <<'EOF'
 #!/bin/sh
 case "${1:-}" in
+    nft-map)     [ -f "$STATE/nftmap.json" ] && cat "$STATE/nftmap.json" ;;
     status)      cat "$STATE/status.json" 2>/dev/null ;;
     outputs)     cat "$STATE/outputs" 2>/dev/null ;;
     vless-nodes) cat "$STATE/nodes.json" 2>/dev/null ;;
@@ -161,6 +191,14 @@ if m:
         if n.get('index') == int(m.group(1)):
             out(n.get('host'))
     sys.exit(0)
+# Простой путь по именам (`@.table`, `@.mark.mask` — ответ `steer nft-map --json`).
+m = re.fullmatch(r'@((?:\.[A-Za-z_]\w*)+)', expr)
+if m:
+    cur = d
+    for k in m.group(1).split('.')[1:]:
+        cur = cur.get(k) if isinstance(cur, dict) else None
+    out(cur)
+    sys.exit(0)
 sys.exit(1)
 PY
 EOF
@@ -195,9 +233,10 @@ printf 'PKG-from-api\n' > "$T/api-pkg"
 
 reset() {
     rm -f "$S/curl.log" "$S/ip.log" "$S/rules" "$S/blocked" "$S/blocked-always" \
-          "$S/serve" "$S/uci.splify2_main_fetch_via_tunnel"
-    rm -rf "$T/cache"; mkdir -p "$T/cache"
-    : > "$S/curl.log"; : > "$S/ip.log"
+          "$S/serve" "$S/uci.splify2_main_fetch_via_tunnel" "$S/via.log" "$S/nft.log" \
+          "$S/redir-map" "$S/nftmap.json" "$S/curl-fail" "$S/nft-fail" "$S/nft-last" "$S/curl-sleep"
+    rm -rf "$T/cache" "$S/nft" "$T/om"; mkdir -p "$T/cache"
+    : > "$S/curl.log"; : > "$S/ip.log"; : > "$S/nft.log"
 }
 
 # Прогон: печатает «RC=<код> NOTE=<строка>» и оставляет скачанное в $T/got.
@@ -205,7 +244,7 @@ run() {  # URL...
     rm -f "$T/got" "$T/got2"
     env PATH="$T/bin:$PATH" STATE="$S" \
         FETCH_STEER="$T/bin/steer" FETCH_SPEC="$S/spec.json" \
-        FETCH_CACHE="$T/cache" FETCH_CONNECT_TIMEOUT=1 FETCH_TIMEOUT=5 \
+        FETCH_CACHE="$T/cache" FETCH_CONNECT_TIMEOUT=1 FETCH_TIMEOUT=5 OUTMARK_DIR="$T/om" \
         sh -c '
             . "$1"
             shift
@@ -633,6 +672,139 @@ cat > "$S/status.json" <<'EOF'
 {"schema":1,"outputs":{"direct":{"kind":"direct"},"vl":{"kind":"vless","device":"vl","up":true,"mark":"0x00100000","table":300}},"channels":[]}
 EOF
 printf 'direct\nvl\n' > "$S/outputs"
+
+# ---- 12. путь трафика выхода: туннель с перенаправлением TCP — по метке ----------------
+# Ядро steer 2.1: TCP туннеля vless, hysteria2, прокси несётся только по метке выхода (правило nat
+# ядра отдаёт его слушателю модуля по карте tcp_redir), а TCP, пущенный в устройство туннеля, ядро
+# сбрасывает. Признак «перенаправляет» — элемент метки выхода в карте; таблица ядра и поле метки —
+# из `steer nft-map --json`.
+NFTMAP='{"table":"steer","family":"inet","api":"1.5","mark":{"mask":"0x0ff00000","base":20,"bits":8},"chains":[]}'
+redir_on() {  # элементы карты — метка vl (0x00100000) среди прочих, в две строки, как печатает nft
+    printf '%s\n' "$NFTMAP" > "$S/nftmap.json"
+    printf '\t\telements = { 0x00200000 : 9482,\n\t\t\t     0x00100000 : 9481 }\n' > "$S/redir-map"
+}
+tables_left() { ls "$S/nft" 2>/dev/null | tr '\n' ' ' | sed 's/ $//'; }
+slots_left() { ls "$T/om" 2>/dev/null | tr '\n' ' ' | sed 's/ $//'; }
+
+reset
+echo always > "$S/uci.splify2_main_fetch_via_tunnel"
+printf 'api.github.com\ncodeload.github.com\ngitlab.com\n' > "$S/blocked-always"
+printf 'githubusercontent.com\n' > "$S/blocked"
+redir_on
+res="$(run "$RAW")"
+check "tcp-redir: скачано через выход" "direct:$RAW;RC1=0" "$(cat "$T/got" 2>/dev/null);$(echo "$res" | grep '^RC1=')"
+check "tcp-redir: curl с портом из ряда, таблица метки стоит в миг запроса" "yes" \
+      "$(grep -q '^local-port=29[0-9]*-29[0-9]* tables=splify2_om[0-9]*_[0-9]* $' "$S/via.log" && echo yes || echo no)"
+check "tcp-redir: --interface не зовётся" "" "$(grep -c '^interface=' "$S/via.log" | sed 's/^0$//')"
+check "tcp-redir: правило по адресу не ставится" "" "$(grep -c '^rule add' "$S/ip.log" | sed 's/^0$//')"
+check "tcp-redir: метка выхода в поле ядра, чужие биты целы" "yes" \
+      "$(grep -q 'ct direction original meta mark set meta mark and 0xf00fffff or 0x00100000$' "$S/nft-last" && echo yes || echo no)"
+check "tcp-redir: цепочка route на output, приоритет mangle" "yes" \
+      "$(grep -q 'type route hook output priority mangle;' "$S/nft-last" && echo yes || echo no)"
+check "tcp-redir: не перенаправленное к слушателю (не на loopback) отбрасывается" "yes;yes" \
+      "$(grep -q 'ct direction original ip daddr != 127.0.0.0/8 drop$' "$S/nft-last" && echo yes || echo no);$(grep -q 'ct direction original ip6 daddr != ::1 drop$' "$S/nft-last" && echo yes || echo no)"
+_lp="$(sed -n 's/^local-port=\([0-9-]*\) .*/\1/p' "$S/via.log")"
+check "tcp-redir: ряд портов во всех правилах тот же, что у curl" "3" "$(grep -c "tcp sport $_lp ct direction" "$S/nft-last")"
+check "tcp-redir: таблица и место сняты" ";" "$(tables_left);$(slots_left)"
+check "tcp-redir: назван выход" "yes" "$(echo "$res" | grep -q 'NOTE1=.*through output vl' && echo yes || echo no)"
+
+# curl отказал — таблица всё равно снята, место свободно.
+reset
+echo always > "$S/uci.splify2_main_fetch_via_tunnel"
+printf 'api.github.com\ncodeload.github.com\ngitlab.com\ngithubusercontent.com\n' > "$S/blocked-always"
+redir_on
+touch "$S/curl-fail"
+res="$(run "$RAW")"
+check "tcp-redir, curl отказал: отказ" "RC1=1" "$(echo "$res" | grep '^RC1=')"
+check "tcp-redir, curl отказал: таблица метки ставилась" "yes" "$(grep -q '^-f ' "$S/nft.log" && echo yes || echo no)"
+check "tcp-redir, curl отказал: таблица и место сняты" ";" "$(tables_left);$(slots_left)"
+
+# Метки выхода нет в карте (выход не привязан к модулю, или вид без перенаправления) — прежнее
+# правило по адресу, nft не трогается.
+reset
+echo always > "$S/uci.splify2_main_fetch_via_tunnel"
+printf 'api.github.com\ncodeload.github.com\ngitlab.com\n' > "$S/blocked-always"
+printf 'githubusercontent.com\n' > "$S/blocked"
+printf '%s\n' "$NFTMAP" > "$S/nftmap.json"
+printf '\t\telements = { 0x00200000 : 9482 }\n' > "$S/redir-map"
+res="$(run "$RAW")"
+check "без элемента метки: прежнее правило по адресу" "direct:$RAW;2" \
+      "$(cat "$T/got" 2>/dev/null);$(grep -c '^rule add to 185.199.10' "$S/ip.log")"
+check "без элемента метки: таблицы метки не было" "" "$(grep -c '^-f ' "$S/nft.log" | sed 's/^0$//')"
+# Ядро до 2.1 (nft-map нет): то же.
+reset
+echo always > "$S/uci.splify2_main_fetch_via_tunnel"
+printf 'githubusercontent.com\n' > "$S/blocked"
+printf '\t\telements = { 0x00100000 : 9481 }\n' > "$S/redir-map"
+res="$(run "$RAW")"
+check "ядро без nft-map: прежнее правило по адресу" "direct:$RAW;2;" \
+      "$(cat "$T/got" 2>/dev/null);$(grep -c '^rule add to 185.199.10' "$S/ip.log");$(grep -c '^-f ' "$S/nft.log" | sed 's/^0$//')"
+
+# out_curl напрямую: выход без перенаправления — прежний --interface; с ним — метка.
+oc_run() {  # ВЫХОД УСТРОЙСТВО [АРГУМЕНТЫ curl…] — печатает «RC=код»
+    env PATH="$T/bin:$PATH" STATE="$S" FETCH_STEER="$T/bin/steer" FETCH_SPEC="$S/spec.json" \
+        OUTMARK_DIR="$T/om" OUTMARK_SLOTS="${OC_SLOTS:-64}" \
+        sh -c '. "$1"; shift; o="$1"; d="$2"; shift 2; out_curl "$o" "$d" curl -o "$OUT" "$@"; echo "RC=$?"' \
+        _ "$FETCH" "$@"
+}
+reset
+check "out_curl, обычный выход: код curl" "RC=0" "$(oc_run vl wg0 https://example.org/a)"
+check "out_curl, обычный выход: прежний --interface, nft не трогается" "interface=wg0 tables=;" \
+      "$(cat "$S/via.log");$(grep -c . "$S/nft.log" | sed 's/^0$//')"
+reset
+check "out_curl: без перенаправления и без устройства — отказ без запуска" "RC=1;0" \
+      "$(oc_run vl '' https://example.org/a);$(grep -c . "$S/curl.log")"
+reset
+redir_on
+check "out_curl, tcp-redir: код curl" "RC=0" "$(oc_run vl vl https://example.org/a)"
+check "out_curl, tcp-redir: --local-port, без --interface" "local-port" "$(cut -d= -f1 "$S/via.log")"
+reset
+redir_on
+touch "$S/curl-fail"
+check "out_curl, tcp-redir: код отказа curl передан" "RC=7" "$(oc_run vl vl https://example.org/a)"
+check "out_curl, tcp-redir: после отказа таблица и место сняты" ";" "$(tables_left);$(slots_left)"
+reset
+redir_on
+touch "$S/nft-fail"
+check "out_curl: таблица не встала — curl не зовётся, место свободно" "RC=1;0;" \
+      "$(oc_run vl vl https://example.org/a);$(grep -c . "$S/curl.log");$(slots_left)"
+
+# Параллельные запросы: у каждого своё место, свой ряд портов и своя таблица.
+reset
+redir_on
+echo 1 > "$S/curl-sleep"
+oc_run vl vl https://example.org/a > "$T/oc1" &
+oc_run vl vl https://example.org/b > "$T/oc2" &
+oc_run vl vl https://example.org/c > "$T/oc3" &
+wait
+check "параллельно: все три ответили" "RC=0 RC=0 RC=0" "$(cat "$T/oc1" "$T/oc2" "$T/oc3" | tr '\n' ' ' | sed 's/ $//')"
+check "параллельно: ряды портов разные" "3" "$(sed -n 's/^local-port=\([0-9-]*\) .*/\1/p' "$S/via.log" | sort -u | grep -c .)"
+check "параллельно: в миг каждого запроса стояли три разные таблицы" "3" \
+      "$(sed -n 's/^local-port=[0-9-]* tables=//p' "$S/via.log" | tr ' ' '\n' | grep . | sort -u | grep -c .)"
+check "параллельно: ряды не пересекаются" "yes" \
+      "$(sed -n 's/^local-port=\([0-9]*\)-\([0-9]*\) .*/\1 \2/p' "$S/via.log" | sort -n |
+         awk 'NR > 1 && $1 <= hi { bad = 1 } { hi = $2 } END { print bad ? "no" : "yes" }')"
+check "параллельно: всё снято" ";" "$(tables_left);$(slots_left)"
+
+# Место, брошенное убитым процессом: таблица мёртвого хозяина снимается, место забирается. Место
+# одно, чтобы занятое было тем самым.
+reset
+redir_on
+mkdir -p "$T/om/0" "$S/nft"
+echo 999999 > "$T/om/0/pid"
+: > "$S/nft/splify2_om0_999999"
+check "брошенное место забрано" "RC=0" "$(OC_SLOTS=1 oc_run vl vl https://example.org/a)"
+check "таблица мёртвого хозяина снята" "yes" \
+      "$(grep -q '^delete table inet splify2_om0_999999$' "$S/nft.log" && echo yes || echo no)"
+check "после запроса не осталось ничего" ";" "$(tables_left);$(slots_left)"
+# Место занято живым — отказ без запуска curl.
+reset
+redir_on
+mkdir -p "$T/om/0"
+echo $$ > "$T/om/0/pid"
+check "все места заняты живыми: отказ без запуска" "RC=1;0" \
+      "$(OC_SLOTS=1 oc_run vl vl https://example.org/a);$(grep -c . "$S/curl.log")"
+rm -rf "$T/om"
 
 printf '\n%s\n' "$([ "$fails" -eq 0 ] && echo 'все проверки прошли' || echo "ЕСТЬ ПРОВАЛЫ: $fails")"
 [ "$fails" -eq 0 ]

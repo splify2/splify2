@@ -17,10 +17,15 @@
 # выхода». Замерено на роутере: собственный запрос уходил с адреса провайдера (46.42.17.15),
 # с правилом — с адреса узла подписки (45.157.235.107), и манифест приезжал целиком.
 #
-# ПОЧЕМУ ПРАВИЛО, А НЕ МЕТКА В `output`. Метку тоже проверял, работает (`type route hook
-# output`, 17 пакетов в счётчике). Но правило по адресу назначения не требует ни своей
-# таблицы nftables рядом с таблицей движка, ни разбора чужой метки, и одинаково уводит и
-# curl, и uclient-fetch — а без curl остаётся именно он: в зависимостях пакета curl нет.
+# ПОЧЕМУ ПРАВИЛО, А НЕ МЕТКА В `output` — У ВЫХОДА С НАСТОЯЩИМ УСТРОЙСТВОМ (interface, wireguard,
+# awg, xsteer). Правило по адресу назначения не требует ни своей таблицы nftables рядом с
+# таблицей ядра, ни разбора чужой метки, и одинаково уводит и curl, и uclient-fetch — а без curl
+# остаётся именно он: в зависимостях пакета curl нет.
+#
+# У ТУННЕЛЯ С ПЕРЕНАПРАВЛЕНИЕМ TCP (vless, hysteria2, прокси — ядро steer 2.1 и новее) правило
+# не годится: таблица выхода ведёт в устройство туннеля, а TCP, пришедший в это устройство,
+# ядро steer сбрасывает — TCP выхода несётся только по МЕТКЕ, которую правило nat ядра
+# перенаправляет к слушателю модуля. Поэтому такой повтор идёт по метке выхода: out_curl ниже.
 #
 # ЧТО ЭТО НЕ ДЕЛАЕТ. Правило живёт только на время скачивания и снимается сразу. Если
 # процесс убили посередине, правило останется до следующего повтора (он чистит свой
@@ -42,6 +47,12 @@ FETCH_GITLAB=${FETCH_GITLAB:-https://gitlab.com}
 FETCH_CODELOAD=${FETCH_CODELOAD:-https://codeload.github.com}
 FETCH_DIST_BRANCH=${FETCH_DIST_BRANCH:-dist}
 FETCH_CACHE=${FETCH_CACHE:-/tmp/splify2-fetch}
+# Запрос путём трафика выхода по метке (out_curl): места, занятые идущими сейчас запросами, и
+# порты источника, которым метка ставится.
+OUTMARK_DIR=${OUTMARK_DIR:-/tmp/splify2-outmark}
+OUTMARK_PORT_BASE=${OUTMARK_PORT_BASE:-29000}
+OUTMARK_SLOTS=${OUTMARK_SLOTS:-64}
+OUTMARK_SLOT_PORTS=${OUTMARK_SLOT_PORTS:-16}
 # Тексты для человека (s2_t): файл подключают и отдельно от env.sh (стенд, программы).
 command -v s2_t >/dev/null 2>&1 || . "${I18N_SH:-${SPLIFY2_LIBDIR:-/usr/lib/splify2}/i18n.sh}"
 # Перечень выпусков splify2/releases — три адреса одного version.json, по порядку. Читает его
@@ -234,8 +245,7 @@ fetch_github() {  # URL ФАЙЛ
 # ---- выходы, через которые можно повторить ------------------------------------------
 # Печатает «ИМЯ ЗНАЧЕНИЕ» по строке на каждый ПОДНЯТЫЙ выход, у которого есть нужное поле, в
 # порядке `steer outputs`: `table` (умолчание) — своя таблица маршрутизации, `device` — своё
-# устройство (по нему запрос уходит через выход: `curl --interface`, так же мерит страну выхода
-# outbound_geo). СКОЛЬКО — сколько строк печатать (пусто или 0 — все). Ни одной — код 1.
+# устройство (у выхода без перенаправления TCP по нему запрос уходит через выход — out_curl). СКОЛЬКО — сколько строк печатать (пусто или 0 — все). Ни одной — код 1.
 # Через `steer outputs`, а не через jshn: этот файл подключает и splify2-update-lists,
 # которому libubox не нужен ни для чего больше.
 fetch_outs() {  # [ПОЛЕ [СКОЛЬКО]]
@@ -284,6 +294,150 @@ fetch_peers() {  # ВЫХОД
     wg show all endpoints 2>/dev/null | awk '{ for (i = 2; i <= NF; i++) {
         n = split($i, p, ":"); if (n == 2 && p[1] ~ /^[0-9.]+$/) print p[1] } }'
 }
+
+# ---- запрос curl путём трафика выхода -------------------------------------------------
+# ЗАЧЕМ. С ядра steer 2.1 (R-152) TCP выхода-туннеля с перенаправлением (vless, hysteria2, прокси
+# и плагины со способностью tcp-redir) несётся только по МЕТКЕ выхода: правило nat ядра
+# `steer-tcp-redir` (хуки prerouting и output) по карте `tcp_redir` «метка → порт» отдаёт
+# соединение слушателю модуля. Своего TCP у устройства туннеля больше нет, и `curl --interface
+# <устройство>` получает сброс сразу. У остальных выходов устройство настоящее, и через него
+# по-прежнему ходит `--interface`.
+#
+# КАК МЕТКА ДОСТАЁТСЯ curl, который SO_MARK не ставит. На время запроса заводится своя таблица
+# nft: цепочка `type route hook output priority mangle` ставит метку выхода в поле метки ядра
+# (чужие биты целы) пакетам TCP с портами источника из выделенного ряда, а curl берёт порт из
+# этого ряда (`--local-port`). Цепочка route после смены метки заново выбирает маршрут, и правило
+# nat ядра (dstnat - 1, позже mangle) видит метку. Вторая цепочка (`filter`, после nat) отбрасывает
+# такие пакеты, если их назначение не стало адресом loopback: ядро, не перенаправившее соединение
+# к слушателю (выход в этот миг не привязан, модуль перезапускается), иначе отдало бы его маршруту
+# выхода или напрямую — и замер страны соврал бы адресом провайдера. Судить по назначению, а не по
+# `oifname`: на хуке output устройство — то, что выбрал маршрут ДО перенаправления (на стенде
+# перенаправленный SYN к 127.0.0.1 виден там с OUT=eth1), и условие `oifname != "lo"` отбрасывало
+# бы как раз удачные соединения.
+#
+# Условия обеих цепочек — `ct direction original`: ответы слушателей роутера, чей порт случайно
+# попал в ряд, идут в обратном направлении и правил не касаются; цепочки стоят на хуке output, так
+# что пересылаемый трафик устройств сети через них не идёт вовсе. Ряд лежит ниже
+# ip_local_port_range (32768-60999 по умолчанию): обычные исходящие соединения роутера берут
+# порты оттуда и в ряд не попадают.
+#
+# МЕСТА. Запросы идут параллельно (замер нескольких выходов разом), поэтому каждому — своё место:
+# каталог OUTMARK_DIR/<N>, созданный mkdir (атомарно), со своим рядом портов и своей таблицей
+# `splify2_om<N>_<pid>`. Таблица и место снимаются ловушкой подоболочки — при отказе curl, при
+# обычном выходе и по INT/TERM/HUP (сигнал всей группе процессов снимает их сразу; сигнал одной
+# подоболочке — когда кончится curl, не позже его срока). Если процесс убит без ловушки (KILL),
+# место с мёртвым pid забирает запрос, которому оно встретится при обходе, и снимает оставшуюся
+# таблицу; до того она метит лишь порты этого места, которыми никто, кроме out_curl, не ходит. Порядок обхода мест — с разных
+# начальных: подряд идущие запросы одного процесса не упираются в порты прежнего запроса,
+# которые ещё держит TIME_WAIT (bind на такой порт curl не получает и берёт следующий из ряда).
+
+# Перенаправляет ли ядро TCP выхода к слушателю по метке прямо сейчас. Да — код 0 и
+# OUTMARK_MARK (метка выхода), OUTMARK_MASK (поле метки ядра), OUTMARK_TABLE (таблица nft ядра).
+# Спрашивается у ядра, а не выводится из вида: метка выхода — из `steer status`, таблица и поле
+# метки — из `steer nft-map --json` (ядро 2.1 и новее), признак — элемент метки в карте
+# `tcp_redir` этой таблицы. Его ставит сторож ровно тогда, когда таблица выхода привязана к
+# устройству модуля с перенаправлением, — так верно и для группы, стоящей на таком члене. Карты нет
+# (ядро 2.0, выходов с перенаправлением нет) или элемента нет — код 1, и путь прежний.
+out_redir() {  # ВЫХОД
+    OUTMARK_MARK=''; OUTMARK_MASK=''; OUTMARK_TABLE=''
+    case "$1" in ''|*[!a-zA-Z0-9_-]*) return 1 ;; esac
+    command -v nft >/dev/null 2>&1 || return 1
+    _or_m="$("$FETCH_STEER" status --spec "$FETCH_SPEC" 2>/dev/null |
+        jsonfilter -e "@.outputs['$1'].mark" 2>/dev/null)"
+    case "$_or_m" in 0x*) ;; *) return 1 ;; esac
+    case "${_or_m#0x}" in ''|*[!0-9a-fA-F]*) return 1 ;; esac
+    _or_j="$("$FETCH_STEER" nft-map --json 2>/dev/null)"
+    _or_t="$(printf '%s' "$_or_j" | jsonfilter -e '@.table' 2>/dev/null)"
+    _or_k="$(printf '%s' "$_or_j" | jsonfilter -e '@.mark.mask' 2>/dev/null)"
+    case "$_or_t" in ''|*[!a-zA-Z0-9_-]*) return 1 ;; esac
+    case "$_or_k" in 0x*) ;; *) return 1 ;; esac
+    case "${_or_k#0x}" in ''|*[!0-9a-fA-F]*) return 1 ;; esac
+    [ $((_or_m & ~_or_k)) = 0 ] && [ $((_or_m)) != 0 ] || return 1
+    # Элементы карты: `elements = { 0x00100000 : 9481, 0x00200000 : 9482 }`, бывает в несколько
+    # строк. Ключ сравнивается числом: запись метки (ведущие нули, регистр) у nft своя.
+    _or_hit=0
+    for _or_e in $(nft list map inet "$_or_t" tcp_redir 2>/dev/null | tr '\n' ' ' |
+            sed -n 's/.*elements[[:space:]]*=[[:space:]]*{\([^}]*\)}.*/\1/p' |
+            tr ',' '\n' | sed -n 's/^[[:space:]]*\([0-9][0-9a-fA-Fx]*\)[[:space:]]*:.*/\1/p'); do
+        case "$_or_e" in
+            0x*[!0-9a-fA-F]*|0x|[1-9]*[!0-9]*|0[!x]*) continue ;;
+        esac
+        [ $((_or_e & _or_k)) = $((_or_m)) ] && { _or_hit=1; break; }
+    done
+    [ "$_or_hit" = 1 ] || return 1
+    OUTMARK_MARK="$_or_m"; OUTMARK_MASK="$_or_k"; OUTMARK_TABLE="$_or_t"
+    return 0
+}
+
+# Pid процесса, который это выполняет: в подоболочке `$$` — pid родителя, а место живо, пока жив
+# именно его хозяин.
+outmark_pid() { sh -c 'echo $PPID'; }
+
+# Занять место: OUTMARK_SLOT. Код 1 — все заняты живыми запросами.
+outmark_slot() {  # PID
+    mkdir -p "$OUTMARK_DIR" 2>/dev/null || return 1
+    _os_i=$(( ($1 + ${_outmark_seq:-0}) % OUTMARK_SLOTS ))
+    _outmark_seq=$(( ${_outmark_seq:-0} + 1 ))
+    _os_n=0
+    while [ "$_os_n" -lt "$OUTMARK_SLOTS" ]; do
+        _os_d="$OUTMARK_DIR/$_os_i"
+        if mkdir "$_os_d" 2>/dev/null; then
+            printf '%s\n' "$1" > "$_os_d/pid"
+            OUTMARK_SLOT="$_os_i"
+            return 0
+        fi
+        # Хозяин умер, не сняв ловушкой своё: забрать место, сняв его таблицу. Пустой pid —
+        # место только что занято, хозяин ещё не успел записаться.
+        _os_p="$(cat "$_os_d/pid" 2>/dev/null)"
+        case "$_os_p" in
+            ''|*[!0-9]*) ;;
+            *) if ! kill -0 "$_os_p" 2>/dev/null; then
+                   nft delete table inet "splify2_om${_os_i}_$_os_p" 2>/dev/null
+                   [ "$(cat "$_os_d/pid" 2>/dev/null)" = "$_os_p" ] && rm -rf "$_os_d"
+                   if mkdir "$_os_d" 2>/dev/null; then
+                       printf '%s\n' "$1" > "$_os_d/pid"
+                       OUTMARK_SLOT="$_os_i"
+                       return 0
+                   fi
+               fi ;;
+        esac
+        _os_i=$(( (_os_i + 1) % OUTMARK_SLOTS ))
+        _os_n=$((_os_n + 1))
+    done
+    return 1
+}
+
+# Запрос curl путём трафика выхода: у выхода с перенаправлением TCP — по метке, у остальных —
+# через устройство (`--interface`). ПРОГРАММА — curl (у замера страны — шов GEO_CURL). Код —
+# код curl; 1 без запуска — идти нечем: перенаправления нет и устройства не назвали, или все
+# места заняты, или таблица nft не встала. Подоболочка: ловушка снимает таблицу и место при любом
+# исходе, не трогая ловушек вызывающего.
+out_curl() (  # ВЫХОД УСТРОЙСТВО ПРОГРАММА [АРГУМЕНТЫ…]
+    _oc_out="$1"; _oc_dev="$2"; _oc_curl="$3"
+    shift 3
+    if ! out_redir "$_oc_out"; then
+        [ -n "$_oc_dev" ] || exit 1
+        exec "$_oc_curl" --interface "$_oc_dev" "$@"
+    fi
+    _oc_pid="$(outmark_pid)"
+    outmark_slot "$_oc_pid" || exit 1
+    _oc_tab="splify2_om${OUTMARK_SLOT}_$_oc_pid"
+    _oc_lo=$((OUTMARK_PORT_BASE + OUTMARK_SLOT * OUTMARK_SLOT_PORTS))
+    _oc_hi=$((_oc_lo + OUTMARK_SLOT_PORTS - 1))
+    trap 'nft delete table inet "$_oc_tab" 2>/dev/null; rm -rf "$OUTMARK_DIR/$OUTMARK_SLOT"' EXIT
+    trap 'exit 1' INT TERM HUP
+    {
+        printf 'table inet %s {\n' "$_oc_tab"
+        printf '\tchain om_mark {\n\t\ttype route hook output priority mangle; policy accept;\n'
+        printf '\t\ttcp sport %s-%s ct direction original meta mark set meta mark and 0x%08x or %s\n\t}\n' \
+            "$_oc_lo" "$_oc_hi" $((~OUTMARK_MASK & 0xffffffff)) "$OUTMARK_MARK"
+        printf '\tchain om_guard {\n\t\ttype filter hook output priority filter; policy accept;\n'
+        printf '\t\ttcp sport %s-%s ct direction original ip daddr != 127.0.0.0/8 drop\n' "$_oc_lo" "$_oc_hi"
+        printf '\t\ttcp sport %s-%s ct direction original ip6 daddr != ::1 drop\n\t}\n}\n' "$_oc_lo" "$_oc_hi"
+    } > "$OUTMARK_DIR/$OUTMARK_SLOT/rules.nft" || exit 1
+    nft -f "$OUTMARK_DIR/$OUTMARK_SLOT/rules.nft" 2>/dev/null || exit 1
+    "$_oc_curl" --local-port "$_oc_lo-$_oc_hi" "$@"
+)
 
 # ---- собственно скачивание ----------------------------------------------------------
 # Один заход. ЧЕТВЁРТЫЙ аргумент — «только IPv4»: в повторе это обязательно, иначе curl
@@ -361,6 +515,26 @@ fetch_via_tunnel() {  # URL ФАЙЛ
             return 1
         done
     done
+
+    # Туннель с перенаправлением TCP: по метке выхода (out_curl), правило по адресу привело бы
+    # соединение в устройство туннеля, где ядро его сбрасывает. Метку ставит curl с портом из
+    # своего ряда — uclient-fetch порт источника выбрать не умеет.
+    if out_redir "$_vt_name"; then
+        if ! command -v curl >/dev/null 2>&1; then
+            FETCH_NOTE="$(s2_t fetch.need_curl "A retry through output {name} is not possible: curl is needed (package curl)" name "$_vt_name")"
+            return 1
+        fi
+        out_curl "$_vt_name" '' curl -fsSL -4 --connect-timeout "$FETCH_CONNECT_TIMEOUT" \
+            --max-time "$FETCH_TIMEOUT" -o "$2" "$1"
+        _vt_rc=$?
+        if [ "$_vt_rc" != 0 ] || [ ! -s "$2" ]; then
+            rm -f "$2"
+            FETCH_NOTE="$(s2_t fetch.both_failed "{host} did not answer directly or through output {name}" host "$_vt_host" name "$_vt_name")"
+            return 1
+        fi
+        FETCH_NOTE="$(s2_t fetch.via_output "Downloaded through output {name}" name "$_vt_name")"
+        return 0
+    fi
 
     fetch_rules_flush
     # `uidrange 0-0` — не украшение: правило по одному адресу назначения действует на ВЕСЬ
