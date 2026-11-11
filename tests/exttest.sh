@@ -92,8 +92,11 @@ chmod +x "$T/bin/steer" "$T/bin/initd-rpcd" "$T/bin/initd-events"
 PL="$T/p"
 
 # Окружение вызова объекта — как у стенда pluginmatch/rpcdmatch, но только то, что нужно этим методам.
+# База пакетов: ядро 2.1.0 — «плагина нет» проверяется на ядре, которое плагины принимает (на ядре младше нужного
+# steer_install и steer_versions отвечает сам каркас — стенд coreupmatch).
+printf 'C:Q1x=\nP:steer-core\nV:2.1.0-r1\n\n' > "$T/apkdb"
 envs() {
-    env SANDBOX="$T" PATH="$T/bin:$PATH" S2_LANG=ru S2_DICT_EXTRA="$ROOT/plugins/lang-ru/i18n/backend" JSHN_SH="$ROOT/tests/stub/jshn.sh" \
+    env SANDBOX="$T" PATH="$T/bin:$PATH" APK_DB="$T/apkdb" S2_LANG=ru S2_DICT_EXTRA="$ROOT/plugins/lang-ru/i18n/backend" JSHN_SH="$ROOT/tests/stub/jshn.sh" \
         RPCD_LIB="$LIBD/rpcd" FAST_SH="$LIBD/fast.sh" FETCH_SH="$LIBD/fetch.sh" \
         SPLIFY2_LOCK_DIR="$T/lock" STEER="$T/bin/steer" STEER_PLUGIN_STUB="$ROOT/tests/stub/steer-plugin" PLUG="$PL" \
         SPEC="$T/etc/spec.json" SPEC_VIEW="$T/spec.view.json" APPLIED="$T/etc/spec.applied.json" \
