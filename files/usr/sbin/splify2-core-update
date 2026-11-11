@@ -21,6 +21,21 @@
 # нему базовый вид показывает строку хода. Повторять безопасно: стоящее ядро не младше нужного — сразу шаг 5.
 # Чего не делает: не трогает ядро, которое ведёт steer-box-connector (podkop, forkop) — это пакеты коннектора.
 
+# Чужие дескрипторы — прочь первым делом. Команду запускают rpcd (метод steer_install) и postinst внутри транзакции
+# менеджера пакетов, который сам запущен методом rpcd (самообновление 26.10.x): rpcd создаёт трубы вызовов без O_CLOEXEC,
+# и держатель чужой трубы — мы и всё, что мы запустим (демон steerd после перезапуска службы живёт дальше), — не даёт
+# вызову закончиться и роняет rpcd, когда труба наконец закрывается. Тот же приём и те же оговорки (двузначные номера,
+# дескриптор самого скрипта) — в начале /usr/libexec/rpcd/splify2.
+if ( exec 3>/dev/null; eval 'exec 10>&3'; eval 'exec 10>&-' ) 2>/dev/null; then _fd_wide=1; else _fd_wide=0; fi
+for _fd in /proc/$$/fd/*; do
+    _fd="${_fd##*/}"
+    [ "$_fd" -gt 2 ] 2>/dev/null || continue
+    [ "$_fd" -le 9 ] || [ "$_fd_wide" = 1 ] || continue
+    [ "/proc/$$/fd/$_fd" -ef "$0" ] && continue
+    eval "exec $_fd>&-" 2>/dev/null
+done
+unset _fd _fd_wide
+
 _cu_lib="${SPLIFY2_LIBDIR:-/usr/lib/splify2}"
 . "${JSHN_SH:-/usr/share/libubox/jshn.sh}"
 ENV_SH="${ENV_SH:-$_cu_lib/env.sh}"
