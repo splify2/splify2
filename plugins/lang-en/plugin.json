@@ -1,7 +1,7 @@
 {
   "schema": 1,
   "id": "lang-en",
-  "version": "1.0.0",
+  "version": "1.0.1",
   "type": "language",
   "name": "English",
   "description": "English for the splify2 frame and the Andromeda panel",
