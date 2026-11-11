@@ -1,27 +1,38 @@
-# lang-en — English
+# lang-en — английский язык
 
-Official splify2 plugin (`splify2-core-plugins`), `type: language`. The splify2 frame is written in English, so its
-dictionary is the identity map; the real content for the Andromeda panel is the English host dictionary.
+Официальный плагин splify2 (`splify2-core-plugins`), `type: language`, ставится вместе с пакетом. Каркас splify2 написан
+по-английски, поэтому его словарь — тождественный; содержательная часть плагина — английский словарь панели Andromeda и
+словарь текстов бэкенда, эталон для переводчиков.
 
-## What is inside
+## Что внутри
 
-| File | For | Format |
+| Файл | Для кого | Формат |
 |---|---|---|
-| `i18n/core/en.json` | the frame (classic LuCI JS) | "English string -> string"; every string of `luci/.../core/strings.json` maps to itself. It is kept in full so that a wording fix is one edit here and so that the coverage test is the same for every language |
-| `i18n/host/en.json` | Andromeda | "`ns.key` -> string", `{0}`, `{1}` placeholders; the same keys as `ui/src/copy/en.json` |
-| `i18n/backend/en.json` | the backend (rpcd, host services, official plugins) | "code -> text" with `{name}` placeholders; the code is the first argument of `fail_code` / `s2_fail_code` / `s2_t`. It equals the English default text in the code (`tests/i18nmatch.sh` checks it), so it is the reference for translators |
-| `i18n/ru.json`, `i18n/en.json` | the plugin card | `plugin.name`, `plugin.description` |
+| `i18n/core/en.json` | каркас (базовый вид на LuCI JS) | «английская строка → строка»; каждая строка `luci/.../core/strings.json` переводится сама в себя. Словарь держится полным, чтобы правка формулировки была одной правкой здесь, а проверка покрытия — одной для всех языков |
+| `i18n/host/en.json` | Andromeda | «`ns.key` → строка», подстановки `{0}`, `{1}`; ключи те же, что у русского словаря `lang-ru` |
+| `i18n/backend/en.json` | бэкенд (rpcd, службы хоста, официальные плагины) | «код → текст», подстановки `{имя}`; код — первый аргумент `fail_code` / `s2_fail_code` / `s2_t`. Текст равен английскому тексту по умолчанию в коде (это проверяет `tests/i18nmatch.sh`), поэтому словарь — эталон для переводчиков |
+| `i18n/ru.json`, `i18n/en.json` | карточка плагина | `plugin.name`, `plugin.description` |
 
-Without any language plugin the frame is English anyway (a missing translation shows the key). The plugin matters for
-Andromeda, whose strings are Russian in code (`ui/src/copy/ru.ts`): the panel stores this dictionary in the browser
-(`registerHostDict`) and shows English after the language is switched.
+## Что меняется для человека
 
-## Tests
+- **Каркас** и без языкового плагина английский: ключ строки и есть английский текст.
+- **Бэкенд** и без плагина отвечает по-английски, когда язык каркаса английский или не определён.
+- **Andromeda**: английский вшит в саму панель, и без плагина он тоже есть. Словарь плагина панель кладёт в память браузера
+  (`registerHostDict`); после выбора английского и перезагрузки панели строки из словаря плагина берутся поверх вшитых.
 
-`tests/langmatch.sh`: coverage of `strings.json` without extra keys, the Andromeda dictionary equals `ui/src/copy/en.json`,
-the real `i18n_get` returns the dictionary of an enabled plugin, `s2p lint --official` passes.
+Выключенный или снятый плагин свой словарь больше не отдаёт; каркас и так английский. Словарь, который Andromeda уже
+положила в память браузера, остаётся там и после выключения плагина.
 
-## Not covered
+## Как проверяется
 
-Log lines (`logger`, stderr), developer output and the messages of the `/cgi-bin/splify2-api` gateway (the `desktop-api` plugin; its refusals carry a
-`gateway.*` code and the plugin's own `i18n/backend` dictionaries) are not translated by this plugin.
+`tests/langmatch.sh`: словарь каркаса покрывает `strings.json` без лишних ключей и с теми же подстановками, словарь
+Andromeda — те же ключи, что у `lang-ru`, и те же подстановки `{0}`, `{1}`, настоящий `i18n_get` отдаёт словарь
+включённого плагина и не отдаёт выключенного, `s2p lint --official` проходит. Совпадение словаря Andromeda со строками
+самой панели проверяет её репозиторий. `tests/i18nmatch.sh`: словарь бэкенда покрывает ровно те коды, что есть в коде, и
+равен английским текстам вызовов.
+
+## Чего нет
+
+Строки журнала (`logger`, stderr), вывод разработчика и сообщения шлюза `/cgi-bin/splify2-api` (плагин `desktop-api`:
+отказ несёт код `gateway.*`, словари — свои, `i18n/backend` плагина) этим плагином не переводятся. Строки схем настроек
+других плагинов лежат в их собственных словарях.
