@@ -187,7 +187,7 @@ rm -f "$PKGDIR/$name"
 log "$(jf "$ir" output)"
 if [ "$irc" != 0 ]; then
     err="$(jf "$ir" error)"
-    finish_fail core_update.install_failed "steer {version} did not install: {why}" version "$ver" why "$(printf '%s' "${err:-?}" | tail -n 3 | tr '\n' ' ')"
+    finish_fail core_update.install_failed "steer {version} did not install: {why}" version "$ver" why "$(printf '%s' "${err:-?}" | tail -n 3 | tr '\n' ' ' | sed 's/ *$//')"
 fi
 now="$(core_version)"
 coreup_ver_ge "$now" "$STEER_MIN_VERSION" ||
