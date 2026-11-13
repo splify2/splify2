@@ -112,26 +112,34 @@ pm_installed() {
 #   - наше имя (аргумент — регулярное выражение имён) — становится «имя» всегда: закрепление за
 #     файлом нужно только самой транзакции, дальше оно лишь не даёт apk увидеть пакет в фиде и
 #     ломает следующую установку той же версии другой сборки.
-# Записи без «><» (в том числе `!имя`) и закрепления чужих пакетов с верным хешом не трогаются.
+# Запрет `!имя` на наше имя убирается всегда. steer-core 2.1 берёт на себя (provides) имена всех прежних пакетов
+# ядра и модулей — steer, steer-extended, libsteer, libsteer-wolfssl, steer-vless…, — и запрет любого из них в world
+# запрещает и его: «unable to select packages: breaks: world[!steer-extended]» (apk 3.0.2 на стенде; жалоба из чата —
+# 25.12 после «удаления Steer» Zapret Manager'ом). Такие запреты оставляли прежние установщики (наш прежде называл
+# прежние пакеты в транзакции как `!имя`) и чужие; самой установке ядра они не нужны вовсе — прежние пакеты снимает
+# конфликт и замена в самом steer-core.
+# Прочие записи без «><» и закрепления чужих пакетов с верным хешом не трогаются.
 # Пути — APK_WORLD и APK_DB: стенды подставляют свои.
 PM_OURS='^(steer|steer-.*|libsteer.*|splify2.*|luci-app-splify2|luci-i18n-splify2-.*|steer-box-connector|luci-app-steer-box-connector)$'
 pm_world_heal() {  # [ИМЕНА-ERE]
     [ "$PM" = apk ] || return 0
     _wh_w="${APK_WORLD:-/etc/apk/world}"; _wh_d="${APK_DB:-/lib/apk/db/installed}"
-    [ -s "$_wh_w" ] && [ -s "$_wh_d" ] || return 0
-    grep -q '><' "$_wh_w" 2>/dev/null || return 0
-    grep -q '^P:' "$_wh_d" 2>/dev/null || return 0
+    [ -s "$_wh_w" ] || return 0
+    grep -q -e '><' -e '^!' "$_wh_w" 2>/dev/null || return 0
+    [ -f "$_wh_d" ] || _wh_d=/dev/null
     _wh_t="$_wh_w.heal.$$"
     if awk -v ours="${1:-^$}" '
         FILENAME == ARGV[1] {
             if ($0 ~ /^C:/) { c = substr($0, 3); if (p != "") id[p] = c }
-            else if ($0 ~ /^P:/) { p = substr($0, 3); if (c != "") id[p] = c }
+            else if ($0 ~ /^P:/) { p = substr($0, 3); db = 1; if (c != "") id[p] = c }
             if ($0 == "") { c = ""; p = "" }
             next
         }
         {
+            if (substr($0, 1, 1) == "!") { if (substr($0, 2) !~ ours) print; next }
             i = index($0, "><")
             if (i == 0) { print; next }
+            if (!db) { print; next }
             n = substr($0, 1, i - 1); q = substr($0, i + 2)
             if (!(n in id)) next
             if (n ~ ours || id[n] != q) print n; else print
@@ -157,7 +165,7 @@ pm_world_heal() {  # [ИМЕНА-ERE]
 # зависимости нет, дело не в списках, и крутить это по кругу незачем. Прежняя редакция знала
 # это только про opkg («беда, которой нет у apk») — у 1.2.5 зависимостей не было, и ветка apk
 # отказа просто не встречала; у 26.9 их две (https-dns-proxy, ip-full).
-pm_add() {  # ФАЙЛ... [!ИМЯ...] — одной транзакцией
+pm_add() {  # ФАЙЛ... — одной транзакцией
     if [ "$PM" = apk ]; then
         # До: поломку прошлой оборванной установки (см. pm_world_heal) apk сам не чинит, и без
         # лечения не ставится ничто; и наши закрепления за файлами — модули 2.0, поставленные
@@ -732,8 +740,9 @@ pm_drop_old() {  # ИМЕНА
     done
 }
 
-# Убрать из /etc/apk/world запреты `!имя` и имя steer после перехода: пакетов они уже не
-# касаются (прежние сняты в транзакции, steer-core называет себя steer сам).
+# Убрать из /etc/apk/world имена прежних пакетов ядра после перехода: их уже удовлетворяет сам steer-core (provides),
+# и снятие имени менеджером убирает только запись («World updated, but … not removed: steer: steer-core» — apk 3.0.2
+# на стенде). Запрет `!имя` на то же имя снялся бы так же, но до сюда он не доживает: его убирает pm_world_heal.
 # Прежний пакет интерфейса (luci-app-splify2) — единственное, что установщик снимает сверх ядра.
 pm_drop_old_ui() {
     pm_has luci-app-splify2 || return 0
@@ -785,22 +794,15 @@ if ! box_busy; then
         _f="steer-core-${SV}-1_${ARCH}.$(pm_ext)"
         info "$_f"
         fetch_pkg steer "$SV" "$_f" "$TMP/$_f" "$REPO_STEER"
-        # Одной транзакцией. Прежнее ядро 1.x у apk снимается в ней же: `!имя` (у steer — снятием закрепления
-        # имени за файлом 1.x в world, после чего steer-core замещает его по replaces). Пакеты модулей 2.0
-        # называть не нужно: steer-core 2.1 берёт их имена на себя, а закрепления за файлами, с которыми он не
-        # решается, pm_add снимает до транзакции. /etc/steer — спека, списки, подписки — пакетам не
-        # принадлежит и остаётся на месте.
-        EXTRA=""
-        if [ "$PM" = apk ]; then
-            for _n in $STEER_OLD; do
-                case "$_n" in
-                    steer) apk add steer >/dev/null 2>&1 || true ;;
-                    *) EXTRA="$EXTRA !$_n" ;;
-                esac
-            done
-        fi
-        # shellcheck disable=SC2086
-        if ! pm_add "$TMP/$_f" $EXTRA; then
+        # Одной транзакцией, и прежних пакетов в ней НЕ называть. steer-core 2.1 сам конфликтует с прежними пакетами
+        # ядра (1.x, промежуточной раскладки) и модулей 2.0 и берёт их имена на себя (provides, replaces): apk снимает их
+        # в той же транзакции, а их имена в world остаются удовлетворены самим steer-core (apk 3.0.2 на стенде: steer и
+        # steer-extended 1.5.9 → steer-core 2.1.3 — «Purging steer-extended, Purging steer, Installing steer-core»).
+        # `!имя` здесь, наоборот, ломало переход: запрет имени запрещает и того, кто его provides, — «breaks:
+        # world[!steer-extended]», — а оборванная на середине транзакция оставляла этот запрет в world навсегда.
+        # Закрепления прежних пакетов за файлами («steer><Q1…» у 1.x) и чужие запреты наших имён снимает pm_add до
+        # транзакции (pm_world_heal). /etc/steer — спека, списки, подписки — пакетам не принадлежит и остаётся на месте.
+        if ! pm_add "$TMP/$_f"; then
             [ "$PM" = opkg ] && [ -n "$STEER_OLD$MOD_OLD" ] || die "ядро не установилось"
             info "прежнее ядро мешает — снимаю его и ставлю заново"
             # shellcheck disable=SC2086

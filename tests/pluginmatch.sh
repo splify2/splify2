@@ -204,6 +204,18 @@ rm -f "$PLUG/fail.repo"
 printf 'busy\n' > "$PLUG/fail.list"
 check "менеджер занят другим запросом — код busy" "busy" "$(rpcd plugins_list | pj 'd["code"]')"
 
+# Ядро до 2.1.3 называет плагин семени (из файла, без репозитория) «без подписи»: каркас поправляет trust только ему
+# (#2993, #3005: после обновления с 26.10 все плагины панели стояли жёлтыми).
+plug_reset
+mkdir -p "$T/seedt"; : > "$T/seedt/backup-1.0.0-all.s2p"; printf 'backup\nlang-ru\n' > "$T/seededt"
+printf '%s\n' '{"schema":1,"plugins":{"backup":{"version":"1.0.0","repo":null,"from":"file"},"lang-ru":{"version":"1.0.2","repo":null,"from":"file"},"own":{"version":"0.1.0","repo":null,"from":"file"}}}' > "$PLUG/state.json"
+printf '%s\n' '{"plugins":[{"id":"backup","name":"Архив {настроек}","version":"1.0.0","repo":null,"trust":"unsigned","state":"enabled","compat":{"splify2-api":"^1.0"}},{"id":"lang-ru","version":"1.0.2","repo":null,"trust":"unsigned","state":"enabled"},{"id":"own","version":"0.1.0","repo":null,"trust":"unsigned","state":"enabled"},{"id":"vless","repo":"splify2","trust":"official","state":"enabled"}]}' > "$PLUG/list.json"
+export SPLIFY2_SEED="$T/seedt" SPLIFY2_SEEDED="$T/seededt"
+out="$(rpcd plugins_list)"
+unset SPLIFY2_SEED SPLIFY2_SEEDED
+check "плагин семени из файла — official; без архива этой версии в семени и чужой из файла — как сказал менеджер" \
+    "official unsigned unsigned official" "$(printf '%s' "$out" | pj '" ".join(p["trust"] for p in d["plugins"])')"
+
 # Название и описание на языке человека: ключи plugin.name и plugin.description словаря плагина.
 plug_reset
 printf '%s\n' '{"plugins":[{"id":"backup","name":"Архив настроек","version":"1.0.0","state":"enabled"}]}' > "$PLUG/list.json"

@@ -272,8 +272,12 @@ case "$2" in
         json_get_var sub_name name
         [ -n "$sub_name" ] || fail_code sub.no_name "No subscription name given"
         sub_use "$sub_name"
-        used="$(sub_used_by "$SUB")"
-        [ "${used:-0}" = 0 ] || fail_code sub.in_use "The subscription is used by outputs: {outputs}" outputs "$used"
+        # Отказ называет выходы ПО ИМЕНАМ, а не числом: «занята выходами: 1» человек, удаливший все правила, читал
+        # как ошибку (чат, D#3013–D#3017) — а держит подписку выход-подключение, который живёт и без правил (заведён
+        # кнопкой «выход на узлах подписки» или остался от правила, у которого был не единственным). Имя — то, что
+        # стоит на карточке в «Подключениях»: там его и удалить.
+        used="$(sub_outputs_using "$SUB" | tr '\n' ' ' | sed 's/ *$//; s/ /, /g')"
+        [ -z "$used" ] || fail_code sub.in_use "The subscription is used by outputs: {outputs}" outputs "$used"
         rm -f "$SUB" "$SUB_INFO"
         if [ "$SUB_NAME" = main ]; then
             uci -q delete splify2.main.sub_url 2>/dev/null

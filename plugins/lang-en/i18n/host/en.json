@@ -259,6 +259,7 @@
  "dns.kakSprashivat": "How to ask",
  "dns.dlyaImenPodPravilami": "For names matched by rules",
  "dns.dlyaOstalnyhSaytov": "For other sites",
+ "dns.otdelnyyDlyaPravil": "Separate DNS for names matched by rules",
  "dns.dnsRoutera": "Router DNS",
  "dns.odinServer": "One server",
  "dns.neskolkoServerov": "Several",

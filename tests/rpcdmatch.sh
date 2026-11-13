@@ -2487,8 +2487,8 @@ cat > "$T/etc/spec.json" <<JSON
 JSON
 out="$(rpcd sub_del '{"name":"blue"}')"
 check "занятая подписка не удаляется" "false" "$(printf '%s' "$out" | jget ok)"
-check "и сказано, сколькими выходами занята" "yes" \
-      "$(printf '%s' "$out" | jget error | grep -q 'занята выходами' && echo yes || echo no)"
+check "и выход назван по имени, а не числом (чат: «занята выходами: 1» без правил читалось ошибкой)" "yes" \
+      "$(printf '%s' "$out" | jget error | grep -q 'занята выходами: vl$' && echo yes || echo no)"
 # То же в спеке v2 — той, что пишет панель: файл подписки там ключ `subscription`, а не `sub_file`. Выход
 # убирают в редакторе выходов раньше подписки (занятый DNS, группой или туннелем он не убирается: см.
 # ui/tests/output-delete.test.tsx), и пока выход стоит в спеке, подписка остаётся.
@@ -2497,6 +2497,13 @@ cat > "$T/etc/spec.json" <<JSON
 JSON
 out="$(rpcd sub_del '{"name":"blue"}')"
 check "занятая подписка не удаляется и в спеке v2" "false" "$(printf '%s' "$out" | jget ok)"
+# Два выхода; у одного оба ключа (`subscription` и прежний `sub_file`) — назван один раз.
+cat > "$T/etc/spec.json" <<JSON
+{"version":2,"outputs":{"vl":{"kind":"tunnel","protocol":"vless","subscription":"$T/etc/subs/blue.txt","sub_file":"$T/etc/subs/blue.txt"},"hy":{"kind":"tunnel","protocol":"hysteria2","subscription":"$T/etc/subs/blue.txt"},"x":{"kind":"tunnel","protocol":"vless","subscription":"$T/etc/subs/other.txt"}}}
+JSON
+out="$(rpcd sub_del '{"name":"blue"}')"
+check "в отказе названы все держащие выходы и только они" "vl, hy" \
+      "$(printf '%s' "$out" | jget error | sed -n 's/.*занята выходами: //p' | tr ',' '\n' | sed 's/^ //' | sort -r | paste -sd, | sed 's/,/, /g')"
 check "файл подписки на месте" "yes" "$([ -s "$T/etc/subs/blue.txt" ] && echo yes || echo no)"
 printf '%s\n' '{"schema":1,"outputs":{},"channels":[]}' > "$T/etc/spec.json"
 out="$(rpcd sub_del '{"name":"blue"}')"
@@ -5274,6 +5281,8 @@ poison() {
         'zapret><QgoodZapretGoodZapretGoodZapretG=' \
         'kmod-tun><QstaleStaleStaleStaleStaleStale=' \
         '!libsteer' \
+        '!steer-extended' \
+        '!kmod-foo' \
         'ip-full' > "$T/apk.world"
     printf '%s\n' \
         'C:QoLdcoreOLDcoreOLDcoreOLDcoreO=' 'P:steer-core' 'V:2.0.3-r1' '' \
@@ -5295,8 +5304,10 @@ check "  чужое закрепление с верным хешом не тр�
       "zapret><QgoodZapretGoodZapretGoodZapretG=" "$(grep '^zapret' "$T/apk.world")"
 check "  чужое закрепление за пакетом с другим хешом стало «именем»" \
       "kmod-tun" "$(grep '^kmod-tun' "$T/apk.world")"
-check "  запись !имя и запись без закрепления целы" \
-      "!libsteer ip-full" "$(grep -e '^!' -e '^ip-full' "$T/apk.world" | tr '\n' ' ' | sed 's/ $//')"
+# Запрет нашего имени снимается: steer-core 2.1 provides steer-extended, libsteer…, и `!steer-extended` в world
+# не даёт его поставить вовсе («breaks: world[!steer-extended]», чат S#61430, apk 3.0.2 на стенде). Чужой — цел.
+check "  запреты наших имён сняты; чужой запрет и запись без закрепления целы" \
+      "!kmod-foo ip-full" "$(grep -e '^!' -e '^ip-full' "$T/apk.world" | tr '\n' ' ' | sed 's/ $//')"
 check "  лечение — правка файла: лишних вызовов apk нет" \
       "add" "$(awk '{printf "%s ", $1}' "$T/apk.log" | sed 's/ $//')"
 

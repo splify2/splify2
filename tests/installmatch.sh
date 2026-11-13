@@ -571,7 +571,7 @@ done
 # чинит файл до своей команды и после неё, при любом исходе.
 export APK_WORLD="$SB/apk.world" APK_DB="$SB/apk.db"
 printf '%s\n' 'steer-core><QnEWcoreNEWcoreNEWcoreNEWcor=' 'steer-vless><QnEWvlessNEWvlessNEWvlessNEW=' \
-    'zapret><QgoodZapretGoodZapretGoodZapretG=' '!libsteer' > "$APK_WORLD.seed"
+    'zapret><QgoodZapretGoodZapretGoodZapretG=' '!libsteer' '!steer-extended' '!kmod-foo' > "$APK_WORLD.seed"
 printf '%s\n' 'C:QoLdcoreOLDcoreOLDcoreOLDcoreO=' 'P:steer-core' 'V:2.0.3-r1' '' \
     'C:QgoodZapretGoodZapretGoodZapretG=' 'P:zapret' 'V:72-r1' '' > "$APK_DB"
 cat > "$SB/bin/apk" <<STUB
@@ -584,12 +584,17 @@ cp "$APK_WORLD.seed" "$APK_WORLD"
 APK_ADD_RC=1 PM=apk pm_add "$SB/pkg.file" >/dev/null 2>&1
 check "обрыв: закрепление стоящего ядра стало «именем»" "steer-core" "$(grep '^steer-core' "$APK_WORLD")"
 check "обрыв: закрепление за пакетом, которого в базе нет, убрано" "0" "$(grep -c '^steer-vless' "$APK_WORLD")"
-check "обрыв: чужое закрепление с верным хешом и запись !имя целы" \
-    "zapret><QgoodZapretGoodZapretGoodZapretG= !libsteer" \
+check "обрыв: чужое закрепление с верным хешом и чужой запрет целы, запреты наших имён сняты" \
+    "zapret><QgoodZapretGoodZapretGoodZapretG= !kmod-foo" \
     "$(grep -e '^zapret' -e '^!' "$APK_WORLD" | tr '\n' ' ' | sed 's/ $//')"
 cp "$APK_WORLD.seed" "$APK_WORLD"
 APK_ADD_RC=0 PM=apk pm_add "$SB/pkg.file" >/dev/null 2>&1
 check "успех: закрепление нашего пакета стало «именем» (пакет стоит)" "steer-core" "$(grep '^steer-core' "$APK_WORLD")"
+# Запрет без единого закрепления (так оставляет world чужой менеджер, «удаливший Steer»): «breaks: world[!steer-extended]»
+# на установке steer-core 2.1 — он provides steer-extended. Снимается и тогда, когда «><» в world нет вовсе.
+printf '%s\n' 'zapret' '!steer-extended' '!steer' '!libsteer' '!libsteer-wolfssl' > "$APK_WORLD"
+APK_ADD_RC=0 PM=apk pm_add "$SB/pkg.file" >/dev/null 2>&1
+check "запреты наших имён без закреплений сняты, чужое имя цело" "zapret" "$(tr '\n' ' ' < "$APK_WORLD" | sed 's/ $//')"
 cp "$APK_WORLD.seed" "$APK_WORLD"; rm -f "$APK_DB.none"
 check "opkg: файла world нет — лечение молча ничего не делает" "0" \
     "$(rm -f "$SB/none.world"; APK_WORLD="$SB/none.world" PM=opkg pm_world_heal; echo $?)"
@@ -709,12 +714,21 @@ case "$1" in
             case "${f##*/}" in steer-core-2.[1-9]*)
                 # steer-core 2.1 берёт имена модулей на себя; закрепление модуля за файлом 2.0 не решается (снято на 3.0.5)
                 pin="$(grep -E '^steer-(vless|hysteria2|proxy|xsteer|obfs|warpbox|tgws|extended)><' "$WD" | head -n 1)"
-                [ -n "$pin" ] && { printf 'ERROR: unable to select packages:\n  steer-core:\n    breaks: world[%s]\n' "$pin"; exit 1; } ;;
+                [ -n "$pin" ] && { printf 'ERROR: unable to select packages:\n  steer-core:\n    breaks: world[%s]\n' "$pin"; exit 1; }
+                # запрет имени, которое steer-core 2.1 provides, — в world или в самой команде (apk 3.0.2 на стенде)
+                ban="$( { cat "$WD"; for a in $names; do echo "$a"; done; } | grep -E '^!(steer|steer-extended|libsteer|libsteer-wolfssl|steer-(vless|hysteria2|proxy|xsteer|obfs|warpbox|tgws))$' | head -n 1)"
+                [ -n "$ban" ] && { printf 'ERROR: unable to select packages:\n  steer-core:\n    breaks: world[%s]\n' "$ban"; exit 1; } ;;
             esac
         done
         [ -n "${APK_ADD_FAIL:-}" ] && { echo "ERROR: $APK_ADD_FAIL"; exit 1; }
         for f in $files; do
             b="${f##*/}"; n="$(echo "$b" | sed 's/-[0-9].*//')"; v="$(echo "$b" | sed "s/^$n-//; s/-1_.*//")"
+            # steer-core 2.1: конфликт и замена — прежние пакеты ядра и модулей снимаются в той же транзакции
+            case "$b" in steer-core-2.[1-9]*)
+                for o in steer steer-extended libsteer libsteer-wolfssl steer-vless steer-hysteria2 steer-proxy steer-xsteer steer-obfs steer-warpbox steer-tgws; do
+                    pkgdb has "$o" && pkgdb del "$o"
+                done ;;
+            esac
             pkgdb add "$n" "$v"; sed -i "/^$n\$/d; /^$n></d" "$WD"; echo "$n><Q1$n=" >> "$WD"
             pkghook "$n" "$v"
         done
@@ -832,11 +846,20 @@ wrun
 check "2.1.0 → 2.1.1: обновлено" "0;splify2 26.11.0;steer-core 2.1.1" "$(cat "$W/rc");$(pkgs)"
 mkwrel 2.1.0
 
-# 6. Ядро 1.x (steer-extended): переход одной транзакцией с `!steer-extended`, выбор по умолчанию.
+# 6. Ядро 1.x (steer-extended): переход одной транзакцией без `!имя` — прежнее снимает конфликт steer-core; выбор по
+# умолчанию. `!steer-extended` в той же транзакции ломал её: steer-core provides steer-extended (apk 3.0.2 на стенде).
 wroot apk steer-extended 1.5.9
 wrun
 check "1.5.9 steer-extended (apk): прошло, итог steer-core 2.1.0" "0;splify2 26.11.0;steer-core 2.1.0" "$(cat "$W/rc");$(pkgs)"
-check "  прежнее ядро названо в той же транзакции" "1" "$(grep -c '^apk add .*steer-core-2.1.0.*!steer-extended' "$W/pm.log")"
+check "  запретов в транзакции нет, в world не осталось" "0;0" "$(grep -c '^apk add .*!' "$W/pm.log");$(grep -c '^!' "$W/r/etc/apk/world")"
+
+# 6б. После «удаления Steer» чужим менеджером: пакетов нет, в world — запреты всех имён ядра (чат: «breaks:
+# world[!steer-extended]» на 25.12). Установка проходит, запретов не остаётся.
+wroot apk
+printf '%s\n' '!steer' '!steer-core' '!steer-extended' '!libsteer' '!libsteer-wolfssl' >> "$W/r/etc/apk/world"
+wrun
+check "запреты !steer* от чужого менеджера: прошло, итог steer-core 2.1.0" "0;splify2 26.11.0;steer-core 2.1.0" "$(cat "$W/rc");$(pkgs)"
+check "  запретов в world не осталось" "0" "$(grep -c '^!' "$W/r/etc/apk/world")"
 
 # 7. Коннектор: пакеты ядра не трогаются, плагины не ставятся; про ядро 2.0 сказано, что делать.
 wroot apk steer-core 2.0.5 steer-box-connector 2.0.5

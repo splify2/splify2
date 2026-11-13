@@ -22,6 +22,33 @@ plugin_after() {  # [ДЕЙСТВИЕ]
     plugin_changed_notify "${1:-}"
 }
 
+# Доверие к плагинам семени пакета в ответе менеджера. Ядро до 2.1.3 называло поставленное файлом без репозитория «без
+# подписи» (trust unsigned), даже когда архив подписан ключом выпуска и пришёл семенем пакета: после обновления с 26.10
+# все плагины панели стояли жёлтыми «splify2 за него не отвечает» (#2993, #3005), пока ядро не 2.1.3. Признак плагина
+# семени — тот же, по которому каркас отдаёт ему свои методы (ext_seed_official: перечень семени, из файла, с подписью,
+# архив этой версии в семени). Правится первый ключ trust после `"id": "<ID>"` — ключ самой записи (менеджер пишет его
+# шестым, до вложенных объектов); внутри строк кавычки экранированы, и `"trust": ` там не встречается.
+plugin_seed_trust() {  # МАССИВ_ПЛАГИНОВ
+    _st="$1"
+    case "$_st" in *'"trust": "unsigned"'*) _st_sp=' ' ;; *'"trust":"unsigned"'*) _st_sp='' ;; *) printf '%s' "$_st"; return 0 ;; esac
+    plugin_need_ext
+    [ -r "$EXT_SEEDED" ] || { printf '%s' "$_st"; return 0; }
+    while IFS= read -r _st_id; do
+        case "$_st_id" in ''|*[!A-Za-z0-9_.-]*) continue ;; esac
+        _st_pre="${_st%%"\"id\":$_st_sp\"$_st_id\""*}"
+        [ "$_st_pre" != "$_st" ] || continue
+        ext_seed_official "$_st_id" || continue
+        _st_post="${_st#"$_st_pre"}"
+        _st_head="${_st_post%%"\"trust\":$_st_sp"*}"
+        _st_tail="${_st_post#"$_st_head"}"
+        case "$_st_tail" in
+            "\"trust\":$_st_sp\"unsigned\""*)
+                _st="$_st_pre$_st_head\"trust\":$_st_sp\"official\"${_st_tail#"\"trust\":$_st_sp\"unsigned\""}" ;;
+        esac
+    done < "$EXT_SEEDED"
+    printf '%s' "$_st"
+}
+
 # Хук plugin_changed (splify2-api): плагины пересчитывают своё. Исход хуков здесь не учитывается.
 plugin_changed_notify() {  # ДЕЙСТВИЕ
     [ -n "$1" ] || return 0
@@ -137,7 +164,7 @@ case "$2" in
         # сотни запусков процессов на каждое открытие вкладки.
         plugin_sync_fresh || plugin_sync
         plugin_manager_ro list || { plugin_manager_fail; exit 0; }
-        _pl_plugins="$(plugin_json_array "$PLUGIN_OUT" plugins)"
+        _pl_plugins="$(plugin_seed_trust "$(plugin_json_array "$PLUGIN_OUT" plugins)")"
         _pl_repos="[]"; _pl_rerr=""
         if plugin_manager_ro repo list; then
             _pl_repos="$(plugin_json_array "$PLUGIN_OUT" repos)"
