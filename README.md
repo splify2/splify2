@@ -56,6 +56,27 @@ wget -O /tmp/splify2-install.sh https://gitlab.com/xyzmean/splify2/-/raw/main/in
 Нужно ядро steer 2.1.0 или новее. Следы удаляет `splify2-purge` (без ключей показывает план, `--yes`
 выполняет); сами пакеты он не снимает — это делает кнопка в «Настройки → Интерфейс» или `apk del`/`opkg remove`.
 
+## Поддержать splify2 / Support splify2 / 支持 splify2
+
+[Поддержать через CloudTips / Donate via CloudTips / 通过 CloudTips 捐赠](https://pay.cloudtips.ru/p/fb925110)
+
+<details>
+<summary>Донаты в криптовалюте / Crypto donations / 加密货币捐赠</summary>
+
+| Bitcoin (BTC) / 比特币 | TON / USDT (TON) | ETH (Ethereum / 以太坊) |
+| :---: | :---: | :---: |
+| <img src="docs/img/donate-btc.png" width="140" alt="Bitcoin address QR code"> | <img src="docs/img/donate-ton.png" width="140" alt="TON network address QR code"> | <img src="docs/img/donate-eth.png" width="140" alt="Ethereum address QR code"> |
+
+- **Bitcoin / 比特币:** `bc1q0d2j8zgrfnr33j83y9hza3mk0py8xtpzg5wxxv`
+- **Сеть TON / TON network / TON 网络:** `UQA_zsyjS1uVC4r0aGfCiY6skZvMsqeeUb7K425eq42KYVai`
+- **Только ETH в сети Ethereum / ETH on Ethereum only / 仅限以太坊网络的 ETH:** `0xD6dc71Eba770A4527a94FBa9D369cf6f2B2CFB15`
+
+- **Русский:** Для адреса TON выберите в кошельке Toncoin (TON) или USDT перед отправкой. Для USDT используйте сеть TON, а не Ethereum или Tron.
+- **English:** For the TON address, select Toncoin (TON) or USDT in your wallet before sending. Use the TON network for USDT, not Ethereum or Tron.
+- **简体中文：** 向 TON 地址转账前，请在钱包中选择 Toncoin（TON）或 USDT。发送 USDT 时请选择 TON 网络，不要使用 Ethereum 或 Tron 网络。
+
+</details>
+
 ## Документация
 
 - [Быстрый старт](https://splify2.github.io/docs/quickstart/) и [как это работает](https://splify2.github.io/docs/how-it-works/)
