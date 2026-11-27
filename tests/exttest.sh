@@ -735,18 +735,20 @@ echo "== сборка .s2p: плагины каркаса из архива ра
 SDK="${PLUGIN_SDK:-$ROOT/../plugin-sdk}"
 [ -d "$SDK" ] || SDK="$ROOT/../../plugin-sdk"
 [ -d "$SDK" ] || SDK=/home/yo1nk/splicicd/plugin-sdk
-if { command -v s2p >/dev/null 2>&1 || [ -x "$SDK/bin/s2p" ] || { [ -f "$SDK/build.sh" ] && command -v go >/dev/null 2>&1; }; }; then
+if { { [ -n "${S2P:-}" ] && [ -x "$S2P" ]; } || command -v s2p >/dev/null 2>&1 || [ -x "$SDK/bin/s2p" ] || { [ -f "$SDK/build.sh" ] && command -v go >/dev/null 2>&1; }; }; then
     mkdir -p "$T/dist"
     if PLUGIN_SDK="$SDK" S2P_OUT_DIR="$T/dist" sh "$ROOT/plugins/build.sh" >"$T/build.log" 2>&1; then built=ok; else built=fail; cat "$T/build.log"; fi
     check "plugins/build.sh: lint и сборка всех плагинов каркаса" "ok;$(ls -d "$ROOT"/plugins/*/plugin.json | wc -l)" "$built;$(ls "$T/dist" | grep -c '\.s2p$')"
     reset
     for id in backup lists-catalog; do
         mkdir -p "$PL/lib/$id"
-        tar xzf "$T/dist/$id-1.0.0-all.s2p" -C "$PL/lib/$id"
+        ver="$(python3 -c 'import json,sys; print(json.load(open(sys.argv[1]))["version"])' "$ROOT/plugins/$id/plugin.json")"
+        tar xzf "$T/dist/$id-$ver-all.s2p" -C "$PL/lib/$id"
         python3 - "$PL/state.json" "$id" <<'PY'
 import json, sys
 p, i = sys.argv[1:3]
-d = json.load(open(p)); d.setdefault("plugins", {})[i] = {"version": "1.0.0", "state": "enabled", "repo": "splify2-core-plugins"}
+v = json.load(open(p.rsplit("/", 1)[0] + "/lib/" + i + "/plugin.json"))["version"]
+d = json.load(open(p)); d.setdefault("plugins", {})[i] = {"version": v, "state": "enabled", "repo": "splify2-core-plugins"}
 json.dump(d, open(p, "w"))
 PY
     done
@@ -760,7 +762,8 @@ PY
         python3 - "$PL/state.json" "$@" <<'PY'
 import json, sys
 p, i = sys.argv[1:3]
-d = json.load(open(p)); d["plugins"][i] = {"version": "1.0.0", "state": "enabled", "repo": None, "from": "file"}
+v = json.load(open(p.rsplit("/", 1)[0] + "/lib/" + i + "/plugin.json"))["version"]
+d = json.load(open(p)); d["plugins"][i] = {"version": v, "state": "enabled", "repo": None, "from": "file"}
 for kv in sys.argv[3:]:
     k, v = kv.split("=", 1); d["plugins"][i][k] = json.loads(v)
 json.dump(d, open(p, "w"))
@@ -768,13 +771,13 @@ PY
         touch -d '+3 seconds' "$PL/state.json"
     }
     lists_refused() { rpc lists | pj '"yes" if d.get("code") in ("not_installed", "unavailable", "failed") else "no"'; }
-    mkdir -p "$T/seed"; cp "$T/dist/lists-catalog-1.0.0-all.s2p" "$T/seed/"; echo lists-catalog > "$T/seeded"
+    mkdir -p "$T/seed"; cp "$T/dist/lists-catalog-"*-all.s2p "$T/seed/"; echo lists-catalog > "$T/seeded"
     export SPLIFY2_SEED="$T/seed" SPLIFY2_SEEDED="$T/seeded"
     seed_state lists-catalog
     check "из семени пакета (репозитория нет): lists отвечает" "no" "$(lists_refused)"
     : > "$T/seeded"; seed_state lists-catalog
     check "из файла, но не семенем поставлен: имя не отдаётся" "yes" "$(lists_refused)"
-    echo lists-catalog > "$T/seeded"; seed_state lists-catalog 'version="1.0.1"'
+    echo lists-catalog > "$T/seeded"; seed_state lists-catalog 'version="0.0.0"'
     check "из файла другой версии, чем в семени: имя не отдаётся" "yes" "$(lists_refused)"
     seed_state lists-catalog 'unsigned=true'
     check "без подписи: имя не отдаётся" "yes" "$(lists_refused)"
@@ -785,7 +788,9 @@ PY
     unset SPLIFY2_SEED SPLIFY2_SEEDED
     python3 - "$PL/state.json" <<'PY'
 import json, sys
-d = json.load(open(sys.argv[1])); d["plugins"]["lists-catalog"] = {"version": "1.0.0", "state": "enabled", "repo": "splify2-core-plugins"}
+p = sys.argv[1]
+v = json.load(open(p.rsplit("/", 1)[0] + "/lib/lists-catalog/plugin.json"))["version"]
+d = json.load(open(p)); d["plugins"]["lists-catalog"] = {"version": v, "state": "enabled", "repo": "splify2-core-plugins"}
 json.dump(d, open(sys.argv[1], "w"))
 PY
     touch -d '+6 seconds' "$PL/state.json"
