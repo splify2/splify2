@@ -1140,6 +1140,18 @@ out="$(srs_rpcd list_remove '{"id":"itdog:../../etc/passwd","kind":"domains"}')"
 check "list_remove отвергает выход за каталог списков" "yes" \
       "$(printf '%s' "$out" | grep -q '"ok": *false' && echo yes || echo no)"
 
+# Legacy names remain removable, without permitting traversal outside custom/.
+mkdir -p "$T/lists/custom/domains"
+printf 'example.org\n' > "$T/lists/custom/domains/Россия изнутри.lst"
+printf 'source=text\n' > "$T/lists/custom/domains/Россия изнутри.lst.src"
+out="$(srs_rpcd list_remove '{"name":"Россия изнутри","kind":"domains"}')"
+check "удаление прежнего имени с кириллицей и пробелами" "yes;gone" \
+    "$(printf '%s' "$out" | grep -q '\"ok\": *true' && echo yes || echo no);$([ ! -e "$T/lists/custom/domains/Россия изнутри.lst" ] && [ ! -e "$T/lists/custom/domains/Россия изнутри.lst.src" ] && echo gone)"
+printf 'keep\n' > "$T/lists/keep.lst"
+out="$(srs_rpcd list_remove '{"name":"../keep","kind":"domains"}')"
+check "удаление по имени не выходит из custom" "yes;keep" \
+    "$(printf '%s' "$out" | grep -q '\"ok\": *false' && echo yes || echo no);$(cat "$T/lists/keep.lst")"
+
 # ---- НАБОР, НАЗВАННЫЙ КАТАЛОГОМ: format=srs и своя ссылка в манифесте -------------------
 #
 # ИМЯ ПОЛОВИНЫ — ОТ НАБОРА (`telegram.srs.lst`), и это видно в путях ниже: качается `.srs`, а

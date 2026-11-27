@@ -779,7 +779,7 @@ wroot() {  # apk|opkg [ИМЯ ВЕРСИЯ]...
 }
 # Запуск установщика без терминала (умолчания), как `sh install.sh </dev/null`. Вывод — в $W/out, код — в $W/rc.
 wrun() {
-    env INSTALL_ROOT="$W/r" W="$W" APK_WORLD="$W/r/etc/apk/world" APK_DB="$W/r/lib/apk/db/installed" \
+    env INSTALL_ROOT="$W/r" W="$W" STEER_BIN="$W/r/usr/sbin/steer" APK_WORLD="$W/r/etc/apk/world" APK_DB="$W/r/lib/apk/db/installed" \
         BOX_INITD="$W/r/etc/init.d/sing-box" PATH="$W/bin-$WPM:$W/bin:$PATH" "$@" \
         sh "$ROOT/install.sh" </dev/null > "$W/out" 2>&1
     echo $? > "$W/rc"

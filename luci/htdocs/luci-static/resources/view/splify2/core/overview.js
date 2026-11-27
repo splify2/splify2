@@ -26,7 +26,7 @@ function verdictCell(v) {
 return baseclass.extend({
 	render: function(host) {
 		var out = E('div', {});
-		var note = function(msg, kind) { ui.addNotification(null, E('p', msg), kind || 'info'); };
+		var note = function(msg, kind) { ui.addNotification(null, E('div', {}, msg), kind || 'info'); };
 
 		var act = function(method, okText) {
 			return api.once(function() {

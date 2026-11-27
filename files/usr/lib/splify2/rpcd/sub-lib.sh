@@ -219,6 +219,17 @@ sub_answer() {  # ПОЛЕ
     printf '%s' "$SUB_ANSWER" | jsonfilter -e "@.$1" 2>/dev/null
 }
 
+# sub-fetch counts VLESS nodes. Foreign protocols can still be usable by
+# their own plugins; zero VLESS nodes must not mean an empty HTTP/HY2 list.
+sub_usable() {
+    _su_count="$(sub_answer usable)"
+    _su_foreign="$(sub_answer foreign)"
+    if [ "$_su_count" = 0 ]; then
+        case "$_su_foreign" in ''|0|*[!0-9]*) ;; *) return 0 ;; esac
+    fi
+    printf '%s' "$_su_count"
+}
+
 # Спросить у панели ОДИН остаток трафика, не подменяя подписку. Тоже вызовом движка: та же
 # проба заголовков, та же арифметика периода, тот же файл.
 sub_quota_ask() {  # URL

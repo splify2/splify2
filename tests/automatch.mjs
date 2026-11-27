@@ -505,9 +505,10 @@ import { scanStrings, stringsFile } from './lib/strings.mjs'
       { id: 'backup', name: 'Архив настроек', description: 'Выгрузка настроек в файл', version: '1.0.0', state: 'enabled', repo: 'splify2' },
       { id: 'solo', name: 'Один', description: 'Слова манифеста', version: '1.0.0', state: 'enabled', repo: 'splify2' },
     ] }
-  rr.plugins_search = { ok: true, plugins: [] }
+  rr.plugins_search = { ok: true, plugins: [], errors: 'splify2: index download failed' }
   const pl2 = L2.load('view.splify2.core.plugins').render(host)
   await tick(); await tick()
+  check('каталог показывает причину недоступности индекса', true, pl2.textContent.includes('splify2: index download failed'))
   const row = (id) => find(pl2, (n) => n.attrs && n.attrs['data-plugin'] === id)
   check('плагины: язык человека уходит в plugins_list', true, rc.some((c) => c.method === 'plugins_list' && c.args[0] === 'en'))
   check('плагины: название и описание из словаря плагина', [ true, false ], [ /Settings archive/.test(row('backup').textContent) && /Export the router settings/.test(row('backup').textContent), /Архив/.test(row('backup').textContent) ])
@@ -530,6 +531,15 @@ import { scanStrings, stringsFile } from './lib/strings.mjs'
   check('Remove: used_by нет в ответе — зависимые считаются по requires.plugins списка', [ 'disabled', 'Required by: user2' ], [ rm('lib2').attrs.disabled, why('lib2') ])
   // запасная схема: одна строка на странице разделов
   check('запасная схема названа одной строкой', true, /follow the package/.test(readFileSync(resolve(CORE, 'sections.js'), 'utf8')))
+
+  // A rejected output deletion is a rejected spec_set. Preserve the nested
+  // notification content, including the core's explanation of the refusal.
+  rr.spec_set = { ok: false, error: 'output vpn is still used by rule video' }
+  const sections = L2.load('view.splify2.core.sections')
+  const section = sections.render(sections.defs().find((d) => d.id === 'outputs'), host)
+  click(find(section, (n) => n.tag === 'button' && n.textContent === 'Save')); await tick()
+  check('отказ сохранения выхода: сообщение ядра видно в уведомлении', true,
+    notes.some((n) => n.kind === 'danger' && n.text.includes('output vpn is still used by rule video')))
 }
 
 // ---- 10. отзывчивость каркаса: параллельная загрузка, кэш схемы, вкладки не теряют правок, без двойной отправки ----

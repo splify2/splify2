@@ -50,7 +50,7 @@ return baseclass.extend({
 		var node = this.nodeOf(def);
 		var form = null;
 		var drawnGen = -1, dirty = false;   // the spec the form was built from; edited since
-		var note = function(msg, kind) { ui.addNotification(null, E('p', msg), kind || 'info'); };
+		var note = function(msg, kind) { ui.addNotification(null, E('div', {}, msg), kind || 'info'); };
 
 		var build = function() {
 			var value = {};

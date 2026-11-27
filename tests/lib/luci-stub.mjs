@@ -59,7 +59,9 @@ export class El {
 }
 export const E = (tag, attrs, kids) => {
   if (tag && typeof tag === 'object') return tag
-  if (attrs && (Array.isArray(attrs) || typeof attrs === 'string' || attrs instanceof El)) return new El(tag, {}, attrs)
+  // LuCI dom.create treats every non-array object, including a DOM Node,
+  // as attributes. Nested notification nodes must be the third argument.
+  if (!(attrs instanceof Object) || Array.isArray(attrs)) return new El(tag, {}, attrs)
   return new El(tag, attrs, kids)
 }
 

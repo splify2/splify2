@@ -1,7 +1,7 @@
 {
   "schema": 1,
   "id": "lists-catalog",
-  "version": "1.0.0",
+  "version": "1.0.1",
   "name": "Каталог списков",
   "description": "Списки сервисов и сайтов: каталог, загрузка, свои списки и обновление раз в сутки",
   "homepage": "https://github.com/splify2/splify2",

@@ -12,7 +12,7 @@ var T = i18n.T.bind(i18n);
 
 return baseclass.extend({
 	render: function(host) {
-		var note = function(msg, kind) { ui.addNotification(null, E('p', msg), kind || 'info'); };
+		var note = function(msg, kind) { ui.addNotification(null, E('div', {}, msg), kind || 'info'); };
 		var out = E('div', { 'class': 'cbi-section' });
 
 		Promise.all([ api.call('prefs_get'), api.call('fetch_mode').catch(function() { return null; }) ]).then(function(r) {

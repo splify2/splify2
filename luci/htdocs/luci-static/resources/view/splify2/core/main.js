@@ -41,7 +41,7 @@ return view.extend({
 		var bar = E('div', { 'class': 'splify2-bar' });
 		var pane = E('div', {});
 		var menu = E('ul', { 'class': 'cbi-tabmenu' });
-		var note = function(msg, kind) { ui.addNotification(null, E('p', msg), kind || 'info'); };
+		var note = function(msg, kind) { ui.addNotification(null, E('div', {}, msg), kind || 'info'); };
 		var views = {};          // id -> the element of a drawn tab: a tab keeps its unsaved edits while another one is open
 		var schemaStale = false; // a plugin changed: the schema of the core is asked again when a form opens
 		var host = {

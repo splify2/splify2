@@ -20,7 +20,7 @@ function badge(text, color, title) {
 return baseclass.extend({
 	render: function(host) {
 		var root = E('div', {});
-		var note = function(msg, kind) { ui.addNotification(null, E('p', msg), kind || 'info'); };
+		var note = function(msg, kind) { ui.addNotification(null, E('div', {}, msg), kind || 'info'); };
 		// The core before 2.1 has no plugin manager: the backend says it with the code core_too_old and the
 		// numbers (installed, need), and the words are ours.
 		var oldCore = function(e) { return e && e.code === 'core_too_old' ? { installed: e.reply.installed || '?', need: e.reply.need || '2.1' } : null; };
@@ -254,6 +254,7 @@ return baseclass.extend({
 			body.appendChild(E('div', { 'class': 'cbi-section' }, [ E('h3', {}, T('Installed')), installedRows(), E('div', { 'class': 'cbi-page-actions' }, [ autoAll ]) ]));
 			body.appendChild(E('div', { 'class': 'cbi-section' }, [ E('h3', {}, T('Catalog')),
 				state.list.repos_error ? E('div', { 'class': 'alert-message warning' }, state.list.repos_error) : '',
+				state.catalogError ? E('div', { 'class': 'alert-message warning' }, state.catalogError) : '',
 				search, catalogRows() ]));
 			body.appendChild(E('div', { 'class': 'cbi-section' }, [ E('h3', {}, T('Repositories')), reposTable(),
 				E('div', { 'class': 'cbi-page-actions' }, [ E('button', { 'class': 'cbi-button cbi-button-add', click: addRepo }, T('Add a repository')) ]) ]));
@@ -266,9 +267,10 @@ return baseclass.extend({
 		var loadCatalog = function() {
 			var my = ++seq.cat;
 			state.catalog = null;
+			state.catalogError = '';
 			return api.call('plugins_search', { query: state.query || undefined }).then(function(r) {
 				if (my !== seq.cat) return;
-				state.catalog = r.plugins || []; draw();
+				state.catalog = r.plugins || []; state.catalogError = r.errors || ''; draw();
 			}, function(e) {
 				if (my !== seq.cat) return;
 				state.catalog = [];

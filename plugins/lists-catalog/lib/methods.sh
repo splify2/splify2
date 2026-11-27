@@ -702,8 +702,11 @@ AD_EOF
         # Свой список ищется по имени, а не через манифест: в манифесте его нет и быть
         # не может, поэтому прежний код удалить его не мог вовсе.
         if [ -n "$name" ]; then
+            # Legacy lists may have Unicode names or spaces. Deleting an
+            # existing basename must not require renaming the list first.
+            # Keep separators and control characters out of the path.
             case "$name" in
-                *[!A-Za-z0-9_-]*) s2_fail_code lists.bad_name "A list name may contain Latin letters, digits, hyphens and underscores" ;;
+                .|..|*/*|*\\*|*[[:cntrl:]]*) s2_fail_code lists.bad_name "A list name may contain Latin letters, digits, hyphens and underscores" ;;
             esac
             dest="$(custom_path "$name" "${kind:-}")"
             # Вид могли не указать — тогда ищем оба, но удаляем ровно один: имя внутри

@@ -265,6 +265,13 @@ check "слово по-русски идёт как есть" "search обход
 printf 'каталог недоступен\n' > "$PLUG/fail.search"
 check "каталог недоступен — слова менеджера" "каталог недоступен" "$(rpcd plugins_search '{}' | pj 'd["error"]')"
 rm -f "$PLUG/fail.search"
+printf '%s\n' '{"plugins":[],"errors":"splify2: index download failed"}' > "$PLUG/search.json"
+check "пустой каталог с ошибкой индекса не теряет причину" "splify2: index download failed" \
+    "$(rpcd plugins_search '{}' | pj 'd["errors"]')"
+printf '%s\n' '{"plugins":[{"id":"backup"}],"errors":"mirror: unavailable"}' > "$PLUG/search.json"
+out="$(rpcd plugins_search '{}')"
+check "частичный каталог сохраняет и плагины, и ошибку" "backup;mirror: unavailable" \
+    "$(printf '%s' "$out" | pj 'd["plugins"][0]["id"]');$(printf '%s' "$out" | pj 'd["errors"]')"
 
 printf '%s\n' '{"repos":[{"name":"splify2","official":true},{"name":"my","url":"https://x.example/p/","official":false}]}' > "$PLUG/repos.json"
 out="$(rpcd repos_list)"

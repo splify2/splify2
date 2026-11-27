@@ -2310,12 +2310,14 @@ check "сразу после настройки обновлять не пора
 
 # Отказ записи интервала — отказ, а не «ok» (I-329: `A && x || y` запускал вторую ветку): расписание записать нельзя.
 chmod 500 "$SUBCONF"
-out="$(rpcd sub_auto '{"name":"auto1","minutes":90}')"
-chmod 700 "$SUBCONF"
 if [ "$(id -u)" != 0 ]; then
+    out="$(rpcd sub_auto '{"name":"auto1","minutes":90}')"
     check "sub_auto: отказ записи интервала назван отказом" "false" "$(printf '%s' "$out" | jget ok)"
+    check "и прежний интервал остался" "auto1 60" "$(grep '^auto1 ' "$SUBCONF/schedule")"
+else
+    echo "sub_auto: root обходит chmod — отказ прав записи проверяется только без root"
 fi
-check "и прежний интервал остался" "auto1 60" "$(grep '^auto1 ' "$SUBCONF/schedule")"
+chmod 700 "$SUBCONF"
 
 out="$(rpcd sub_auto '{"name":"auto1","minutes":0}')"
 check "ноль выключает обновление" "true;0"       "$(printf '%s' "$out" | jget ok);$(printf '%s' "$out" | jget auto)"
@@ -5531,6 +5533,11 @@ check "строки самолечения ipv6, которые узнаёт And
 check "prefs_set: отказ не затронул выбранное" "my-ui" "$(rpcd prefs_get | jget interface)"
 printf 'luci.main.lang=ru\n' >> "$T/uci.store"
 check "prefs_get: язык LuCI" "ru" "$(rpcd prefs_get | jget lang)"
+
+out="$(STEER_SUB_JSON='{"ok":true,"url":"https://panel.invalid/http","usable":0,"foreign":2}' \
+       rpcd sub_set '{"name":"httpnodes","url":"https://panel.invalid/http"}')"
+check "чужие для VLESS протоколы не объявляются пустой подпиской" "missing" \
+      "$(printf '%s' "$out" | python3 -c 'import json,sys; print(json.load(sys.stdin).get("usable", "missing"))')"
 
 printf '\n%s\n' "$([ "$fails" -eq 0 ] && echo 'все проверки прошли' || echo "ЕСТЬ ПРОВАЛЫ: $fails")"
 [ "$fails" -eq 0 ]

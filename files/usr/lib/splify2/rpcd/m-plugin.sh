@@ -195,7 +195,10 @@ case "$2" in
         case "$_pq" in -*) plugin_fail bad_request plugin.query_dash "The query cannot start with a hyphen"; exit 0 ;; esac
         if [ -n "$_pq" ]; then plugin_manager_ro search "$_pq"; else plugin_manager_ro search; fi ||
             { plugin_manager_fail; exit 0; }
-        plugin_ok_raw plugins "$(plugin_json_array "$PLUGIN_OUT" plugins)"
+        # search may succeed with a partial/empty catalog and repository errors.
+        # Preserve those errors instead of presenting an unavailable index as empty.
+        plugin_ok_raw plugins "$(plugin_json_array "$PLUGIN_OUT" plugins)" \
+            errors "$(plugin_jstr "$(jsonfilter -s "$PLUGIN_OUT" -e '@.errors' 2>/dev/null)")"
         ;;
 
     repos_list)

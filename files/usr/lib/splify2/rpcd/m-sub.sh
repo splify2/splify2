@@ -115,7 +115,7 @@ case "$2" in
         # подписку при подъёме туннеля, — значит это то самое число, по которому туннель и
         # поднимется. Прежде оболочка добывала его отдельным запуском движка и регулярным
         # выражением по его JSON, поэтому в ответ оно не попадало вовсе.
-        [ -n "$(sub_answer usable)" ] && json_add_int usable "$(sub_answer usable)"
+        [ -n "$(sub_usable)" ] && json_add_int usable "$(sub_usable)"
         # Сказанное панелью про устройство — в ответе, а не в журнале: человек нажал кнопку
         # и должен узнать там же, что скачалась заглушка, а не гадать позже по туннелю,
         # который «настроен и не работает».
@@ -255,7 +255,7 @@ case "$2" in
             json_add_boolean changed 0
         fi
         json_add_int bytes "$(wc -c 2>/dev/null < "$SUB" || echo 0)"
-        [ -n "$(sub_answer usable)" ] && json_add_int usable "$(sub_answer usable)"
+        [ -n "$(sub_usable)" ] && json_add_int usable "$(sub_usable)"
         sub_userinfo_emit
         json_dump
         ;;
